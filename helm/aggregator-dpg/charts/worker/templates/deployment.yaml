@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "worker.fullname" . }}
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "worker.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "worker.serviceAccountName" . }}
+      {{- include "worker.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: worker
+          image: {{ include "worker.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "worker.globalConfigMap" . }}
+            - configMapRef:
+                name: {{ include "worker.appConfigMap" . }}
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: POSTGRES_PASSWORD
+            # POSTGRES_USER + POSTGRES_DB come from the umbrella's
+            # `{release}-global` ConfigMap (envFrom above). Kubernetes
+            # resolves $(VAR) at container start.
+            - name: DATABASE_URL
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):5432/$(POSTGRES_DB)"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: SIGNALSTACK_ADMIN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: SIGNALSTACK_ADMIN_KEY
+                  optional: true
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pgrep -f "node" >/dev/null || exit 1
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

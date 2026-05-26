@@ -1,0 +1,25 @@
+replicaCount: 1
+image:
+  repository: aggregator-dpg/api
+  tag: ""
+  pullPolicy: IfNotPresent
+service:
+  port: 4000
+resources:
+  requests: { cpu: 200m, memory: 512Mi }
+  limits:   { cpu: 2,    memory: 1Gi   }
+runMigrationsOnBoot: true
+bulk:
+  uploadUrlTtlSeconds: 900
+  uploadMaxBytes: 10485760
+  qrDownloadUrlTtlSeconds: 900
+adminEmails: "admin@bluedots.local"
+publicLinkBaseUrl: ""
+serviceAccount:
+  create: true
+  annotations: {}
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPU: 70

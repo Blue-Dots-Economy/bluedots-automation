@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "keycloak.renderScriptConfigMap" . }}
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+data:
+  # K8s-tuned port of infra/keycloak/render-realm.sh.
+  # The docker-compose variant exec's into kc.sh at the end; here we just
+  # render and exit so the initContainer succeeds and hands off to the main
+  # Keycloak container via a shared emptyDir.
+  render-realm.sh: |-
+    #!/bin/sh
+    set -eu
+
+    SRC_DIR="/opt/keycloak/data/import-template"
+    DST_DIR="/opt/keycloak/data/import"
+
+    : "${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set}"
+    : "${OIDC_CLIENT_SECRET:?OIDC_CLIENT_SECRET must be set}"
+    : "${BFF_SERVICE_CLIENT_SECRET:?BFF_SERVICE_CLIENT_SECRET must be set}"
+    : "${SMTP_HOST:=mailhog}"
+    : "${SMTP_PORT:=1025}"
+    : "${SMTP_FROM:=no-reply@bluedots.local}"
+    : "${SMTP_FROM_DISPLAY:=Blue Dots Aggregator}"
+    : "${SMTP_SSL:=false}"
+    : "${SMTP_STARTTLS:=false}"
+    : "${SMTP_AUTH:=false}"
+    : "${SMTP_USER:=}"
+    : "${SMTP_PASSWORD:=}"
+
+    mkdir -p "$DST_DIR"
+
+    escape() {
+      printf '%s' "$1" | sed -e 's/[&|]/\\&/g'
+    }
+
+    PUBLIC_BASE_URL_ESC=$(escape "$PUBLIC_BASE_URL")
+    OIDC_CLIENT_SECRET_ESC=$(escape "$OIDC_CLIENT_SECRET")
+    BFF_SERVICE_CLIENT_SECRET_ESC=$(escape "$BFF_SERVICE_CLIENT_SECRET")
+    SMTP_HOST_ESC=$(escape "$SMTP_HOST")
+    SMTP_PORT_ESC=$(escape "$SMTP_PORT")
+    SMTP_FROM_ESC=$(escape "$SMTP_FROM")
+    SMTP_FROM_DISPLAY_ESC=$(escape "$SMTP_FROM_DISPLAY")
+    SMTP_SSL_ESC=$(escape "$SMTP_SSL")
+    SMTP_STARTTLS_ESC=$(escape "$SMTP_STARTTLS")
+    SMTP_AUTH_ESC=$(escape "$SMTP_AUTH")
+    SMTP_USER_ESC=$(escape "$SMTP_USER")
+    SMTP_PASSWORD_ESC=$(escape "$SMTP_PASSWORD")
+
+    for src in "$SRC_DIR"/*.json; do
+      [ -f "$src" ] || continue
+      dst="$DST_DIR/$(basename "$src")"
+      sed \
+        -e "s|__PUBLIC_BASE_URL__|${PUBLIC_BASE_URL_ESC}|g" \
+        -e "s|__OIDC_CLIENT_SECRET__|${OIDC_CLIENT_SECRET_ESC}|g" \
+        -e "s|__BFF_SERVICE_CLIENT_SECRET__|${BFF_SERVICE_CLIENT_SECRET_ESC}|g" \
+        -e "s|__SMTP_HOST__|${SMTP_HOST_ESC}|g" \
+        -e "s|__SMTP_PORT__|${SMTP_PORT_ESC}|g" \
+        -e "s|__SMTP_FROM__|${SMTP_FROM_ESC}|g" \
+        -e "s|__SMTP_FROM_DISPLAY__|${SMTP_FROM_DISPLAY_ESC}|g" \
+        -e "s|__SMTP_SSL__|${SMTP_SSL_ESC}|g" \
+        -e "s|__SMTP_STARTTLS__|${SMTP_STARTTLS_ESC}|g" \
+        -e "s|__SMTP_AUTH__|${SMTP_AUTH_ESC}|g" \
+        -e "s|__SMTP_USER__|${SMTP_USER_ESC}|g" \
+        -e "s|__SMTP_PASSWORD__|${SMTP_PASSWORD_ESC}|g" \
+        "$src" > "$dst"
+      echo "rendered $(basename "$src") -> $dst"
+    done

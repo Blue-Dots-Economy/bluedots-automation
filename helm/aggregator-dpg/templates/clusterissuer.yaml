@@ -1,0 +1,21 @@
+{{- if and (index .Values "cert-manager" "enabled") .Values.ingress.clusterIssuer }}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.ingress.clusterIssuer }}
+  labels:
+    {{- include "aggregator.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.ingress.acmeEmail | default "ops@sanketika.in" }}
+    privateKeySecretRef:
+      name: {{ .Values.ingress.clusterIssuer }}-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: {{ .Values.ingress.className }}
+{{- end }}

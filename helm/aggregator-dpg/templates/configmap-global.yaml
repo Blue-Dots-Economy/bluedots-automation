@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aggregator.fullname" . }}-global
+  labels:
+    {{- include "aggregator.labels" . | nindent 4 }}
+data:
+  # ─── Public URLs ─────────────────────────────────────────────────────
+  PUBLIC_HOST: {{ .Values.global.publicHost | quote }}
+  PUBLIC_PROTOCOL: {{ .Values.global.publicProtocol | quote }}
+  PUBLIC_BASE_URL: {{ include "aggregator.publicBaseUrl" . | quote }}
+  PUBLIC_PORTAL_URL: {{ include "aggregator.publicBaseUrl" . | quote }}
+
+  # ─── Logging ─────────────────────────────────────────────────────────
+  LOG_LEVEL: {{ .Values.global.appLogLevel | quote }}
+  NODE_ENV: production
+
+  # ─── OIDC / Keycloak ─────────────────────────────────────────────────
+  KEYCLOAK_REALM: {{ .Values.global.keycloakRealm | quote }}
+  KEYCLOAK_URL: {{ include "aggregator.keycloakUrl" . | quote }}
+  OIDC_ISSUER: {{ include "aggregator.oidcIssuer" . | quote }}
+  OIDC_CLIENT_ID: {{ .Values.global.oidc.clientId | quote }}
+  OIDC_SCOPE: {{ .Values.global.oidc.scope | quote }}
+  KEYCLOAK_ADMIN_CLIENT_ID: {{ default "aggregator-api" .Values.global.keycloakAdminClientId | quote }}
+
+  # ─── S3 ──────────────────────────────────────────────────────────────
+  S3_REGION: {{ .Values.global.s3.region | quote }}
+  S3_BUCKET: {{ .Values.global.s3.bucket | quote }}
+  S3_FORCE_PATH_STYLE: {{ .Values.global.s3.forcePathStyle | quote }}
+  AWS_REGION: {{ .Values.global.s3.region | quote }}
+
+  # ─── Mail (shared SMTP wiring) ───────────────────────────────────────
+  MAIL_PROVIDER: {{ .Values.mail.provider | quote }}
+  SMTP_HOST: {{ include "aggregator.smtpHost" . | quote }}
+  SMTP_PORT: {{ .Values.mail.smtp.port | quote }}
+  SMTP_FROM: {{ .Values.mail.smtp.from | quote }}
+  SMTP_FROM_DISPLAY: {{ .Values.mail.smtp.fromDisplay | quote }}
+  SMTP_SECURE: {{ .Values.mail.smtp.secure | quote }}
+  SMTP_STARTTLS: {{ .Values.mail.smtp.starttls | quote }}
+  SMTP_AUTH: {{ .Values.mail.smtp.auth | quote }}
+  SES_FROM: {{ .Values.mail.ses.from | quote }}
+  SES_CONFIGURATION_SET: {{ .Values.mail.ses.configurationSet | quote }}
+
+  # ─── Database / Redis hosts (used by helpers) ────────────────────────
+  POSTGRES_HOST: {{ include "aggregator.postgresHost" . | quote }}
+  POSTGRES_USER: {{ .Values.postgresql.auth.username | quote }}
+  POSTGRES_DB: {{ .Values.postgresql.auth.database | quote }}
+  REDIS_URL: {{ include "aggregator.redisUrl" . | quote }}

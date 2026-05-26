@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "web.appConfigMap" . }}
+  labels:
+    {{- include "web.labels" . | nindent 4 }}
+data:
+  PORT: "{{ .Values.service.port }}"
+  HOSTNAME: "0.0.0.0"
+  NEXT_TELEMETRY_DISABLED: "1"
+  API_BASE_URL: "http://{{ .Release.Name }}-api:4000"
+  NEXT_PUBLIC_API_URL: "{{ include "web.publicBaseUrl" . }}/backend"
+  OIDC_ISSUER: "{{ include "web.oidcIssuer" . }}"
+  OIDC_REDIRECT_URI: "{{ include "web.publicBaseUrl" . }}/api/auth/callback"
+  OIDC_POST_LOGOUT_REDIRECT_URI: "{{ include "web.publicBaseUrl" . }}/"
+  BFF_SERVICE_CLIENT_ID: "aggregator-api"
+  SESSION_COOKIE_NAME: "{{ .Values.session.cookieName }}"
+  COOKIE_SECURE: "{{ .Values.session.cookieSecure }}"
+  SESSION_TTL_SECONDS: "{{ .Values.session.ttlSeconds }}"
+  PUBLIC_PORTAL_URL: "{{ include "web.publicBaseUrl" . }}"
+  # Server-side schema reads from the active network's config folder
+  # (public registration link page loads participant schema by file
+  # path). Must match the api's AGGREGATOR_CONFIG_PATH root.
+  SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"

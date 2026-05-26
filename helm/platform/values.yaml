@@ -1,0 +1,87 @@
+# =============================================================================
+# Platform umbrella chart — shared ingress-nginx + cert-manager.
+# Install ONCE per cluster, before aggregator-dpg or signal-stack.
+# =============================================================================
+
+# ─── ClusterIssuer (consumed by Ingress objects in other namespaces) ─────────
+issuer:
+  enabled: true
+  # Name referenced by `cert-manager.io/cluster-issuer` annotation on Ingress.
+  name: letsencrypt-prod
+  # ACME registration email for Let's Encrypt.
+  acmeEmail: ops@sanketika.in
+  # ACME server. Use the staging URL while debugging to avoid rate limits:
+  #   https://acme-staging-v02.api.letsencrypt.org/directory
+  server: https://acme-v02.api.letsencrypt.org/directory
+  # Ingress class used by HTTP-01 solver. Must match ingress-nginx.controller.ingressClass.
+  ingressClass: nginx
+
+# ─── ingress-nginx subchart values (consumed verbatim) ───────────────────────
+# See: https://artifacthub.io/packages/helm/ingress-nginx/ingress-nginx
+ingress-nginx:
+  enabled: true
+  controller:
+    # IngressClass + controller selector. Single controller per cluster keeps
+    # routing simple; multiple controllers need distinct classes.
+    ingressClassResource:
+      name: nginx
+      enabled: true
+      default: true
+    ingressClass: nginx
+    # Watch Ingress resources cluster-wide so cross-ns Ingress works.
+    scope:
+      enabled: false
+    service:
+      type: LoadBalancer
+      # Cloud LB annotations go here if you need NLB / static IP / etc.
+      annotations: {}
+    config:
+      use-forwarded-headers: "true"
+      proxy-body-size: "10m"
+    # Tune resources for prod traffic.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# ─── cert-manager subchart values (consumed verbatim) ────────────────────────
+# See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
+cert-manager:
+  enabled: true
+  # Install all cert-manager CRDs (Certificate, Issuer, Order, Challenge, ...)
+  # via the subchart. Subchart default is `false`, which leaves
+  # `challenges.acme.cert-manager.io` missing and breaks ACME HTTP-01 flow.
+  crds:
+    enabled: true
+    # Survive `helm uninstall` so reinstalls don't blow away in-flight orders.
+    keep: true
+  global:
+    leaderElection:
+      # cert-manager runs in the platform release namespace; leader election lease lives there too.
+      namespace: platform
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  webhook:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+  cainjector:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi

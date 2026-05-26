@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "worker.appConfigMap" . }}
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+data:
+  # Per-network deployment — mirrors the api configmap so worker
+  # validates rows against the same schema the api accepts.
+  AGGREGATOR_CONFIG_PATH: "/app/config/{{ .Values.global.aggregatorNetwork }}/aggregator.config.yaml"
+  SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
+  SIGNALSTACK_ITEM_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
+  SIGNALSTACK_BASE_URL: "{{ .Values.global.signalstackBaseUrl }}"
+  # network_service org id in signal-stack DB; sent as `x-acting-org-id` on admin calls.
+  SIGNALSTACK_ACTING_ORG_ID: "{{ .Values.global.signalstack.actingOrgId }}"
+  BULK_MAX_ROWS: "{{ .Values.bulk.maxRows }}"
+  BULK_MAX_ROW_BYTES: "{{ .Values.bulk.maxRowBytes }}"
+  LINK_METRICS_ROLLUP_INTERVAL_MS: "{{ .Values.cron.linkMetricsRollupIntervalMs }}"
+  WATCHDOG_INTERVAL_MS: "{{ .Values.cron.watchdogIntervalMs }}"
+  S3_FORCE_PATH_STYLE: "{{ .Values.global.s3.forcePathStyle }}"

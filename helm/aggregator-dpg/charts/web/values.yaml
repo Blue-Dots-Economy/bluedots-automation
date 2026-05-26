@@ -1,0 +1,19 @@
+replicaCount: 1
+image:
+  repository: aggregator-dpg/web
+  tag: ""
+  pullPolicy: IfNotPresent
+service:
+  port: 3000
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits:   { cpu: 1,    memory: 1Gi   }
+session:
+  cookieName: sid
+  cookieSecure: "true"
+  ttlSeconds: 43200
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPU: 70
