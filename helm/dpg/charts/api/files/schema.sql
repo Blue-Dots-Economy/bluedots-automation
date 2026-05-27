@@ -1,6 +1,6 @@
 -- GENERATED FILE — do not edit by hand.
 --
--- Source: packages/database/src/utils/sql_scripts/auth.sql, packages/database/src/utils/sql_scripts/metrics.sql, packages/database/src/utils/sql_scripts/create_items.sql, packages/database/src/utils/sql_scripts/create_actions_events.sql
+-- Source: packages/database/src/utils/sql_scripts/auth.sql, packages/database/src/utils/sql_scripts/metrics.sql, packages/database/src/utils/sql_scripts/pii_reveal_audit.sql, packages/database/src/utils/sql_scripts/create_items.sql, packages/database/src/utils/sql_scripts/create_actions_events.sql
 -- Regenerate with: pnpm schema:bundle
 -- CI guards drift via: pnpm schema:bundle:check
 --
@@ -410,6 +410,8 @@ CREATE INDEX IF NOT EXISTS user_onboarded_by_org_via_idx
 -- inbound FK; recompute is the only writer so there shouldn't be any.
 DROP TABLE IF EXISTS participant_metrics CASCADE;
 
+DROP TABLE IF EXISTS item_metrics CASCADE;
+
 CREATE TABLE IF NOT EXISTS item_metrics (
   item_id                   text PRIMARY KEY,
   item_network              text NOT NULL,
@@ -419,21 +421,23 @@ CREATE TABLE IF NOT EXISTS item_metrics (
   onboarded_by_org_id       text,
   onboarded_via             text,
 
+  display_name              text NOT NULL,
+
   profile_status            text,
   profile_completion_pct    integer,
   profile_created_at        timestamp,
   profile_last_updated_at   timestamp,
   age_days                  integer,
 
-  applications_total        integer DEFAULT 0,
-  applications_pending      integer DEFAULT 0,
-  applications_shortlisted  integer DEFAULT 0,
-  applications_rejected     integer DEFAULT 0,
+  count_create              integer NOT NULL DEFAULT 0,
+  count_accept              integer NOT NULL DEFAULT 0,
+  count_reject              integer NOT NULL DEFAULT 0,
+  count_cancel              integer NOT NULL DEFAULT 0,
 
-  last_applied_at           timestamp,
-  last_shortlisted_at       timestamp,
-  last_rejected_at          timestamp,
-  openings                  integer,
+  last_create_at            timestamp,
+  last_accept_at            timestamp,
+  last_reject_at            timestamp,
+  last_cancel_at            timestamp,
 
   actionable_tags           text[],
 
@@ -465,6 +469,32 @@ CREATE INDEX IF NOT EXISTS item_metrics_org_domain_last_computed_idx
 CREATE INDEX IF NOT EXISTS item_metrics_owner_domain_idx
   ON item_metrics (owner_user_id, item_domain);
 
+-- ─── pii_reveal_audit.sql ───
+
+-- pii_reveal_audit.sql
+--
+-- Idempotent DDL for the PII-reveal audit table. Mirrors the Drizzle
+-- definition in apps/api/db/postgres/schema/pii_reveal_audit.ts.
+--
+-- Append-only. No FKs to item_actions or items (both partitioned).
+
+CREATE TABLE IF NOT EXISTS pii_reveal_audit (
+  reveal_id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  action_id                      uuid NOT NULL,
+  viewer_user_id                 text NOT NULL,
+  revealed_item_id               uuid NOT NULL,
+  revealed_item_owner            text NOT NULL,
+  revealed_action_type           text NOT NULL,
+  revealed_action_status_at_view text NOT NULL,
+  viewed_at                      timestamp NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS pii_reveal_audit_viewer_idx
+  ON pii_reveal_audit (viewer_user_id, viewed_at);
+
+CREATE INDEX IF NOT EXISTS pii_reveal_audit_item_idx
+  ON pii_reveal_audit (revealed_item_id, viewed_at);
+
 -- ─── create_items.sql ───
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -486,7 +516,6 @@ CREATE TABLE IF NOT EXISTS items (
   item_latitude DOUBLE PRECISION,
   item_longitude DOUBLE PRECISION,
   created_by TEXT NOT NULL,
-  aggregator_id UUID,
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -511,9 +540,6 @@ PARTITION BY LIST (item_network);
 ALTER TABLE IF EXISTS items
 ADD COLUMN IF NOT EXISTS item_private_state JSONB NOT NULL DEFAULT '{}'::jsonb;
 
-ALTER TABLE IF EXISTS items
-ADD COLUMN IF NOT EXISTS aggregator_id UUID;
-
 CREATE INDEX IF NOT EXISTS items_lookup_idx
 ON items (item_network, item_domain, created_at DESC);
 
@@ -534,9 +560,6 @@ ON items USING GIN (item_private_state);
 
 CREATE INDEX IF NOT EXISTS items_geo_earth_idx
 ON items USING GIST (ll_to_earth(item_latitude, item_longitude));
-
-CREATE INDEX IF NOT EXISTS items_aggregator_id_idx
-ON items (aggregator_id) WHERE aggregator_id IS NOT NULL;
 
 -- ─── create_actions_events.sql ───
 
