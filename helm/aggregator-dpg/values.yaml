@@ -10,7 +10,7 @@
 
 global:
   # UPDATE: public FQDN that ingress + KC issuer + email links use.
-  publicHost: bluedots-aggregator.duckdns.org
+  publicHost: purpledots.servehalflife.com
   # UPDATE: http for local, https when cert-manager issues a cert.
   publicProtocol: https
 
@@ -69,7 +69,7 @@ global:
   # push participants outward via POST /api/v1/admin/* with `x-api-key`.
   # baseUrl = in-cluster DNS to the signals api svc; adminKey = raw key
   # provisioned by signals-DPG's helm migrate-job (see secrets.signalstackAdminKey).
-  signalstackBaseUrl: ''
+  signalstackBaseUrl: 'http://dpg-api.signal-stack.svc.cluster.local:2742'
 
 # ─── Image pull Secret (optional, renders templates/ghcr-pull-secret.yaml) ──
 # Default: pre-create the Secret out-of-band; chart only references it.
@@ -176,14 +176,13 @@ api:
     uploadUrlTtlSeconds: 900
     uploadMaxBytes: 10485760
     qrDownloadUrlTtlSeconds: 900
-  adminEmails: 'admin@bluedots.local'
+  adminEmails: 'aniket@sanketika.in'
   publicLinkBaseUrl: '' # empty => derived from global.publicProtocol+publicHost
   serviceAccount:
     create: true
-    # UPDATE (EKS prod): IRSA role for S3/SES.
-    #   annotations:
-    #     eks.amazonaws.com/role-arn: arn:aws:iam::<acct>:role/aggregator-api
-    annotations: {}
+    # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
   hpa:
     enabled: false
     minReplicas: 2
@@ -207,8 +206,9 @@ worker:
     watchdogIntervalMs: 3600000
   serviceAccount:
     create: true
-    # UPDATE (EKS prod): IRSA role for S3/SES.
-    annotations: {}
+    # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
 
 keycloak:
   replicaCount: 1
