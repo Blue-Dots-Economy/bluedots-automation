@@ -14,8 +14,12 @@ global:
   # UPDATE: http for local, https when cert-manager issues a cert.
   publicProtocol: https
 
-  # Container registry where web/api/worker/keycloak images are pushed.
-  imageRegistry: ghcr.io/blue-dots-economy
+  # Container registry — left empty intentionally. Bitnami subcharts
+  # (postgresql, redis) read `global.imageRegistry` first and would otherwise
+  # have `docker.io/bitnamilegacy/...` rewritten to `<registry>/bitnamilegacy/...`
+  # causing ImagePullBackOff. Set the full registry path in each
+  # `image.repository` field below instead.
+  imageRegistry: ''
   # List of Secret NAMES (strings) — helper renders `- name: <value>`.
   # Source: either pre-created Secret OR rendered via templates/ghcr-pull-secret.yaml
   # (toggle via `imagePullSecret.create=true` below).
@@ -145,8 +149,8 @@ web:
   # UPDATE: bump for prod (2-3 replicas typical). HPA below scales further.
   replicaCount: 1
   image:
-    repository: aggregator-dpg/web
-    tag: 'sha-a4f8d82'
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
+    tag: 'sha-8cc38b3'
     pullPolicy: IfNotPresent
   service:
     port: 3000
@@ -163,8 +167,8 @@ web:
 api:
   replicaCount: 1
   image:
-    repository: aggregator-dpg/api
-    tag: 'sha-a4f8d82'
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
+    tag: 'sha-8cc38b3'
     pullPolicy: IfNotPresent
   service:
     port: 4000
@@ -192,8 +196,8 @@ api:
 worker:
   replicaCount: 1
   image:
-    repository: aggregator-dpg/worker
-    tag: 'sha-a4f8d82'
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
+    tag: 'sha-902a103'
     pullPolicy: IfNotPresent
   resources:
     requests: { cpu: 100m, memory: 384Mi }
@@ -294,11 +298,20 @@ redis:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { cpu: 500m, memory: 512Mi }
 
+# ─── ingress-nginx subchart toggle ─────────────────────────────────────────
+# Disabled on this cluster: a separate `platform` Helm release owns the shared
+# ingress-nginx controller. Enabling here would deploy a duplicate controller.
+# Set true only for a standalone cluster that has no pre-existing ingress-nginx.
+ingress-nginx:
+  enabled: false
+
 # ─── cert-manager subchart values (consumed verbatim) ──────────────────────
 # See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
-# Disabled here because bluedots-devops installs cert-manager once cluster-wide
-# via the `platform` chart. Re-enable only when running aggregator standalone.
 cert-manager:
+  # Disabled on this cluster: the shared `platform` release owns cert-manager
+  # and its cluster-scoped CRDs. Enabling here causes CRD ownership conflicts
+  # ("exists and cannot be imported into the current release"). Set true only
+  # for a standalone cluster with no pre-existing cert-manager install.
   enabled: false
   # Install all cert-manager CRDs (Certificate, Issuer, Order, Challenge, ...)
   # as part of this Helm release. Subchart default is `false`, which leaves
@@ -307,11 +320,3 @@ cert-manager:
     enabled: true
     # Survive `helm uninstall` so reinstalls don't blow away in-flight orders.
     keep: true
-
-# ─── ingress-nginx subchart values (consumed verbatim) ─────────────────────
-# Disabled here because bluedots-devops installs ingress-nginx once
-# cluster-wide via the `platform` chart. Aggregator's Ingress objects use
-# `ingressClassName: nginx` (set under `ingress.className` above) to consume
-# the shared controller.
-ingress-nginx:
-  enabled: false
