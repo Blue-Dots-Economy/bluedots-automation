@@ -96,10 +96,18 @@ http://{{ include "aggregator.fullname" . }}-keycloak:{{ .Values.keycloak.servic
 {{- end -}}
 
 {{/*
-  Postgres host (Bitnami subchart Service is `{release}-postgresql`).
+  Postgres host — shared instance in the common-services release.
+  Cross-namespace FQDN built from .Values.dataPlatform.
 */}}
 {{- define "aggregator.postgresHost" -}}
-{{- printf "%s-postgresql" (include "aggregator.fullname" .) -}}
+{{- printf "%s.%s.svc.cluster.local" .Values.global.dataPlatform.postgresService .Values.global.dataPlatform.namespace -}}
+{{- end -}}
+
+{{/*
+  Redis host — shared instance in the common-services release.
+*/}}
+{{- define "aggregator.redisHost" -}}
+{{- printf "%s.%s.svc.cluster.local" .Values.global.dataPlatform.redisService .Values.global.dataPlatform.namespace -}}
 {{- end -}}
 
 {{/*
@@ -107,13 +115,6 @@ http://{{ include "aggregator.fullname" . }}-keycloak:{{ .Values.keycloak.servic
 */}}
 {{- define "aggregator.databaseUrl" -}}
 postgres://{{ .Values.postgresql.auth.username }}:$(POSTGRES_PASSWORD)@{{ include "aggregator.postgresHost" . }}:5432/{{ .Values.postgresql.auth.database }}
-{{- end -}}
-
-{{/*
-  Redis URL (Bitnami standalone Service is `{release}-redis-master`).
-*/}}
-{{- define "aggregator.redisUrl" -}}
-redis://{{ include "aggregator.fullname" . }}-redis-master:6379
 {{- end -}}
 
 {{/*

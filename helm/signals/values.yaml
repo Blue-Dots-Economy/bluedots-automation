@@ -24,16 +24,6 @@ images:
     repository: vinodbbhorge/match-scoring
     tag: "latest"             # branch tag emitted by build-images.yaml; override per environment.
     pullPolicy: IfNotPresent
-  postgresql: &postgresql_image
-    registry: docker.io
-    repository: bitnamilegacy/postgresql
-    tag: 17.6.0
-    pullPolicy: IfNotPresent
-  redis: &redis_image
-    registry: docker.io
-    repository: bitnamilegacy/redis
-    tag: 7.2.5
-    pullPolicy: IfNotPresent
 
 # Pull secrets shared by api/ui.
 # Source: either pre-created Secret OR rendered via templates/ghcr-pull-secret.yaml
@@ -73,16 +63,6 @@ resources:
     # requests:
     #   cpu: 50m
     #   memory: 64Mi
-  postgresql: &postgresql_resources {}
-    # limits:
-    #   cpu: 1000m
-    #   memory: 1Gi
-    # requests:
-    #   cpu: 250m
-    #   memory: 512Mi
-  redis:
-    master: &redis_master_resources {}
-    replica: &redis_replica_resources {}
 
 # -----------------------------------------------------------------------------
 # Credentials — single source for all secret material.
@@ -190,18 +170,22 @@ api:
     NETWORK_CONFIG_URLS: ""
     ALLOW_EXTRA_SCHEMA_DATA: "false"
     SCHEMA_REGISTRY_URL: ""
-  # Hosts assume umbrella release name "dpg". Override --set api.postgres.host=... if different.
+  # Postgres + Redis are provided by the shared common-services release
+  # (namespace: common-services, release: platform). Cross-namespace FQDN.
   postgres:
     enabled: true
-    host: dpg-postgresql
+    host: platform-postgresql.common-services.svc.cluster.local
     port: 5432
-    # Admin creds (superuser) for the migrate Job — needed for CREATE EXTENSION.
-    adminSecret: *pg_existing_secret
+    # Admin (superuser) creds left empty: pgcrypto/cube/earthdistance extensions
+    # are created by the common-services Postgres bootstrap (00-bootstrap.sh) on
+    # the `dpg` database. Migrate Job skips CREATE EXTENSION and runs schema as
+    # the `dpg` app user.
+    adminSecret: ""
     adminUser: postgres
     adminPasswordKey: *pg_admin_key
   redis:
     enabled: true
-    host: dpg-redis-master
+    host: platform-redis-master.common-services.svc.cluster.local
     port: 6379
 
   # Network schema ConfigMap mounted into this pod. apiInternalUrl is the
@@ -275,7 +259,7 @@ notification-service:
 
   redis:
     enabled: true
-    host: dpg-redis-master
+    host: platform-redis-master.common-services.svc.cluster.local
     port: 6379
 
   config:
@@ -323,7 +307,7 @@ match-score:
 
   redis:
     enabled: true
-    host: dpg-redis-master
+    host: platform-redis-master.common-services.svc.cluster.local
     port: 6379
 
   config:
@@ -377,62 +361,10 @@ match-score:
         }
       }
 
-postgresql:
-  enabled: true
-  image: *postgresql_image
-  architecture: standalone
-  auth:
-    username: *pg_username
-    database: *pg_database
-    password: *pg_password
-    postgresPassword: *pg_password
-    existingSecret: *pg_existing_secret
-    secretKeys:
-      adminPasswordKey: *pg_admin_key
-      userPasswordKey: *pg_user_key
-  primary:
-    resources: *postgresql_resources
-    persistence:
-      enabled: true
-      size: 8Gi
-    service:
-      ports:
-        postgresql: 5432
-    # Bitnami runs these on an empty data dir (first boot only).
-    # Extensions live in the app database; superuser is required.
-    initdb:
-      scriptsConfigMap: ""
-      scripts:
-        00-extensions.sql: |
-          \connect dpg
-          CREATE EXTENSION IF NOT EXISTS pgcrypto;
-          CREATE EXTENSION IF NOT EXISTS cube;
-          CREATE EXTENSION IF NOT EXISTS earthdistance;
-
-redis:
-  enabled: true
-  image: *redis_image
-  architecture: standalone
-  auth:
-    enabled: true
-    password: *redis_password
-    existingSecret: *redis_existing_secret
-    existingSecretPasswordKey: *redis_password_key
-  commonConfiguration: |-
-    appendonly yes
-    appendfsync everysec
-    save ""
-    maxmemory 256mb
-    maxmemory-policy allkeys-lru
-  master:
-    resources: *redis_master_resources
-    persistence:
-      enabled: true
-      size: 8Gi
-    service:
-      ports:
-        redis: 6379
-  replica:
-    replicaCount: 0
-    resources: *redis_replica_resources
+# NOTE: Postgres + Redis subcharts removed — the shared instances in the
+# common-services release provide them. The `dpg` user/database and
+# pgcrypto/cube/earthdistance extensions are created by the common-services
+# Postgres bootstrap. credentials.postgresql.password / credentials.redis.password
+# above MUST match the common-services `dpg-password` / `redis-password`
+# (injected by the Makefile `dpg-install` target from the common-services Secrets).
 

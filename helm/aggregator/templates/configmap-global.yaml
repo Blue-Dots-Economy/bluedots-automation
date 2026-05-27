@@ -45,4 +45,8 @@ data:
   POSTGRES_HOST: {{ include "aggregator.postgresHost" . | quote }}
   POSTGRES_USER: {{ .Values.postgresql.auth.username | quote }}
   POSTGRES_DB: {{ .Values.postgresql.auth.database | quote }}
-  REDIS_URL: {{ include "aggregator.redisUrl" . | quote }}
+  # REDIS_URL is assembled per-pod (api/worker) from REDIS_HOST/REDIS_PORT plus
+  # the REDIS_PASSWORD env (from the umbrella Secret) so the password stays out
+  # of this ConfigMap.
+  REDIS_HOST: {{ include "aggregator.redisHost" . | quote }}
+  REDIS_PORT: {{ .Values.global.dataPlatform.redisPort | quote }}

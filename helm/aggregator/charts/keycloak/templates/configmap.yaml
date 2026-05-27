@@ -6,7 +6,7 @@ metadata:
     {{- include "keycloak.labels" . | nindent 4 }}
 data:
   KC_DB: "postgres"
-  KC_DB_URL: "jdbc:postgresql://{{ .Release.Name }}-postgresql:5432/keycloak"
+  KC_DB_URL: "jdbc:postgresql://{{ .Values.global.dataPlatform.postgresService }}.{{ .Values.global.dataPlatform.namespace }}.svc.cluster.local:5432/keycloak"
   KC_HOSTNAME: "{{ .Values.global.publicHost }}"
   KC_HOSTNAME_STRICT: "false"
   KC_HTTP_ENABLED: "true"

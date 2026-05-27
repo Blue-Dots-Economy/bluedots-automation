@@ -61,6 +61,16 @@ global:
   # `helm install` and carry every key listed under `secrets.*` below.
   existingSecret: ''
 
+  # Shared data layer location (common-services release). Cross-namespace
+  # service coordinates for the shared Postgres + Redis. Lives under `global`
+  # so subcharts (keycloak) can resolve the DB host too. Defaults assume the
+  # common-services release name `platform` in namespace `common-services`.
+  dataPlatform:
+    namespace: common-services
+    postgresService: platform-postgresql
+    redisService: platform-redis-master
+    redisPort: 6379
+
   # Workaround for compose `extra_hosts: PUBLIC_HOST:host-gateway`. Add an
   # entry per app pod so server-side OIDC discovery doesn't bounce through
   # external DNS. Usually empty in cloud clusters.
@@ -109,7 +119,13 @@ secrets:
   # Deprecated alias of global.existingSecret. If set, global.existingSecret
   # takes precedence (kept for ergonomic top-level reference).
   existingSecret: ''
+  # Postgres password for the shared `aggregator` user in the common-services
+  # Postgres. Injected by the Makefile `aggregator-install` target from the
+  # common-services `data-postgres` Secret (aggregator-password key).
   postgresPassword: change-me-postgres-password
+  # Redis password for the shared common-services Redis. Injected by the Makefile
+  # `aggregator-install` target from the common-services `data-redis` Secret.
+  redisPassword: change-me-redis-password
   kcBootstrapAdminPassword: change-me-keycloak-admin
   keycloakAdminClientSecret: change-me-kc-admin-client-secret
   approvalTokenSecret: change-me-32-hex-min-chars-required-here
@@ -234,69 +250,15 @@ keycloak:
     requests: { cpu: 250m, memory: 768Mi }
     limits: { cpu: 1, memory: 1500Mi }
 
-# ─── Bitnami postgresql subchart values (consumed verbatim) ────────────────
-# See: https://artifacthub.io/packages/helm/bitnami/postgresql
+# ─── Shared Postgres (common-services release) ─────────────────────────────
+# The Postgres subchart was removed; api/worker/keycloak connect to the shared
+# instance in the common-services release. The `aggregator` user + `aggregator`
+# and `keycloak` databases are created by the common-services Postgres bootstrap.
+# Host/namespace are resolved by the `aggregator.postgresHost` helper.
 postgresql:
-  enabled: true
-  # UPDATE: Bitnami's free `postgresql` chart now requires a paid subscription
-  # for the official image; `bitnamilegacy/*` mirrors the last freely-licensed
-  # tags. Override here if you have a paid Bitnami license.
-  image:
-    registry: docker.io
-    repository: bitnamilegacy/postgresql
-    tag: 17.6.0
   auth:
     username: aggregator
     database: aggregator
-    # Bitnami reads the password from the umbrella-managed Secret
-    # `<release>-secrets`, which carries the value the operator put in
-    # `secrets.postgresPassword` (above). Single source of truth — api,
-    # worker, keycloak and the postgres pod all see the same password.
-    # NOTE: name assumes release is `aggregator` (install.sh default).
-    # If you change the release name, set this to `<release>-secrets`.
-    existingSecret: aggregator-secrets
-    secretKeys:
-      adminPasswordKey: postgres-password
-      userPasswordKey: password
-  primary:
-    persistence:
-      enabled: true
-      # UPDATE: bump for prod (50Gi+ typical).
-      size: 2Gi
-    initdb:
-      scripts:
-        01-create-keycloak-db.sql: |
-          CREATE DATABASE keycloak OWNER aggregator;
-    resources:
-      requests: { cpu: 250m, memory: 512Mi }
-      limits: { cpu: 2, memory: 2Gi }
-
-# ─── Bitnami redis subchart values (consumed verbatim) ─────────────────────
-# See: https://artifacthub.io/packages/helm/bitnami/redis
-redis:
-  enabled: true
-  # UPDATE: same Bitnami licensing note as postgresql.
-  image:
-    registry: docker.io
-    repository: bitnamilegacy/redis
-    tag: 7.2.5
-  architecture: standalone
-  auth:
-    enabled: false
-  master:
-    persistence:
-      enabled: true
-      # UPDATE: bump for prod (5Gi+ typical).
-      size: 1Gi
-    extraFlags:
-      - '--save'
-      - '60'
-      - '1'
-      - '--loglevel'
-      - 'warning'
-    resources:
-      requests: { cpu: 50m, memory: 128Mi }
-      limits: { cpu: 500m, memory: 512Mi }
 
 # ─── ingress-nginx subchart toggle ─────────────────────────────────────────
 # Disabled on this cluster: a separate `platform` Helm release owns the shared

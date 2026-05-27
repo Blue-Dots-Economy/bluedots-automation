@@ -1,0 +1,28 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: common-services-db-ingress
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: common-services
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/name, operator: In, values: [postgresql, redis] }
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+{{- range .Values.networkPolicy.allowedFromNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: {{ . | quote }}
+{{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+{{- end }}

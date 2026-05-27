@@ -38,6 +38,15 @@ spec:
             # resolves $(VAR) at container start.
             - name: DATABASE_URL
               value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):5432/$(POSTGRES_DB)"
+            # REDIS_HOST + REDIS_PORT come from the umbrella's `{release}-global`
+            # ConfigMap (envFrom above); REDIS_PASSWORD from the umbrella Secret.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: REDIS_PASSWORD
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:

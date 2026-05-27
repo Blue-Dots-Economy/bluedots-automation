@@ -8,17 +8,17 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-PLATFORM_NS    ?= platform
+COMMON_NS      ?= common-services
 DPG_NS         ?= dpg
 AGG_NS         ?= aggregator
 
-PLATFORM_REL   ?= platform
+COMMON_REL     ?= platform
 DPG_REL        ?= dpg
 AGG_REL        ?= aggregator
 
-PLATFORM_DIR   := ./helm/platform
-DPG_DIR        := ./helm/dpg
-AGG_DIR        := ./helm/aggregator-dpg
+COMMON_DIR     := ./helm/common-services
+DPG_DIR        := ./helm/signals
+AGG_DIR        := ./helm/aggregator
 
 # ─── help ──────────────────────────────────────────────────────────────────
 help:  ## Show this help
@@ -34,29 +34,53 @@ preflight:  ## Verify kubectl + helm + cluster reachable
 	@echo "context: $$(kubectl config current-context)"
 
 # ─── 1) platform ───────────────────────────────────────────────────────────
-platform-install: preflight  ## [1/3] Install platform (ingress-nginx + cert-manager + ClusterIssuer)
-	helm upgrade --install $(PLATFORM_REL) $(PLATFORM_DIR) \
-	  -n $(PLATFORM_NS) --create-namespace \
-	  -f $(PLATFORM_DIR)/values.yaml \
+platform-install: preflight  ## [1/3] Install common-services (ingress-nginx + cert-manager + ClusterIssuer + Postgres + Redis)
+	@set -euo pipefail; \
+	getpw() { kubectl -n $(COMMON_NS) get secret "$$1" -o jsonpath="{.data.$$2}" 2>/dev/null | base64 -d || true; }; \
+	PG_ADMIN=$$(getpw data-postgres postgres-password);    [ -n "$$PG_ADMIN" ] || PG_ADMIN=$$(openssl rand -hex 16); \
+	PG_AGG=$$(getpw data-postgres aggregator-password);    [ -n "$$PG_AGG" ]   || PG_AGG=$$(openssl rand -hex 16); \
+	PG_DPG=$$(getpw data-postgres dpg-password);           [ -n "$$PG_DPG" ]   || PG_DPG=$$(openssl rand -hex 16); \
+	REDIS_PW=$$(getpw data-redis redis-password);          [ -n "$$REDIS_PW" ] || REDIS_PW=$$(openssl rand -hex 16); \
+	helm upgrade --install $(COMMON_REL) $(COMMON_DIR) \
+	  -n $(COMMON_NS) --create-namespace \
+	  -f $(COMMON_DIR)/values.yaml \
+	  --set credentials.postgresAdminPassword=$$PG_ADMIN \
+	  --set credentials.aggregatorPassword=$$PG_AGG \
+	  --set credentials.dpgPassword=$$PG_DPG \
+	  --set credentials.redisPassword=$$REDIS_PW \
 	  --wait --timeout 5m
-	kubectl -n $(PLATFORM_NS) rollout status deploy/$(PLATFORM_REL)-ingress-nginx-controller --timeout=180s
-	kubectl -n $(PLATFORM_NS) rollout status deploy/$(PLATFORM_REL)-cert-manager             --timeout=180s
+	kubectl -n $(COMMON_NS) rollout status deploy/$(COMMON_REL)-ingress-nginx-controller --timeout=180s
+	kubectl -n $(COMMON_NS) rollout status deploy/$(COMMON_REL)-cert-manager             --timeout=180s
 	kubectl get clusterissuer letsencrypt-prod
 
 platform-uninstall:  ## Uninstall platform release (cluster-wide impact)
-	helm uninstall $(PLATFORM_REL) -n $(PLATFORM_NS) || true
-	kubectl delete namespace $(PLATFORM_NS) --wait=true --timeout=120s || true
+	helm uninstall $(COMMON_REL) -n $(COMMON_NS) || true
+	kubectl delete namespace $(COMMON_NS) --wait=true --timeout=120s || true
 
 # ─── 2) dpg ────────────────────────────────────────────────────────────────
-dpg-install: preflight  ## [2/3] Install DPG umbrella (api, ui, notification, match-score, pg, redis)
-	NAMESPACE=$(DPG_NS) RELEASE=$(DPG_REL) bash $(DPG_DIR)/install.sh install
+dpg-install: preflight  ## [2/3] Install DPG umbrella (api, ui, notification, match-score) — uses shared common-services DBs
+	@set -euo pipefail; \
+	getpw() { kubectl -n $(COMMON_NS) get secret "$$1" -o jsonpath="{.data.$$2}" 2>/dev/null | base64 -d || true; }; \
+	PG_PW=$$(getpw data-postgres dpg-password); \
+	REDIS_PW=$$(getpw data-redis redis-password); \
+	[ -n "$$PG_PW" ]    || { echo "ERROR: common-services Secret data-postgres/dpg-password not found — run 'make platform-install' first"; exit 1; }; \
+	[ -n "$$REDIS_PW" ] || { echo "ERROR: common-services Secret data-redis/redis-password not found — run 'make platform-install' first";  exit 1; }; \
+	PG_PW="$$PG_PW" REDIS_PW="$$REDIS_PW" NAMESPACE=$(DPG_NS) RELEASE=$(DPG_REL) bash $(DPG_DIR)/install.sh install
 
 dpg-cleanup:  ## Destroy DPG release + PVCs + namespace (DESTRUCTIVE)
 	NAMESPACE=$(DPG_NS) RELEASE=$(DPG_REL) bash $(DPG_DIR)/install.sh cleanup --yes
 
 # ─── 3) aggregator-dpg ─────────────────────────────────────────────────────
-aggregator-install: preflight  ## [3/3] Install aggregator-dpg (web, api, worker, keycloak)
-	bash $(AGG_DIR)/install.sh -n $(AGG_NS) -r $(AGG_REL)
+aggregator-install: preflight  ## [3/3] Install aggregator-dpg (web, api, worker, keycloak) — uses shared common-services DBs
+	@set -euo pipefail; \
+	getpw() { kubectl -n $(COMMON_NS) get secret "$$1" -o jsonpath="{.data.$$2}" 2>/dev/null | base64 -d || true; }; \
+	PG_PW=$$(getpw data-postgres aggregator-password); \
+	REDIS_PW=$$(getpw data-redis redis-password); \
+	[ -n "$$PG_PW" ]    || { echo "ERROR: common-services Secret data-postgres/aggregator-password not found — run 'make platform-install' first"; exit 1; }; \
+	[ -n "$$REDIS_PW" ] || { echo "ERROR: common-services Secret data-redis/redis-password not found — run 'make platform-install' first";        exit 1; }; \
+	bash $(AGG_DIR)/install.sh -n $(AGG_NS) -r $(AGG_REL) \
+	  --set secrets.postgresPassword=$$PG_PW \
+	  --set secrets.redisPassword=$$REDIS_PW
 
 aggregator-uninstall:  ## Uninstall aggregator release
 	helm uninstall $(AGG_REL) -n $(AGG_NS) || true
@@ -75,17 +99,17 @@ uninstall: aggregator-uninstall dpg-cleanup platform-uninstall  ## Uninstall eve
 
 # ─── static checks ─────────────────────────────────────────────────────────
 lint:  ## helm lint all 3 charts
-	helm lint $(PLATFORM_DIR)
+	helm lint $(COMMON_DIR)
 	helm lint $(DPG_DIR)
 	helm lint $(AGG_DIR)
 
 template:  ## helm template all 3 (rendering smoke test)
-	@helm template $(PLATFORM_REL) $(PLATFORM_DIR)           >/dev/null && echo "✔ platform renders"
+	@helm template $(COMMON_REL) $(COMMON_DIR)           >/dev/null && echo "✔ platform renders"
 	@helm template $(DPG_REL)      $(DPG_DIR)                >/dev/null && echo "✔ dpg renders"
 	@helm template $(AGG_REL)      $(AGG_DIR)                >/dev/null && echo "✔ aggregator-dpg renders"
 
 dry-run: preflight  ## helm --dry-run all 3 against current cluster
-	helm upgrade --install $(PLATFORM_REL) $(PLATFORM_DIR) -n $(PLATFORM_NS) --create-namespace --dry-run
+	helm upgrade --install $(COMMON_REL) $(COMMON_DIR) -n $(COMMON_NS) --create-namespace --dry-run
 	helm upgrade --install $(DPG_REL)      $(DPG_DIR)      -n $(DPG_NS)      --create-namespace --dry-run
 	bash $(AGG_DIR)/install.sh -n $(AGG_NS) -r $(AGG_REL) --dry-run
 

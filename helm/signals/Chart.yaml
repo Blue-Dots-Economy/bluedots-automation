@@ -1,6 +1,6 @@
 apiVersion: v2
 name: dpg
-description: Umbrella chart for DPG monorepo (api, ui, notification-service, match-score, postgresql, redis) with centralized image/resource/credential values.
+description: Umbrella chart for DPG monorepo (api, ui, notification-service, match-score) with centralized image/resource/credential values. Postgres + Redis are provided by the shared common-services release.
 type: application
 version: 0.1.0
 appVersion: "1.0.0"
@@ -30,11 +30,3 @@ dependencies:
     repository: "file://../match-score"
     alias: match-score
     condition: match-score.enabled
-  - name: postgresql
-    version: 18.6.6
-    repository: "file://../postgresql"
-    condition: postgresql.enabled
-  - name: redis
-    version: 19.6.4
-    repository: "file://../redis"
-    condition: redis.enabled

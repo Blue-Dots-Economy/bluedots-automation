@@ -55,9 +55,13 @@ generate_passwords() {
     fi
   }
 
+  # PG_PW / REDIS_PW may be supplied via env (the Makefile dpg-install target
+  # passes the shared common-services dpg + redis passwords so the signal-stack
+  # connects to the shared Postgres/Redis with matching credentials). Fall back
+  # to a generated value only when not provided.
   echo "credentials:"
-  _write_if_empty PG_PW       "$(openssl rand -hex 16)"
-  _write_if_empty REDIS_PW    "$(openssl rand -hex 16)"
+  _write_if_empty PG_PW       "${PG_PW:-$(openssl rand -hex 16)}"
+  _write_if_empty REDIS_PW    "${REDIS_PW:-$(openssl rand -hex 16)}"
   _write_if_empty AUTH_SECRET "$(openssl rand -hex 32)"
 }
 
