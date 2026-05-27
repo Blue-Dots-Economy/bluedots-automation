@@ -9,12 +9,12 @@
 # -----------------------------------------------------------------------------
 images:
   api: &api_image
-    repository: vinodbbhorge/api
-    tag: "test"             # branch tag emitted by build-images.yaml; override per environment.
-    pullPolicy: IfNotPresent
+    repository: ghcr.io/blue-dots-economy/signals-dpg/api
+    tag: "sha-d64dfe0"
+    pullPolicy: Always
   ui: &ui_image
-    repository: vinodbbhorge/ui
-    tag: "test"             # branch tag emitted by build-images.yaml; override per environment.
+    repository: vinodbbhorge/signalstack-ui
+    tag: "develop-signal-integration"
     pullPolicy: Always
   notificationService: &notification_service_image
     repository: vinodbbhorge/notification-service
