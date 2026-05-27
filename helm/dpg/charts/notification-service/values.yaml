@@ -101,6 +101,9 @@ secrets:
     REDIS_PASSWORD: ""
     GMAIL_USER: ""
     GMAIL_PASS: ""
+    # MSG91 SMS provider — required for mobile OTP login flow.
+    MSG91_AUTH_KEY: ""
+    MSG91_TEMPLATE_ID: ""
 
 # In-cluster Redis wiring. Injects REDIS_HOST/REDIS_PORT into the ConfigMap.
 redis:
