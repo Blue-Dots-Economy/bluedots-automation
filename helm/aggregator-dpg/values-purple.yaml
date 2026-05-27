@@ -7,7 +7,7 @@
 # Aggregator API + worker point at purple_dot config tree.
 global:
   aggregatorNetwork: purple_dot
-  publicHost: purpledots.servehalflife.com
+  publicHost: aggregators-purpledots.bluedotseconomy.org
 
 # Theme image baked with purple brand vars (see
 # `infra/keycloak/build-theme-image.sh purple_dot v1`).
