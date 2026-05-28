@@ -8,19 +8,15 @@ generate "backend" {
   if_exists = "overwrite_terragrunt"
   contents  = <<EOF
 terraform {
-  backend "local" {
-    path = "${get_parent_terragrunt_dir()}/.terraform/${path_relative_to_include()}/terraform.tfstate"
+  backend "s3" {
+    # Environment variables required (exported by create_tf_backend.sh):
+    # - TERRAFORM_BACKEND_BUCKET: S3 bucket name
+    # - AWS_REGION: AWS region
+    bucket  = "${get_env("TERRAFORM_BACKEND_BUCKET", "")}"
+    key     = "${path_relative_to_include()}/terraform.tfstate"
+    region  = "${get_env("AWS_REGION", "us-east-1")}"
+    encrypt = true
   }
-}
-EOF
-}
-
-generate "provider" {
-  path      = "provider.tf"
-  if_exists = "overwrite_terragrunt"
-  contents  = <<EOF
-provider "aws" {
-  region = "${local.aws_region}"
 }
 EOF
 }

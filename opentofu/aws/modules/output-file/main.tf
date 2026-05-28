@@ -1,49 +1,52 @@
 locals {
-  global_cloud_values_file = "${var.base_location}/../global-cloud-values.yaml"
+  values_dir = "${var.base_location}/.."
 }
 
-resource "local_sensitive_file" "global_cloud_values_yaml" {
-  filename        = local.global_cloud_values_file
+# One file per chart, each with values already at ROOT level so helm reads them
+# via a single `-f` with no slicing/yq projection. Shared secrets are templated
+# into each file directly (no cross-file YAML anchors needed).
+
+resource "local_sensitive_file" "common_services_values" {
+  filename        = "${local.values_dir}/common-services-values.yaml"
   file_permission = "0600"
-  content = templatefile("${path.module}/global-cloud-values.yaml.tfpl", {
-    building_block                    = var.building_block
-    environment                       = var.environment
-    cloud_storage_provider            = var.cloud_storage_provider
-    cloud_storage_region              = var.cloud_storage_region
-    vpc_id                            = var.vpc_id
-    vpc_cidr_block                    = var.vpc_cidr_block
-    public_subnet_ids_json            = jsonencode(var.public_subnet_ids)
-    private_subnet_ids_json           = jsonencode(var.private_subnet_ids)
-    nat_gateway_public_ip             = var.nat_gateway_public_ip
-    cluster_name                      = var.cluster_name
-    cluster_endpoint                  = var.cluster_endpoint
-    cluster_arn                       = var.cluster_arn
-    oidc_provider                     = var.oidc_provider
-    oidc_provider_arn                 = var.oidc_provider_arn
-    node_role_arn                     = var.node_role_arn
-    private_ingressgateway_ip         = var.private_ingressgateway_ip
-    cloudwatch_observability_role_arn = var.cloudwatch_observability_role_arn
-    app_sa_role_arn                   = var.app_sa_role_arn
-    app_sa_role_name                  = var.app_sa_role_name
-    storage_bucket_public             = var.storage_bucket_public
-    storage_bucket_private            = var.storage_bucket_private
-    random_string                     = var.random_string
-    encryption_string                 = var.encryption_string
-    signalstack_admin_key             = var.signalstack_admin_key
+  content = templatefile("${path.module}/common-services-values.yaml.tfpl", {
+    postgres_admin_password      = var.postgres_admin_password
+    aggregator_postgres_password = var.aggregator_postgres_password
+    signals_postgres_password    = var.signals_postgres_password
+    signals_redis_password       = var.signals_redis_password
+  })
+}
 
-    postgres_admin_password = var.postgres_admin_password
-
-    signals_postgres_password   = var.signals_postgres_password
-    signals_redis_password      = var.signals_redis_password
-    signals_auth_secret         = var.signals_auth_secret
-    signals_notification_secret = var.signals_notification_secret
-    signals_dpg_scoring_secret  = var.signals_dpg_scoring_secret
-
+resource "local_sensitive_file" "aggregator_values" {
+  filename        = "${local.values_dir}/aggregator-values.yaml"
+  file_permission = "0600"
+  content = templatefile("${path.module}/aggregator-values.yaml.tfpl", {
+    aggregator_host                         = var.aggregator_host
+    cloud_storage_region                    = var.cloud_storage_region
+    storage_bucket_public                   = var.storage_bucket_public
     aggregator_postgres_password            = var.aggregator_postgres_password
+    signals_redis_password                  = var.signals_redis_password
     aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
     aggregator_keycloak_admin_client_secret = var.aggregator_keycloak_admin_client_secret
     aggregator_approval_token_secret        = var.aggregator_approval_token_secret
     aggregator_session_key                  = var.aggregator_session_key
     aggregator_oidc_client_secret           = var.aggregator_oidc_client_secret
+    signalstack_admin_key                   = var.signalstack_admin_key
+    app_sa_role_arn                         = var.app_sa_role_arn
+  })
+}
+
+resource "local_sensitive_file" "signals_values" {
+  filename        = "${local.values_dir}/signals-values.yaml"
+  file_permission = "0600"
+  content = templatefile("${path.module}/signals-values.yaml.tfpl", {
+    signals_host                = var.signals_host
+    signals_ui_host             = var.signals_ui_host
+    signals_postgres_password   = var.signals_postgres_password
+    signals_redis_password      = var.signals_redis_password
+    signals_auth_secret         = var.signals_auth_secret
+    signals_notification_secret = var.signals_notification_secret
+    signals_dpg_scoring_secret  = var.signals_dpg_scoring_secret
+    signalstack_admin_key       = var.signalstack_admin_key
   })
 }

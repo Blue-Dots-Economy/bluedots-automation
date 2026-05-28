@@ -10,11 +10,11 @@
 images:
   api: &api_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-d64dfe0"
+    tag: "sha-ea45cbf"
     pullPolicy: Always
   ui: &ui_image
-    repository: vinodbbhorge/signalstack-ui
-    tag: "develop-signal-integration"
+    repository: ghcr.io/blue-dots-economy/signals-dpg/ui
+    tag: "sha-8a8023c"
     pullPolicy: Always
   notificationService: &notification_service_image
     repository: vinodbbhorge/notification-service
@@ -194,8 +194,8 @@ api:
   # local mode skips cross-network fetches but NetworkConfigSchema still
   # validates schema_url as a URL, so it must be a valid URL.
   schemas:
-    apiInternalUrl: "http://dpg-api:2742"
-    crossNetworkUrl: "http://dpg-api:2742"
+    apiInternalUrl: "http://signals-api:2742"
+    crossNetworkUrl: "http://signals-api:2742"
     networks:
       - yellow_dot
       - blue_dot
@@ -206,7 +206,7 @@ ui:
   resources: *ui_resources
 
   # nginx in the UI pod reverse-proxies /api/* to this upstream.
-  apiUpstream: "http://dpg-api:2742"
+  apiUpstream: "http://signals-api:2742"
 
   replicaCount: 1
   service:

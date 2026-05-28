@@ -4,6 +4,9 @@ locals {
   building_block         = local.global_vars.global.building_block
   cloud_storage_region   = local.global_vars.global.cloud_storage_region
   cloud_storage_provider = try(local.global_vars.global.cloud_storage_provider, "aws")
+  signals_host           = try(local.global_vars.global.signals_host, "api.purpledots.servehalflife.com")
+  signals_ui_host        = try(local.global_vars.global.signals_ui_host, "purpledots.servehalflife.com")
+  aggregator_host        = try(local.global_vars.global.aggregator_host, "aggregator.servehalflife.com")
 }
 
 terraform {
@@ -86,6 +89,9 @@ inputs = {
   environment            = local.environment
   cloud_storage_provider = local.cloud_storage_provider
   cloud_storage_region   = local.cloud_storage_region
+  signals_host           = local.signals_host
+  signals_ui_host        = local.signals_ui_host
+  aggregator_host        = local.aggregator_host
 
   # Network
   vpc_id                = dependency.network.outputs.vpc_id

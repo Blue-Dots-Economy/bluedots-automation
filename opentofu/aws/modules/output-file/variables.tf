@@ -24,6 +24,24 @@ variable "cloud_storage_region" {
   type        = string
 }
 
+variable "signals_host" {
+  description = "FQDN for the signals API ingress (used as-is)"
+  type        = string
+  default     = "api.purpledots.servehalflife.com"
+}
+
+variable "signals_ui_host" {
+  description = "FQDN for the signals UI ingress (used as-is)"
+  type        = string
+  default     = "purpledots.servehalflife.com"
+}
+
+variable "aggregator_host" {
+  description = "FQDN for the aggregator public ingress (global.publicHost, used as-is)"
+  type        = string
+  default     = "aggregator.servehalflife.com"
+}
+
 # -----------------------------------------------------------------------------
 # Network
 # -----------------------------------------------------------------------------

@@ -34,7 +34,7 @@ global:
   # Active signalstack network. Drives the api/worker/web config-folder
   # selection and the keycloak themes-init image tag. Override per
   # release via -f values-purple.yaml (or values-blue.yaml).
-  aggregatorNetwork: blue_dot
+  aggregatorNetwork: purple_dot
 
   # Signal-stack integration. Used by api/worker to call the signal-stack
   # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
@@ -166,7 +166,7 @@ web:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: 'sha-8cc38b3'
+    tag: 'sha-d2b9d6c'
     pullPolicy: IfNotPresent
   service:
     port: 3000
@@ -184,7 +184,7 @@ api:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: 'sha-8cc38b3'
+    tag: 'sha-d2b9d6c'
     pullPolicy: IfNotPresent
   service:
     port: 4000
@@ -213,7 +213,7 @@ worker:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: 'sha-902a103'
+    tag: 'sha-d2b9d6c'
     pullPolicy: IfNotPresent
   resources:
     requests: { cpu: 100m, memory: 384Mi }

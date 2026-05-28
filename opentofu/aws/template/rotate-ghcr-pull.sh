@@ -12,9 +12,10 @@
 # After rotation, revoke the OLD PAT in GitHub once image pulls succeed.
 set -euo pipefail
 
-USER="vinodbhorge"
+USER="${GHCR_USER:-vinodbhorge}"
 SERVER="ghcr.io"
-NAMESPACES=(signal-stack aggregator)
+NAMESPACES=("${@:2}")
+[[ ${#NAMESPACES[@]} -eq 0 ]] && NAMESPACES=(signals aggregator)
 
 PAT="${1:-}"
 if [[ -z "$PAT" ]]; then
