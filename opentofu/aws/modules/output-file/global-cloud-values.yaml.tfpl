@@ -33,14 +33,49 @@ global:
   random_string: ${random_string}
   encryption__string: ${encryption_string}
 
-  # ---- Service account (consumed by helm charts via IRSA) ------------------
-  serviceAccount:
-    create: false
-    name: ${app_sa_role_name}
-    annotations:
-      eks.amazonaws.com/role-arn: ${app_sa_role_arn}
-
+# Shared signals-DPG admin api key. ONE generated value, TWO consumer paths,
+# bound via YAML anchor so the two helm releases cannot drift.
 default_passwords:
-  keycloak_password: &keycloak-password "${keycloak_password}"
-  postgresql_password: &postgresql-password "${postgresql_password}"
-  redis_password: &redis-password "${redis_password}"
+  signalstack_admin_key: &signalstack-admin-key "${signalstack_admin_key}"
+
+# IRSA service-account block. SAME ARN injected into every pod-running
+# sub-chart (api + worker) via the anchor below, so adding a new chart that
+# needs S3/SES access is a single-line alias.
+_irsa_service_account: &irsa-service-account
+  create: true
+  # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
+  annotations:
+    eks.amazonaws.com/role-arn: ${app_sa_role_arn}
+
+# ─── Aggregator chart overrides ─────────────────────────────────────────────
+aggregator:
+  secrets:
+    postgresPassword: "${aggregator_postgres_password}"
+    kcBootstrapAdminPassword: "${aggregator_kc_bootstrap_admin_password}"
+    keycloakAdminClientSecret: "${aggregator_keycloak_admin_client_secret}"
+    approvalTokenSecret: "${aggregator_approval_token_secret}"
+    sessionKey: "${aggregator_session_key}"
+    oidcClientSecret: "${aggregator_oidc_client_secret}"
+    signalstackAdminKey: *signalstack-admin-key
+  api:
+    serviceAccount: *irsa-service-account
+  worker:
+    serviceAccount: *irsa-service-account
+
+# ─── Signals chart overrides ────────────────────────────────────────────────
+signals:
+  credentials:
+    postgres:
+      password: "${signals_postgres_password}"
+    redis:
+      password: "${signals_redis_password}"
+    api:
+      authSecret: "${signals_auth_secret}"
+      notificationSecret: "${signals_notification_secret}"
+      data:
+        AUTH_SECRET: "${signals_auth_secret}"
+        POSTGRES_PASSWORD: "${signals_postgres_password}"
+        REDIS_PASSWORD: "${signals_redis_password}"
+        AGGREGATOR_DPG_API_KEY: *signalstack-admin-key
+        NOTIFICATION_SERVICE_SECRET: "${signals_notification_secret}"
+        DPG_SCORING_SECRET: "${signals_dpg_scoring_secret}"

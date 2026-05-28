@@ -138,20 +138,65 @@ variable "encryption_string" {
   }
 }
 
-variable "keycloak_password" {
-  type      = string
-  sensitive = true
-  default   = ""
+variable "signalstack_admin_key" {
+  type        = string
+  sensitive   = true
+  description = "Shared API key for aggregator.signalstackAdminKey and signals AGGREGATOR_DPG_API_KEY (same value, two consumers)"
 }
 
-variable "postgresql_password" {
+# ─── Signals chart secrets ─────────────────────────────────────────────────
+variable "signals_postgres_password" {
   type      = string
   sensitive = true
-  default   = ""
 }
 
-variable "redis_password" {
+variable "signals_redis_password" {
   type      = string
   sensitive = true
-  default   = ""
+}
+
+variable "signals_auth_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "signals_notification_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "signals_dpg_scoring_secret" {
+  type      = string
+  sensitive = true
+}
+
+# ─── Aggregator chart secrets ──────────────────────────────────────────────
+variable "aggregator_postgres_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "aggregator_kc_bootstrap_admin_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "aggregator_keycloak_admin_client_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "aggregator_approval_token_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "aggregator_session_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "aggregator_oidc_client_secret" {
+  type      = string
+  sensitive = true
 }

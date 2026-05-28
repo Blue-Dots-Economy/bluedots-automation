@@ -29,8 +29,19 @@ resource "local_sensitive_file" "global_cloud_values_yaml" {
     storage_bucket_private            = var.storage_bucket_private
     random_string                     = var.random_string
     encryption_string                 = var.encryption_string
-    keycloak_password                 = var.keycloak_password
-    postgresql_password               = var.postgresql_password
-    redis_password                    = var.redis_password
+    signalstack_admin_key             = var.signalstack_admin_key
+
+    signals_postgres_password   = var.signals_postgres_password
+    signals_redis_password      = var.signals_redis_password
+    signals_auth_secret         = var.signals_auth_secret
+    signals_notification_secret = var.signals_notification_secret
+    signals_dpg_scoring_secret  = var.signals_dpg_scoring_secret
+
+    aggregator_postgres_password            = var.aggregator_postgres_password
+    aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
+    aggregator_keycloak_admin_client_secret = var.aggregator_keycloak_admin_client_secret
+    aggregator_approval_token_secret        = var.aggregator_approval_token_secret
+    aggregator_session_key                  = var.aggregator_session_key
+    aggregator_oidc_client_secret           = var.aggregator_oidc_client_secret
   })
 }

@@ -59,11 +59,22 @@ dependency "random_passwords" {
   config_path                            = "../random_passwords"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    keycloak_password   = "dummy-keycloak-pass"
-    postgresql_password = "dummypostgrespass"
-    redis_password      = "dummyredispass"
-    encryption_string   = "00000000000000000000000000000000"
-    random_string       = "dummy-random-string-1234"
+    encryption_string     = "00000000000000000000000000000000"
+    random_string         = "dummy-random-string-1234"
+    signalstack_admin_key = "dummy-signalstack-admin-key-0000000000000000"
+
+    signals_postgres_password   = "00000000000000000000000000000001"
+    signals_redis_password      = "00000000000000000000000000000002"
+    signals_auth_secret         = "00000000000000000000000000000003"
+    signals_notification_secret = "00000000000000000000000000000004"
+    signals_dpg_scoring_secret  = "0000000000000000000000000000000000000000000000000000000000000005"
+
+    aggregator_postgres_password            = "0000000000000000000000000000000000000000000000000000000000000006"
+    aggregator_kc_bootstrap_admin_password  = "0000000000000000000000000000000000000000000000000000000000000007"
+    aggregator_keycloak_admin_client_secret = "0000000000000000000000000000000000000000000000000000000000000008"
+    aggregator_approval_token_secret        = "0000000000000000000000000000000000000000000000000000000000000009"
+    aggregator_session_key                  = "000000000000000000000000000000000000000000000000000000000000000a"
+    aggregator_oidc_client_secret           = "000000000000000000000000000000000000000000000000000000000000000b"
   }
 }
 
@@ -100,9 +111,20 @@ inputs = {
   storage_bucket_private = dependency.storage.outputs.storage_bucket_private == null ? "" : dependency.storage.outputs.storage_bucket_private
 
   # Random secrets
-  random_string       = dependency.random_passwords.outputs.random_string
-  encryption_string   = dependency.random_passwords.outputs.encryption_string
-  keycloak_password   = dependency.random_passwords.outputs.keycloak_password
-  postgresql_password = dependency.random_passwords.outputs.postgresql_password
-  redis_password      = dependency.random_passwords.outputs.redis_password
+  random_string         = dependency.random_passwords.outputs.random_string
+  encryption_string     = dependency.random_passwords.outputs.encryption_string
+  signalstack_admin_key = dependency.random_passwords.outputs.signalstack_admin_key
+
+  signals_postgres_password   = dependency.random_passwords.outputs.signals_postgres_password
+  signals_redis_password      = dependency.random_passwords.outputs.signals_redis_password
+  signals_auth_secret         = dependency.random_passwords.outputs.signals_auth_secret
+  signals_notification_secret = dependency.random_passwords.outputs.signals_notification_secret
+  signals_dpg_scoring_secret  = dependency.random_passwords.outputs.signals_dpg_scoring_secret
+
+  aggregator_postgres_password            = dependency.random_passwords.outputs.aggregator_postgres_password
+  aggregator_kc_bootstrap_admin_password  = dependency.random_passwords.outputs.aggregator_kc_bootstrap_admin_password
+  aggregator_keycloak_admin_client_secret = dependency.random_passwords.outputs.aggregator_keycloak_admin_client_secret
+  aggregator_approval_token_secret        = dependency.random_passwords.outputs.aggregator_approval_token_secret
+  aggregator_session_key                  = dependency.random_passwords.outputs.aggregator_session_key
+  aggregator_oidc_client_secret           = dependency.random_passwords.outputs.aggregator_oidc_client_secret
 }
