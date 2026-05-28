@@ -33,9 +33,13 @@ global:
   random_string: ${random_string}
   encryption__string: ${encryption_string}
 
-# Shared signals-DPG admin api key. ONE generated value, TWO consumer paths,
-# bound via YAML anchor so the two helm releases cannot drift.
+# Shared values defined once via YAML anchor, referenced everywhere they appear
+# so rotation = single edit + two helm upgrades. Anchors must precede aliases.
 default_passwords:
+  postgres_admin_password: &postgres-admin-password "${postgres_admin_password}"
+  aggregator_pg_password: &aggregator-pg-password "${aggregator_postgres_password}"
+  dpg_pg_password: &dpg-pg-password "${signals_postgres_password}"
+  redis_password: &redis-password "${signals_redis_password}"
   signalstack_admin_key: &signalstack-admin-key "${signalstack_admin_key}"
 
 # IRSA service-account block. SAME ARN injected into every pod-running
@@ -48,9 +52,18 @@ _irsa_service_account: &irsa-service-account
     eks.amazonaws.com/role-arn: ${app_sa_role_arn}
 
 # ─── Aggregator chart overrides ─────────────────────────────────────────────
+# ─── common-services chart overrides ────────────────────────────────────────
+common-services:
+  credentials:
+    postgresAdminPassword: *postgres-admin-password
+    aggregatorPassword: *aggregator-pg-password
+    dpgPassword: *dpg-pg-password
+    redisPassword: *redis-password
+
 aggregator:
   secrets:
-    postgresPassword: "${aggregator_postgres_password}"
+    postgresPassword: *aggregator-pg-password
+    redisPassword: *redis-password
     kcBootstrapAdminPassword: "${aggregator_kc_bootstrap_admin_password}"
     keycloakAdminClientSecret: "${aggregator_keycloak_admin_client_secret}"
     approvalTokenSecret: "${aggregator_approval_token_secret}"
@@ -66,16 +79,16 @@ aggregator:
 signals:
   credentials:
     postgres:
-      password: "${signals_postgres_password}"
+      password: *dpg-pg-password
     redis:
-      password: "${signals_redis_password}"
+      password: *redis-password
     api:
       authSecret: "${signals_auth_secret}"
       notificationSecret: "${signals_notification_secret}"
       data:
         AUTH_SECRET: "${signals_auth_secret}"
-        POSTGRES_PASSWORD: "${signals_postgres_password}"
-        REDIS_PASSWORD: "${signals_redis_password}"
+        POSTGRES_PASSWORD: *dpg-pg-password
+        REDIS_PASSWORD: *redis-password
         AGGREGATOR_DPG_API_KEY: *signalstack-admin-key
         NOTIFICATION_SERVICE_SECRET: "${signals_notification_secret}"
         DPG_SCORING_SECRET: "${signals_dpg_scoring_secret}"

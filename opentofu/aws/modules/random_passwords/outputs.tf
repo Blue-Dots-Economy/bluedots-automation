@@ -1,3 +1,9 @@
+# ─── Common-services ────────────────────────────────────────────────────────
+output "postgres_admin_password" {
+  value     = random_id.postgres_admin_password.hex
+  sensitive = true
+}
+
 # ─── Signals chart ──────────────────────────────────────────────────────────
 output "signals_postgres_password" {
   value     = random_id.signals_postgres_password.hex

@@ -61,7 +61,7 @@ cert-manager:
   global:
     leaderElection:
       # cert-manager runs in the platform release namespace; leader election lease lives there too.
-      namespace: platform
+      namespace: common-services
   resources:
     requests:
       cpu: 50m

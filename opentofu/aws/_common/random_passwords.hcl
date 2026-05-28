@@ -1,5 +1,6 @@
 locals {
   global_vars                                   = yamldecode(file(find_in_parent_folders("global-values.yaml")))
+  postgres_admin_password_bytes                 = try(local.global_vars.global.postgres_admin_password_bytes, 16)
   signals_postgres_password_bytes               = try(local.global_vars.global.signals_postgres_password_bytes, 16)
   signals_redis_password_bytes                  = try(local.global_vars.global.signals_redis_password_bytes, 16)
   signals_auth_secret_bytes                     = try(local.global_vars.global.signals_auth_secret_bytes, 16)
@@ -21,6 +22,7 @@ terraform {
 }
 
 inputs = {
+  postgres_admin_password_bytes                 = local.postgres_admin_password_bytes
   signals_postgres_password_bytes               = local.signals_postgres_password_bytes
   signals_redis_password_bytes                  = local.signals_redis_password_bytes
   signals_auth_secret_bytes                     = local.signals_auth_secret_bytes

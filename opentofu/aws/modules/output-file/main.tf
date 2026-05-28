@@ -31,6 +31,8 @@ resource "local_sensitive_file" "global_cloud_values_yaml" {
     encryption_string                 = var.encryption_string
     signalstack_admin_key             = var.signalstack_admin_key
 
+    postgres_admin_password = var.postgres_admin_password
+
     signals_postgres_password   = var.signals_postgres_password
     signals_redis_password      = var.signals_redis_password
     signals_auth_secret         = var.signals_auth_secret

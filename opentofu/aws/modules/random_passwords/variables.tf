@@ -2,6 +2,14 @@
 # i.e. `openssl rand -hex 16` ≡ byte_length = 16 → 32 hex chars.
 
 # -----------------------------------------------------------------------------
+# Common-services (shared postgres + redis StatefulSets) secrets
+# -----------------------------------------------------------------------------
+variable "postgres_admin_password_bytes" {
+  type    = number
+  default = 16
+}
+
+# -----------------------------------------------------------------------------
 # Signals chart secrets
 # -----------------------------------------------------------------------------
 variable "signals_postgres_password_bytes" {
@@ -16,12 +24,12 @@ variable "signals_redis_password_bytes" {
 
 variable "signals_auth_secret_bytes" {
   type    = number
-  default = 16
+  default = 32
 }
 
 variable "signals_notification_secret_bytes" {
   type    = number
-  default = 16
+  default = 32
 }
 
 variable "signals_dpg_scoring_secret_bytes" {
@@ -34,12 +42,12 @@ variable "signals_dpg_scoring_secret_bytes" {
 # -----------------------------------------------------------------------------
 variable "aggregator_postgres_password_bytes" {
   type    = number
-  default = 32
+  default = 16
 }
 
 variable "aggregator_kc_bootstrap_admin_password_bytes" {
   type    = number
-  default = 32
+  default = 16
 }
 
 variable "aggregator_keycloak_admin_client_secret_bytes" {

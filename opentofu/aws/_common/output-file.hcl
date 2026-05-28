@@ -63,6 +63,8 @@ dependency "random_passwords" {
     random_string         = "dummy-random-string-1234"
     signalstack_admin_key = "dummy-signalstack-admin-key-0000000000000000"
 
+    postgres_admin_password = "0000000000000000000000000000000c"
+
     signals_postgres_password   = "00000000000000000000000000000001"
     signals_redis_password      = "00000000000000000000000000000002"
     signals_auth_secret         = "00000000000000000000000000000003"
@@ -114,6 +116,8 @@ inputs = {
   random_string         = dependency.random_passwords.outputs.random_string
   encryption_string     = dependency.random_passwords.outputs.encryption_string
   signalstack_admin_key = dependency.random_passwords.outputs.signalstack_admin_key
+
+  postgres_admin_password = dependency.random_passwords.outputs.postgres_admin_password
 
   signals_postgres_password   = dependency.random_passwords.outputs.signals_postgres_password
   signals_redis_password      = dependency.random_passwords.outputs.signals_redis_password

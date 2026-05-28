@@ -1,3 +1,8 @@
+# ─── Common-services postgres admin ─────────────────────────────────────────
+resource "random_id" "postgres_admin_password" {
+  byte_length = var.postgres_admin_password_bytes
+}
+
 # ─── Signals chart secrets ──────────────────────────────────────────────────
 # All hex output via random_id.hex (length = 2 * byte_length).
 resource "random_id" "signals_postgres_password" {

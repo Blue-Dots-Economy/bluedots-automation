@@ -144,6 +144,12 @@ variable "signalstack_admin_key" {
   description = "Shared API key for aggregator.signalstackAdminKey and signals AGGREGATOR_DPG_API_KEY (same value, two consumers)"
 }
 
+# ─── Common-services (shared postgres+redis) ───────────────────────────────
+variable "postgres_admin_password" {
+  type      = string
+  sensitive = true
+}
+
 # ─── Signals chart secrets ─────────────────────────────────────────────────
 variable "signals_postgres_password" {
   type      = string
