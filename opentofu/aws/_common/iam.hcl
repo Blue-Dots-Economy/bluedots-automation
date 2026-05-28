@@ -39,6 +39,7 @@ inputs = {
   aws_region                 = local.aws_region
   oidc_provider_arn          = dependency.eks.outputs.oidc_provider_arn
   oidc_provider              = dependency.eks.outputs.oidc_provider
+  storage_bucket_public      = dependency.storage.outputs.storage_bucket_public
   storage_bucket_private     = dependency.storage.outputs.storage_bucket_private
   service_account_subjects   = lookup(local.global_vars.global, "service_account_subjects", [
     "system:serviceaccount:app:app-sa"
