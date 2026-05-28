@@ -1,5 +1,5 @@
 exclude {
-  if      = true
+  if      = false
   actions = ["all"]
 }
 
