@@ -23,10 +23,10 @@ variable "oidc_provider" {
   type        = string
 }
 
-# variable "storage_bucket_public" {
-#   description = "Public S3 bucket name"
-#   type        = string
-# }
+variable "storage_bucket_public" {
+  description = "Public S3 bucket name"
+  type        = string
+}
 
 variable "storage_bucket_private" {
   description = "Private S3 bucket name"
