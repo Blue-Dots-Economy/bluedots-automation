@@ -45,23 +45,3 @@ output "storage_bucket_private_arn" {
   description = "ARN of the bucket whose logical key is 'private' (null if not provisioned)"
   value       = try(aws_s3_bucket.this["private"].arn, null)
 }
-
-output "dial_bucket" {
-  description = "Name of the bucket whose logical key is 'dial' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["dial"].id, null)
-}
-
-output "dial_bucket_arn" {
-  description = "ARN of the bucket whose logical key is 'dial' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["dial"].arn, null)
-}
-
-output "velero_bucket" {
-  description = "Name of the bucket whose logical key is 'velero' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["velero"].id, null)
-}
-
-output "velero_bucket_arn" {
-  description = "ARN of the bucket whose logical key is 'velero' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["velero"].arn, null)
-}

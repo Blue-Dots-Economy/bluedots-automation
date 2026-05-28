@@ -1,0 +1,46 @@
+global:
+  building_block: ${building_block}
+  environment: ${environment}
+  cloud_storage_provider: ${cloud_storage_provider}
+  cloud_storage_region: ${cloud_storage_region}
+
+  # ---- Network -------------------------------------------------------------
+  vpc_id: ${vpc_id}
+  vpc_cidr_block: ${vpc_cidr_block}
+  public_subnet_ids: ${public_subnet_ids_json}
+  private_subnet_ids: ${private_subnet_ids_json}
+  nat_gateway_public_ip: ${nat_gateway_public_ip}
+
+  # ---- EKS -----------------------------------------------------------------
+  cluster_name: ${cluster_name}
+  cluster_endpoint: ${cluster_endpoint}
+  cluster_arn: ${cluster_arn}
+  oidc_provider: ${oidc_provider}
+  oidc_provider_arn: ${oidc_provider_arn}
+  node_role_arn: ${node_role_arn}
+  private_ingressgateway_ip: ${private_ingressgateway_ip}
+  cloudwatch_observability_role_arn: ${cloudwatch_observability_role_arn}
+
+  # ---- IAM / IRSA ----------------------------------------------------------
+  app_sa_role_arn: ${app_sa_role_arn}
+  app_sa_role_name: ${app_sa_role_name}
+
+  # ---- S3 ------------------------------------------------------------------
+  public_container_name: ${storage_bucket_public}
+  private_container_name: ${storage_bucket_private}
+
+  # ---- Application secrets -------------------------------------------------
+  random_string: ${random_string}
+  encryption__string: ${encryption_string}
+
+  # ---- Service account (consumed by helm charts via IRSA) ------------------
+  serviceAccount:
+    create: false
+    name: ${app_sa_role_name}
+    annotations:
+      eks.amazonaws.com/role-arn: ${app_sa_role_arn}
+
+default_passwords:
+  keycloak_password: &keycloak-password "${keycloak_password}"
+  postgresql_password: &postgresql-password "${postgresql_password}"
+  redis_password: &redis-password "${redis_password}"

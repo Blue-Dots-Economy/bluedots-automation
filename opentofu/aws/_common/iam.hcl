@@ -28,8 +28,6 @@ dependency "storage" {
     }
     storage_bucket_public  = "dummy-public-bucket"
     storage_bucket_private = "dummy-private-bucket"
-    dial_bucket            = null
-    velero_bucket          = null
   }
 }
 

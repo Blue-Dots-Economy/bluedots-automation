@@ -3,5 +3,5 @@ include "root" {
 }
 
 include "environment" {
-  path = "${get_terragrunt_dir()}/../../_common/output.hcl"
+  path = "${get_terragrunt_dir()}/../../_common/output-file.hcl"
 }

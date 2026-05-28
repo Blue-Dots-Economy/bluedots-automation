@@ -40,13 +40,3 @@ variable "service_account_subjects" {
     "system:serviceaccount:app:app-sa"
   ]
 }
-
-# variable "dial_bucket" {
-#   description = "DIAL state S3 bucket name"
-#   type        = string
-# }
-
-# variable "velero_bucket" {
-#   description = "Velero backup S3 bucket name"
-#   type        = string
-# }
