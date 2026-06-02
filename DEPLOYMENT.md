@@ -81,24 +81,51 @@ $EDITOR global-values.yaml
 cat tf.sh
 ```
 
+There are two ways to bring up the infra. **Option A** is the one-shot
+bootstrap; **Option B** runs the same four functions individually, so you can
+inspect each step (create the tf backend first, then create the tf resources).
+Both run the identical functions in the identical order — pick whichever fits.
+
+#### Option A — one-shot bootstrap (combined)
+
 ```bash
-# 3. run the full infra bootstrap (no-arg install.sh)
+# run the full infra bootstrap (no-arg install.sh)
 #    chains: create_tf_backend -> backup_configs -> create_tf_resources -> apply_gp3_default_sc
 bash install.sh
 ```
 
-What `bash install.sh` (no args) does:
+#### Option B — step by step (individual functions)
 
-1. `create_tf_backend` — creates the S3 state bucket (via `create_tf_backend.sh`).
+Each step is one `install.sh` function; pass it by name. Run **in this order** —
+`create_tf_backend` writes `tf.sh` (region + state-bucket name) that
+`create_tf_resources` sources, so the backend must exist first.
+
+```bash
+# 1. create the tofu remote-state S3 bucket (writes tf.sh)
+bash install.sh create_tf_backend
+
+# 2. create the tofu resources: source tf.sh + terragrunt run --all apply
+#    (VPC -> EKS -> IAM -> storage -> random_passwords -> output-file), writes
+#    the EKS kubeconfig, and generates the 3 per-chart values files
+bash install.sh create_tf_resources
+
+# 3. make gp3 the cluster-default StorageClass (demote gp2)
+bash install.sh apply_gp3_default_sc
+```
+
+You can also chain several in one call (same as Option A):
+`bash install.sh create_tf_backend backup_configs create_tf_resources apply_gp3_default_sc`.
+
+What the four functions do (run by both options):
+
+1. `create_tf_backend` — creates the S3 state bucket (via `create_tf_backend.sh`)
+   and writes `tf.sh` with the region + bucket name.
 2. `backup_configs` — backs up any existing `~/.kube/config`, sets `KUBECONFIG`.
 3. `create_tf_resources` — `source tf.sh` then `terragrunt run --all apply`
    (VPC → EKS → IAM → storage → random_passwords → output-file), and writes the
    EKS kubeconfig. This also generates the three per-chart values files into the
    env directory.
 4. `apply_gp3_default_sc` — makes `gp3` the default StorageClass (demotes `gp2`).
-
-> Prefer to run pieces individually? Each is a function:
-> `bash install.sh create_tf_resources`, etc.
 
 > Regenerate **only** the values files later (e.g. after changing a host in
 > `global-values.yaml`):
