@@ -1,7 +1,7 @@
 global:
   building_block: "purple-dots"             # Naming prefix for all resources
   environment: "dev"                 # Environment name (1-9 lowercase alphanumeric characters)
-  signals_host: "api.purpledots.servehalflife.com" # FQDN for signals API ingress
+  # signals_host: "api.purpledots.servehalflife.com" # FQDN for signals API ingress
   signals_ui_host: "purpledots.servehalflife.com" # FQDN for signals UI ingress
   aggregator_host: "aggregator.servehalflife.com" # FQDN for aggregator ingress (optional override)
 
