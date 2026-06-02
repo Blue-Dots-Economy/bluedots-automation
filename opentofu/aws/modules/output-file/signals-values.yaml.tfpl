@@ -23,6 +23,9 @@ api:
     notificationSecret: "${signals_notification_secret}"
     data:
       AUTH_SECRET: "${signals_auth_secret}"
+      # PII encryption key — generated via `openssl rand -base64 32` equivalent
+      # (random_id.signals_pii_key.b64_std).
+      SIGNALS_PII_KEY: "${signals_pii_key}"
       POSTGRES_PASSWORD: "${signals_postgres_password}"
       REDIS_PASSWORD: "${signals_redis_password}"
       AGGREGATOR_DPG_API_KEY: "${signalstack_admin_key}"

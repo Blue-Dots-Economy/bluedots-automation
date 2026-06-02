@@ -45,6 +45,7 @@ resource "local_sensitive_file" "signals_values" {
     signals_postgres_password   = var.signals_postgres_password
     signals_redis_password      = var.signals_redis_password
     signals_auth_secret         = var.signals_auth_secret
+    signals_pii_key             = var.signals_pii_key
     signals_notification_secret = var.signals_notification_secret
     signals_dpg_scoring_secret  = var.signals_dpg_scoring_secret
     signalstack_admin_key       = var.signalstack_admin_key
