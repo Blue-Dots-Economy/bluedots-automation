@@ -74,7 +74,7 @@ ui:
   runtimeConfig:
     VITE_DEFAULT_VIEW_MODE: "map"
     VITE_MAP_PROVIDER: "google-maps"
-    VITE_GOOGLE_MAPS_API_KEY: "AIzaSyCScNjwQ9EUTXuo9x_eTtQX0XyPOUcR_-4"
+    VITE_GOOGLE_MAPS_API_KEY: ""
     VITE_ACTION_POLL_INTERVAL_MS: "30000"
   service:
     # nginx in the ui image listens on 80; chart default targetPort 8080
