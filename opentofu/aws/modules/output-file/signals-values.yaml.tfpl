@@ -26,6 +26,9 @@ api:
       POSTGRES_PASSWORD: "${signals_postgres_password}"
       REDIS_PASSWORD: "${signals_redis_password}"
       AGGREGATOR_DPG_API_KEY: "${signalstack_admin_key}"
+      # Chart default points at dpg-notification-service (release `dpg`); this
+      # release is `signals`, so the service is signals-notification-service.
+      NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
       NOTIFICATION_SERVICE_SECRET: "${signals_notification_secret}"
       DPG_SCORING_SECRET: "${signals_dpg_scoring_secret}"
   # Cross-namespace FQDNs for shared common-services postgres/redis. Service
