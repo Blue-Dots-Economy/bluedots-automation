@@ -103,14 +103,14 @@ credentials:
       # Migrate-job hashes via SHA-256→base64url, upserts into apikey row
       # on every helm install/upgrade. Rotate = change value + helm upgrade.
       AGGREGATOR_DPG_API_KEY: ""
-      NOTIFICATION_SERVICE_ENDPOINT: "http://dpg-notification-service:3000"
+      NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
       NOTIFICATION_SERVICE_KEY_ID: *notification_key_id
       NOTIFICATION_SERVICE_SECRET: *notification_secret
       SMS_TEMPLATE_ID: ""
       # Match-score (dpg-scoring) provider. keyId+secret MUST match
       # match-score.configFiles.authKeysJson keys[] entry below.
       MATCH_SCORE_PROVIDER: "dpg_scoring"
-      DPG_SCORING_ENDPOINT: "http://dpg-match-score:3000"
+      DPG_SCORING_ENDPOINT: "http://signals-match-score:3000"
       DPG_SCORING_KEY_ID: "match-score-client"
       DPG_SCORING_SECRET: ""
       DPG_SCORING_PATH: ""           # blank → client uses default 'api/v1/scores/match'

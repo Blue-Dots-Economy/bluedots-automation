@@ -10,6 +10,8 @@ global:
   #   SELECT id FROM organization WHERE type='network_service';
   signalstack:
     actingOrgId:
+  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
+  
   dataPlatform:
     namespace: common-services
     postgresService: common-services-postgresql
@@ -30,10 +32,13 @@ secrets:
   sessionKey: "${aggregator_session_key}"
   oidcClientSecret: "${aggregator_oidc_client_secret}"
   signalstackAdminKey: "${signalstack_admin_key}"
+  smtpUser: ""
+  smtpPassword: ""
 
 # IRSA service account injected into every pod-running sub-chart (api + worker)
 # so they assume the S3/SES role via the SA token.
 api:
+  adminEmails: ''
   serviceAccount:
     create: true
     annotations:
