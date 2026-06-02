@@ -1,0 +1,6 @@
+apiVersion: v2
+name: keycloak
+description: Aggregator Keycloak 26.5.5 + custom OTP SPI + realm import
+type: application
+version: 0.1.0
+appVersion: "26.5.5"

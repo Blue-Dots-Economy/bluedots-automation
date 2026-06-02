@@ -1,0 +1,29 @@
+replicaCount: 1
+image:
+  repository: aggregator-dpg/keycloak
+  tag: '26.5.5-aggregator'
+  pullPolicy: IfNotPresent
+bootstrapAdminUsername: admin
+# When true, container starts with `--optimized` (skips build at runtime).
+# Set to false if a build-time SPI option (e.g. KC_SPI_SMS_PROVIDER) is supplied
+# at runtime — `--optimized` rejects build-time mismatches and exits.
+optimized: true
+smsProvider: log
+awsRegion: ap-south-1
+service:
+  port: 8080
+  mgmtPort: 9000
+resources:
+  requests: { cpu: 250m, memory: 768Mi }
+  limits: { cpu: 1, memory: 1500Mi }
+realmRenderer:
+  image: alpine:3.20
+
+# Theme initContainer — produced by `infra/keycloak/build-theme-image.sh`
+# per network. Set `tag` to the network's release tag (e.g.
+# `blue_dot-v1`, `purple_dot-v1`); leave `themesInit: null` in values
+# (or omit the block) to fall back to the JAR-baked theme.
+themesInit:
+  image: docker.io/vinodbbhorge/aggregator-kc-theme
+  tag: purple_dot-develop
+  pullPolicy: IfNotPresent

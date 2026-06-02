@@ -1,0 +1,284 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# aggregator-dpg umbrella chart — single values file (dev + prod).
+#
+# Defaults are dev-safe. For any deployment, review every line tagged
+# `# UPDATE:` and override via:
+#   1. Editing this file directly (single-cluster / dev), OR
+#   2. `helm upgrade ... --set key=value` (CI / per-deploy overrides), OR
+#   3. A vaulted Secret pointed to by `global.existingSecret` (prod).
+# ═══════════════════════════════════════════════════════════════════════════
+
+global:
+  # UPDATE: public FQDN that ingress + KC issuer + email links use.
+  publicHost: purpledots.servehalflife.com
+  # UPDATE: http for local, https when cert-manager issues a cert.
+  publicProtocol: https
+
+  # Container registry — left empty intentionally. Bitnami subcharts
+  # (postgresql, redis) read `global.imageRegistry` first and would otherwise
+  # have `docker.io/bitnamilegacy/...` rewritten to `<registry>/bitnamilegacy/...`
+  # causing ImagePullBackOff. Set the full registry path in each
+  # `image.repository` field below instead.
+  imageRegistry: ''
+  # List of Secret NAMES (strings) — helper renders `- name: <value>`.
+  # Source: either pre-created Secret OR rendered via templates/ghcr-pull-secret.yaml
+  # (toggle via `imagePullSecret.create=true` below).
+  imagePullSecrets:
+    - ghcr-pull
+
+  # Cluster storage class for PVCs. Empty = cluster default.
+  storageClass: ''
+
+  keycloakRealm: aggregator
+
+  # Active signalstack network. Drives the api/worker/web config-folder
+  # selection and the keycloak themes-init image tag. Override per
+  # release via -f values-purple.yaml (or values-blue.yaml).
+  aggregatorNetwork: purple_dot
+
+  # Signal-stack integration. Used by api/worker to call the signal-stack
+  # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
+  #   - actingOrgId: signal-stack `organization` row of type `network_service`
+  #     that represents aggregator-dpg itself. Sent as `x-acting-org-id` on
+  #     every admin call. Read from signal-stack DB after install:
+  #       SELECT id FROM organization WHERE type='network_service';
+  #   - baseUrl + adminKey are wired via secret/configmap elsewhere.
+  signalstack:
+    actingOrgId: '' # REQUIRED before login; otherwise SIGNALSTACK_ORG_NOT_REGISTERED
+
+  oidc:
+    clientId: aggregator-portal
+    scope: 'openid profile email'
+
+  # UPDATE: S3 wiring for bulk uploads, QR PNGs, error CSVs.
+  s3:
+    region: ap-south-1
+    bucket: aggregator-bulk-uploads
+    forcePathStyle: false
+
+  # If set, subcharts reference this Secret name instead of the umbrella's
+  # templated `{release}-secrets`. The named Secret MUST exist before
+  # `helm install` and carry every key listed under `secrets.*` below.
+  existingSecret: ''
+
+  # Shared data layer location (common-services release). Cross-namespace
+  # service coordinates for the shared Postgres + Redis. Lives under `global`
+  # so subcharts (keycloak) can resolve the DB host too. Defaults assume the
+  # common-services release name `platform` in namespace `common-services`.
+  dataPlatform:
+    namespace: common-services
+    postgresService: platform-postgresql
+    redisService: platform-redis-master
+    redisPort: 6379
+
+  # Workaround for compose `extra_hosts: PUBLIC_HOST:host-gateway`. Add an
+  # entry per app pod so server-side OIDC discovery doesn't bounce through
+  # external DNS. Usually empty in cloud clusters.
+  hostAliases: []
+
+  # UPDATE: debug for local, info for prod.
+  appLogLevel: debug
+
+  # Signalstack (signals-DPG) integration. When both are set, api + worker
+  # push participants outward via POST /api/v1/admin/* with `x-api-key`.
+  # baseUrl = in-cluster DNS to the signals api svc; adminKey = raw key
+  # provisioned by signals-DPG's helm migrate-job (see secrets.signalstackAdminKey).
+  signalstackBaseUrl: 'http://dpg-api.signal-stack.svc.cluster.local:2742'
+
+# ─── Image pull Secret (optional, renders templates/ghcr-pull-secret.yaml) ──
+# Default: pre-create the Secret out-of-band; chart only references it.
+# Set create=true + supply username/password to let helm manage it instead.
+# DO NOT commit a real PAT here — pass via --set at install time.
+imagePullSecret:
+  create: false
+  name: ghcr-pull
+  registry: ghcr.io
+  username: ''
+  password: '' # GHCR PAT with read:packages scope
+  email: ''
+
+# ─── Ingress (single host, multi-path) ─────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  # UPDATE: cert-manager ClusterIssuer. Empty disables TLS issuance.
+  clusterIssuer: letsencrypt-prod
+  # UPDATE: ACME registration email for Let's Encrypt account.
+  acmeEmail: ops@sanketika.in
+  # Prod-grade nginx annotations — shared by both Ingress objects (api + main).
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: '1024m'
+    nginx.ingress.kubernetes.io/proxy-buffer-size: '32k'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '300'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '300'
+
+# ─── Secrets ───────────────────────────────────────────────────────────────
+# All values land in Secret `<release>-secrets`. For prod, set
+# `global.existingSecret` and skip this block — values here are ignored.
+secrets:
+  # Deprecated alias of global.existingSecret. If set, global.existingSecret
+  # takes precedence (kept for ergonomic top-level reference).
+  existingSecret: ''
+  # Postgres password for the shared `aggregator` user in the common-services
+  # Postgres. Injected by the Makefile `aggregator-install` target from the
+  # common-services `data-postgres` Secret (aggregator-password key).
+  postgresPassword: change-me-postgres-password
+  # Redis password for the shared common-services Redis. Injected by the Makefile
+  # `aggregator-install` target from the common-services `data-redis` Secret.
+  redisPassword: change-me-redis-password
+  kcBootstrapAdminPassword: change-me-keycloak-admin
+  keycloakAdminClientSecret: change-me-kc-admin-client-secret
+  approvalTokenSecret: change-me-32-hex-min-chars-required-here
+  sessionKey: change-me-32-hex-min-chars-required-here
+  oidcClientSecret: change-me-portal-client-secret
+  bffServiceClientSecret: ''
+  smtpUser: ''
+  smtpPassword: ''
+  twilioAccountSid: ''
+  twilioAuthToken: ''
+  twilioFromNumber: ''
+  awsAccessKeyId: ''
+  awsSecretAccessKey: ''
+  # Raw apikey for signals-DPG admin onboard. Must match the value in the
+  # signals helm release Secret `AGGREGATOR_DPG_API_KEY`.
+  signalstackAdminKey: ''
+
+# ─── Mail wiring (shared by api + keycloak) ────────────────────────────────
+mail:
+  provider: smtp # smtp | ses
+  smtp:
+    # Real SMTP relay host. No in-cluster mailcatcher — wire to SES /
+    # SendGrid / Workspace SMTP / etc. Empty value disables SMTP wiring.
+    host: 'smtp.gmail.com'
+    port: 587
+    from: no-reply@bluedots.local
+    fromDisplay: 'Blue Dots Aggregator'
+    secure: false
+    starttls: true
+    auth: true
+  ses:
+    from: ''
+    configurationSet: ''
+
+# ─── App subcharts ─────────────────────────────────────────────────────────
+web:
+  # UPDATE: bump for prod (2-3 replicas typical). HPA below scales further.
+  replicaCount: 1
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
+    tag: 'sha-d2b9d6c'
+    pullPolicy: IfNotPresent
+  service:
+    port: 3000
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 1, memory: 1Gi }
+    # Tune up for prod (apps/web is a Next.js standalone build).
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+
+api:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
+    tag: 'sha-d2b9d6c'
+    pullPolicy: IfNotPresent
+  service:
+    port: 4000
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { cpu: 2, memory: 1Gi }
+  runMigrationsOnBoot: true
+  bulk:
+    uploadUrlTtlSeconds: 900
+    uploadMaxBytes: 10485760
+    qrDownloadUrlTtlSeconds: 900
+  adminEmails: 'aniket@sanketika.in'
+  publicLinkBaseUrl: '' # empty => derived from global.publicProtocol+publicHost
+  serviceAccount:
+    create: true
+    # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPU: 70
+
+worker:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
+    tag: 'sha-d2b9d6c'
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits: { cpu: 1, memory: 1Gi }
+  bulk:
+    maxRows: 10000
+    maxRowBytes: 65536
+  cron:
+    linkMetricsRollupIntervalMs: 300000
+    watchdogIntervalMs: 3600000
+  serviceAccount:
+    create: true
+    # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+
+keycloak:
+  replicaCount: 1
+  image:
+    repository: vinodbbhorge/aggregator-dpg-keycloak
+    tag: 'test'
+    pullPolicy: IfNotPresent
+  # Set true when the image was built with `kc.sh build` matching all
+  # build-time SPI options (faster cold start). Current v1.0.0 image lacks
+  # KC_SPI_SMS_PROVIDER baked in → keep false until image is rebuilt.
+  optimized: false
+  bootstrapAdminUsername: admin
+  smsProvider: log # log | twilio | sns
+  awsRegion: ap-south-1
+  service:
+    port: 8080
+    mgmtPort: 9000
+  resources:
+    requests: { cpu: 250m, memory: 768Mi }
+    limits: { cpu: 1, memory: 1500Mi }
+
+# ─── Shared Postgres (common-services release) ─────────────────────────────
+# The Postgres subchart was removed; api/worker/keycloak connect to the shared
+# instance in the common-services release. The `aggregator` user + `aggregator`
+# and `keycloak` databases are created by the common-services Postgres bootstrap.
+# Host/namespace are resolved by the `aggregator.postgresHost` helper.
+postgresql:
+  auth:
+    username: aggregator
+    database: aggregator
+
+# ─── ingress-nginx subchart toggle ─────────────────────────────────────────
+# Disabled on this cluster: a separate `platform` Helm release owns the shared
+# ingress-nginx controller. Enabling here would deploy a duplicate controller.
+# Set true only for a standalone cluster that has no pre-existing ingress-nginx.
+ingress-nginx:
+  enabled: false
+
+# ─── cert-manager subchart values (consumed verbatim) ──────────────────────
+# See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
+cert-manager:
+  # Disabled on this cluster: the shared `platform` release owns cert-manager
+  # and its cluster-scoped CRDs. Enabling here causes CRD ownership conflicts
+  # ("exists and cannot be imported into the current release"). Set true only
+  # for a standalone cluster with no pre-existing cert-manager install.
+  enabled: false
+  # Install all cert-manager CRDs (Certificate, Issuer, Order, Challenge, ...)
+  # as part of this Helm release. Subchart default is `false`, which leaves
+  # `challenges.acme.cert-manager.io` missing and breaks ACME HTTP-01 flow.
+  crds:
+    enabled: true
+    # Survive `helm uninstall` so reinstalls don't blow away in-flight orders.
+    keep: true

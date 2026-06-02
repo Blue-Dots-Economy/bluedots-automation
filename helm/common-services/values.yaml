@@ -1,0 +1,210 @@
+# =============================================================================
+# Platform umbrella chart — shared ingress-nginx + cert-manager.
+# Install ONCE per cluster, before aggregator-dpg or signal-stack.
+# =============================================================================
+
+# ─── ClusterIssuer (consumed by Ingress objects in other namespaces) ─────────
+issuer:
+  enabled: true
+  # Name referenced by `cert-manager.io/cluster-issuer` annotation on Ingress.
+  name: letsencrypt-prod
+  # ACME registration email for Let's Encrypt.
+  acmeEmail: ops@sanketika.in
+  # ACME server. Use the staging URL while debugging to avoid rate limits:
+  #   https://acme-staging-v02.api.letsencrypt.org/directory
+  server: https://acme-v02.api.letsencrypt.org/directory
+  # Ingress class used by HTTP-01 solver. Must match ingress-nginx.controller.ingressClass.
+  ingressClass: nginx
+
+# ─── ingress-nginx subchart values (consumed verbatim) ───────────────────────
+# See: https://artifacthub.io/packages/helm/ingress-nginx/ingress-nginx
+ingress-nginx:
+  enabled: true
+  controller:
+    # IngressClass + controller selector. Single controller per cluster keeps
+    # routing simple; multiple controllers need distinct classes.
+    ingressClassResource:
+      name: nginx
+      enabled: true
+      default: true
+    ingressClass: nginx
+    # Watch Ingress resources cluster-wide so cross-ns Ingress works.
+    scope:
+      enabled: false
+    service:
+      type: LoadBalancer
+      # Cloud LB annotations go here if you need NLB / static IP / etc.
+      annotations: {}
+    config:
+      use-forwarded-headers: "true"
+      proxy-body-size: "10m"
+    # Tune resources for prod traffic.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# ─── cert-manager subchart values (consumed verbatim) ────────────────────────
+# See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
+cert-manager:
+  enabled: true
+  # Install all cert-manager CRDs (Certificate, Issuer, Order, Challenge, ...)
+  # via the subchart. Subchart default is `false`, which leaves
+  # `challenges.acme.cert-manager.io` missing and breaks ACME HTTP-01 flow.
+  crds:
+    enabled: true
+    # Survive `helm uninstall` so reinstalls don't blow away in-flight orders.
+    keep: true
+  global:
+    leaderElection:
+      # cert-manager runs in the platform release namespace; leader election lease lives there too.
+      namespace: common-services
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  webhook:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+  cainjector:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# =============================================================================
+# Shared data layer — Postgres + Redis for the aggregator-dpg and dpg stacks.
+# Consumer charts disable their own DB subcharts and connect via cross-namespace
+# FQDN (e.g. platform-postgresql.common-services.svc / platform-redis-master...).
+#
+# Credentials below are populated at deploy time by the Makefile `platform-install`
+# target (reuse-or-generate, then `--set credentials.*`). Left blank in-repo so
+# nothing sensitive is committed; templates/secrets.yaml skips rendering when blank.
+# =============================================================================
+credentials:
+  # admin (`postgres` superuser) password
+  postgresAdminPassword: ""  # PG_ADMIN_PW
+  # per-tenant app passwords
+  aggregatorPassword: ""  # AGGREGATOR_PG_PW
+  dpgPassword: ""  # DPG_PG_PW
+  redisPassword: ""  # REDIS_PW
+
+# -----------------------------------------------------------------------------
+# Bitnami Postgres subchart — single shared instance, multi-tenant.
+#
+# Bootstrap:
+#   - `postgres` superuser created by Bitnami initdb using postgresPassword
+#   - `auth.username/database` adds the `aggregator` user + DB out of the box
+#   - 00-bootstrap.sh creates the `dpg` user, the `dpg` + `keycloak`
+#     databases, and pgcrypto/cube/earthdistance extensions for `dpg`
+# -----------------------------------------------------------------------------
+postgresql:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: 17.6.0
+    pullPolicy: IfNotPresent
+  architecture: standalone
+  auth:
+    username: aggregator
+    database: aggregator
+    existingSecret: data-postgres
+    secretKeys:
+      adminPasswordKey: postgres-password
+      userPasswordKey: aggregator-password
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+    service:
+      ports:
+        postgresql: 5432
+    extraEnvVars:
+      - name: DPG_PG_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: data-postgres
+            key: dpg-password
+    initdb:
+      scripts:
+        00-bootstrap.sh: |
+          #!/bin/bash
+          set -eu
+          echo "[common-services] bootstrapping multi-tenant Postgres"
+          # Bitnami exposes the admin password as POSTGRES_POSTGRES_PASSWORD
+          # (and the app user's as POSTGRES_PASSWORD). Default socket is /tmp.
+          export PGPASSWORD="${POSTGRES_POSTGRES_PASSWORD:-${POSTGRES_PASSWORD}}"
+          psql -v ON_ERROR_STOP=1 --username postgres -d postgres <<-SQL
+            CREATE USER dpg WITH PASSWORD '${DPG_PG_PASSWORD}';
+            CREATE DATABASE keycloak OWNER aggregator;
+            CREATE DATABASE dpg OWNER dpg;
+          SQL
+          psql -v ON_ERROR_STOP=1 --username postgres -d dpg <<-SQL
+            CREATE EXTENSION IF NOT EXISTS pgcrypto;
+            CREATE EXTENSION IF NOT EXISTS cube;
+            CREATE EXTENSION IF NOT EXISTS earthdistance;
+          SQL
+          echo "[common-services] bootstrap complete"
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits:   { cpu: 2,    memory: 2Gi   }
+
+# -----------------------------------------------------------------------------
+# Bitnami Redis subchart — single shared instance, auth enabled.
+# -----------------------------------------------------------------------------
+redis:
+  enabled: true
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/redis
+    tag: 7.2.5
+    pullPolicy: IfNotPresent
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: data-redis
+    existingSecretPasswordKey: redis-password
+  commonConfiguration: |-
+    appendonly yes
+    appendfsync everysec
+    save ""
+    maxmemory 256mb
+    maxmemory-policy allkeys-lru
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    service:
+      ports:
+        redis: 6379
+    resources:
+      requests: { cpu: 50m,  memory: 128Mi }
+      limits:   { cpu: 500m, memory: 512Mi }
+  replica:
+    replicaCount: 0
+
+# -----------------------------------------------------------------------------
+# NetworkPolicy — restrict ingress on 5432/6379 to namespaces labelled
+# `app.kubernetes.io/part-of in (aggregator-dpg, dpg)`. Disable for clusters
+# without a NetworkPolicy controller (kind, plain k3s).
+# -----------------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  allowedFromNamespaces:
+    - aggregator-dpg
+    - dpg

@@ -1,0 +1,112 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "aggregator.fullname" . }}-keycloak-init
+  labels:
+    {{- include "aggregator.labels" . | nindent 4 }}
+  annotations:
+    # Runs after every install + upgrade so smtpServer/userProfile config is
+    # re-applied even when the realm already exists in postgres from a
+    # previous release. Idempotent — see infra/keycloak/init/apply-user-profile.sh.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "aggregator.labels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kc-init
+          image: alpine:3.20
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              apk add --no-cache curl jq >/dev/null
+              exec sh /init/apply-user-profile.sh
+          env:
+            - name: KC_URL
+              value: {{ include "aggregator.keycloakInternalUrl" . | quote }}
+            - name: KC_REALM
+              value: {{ .Values.global.keycloakRealm | quote }}
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: {{ .Values.keycloak.bootstrapAdminUsername | quote }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aggregator.secretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            - name: UNMANAGED_POLICY
+              value: ENABLED
+            - name: SMTP_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "aggregator.fullname" . }}-global
+                  key: SMTP_HOST
+                  optional: true
+            - name: SMTP_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "aggregator.fullname" . }}-global
+                  key: SMTP_PORT
+                  optional: true
+            - name: SMTP_FROM
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "aggregator.fullname" . }}-global
+                  key: SMTP_FROM
+                  optional: true
+            - name: SMTP_FROM_DISPLAY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "aggregator.fullname" . }}-global
+                  key: SMTP_FROM_DISPLAY
+                  optional: true
+            - name: SMTP_SECURE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "aggregator.fullname" . }}-global
+                  key: SMTP_SECURE
+                  optional: true
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aggregator.secretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aggregator.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aggregator.secretName" . }}
+                  key: OIDC_CLIENT_SECRET
+            - name: BFF_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aggregator.secretName" . }}
+                  key: BFF_SERVICE_CLIENT_SECRET
+            - name: PORTAL_CLIENT_ID
+              value: {{ .Values.global.oidc.clientId | quote }}
+            - name: SERVICE_CLIENT_ID
+              value: {{ default "aggregator-api" .Values.global.keycloakAdminClientId | quote }}
+          volumeMounts:
+            - name: init-scripts
+              mountPath: /init
+              readOnly: true
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: {{ include "aggregator.fullname" . }}-keycloak-init
+            defaultMode: 0755

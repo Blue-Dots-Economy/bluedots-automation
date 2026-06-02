@@ -1,0 +1,48 @@
+════════════════════════════════════════════════════════════════════════════
+  aggregator-dpg installed — release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}"
+════════════════════════════════════════════════════════════════════════════
+
+Public entry points (via ingress-nginx + cert-manager):
+
+  Web portal      {{ include "aggregator.publicBaseUrl" . }}/
+  API             {{ include "aggregator.publicBaseUrl" . }}/backend/
+  Keycloak        {{ include "aggregator.publicBaseUrl" . }}/auth/
+
+OIDC issuer that the BFF + browser will both see:
+  {{ include "aggregator.oidcIssuer" . }}
+
+Next steps:
+
+1) Watch the stack come up:
+   kubectl get pods -n {{ .Release.Namespace }} -w
+
+   Expected order:
+     postgresql-0           Ready
+     redis-master-0         Ready
+     {{ include "aggregator.fullname" . }}-keycloak-*  Ready (initContainer logs show realm render)
+     {{ include "aggregator.fullname" . }}-keycloak-init  Completed
+     {{ include "aggregator.fullname" . }}-api-*        Ready (migrations finished)
+     {{ include "aggregator.fullname" . }}-web-*,worker-* Ready
+     Ingress ADDRESS populated → TLS secret filled by cert-manager.
+
+2) Verify upstream health (port-forward when DNS / TLS aren't ready yet):
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "aggregator.fullname" . }}-api 4000:4000
+   curl -sf http://localhost:4000/health/ready
+
+3) Inspect the keycloak-init Job output:
+   kubectl -n {{ .Release.Namespace }} logs job/{{ include "aggregator.fullname" . }}-keycloak-init
+
+{{- if not .Values.secrets.existingSecret }}
+
+⚠  Plaintext secrets baked into a templated Secret. For production overlay
+   values-prod.yaml with `secrets.existingSecret: <name>` and supply the
+   Secret via SealedSecrets / ExternalSecrets / Vault.
+{{- end }}
+
+{{- if empty .Values.global.hostAliases }}
+
+⚠  global.hostAliases is empty. If the api/web BFF fails its OIDC discovery
+   call with a TLS or DNS error, set hostAliases to map "{{ .Values.global.publicHost }}"
+   to the ingress controller cluster IP — this mirrors the
+   docker-compose `extra_hosts: ${PUBLIC_HOST}:host-gateway` workaround.
+{{- end }}

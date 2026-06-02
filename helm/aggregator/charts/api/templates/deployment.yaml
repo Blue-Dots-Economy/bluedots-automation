@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "api.fullname" . }}
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.hpa.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "api.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "api.serviceAccountName" . }}
+      {{- include "api.imagePullSecrets" . | nindent 6 }}
+      {{- include "api.hostAliases" . | nindent 6 }}
+      containers:
+        - name: api
+          image: {{ include "api.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "api.globalConfigMap" . }}
+            - configMapRef:
+                name: {{ include "api.appConfigMap" . }}
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: POSTGRES_PASSWORD
+            # POSTGRES_USER + POSTGRES_DB + POSTGRES_HOST come from the
+            # umbrella's `{release}-global` ConfigMap (envFrom above).
+            - name: DATABASE_URL
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):5432/$(POSTGRES_DB)"
+            # REDIS_HOST + REDIS_PORT come from the umbrella's `{release}-global`
+            # ConfigMap (envFrom above); REDIS_PASSWORD from the umbrella Secret.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: REDIS_PASSWORD
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)"
+            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            - name: APPROVAL_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: APPROVAL_TOKEN_SECRET
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: SIGNALSTACK_ADMIN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "api.secretName" . }}
+                  key: SIGNALSTACK_ADMIN_KEY
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

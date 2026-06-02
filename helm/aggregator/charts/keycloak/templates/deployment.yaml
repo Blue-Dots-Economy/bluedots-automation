@@ -1,0 +1,243 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "keycloak.fullname" . }}
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "keycloak.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        {{- include "keycloak.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/realm: {{ include (print $.Template.BasePath "/configmap-realm.yaml") . | sha256sum }}
+        checksum/render: {{ include (print $.Template.BasePath "/configmap-render-script.yaml") . | sha256sum }}
+        checksum/env: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- include "keycloak.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        fsGroup: 0
+      volumes:
+        - name: realm-template
+          configMap:
+            name: {{ include "keycloak.realmConfigMap" . }}
+        - name: render-script
+          configMap:
+            name: {{ include "keycloak.renderScriptConfigMap" . }}
+            defaultMode: 0755
+        - name: realm-rendered
+          emptyDir: {}
+        # Shared volume the themes-init container writes into and the
+        # main keycloak container mounts read-only at
+        # /opt/keycloak/themes. Lets us ship one vanilla KC image and
+        # swap brand surfaces per network via a tiny init image.
+        - name: kc-themes
+          emptyDir: {}
+      initContainers:
+        {{- with .Values.themesInit }}
+        - name: themes-init
+          # Per-network theme image (built by `infra/keycloak/build-theme-image.sh`).
+          # Copies `/custom/otp` into the shared emptyDir and exits.
+          # Image hash uniquely identifies the brand baked into
+          # theme.properties, so swapping networks = swapping the tag.
+          image: {{ printf "%s:%s" .image .tag | quote }}
+          imagePullPolicy: {{ default "IfNotPresent" .pullPolicy }}
+          volumeMounts:
+            - name: kc-themes
+              mountPath: /shared
+        {{- end }}
+        - name: realm-renderer
+          # Translates the docker-compose render-realm.sh step into K8s land:
+          # reads template realm JSON from a read-only ConfigMap, substitutes
+          # __PUBLIC_BASE_URL__ / __SMTP_*__ placeholders, writes the result
+          # into a shared emptyDir that the main container imports from.
+          image: {{ .Values.realmRenderer.image | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/scripts/render-realm.sh"]
+          env:
+            - name: PUBLIC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.envConfigMap" . }}
+                  key: PUBLIC_BASE_URL
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: OIDC_CLIENT_SECRET
+            - name: BFF_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: BFF_SERVICE_CLIENT_SECRET
+            - name: SMTP_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.globalConfigMap" . }}
+                  key: SMTP_HOST
+                  optional: true
+            - name: SMTP_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.globalConfigMap" . }}
+                  key: SMTP_PORT
+                  optional: true
+            - name: SMTP_FROM
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.globalConfigMap" . }}
+                  key: SMTP_FROM
+                  optional: true
+            - name: SMTP_FROM_DISPLAY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.globalConfigMap" . }}
+                  key: SMTP_FROM_DISPLAY
+                  optional: true
+            - name: SMTP_SSL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.globalConfigMap" . }}
+                  key: SMTP_SECURE
+                  optional: true
+            - name: SMTP_STARTTLS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.globalConfigMap" . }}
+                  key: SMTP_STARTTLS
+                  optional: true
+            - name: SMTP_AUTH
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.globalConfigMap" . }}
+                  key: SMTP_AUTH
+                  optional: true
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+          volumeMounts:
+            - name: realm-template
+              mountPath: /opt/keycloak/data/import-template
+              readOnly: true
+            - name: realm-rendered
+              mountPath: /opt/keycloak/data/import
+            - name: render-script
+              mountPath: /scripts
+              readOnly: true
+      containers:
+        - name: keycloak
+          image: {{ include "keycloak.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - start
+            {{- if .Values.optimized }}
+            - --optimized
+            {{- end }}
+            - --import-realm
+          envFrom:
+            - configMapRef:
+                name: {{ include "keycloak.globalConfigMap" . }}
+            - configMapRef:
+                name: {{ include "keycloak.envConfigMap" . }}
+          env:
+            - name: KC_DB_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "keycloak.globalConfigMap" . }}
+                  key: POSTGRES_USER
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: POSTGRES_PASSWORD
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: TWILIO_ACCOUNT_SID
+                  optional: true
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: TWILIO_AUTH_TOKEN
+                  optional: true
+            - name: TWILIO_FROM_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: TWILIO_FROM_NUMBER
+                  optional: true
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: mgmt
+              containerPort: {{ .Values.service.mgmtPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: realm-rendered
+              mountPath: /opt/keycloak/data/import
+            {{- if .Values.themesInit }}
+            - name: kc-themes
+              mountPath: /opt/keycloak/themes
+              readOnly: true
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /auth/health/ready
+              port: mgmt
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /auth/health/live
+              port: mgmt
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
+          startupProbe:
+            httpGet:
+              path: /auth/health/ready
+              port: mgmt
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
