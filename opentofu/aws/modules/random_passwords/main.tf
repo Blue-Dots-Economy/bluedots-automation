@@ -17,6 +17,12 @@ resource "random_id" "signals_auth_secret" {
   byte_length = var.signals_auth_secret_bytes
 }
 
+# PII encryption key — base64 of 32 random bytes (equivalent to
+# `openssl rand -base64 32`); exposed via the .b64_std output.
+resource "random_id" "signals_pii_key" {
+  byte_length = var.signals_pii_key_bytes
+}
+
 resource "random_id" "signals_notification_secret" {
   byte_length = var.signals_notification_secret_bytes
 }

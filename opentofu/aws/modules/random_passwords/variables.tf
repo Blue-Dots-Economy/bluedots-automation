@@ -27,6 +27,11 @@ variable "signals_auth_secret_bytes" {
   default = 32
 }
 
+variable "signals_pii_key_bytes" {
+  type    = number
+  default = 32
+}
+
 variable "signals_notification_secret_bytes" {
   type    = number
   default = 32

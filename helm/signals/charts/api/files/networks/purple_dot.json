@@ -7,10 +7,46 @@
       "description": "Persons with disabilities seeking services, devices, training, or other support.",
       "minimum_cache_ttl_seconds": 300,
       "status_rules": [
-        { "status": "new",      "when": { "item_age_days": { "lte": 7 } } },
-        { "status": "active",   "when": { "days_since_last": { "buckets": ["create", "accept"], "lte": 30 } } },
-        { "status": "at_risk",  "when": { "days_since_last": { "buckets": ["create", "accept", "reject"], "between": [31, 90] } } },
-        { "status": "inactive", "when": "default" }
+        {
+          "status": "new",
+          "when": {
+            "item_age_days": {
+              "lte": 7
+            }
+          }
+        },
+        {
+          "status": "active",
+          "when": {
+            "days_since_last": {
+              "buckets": [
+                "create",
+                "accept"
+              ],
+              "lte": 30
+            }
+          }
+        },
+        {
+          "status": "at_risk",
+          "when": {
+            "days_since_last": {
+              "buckets": [
+                "create",
+                "accept",
+                "reject"
+              ],
+              "between": [
+                31,
+                90
+              ]
+            }
+          }
+        },
+        {
+          "status": "inactive",
+          "when": "default"
+        }
       ],
       "item_schemas": {
         "profile_1.0": {
@@ -196,16 +232,57 @@
           }
         }
       },
-      "id": "seeker"
+      "id": "seeker",
+      "dashboard_tiles": {
+        "total_items": "Total Beneficiaries",
+        "complete_profiles": "Profiles Complete",
+        "has_applications": "Made Connections"
+      }
     },
     {
       "description": "Organisations and individuals providing services, devices, training, or other support for persons with disabilities.",
       "minimum_cache_ttl_seconds": 300,
       "status_rules": [
-        { "status": "new",      "when": { "item_age_days": { "lte": 7 } } },
-        { "status": "active",   "when": { "days_since_last": { "buckets": ["create", "accept"], "lte": 30 } } },
-        { "status": "at_risk",  "when": { "days_since_last": { "buckets": ["create", "accept", "reject"], "between": [31, 90] } } },
-        { "status": "inactive", "when": "default" }
+        {
+          "status": "new",
+          "when": {
+            "item_age_days": {
+              "lte": 7
+            }
+          }
+        },
+        {
+          "status": "active",
+          "when": {
+            "days_since_last": {
+              "buckets": [
+                "create",
+                "accept"
+              ],
+              "lte": 30
+            }
+          }
+        },
+        {
+          "status": "at_risk",
+          "when": {
+            "days_since_last": {
+              "buckets": [
+                "create",
+                "accept",
+                "reject"
+              ],
+              "between": [
+                31,
+                90
+              ]
+            }
+          }
+        },
+        {
+          "status": "inactive",
+          "when": "default"
+        }
       ],
       "item_schemas": {
         "profile_1.0": {
@@ -367,7 +444,12 @@
           }
         }
       },
-      "id": "provider"
+      "id": "provider",
+      "dashboard_tiles": {
+        "total_items": "Total Service Providers",
+        "complete_profiles": "Profiles Complete",
+        "has_applications": "Received Connections"
+      }
     }
   ],
   "instances": [
@@ -493,12 +575,24 @@
             }
           },
           "metric_categories": {
-            "create": ["created"],
-            "accept": ["accepted"],
-            "reject": ["rejected"],
-            "cancel": ["cancelled"]
+            "create": [
+              "created"
+            ],
+            "accept": [
+              "accepted"
+            ],
+            "reject": [
+              "rejected"
+            ],
+            "cancel": [
+              "cancelled"
+            ]
           },
-          "reveals_pii_on_status": ["accepted"]
+          "reveals_pii_on_status": [
+            "accepted"
+          ],
+          "consent_text_initiator": "I agree to share my contact details (name, email, phone) with this provider if they accept my request.",
+          "consent_text_receiver": "I agree to share my contact details (name, email, phone) with the requester."
         },
         {
           "from_network": "purple_dot",
@@ -569,10 +663,28 @@
             }
           },
           "metric_categories": null,
-          "reveals_pii_on_status": ["accepted"]
+          "reveals_pii_on_status": [
+            "accepted"
+          ],
+          "consent_text_initiator": "I agree to share my contact details (name, email, phone) with this provider if they accept my request.",
+          "consent_text_receiver": "I agree to share my contact details (name, email, phone) with the requester."
         }
       ]
     }
   },
-  "id": "purple_dot"
+  "id": "purple_dot",
+  "dashboard_buckets": {
+    "by_status": {
+      "new": "New",
+      "active": "Active",
+      "at_risk": "At Risk",
+      "inactive": "Inactive"
+    },
+    "by_action_status": {
+      "create": "Requested",
+      "accept": "Connected",
+      "reject": "Declined",
+      "cancel": "Cancelled"
+    }
+  }
 }

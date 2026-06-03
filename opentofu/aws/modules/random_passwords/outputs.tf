@@ -20,6 +20,12 @@ output "signals_auth_secret" {
   sensitive = true
 }
 
+# base64 of 32 random bytes == `openssl rand -base64 32`
+output "signals_pii_key" {
+  value     = random_id.signals_pii_key.b64_std
+  sensitive = true
+}
+
 output "signals_notification_secret" {
   value     = random_id.signals_notification_secret.hex
   sensitive = true

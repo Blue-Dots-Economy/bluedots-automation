@@ -184,6 +184,11 @@ variable "signals_auth_secret" {
   sensitive = true
 }
 
+variable "signals_pii_key" {
+  type      = string
+  sensitive = true
+}
+
 variable "signals_notification_secret" {
   type      = string
   sensitive = true
