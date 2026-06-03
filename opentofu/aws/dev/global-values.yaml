@@ -47,7 +47,7 @@ global:
 
   # EKS configuration
   eks_cluster_version: "1.35"
-  eks_node_instance_type: "t3.large"  # 2 vCPU / 8 GB
+  eks_node_instance_type: "m6a.large"  # 2 vCPU / 8 GB
   eks_node_disk_size_gb: 30
   eks_node_count_min: 1
   eks_node_count_max: 2
