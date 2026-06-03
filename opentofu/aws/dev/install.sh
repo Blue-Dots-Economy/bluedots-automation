@@ -46,12 +46,18 @@ function backup_configs() {
     export KUBECONFIG=~/.kube/config
 }
 
+function plan_tf_resources() {
+    source tf.sh
+    echo -e "\nPlanning terraform resources on AWS"
+    terragrunt run --all init
+    terragrunt run --all plan
+}
+
 function create_tf_resources() {
     source tf.sh
     echo -e "\nCreating resources on AWS"
-    terragrunt run --all init -- -upgrade
-    terragrunt run --all apply --non-interactive
-    chmod 600 ~/.kube/config
+    terragrunt run --all init
+    terragrunt run --all apply
 }
 
 function apply_gp3_default_sc() {
