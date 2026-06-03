@@ -145,7 +145,52 @@ function deploy_all_services() {
     deploy_common_services
     deploy_signals
     deploy_aggregator
+    fix_acme_issuer_uri
     echo -e "\n✔ all releases deployed: common-services, signals, aggregator"
+}
+
+# cert-manager v1.20.2 bug (cert-manager/cert-manager#7846): the controller
+# never persists status.acme.uri on the ClusterIssuer, which triggers a ~2s
+# "Re-checking ACME account registration" loop. Orders/challenges signed during
+# that churn fail with "No Key ID in JWS header" / "Account not found" and
+# certificates stay READY=False. Until an upstream fix ships (v1.20.2 is the
+# latest stable as of 2026-06), recover the account URI from any challenge URL
+# (boulder embeds the account id: /acme/chall/<acct>/...) and patch it into the
+# issuer status, then clear the poisoned cert chains so they reissue cleanly.
+function fix_acme_issuer_uri() {
+    local uri server acct chall
+    uri=$(kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.status.acme.uri}' 2>/dev/null || true)
+    if [ -n "$uri" ]; then
+        echo -e "\n✔ ClusterIssuer status.acme.uri already set: $uri"
+        return 0
+    fi
+    echo -e "\nClusterIssuer status.acme.uri blank (cert-manager#7846) — recovering from challenge URL"
+    # A challenge only exists once a Certificate kicks off; certs are created by
+    # ingress-shim right after the signals/aggregator ingresses land. Poll.
+    for _ in $(seq 1 24); do
+        chall=$(kubectl get challenge -A -o jsonpath='{.items[0].spec.url}' 2>/dev/null || true)
+        [ -n "$chall" ] && break
+        sleep 5
+    done
+    if [ -z "$chall" ]; then
+        echo "WARN: no ACME challenge found to recover the account id from." >&2
+        echo "      If certificates stay un-ready, patch manually:" >&2
+        echo "      kubectl patch clusterissuer letsencrypt-prod --subresource=status --type=merge -p '{\"status\":{\"acme\":{\"uri\":\"<server>/acme/acct/<id>\"}}}'" >&2
+        return 0
+    fi
+    acct=$(echo "$chall" | sed -E 's#.*/acme/chall/([0-9]+)/.*#\1#')
+    server=$(kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.spec.acme.server}' | sed 's#/directory$##')
+    kubectl patch clusterissuer letsencrypt-prod --subresource=status --type=merge \
+        -p "{\"status\":{\"acme\":{\"uri\":\"${server}/acme/acct/${acct}\"}}}"
+    echo "✔ patched issuer uri → ${server}/acme/acct/${acct}"
+    # Orders/challenges created during the loop are signed with a bad kid and
+    # can't recover; delete the whole chain (incl. certs + secrets) so
+    # ingress-shim recreates everything against the now-stable account.
+    for ns in "$SIGNALS_NS" "$AGG_NS"; do
+        kubectl delete order,certificaterequest,challenge,certificate -n "$ns" --all --ignore-not-found 2>/dev/null || true
+        kubectl delete secret -n "$ns" --field-selector type=kubernetes.io/tls --ignore-not-found 2>/dev/null || true
+    done
+    echo "✔ cleared poisoned cert chains; certificates will reissue (watch: kubectl get certificate -A)"
 }
 
 # ═══ helm: destroy individual services ════════════════════════════════════════
@@ -161,6 +206,29 @@ function destroy_common_services() {
     echo -e "\nDestroying common-services"
     helm uninstall "$CS_REL" -n "$CS_NS" || true
     kubectl delete namespace "$CS_NS" --wait=true --timeout=120s || true
+    cleanup_cert_manager_leftovers
+}
+
+# cert-manager CRDs carry a "keep" resource policy, so helm uninstall leaves
+# them (and every Certificate/Issuer/Order/Challenge CR) behind. The
+# ClusterIssuer is a helm hook resource, so it also survives uninstall —
+# carrying stale ACME status that bricks the issuer on the next install
+# ("no registrations with public key"). Wipe everything cert-manager owns.
+function cleanup_cert_manager_leftovers() {
+    echo -e "\nCleaning up cert-manager leftovers (CRDs, webhooks, ACME account key)"
+    kubectl delete crd \
+        challenges.acme.cert-manager.io \
+        orders.acme.cert-manager.io \
+        certificaterequests.cert-manager.io \
+        certificates.cert-manager.io \
+        clusterissuers.cert-manager.io \
+        issuers.cert-manager.io \
+        --ignore-not-found
+    kubectl delete validatingwebhookconfiguration,mutatingwebhookconfiguration \
+        -l app.kubernetes.io/instance="$CS_REL" --ignore-not-found
+    # Stale ACME account key = broken issuer on next install. Namespace deletion
+    # above usually removes it, but be explicit in case the namespace survived.
+    kubectl delete secret letsencrypt-prod-account-key -n "$CS_NS" --ignore-not-found 2>/dev/null || true
 }
 
 function destroy_signals() {
