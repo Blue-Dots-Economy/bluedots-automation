@@ -22,6 +22,7 @@ opentofu/aws/**/signals-values.yaml
 opentofu/aws/**/aggregator-values.yaml
 # Legacy single combined file (pre-split) — still ignore if present locally.
 opentofu/aws/**/global-cloud-values.yaml
+tf.sh
 
 # Editor / OS junk
 .DS_Store
