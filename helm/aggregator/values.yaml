@@ -184,7 +184,7 @@ api:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: 'sha-d2b9d6c'
+    tag: '4f1b7cd'
     pullPolicy: IfNotPresent
   service:
     port: 4000
@@ -196,13 +196,13 @@ api:
     uploadUrlTtlSeconds: 900
     uploadMaxBytes: 10485760
     qrDownloadUrlTtlSeconds: 900
-  adminEmails: 'aniket@sanketika.in'
+  adminEmails: ''
   publicLinkBaseUrl: '' # empty => derived from global.publicProtocol+publicHost
   serviceAccount:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
   hpa:
     enabled: false
     minReplicas: 2
@@ -228,7 +228,7 @@ worker:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
 
 keycloak:
   replicaCount: 1
