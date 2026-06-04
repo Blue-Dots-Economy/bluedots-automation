@@ -25,5 +25,5 @@ realmRenderer:
 # (or omit the block) to fall back to the JAR-baked theme.
 themesInit:
   image: docker.io/vinodbbhorge/aggregator-kc-theme
-  tag: purple_dot-develop
+  tag: orange_dot-develop
   pullPolicy: IfNotPresent
