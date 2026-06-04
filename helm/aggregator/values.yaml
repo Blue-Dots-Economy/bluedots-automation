@@ -202,7 +202,7 @@ api:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
   hpa:
     enabled: false
     minReplicas: 2
@@ -228,7 +228,7 @@ worker:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
 
 keycloak:
   replicaCount: 1
