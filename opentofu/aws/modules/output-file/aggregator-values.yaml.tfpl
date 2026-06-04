@@ -5,6 +5,7 @@
 global:
   # Public FQDN for the aggregator ingress (api + web share this host).
   publicHost: ${aggregator_host}
+  aggregatorNetwork: orange_dot
   # Signalstack (signals-DPG) integration. actingOrgId REQUIRED before login;
   # otherwise SIGNALSTACK_ORG_NOT_REGISTERED. Read after signals is up:
   #   SELECT id FROM organization WHERE type='network_service';
