@@ -19,6 +19,50 @@ variable "cors_max_age_seconds" {
   default     = 3000
 }
 
+variable "cors_allowed_origins" {
+  description = <<-EOT
+    Explicit list of origins allowed for cross-origin (CORS) requests on cors_enabled buckets,
+    e.g. ["https://aggregator.example.com"]. Wildcard "*" is rejected — origins must be specific.
+    Typically derived from global.aggregator_host in global-values.yaml.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !contains(var.cors_allowed_origins, "*")
+    error_message = "cors_allowed_origins must not contain \"*\". List explicit origins (e.g. https://aggregator.example.com)."
+  }
+}
+
+variable "cors_allowed_methods" {
+  description = "HTTP methods permitted by the CORS rule on cors_enabled buckets."
+  type        = list(string)
+  default     = ["GET", "HEAD", "PUT"]
+}
+
+variable "cors_allowed_headers" {
+  description = "Request headers permitted by the CORS rule on cors_enabled buckets."
+  type        = list(string)
+  default     = ["Authorization", "Content-Type", "Content-MD5", "x-amz-acl", "x-amz-date", "x-amz-content-sha256"]
+}
+
+variable "allowed_referers" {
+  description = <<-EOT
+    Referer patterns (aws:Referer) that may read objects from public buckets, e.g.
+    ["https://aggregator.example.com/*"]. When non-empty, the public-read policy is scoped to
+    these referers instead of being open to the whole internet. Typically derived from
+    global.aggregator_host. NOTE: aws:Referer is a defense-in-depth control (clients can spoof
+    the header); pair it with CORS and, for stronger isolation, front the bucket with CloudFront + OAC.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = !contains(var.allowed_referers, "*")
+    error_message = "allowed_referers must not contain \"*\". List explicit referer patterns."
+  }
+}
+
 variable "buckets" {
   description = <<-EOT
     Map of logical bucket name to configuration. The S3 bucket name is auto-prefixed as
