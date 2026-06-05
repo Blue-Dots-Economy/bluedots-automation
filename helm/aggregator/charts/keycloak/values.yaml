@@ -24,6 +24,6 @@ realmRenderer:
 # `blue_dot-v1`, `purple_dot-v1`); leave `themesInit: null` in values
 # (or omit the block) to fall back to the JAR-baked theme.
 themesInit:
-  image: docker.io/vinodbbhorge/aggregator-kc-theme
-  tag: purple_dot-develop
+  image:  ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
+  tag: develop
   pullPolicy: IfNotPresent
