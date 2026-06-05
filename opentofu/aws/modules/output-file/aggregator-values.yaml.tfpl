@@ -34,6 +34,7 @@ secrets:
   signalstackAdminKey: "${signalstack_admin_key}"
   smtpUser: ""
   smtpPassword: ""
+  msg91AuthKey: ""
 
 # IRSA service account injected into every pod-running sub-chart (api + worker)
 # so they assume the S3/SES role via the SA token.
