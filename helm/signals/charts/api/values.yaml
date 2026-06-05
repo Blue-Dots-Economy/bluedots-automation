@@ -5,7 +5,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/blue-dots-economy/signals-dpg/api
   tag: ""            # defaults to .Chart.AppVersion
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 imagePullSecrets: []
 nameOverride: ""

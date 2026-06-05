@@ -188,6 +188,12 @@ spec:
                   name: {{ include "keycloak.secretName" . }}
                   key: TWILIO_FROM_NUMBER
                   optional: true
+            - name: MSG91_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: MSG91_AUTH_KEY
+                  optional: true
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
