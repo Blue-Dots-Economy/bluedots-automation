@@ -1,13 +1,47 @@
 {
+  "id": "blue_dot",
   "name": "blue_dot",
   "display_name": "Blue Dot",
   "description": "Jobs and hiring network.",
   "schema_standard": "https://json-schema.org/draft/2020-12/schema",
   "domains": [
     {
+      "id": "seeker",
       "name": "seeker",
       "description": "People looking for jobs.",
       "minimum_cache_ttl_seconds": 300,
+      "status_rules": [
+        {
+          "status": "new",
+          "when": {
+            "item_age_days": {
+              "lte": 7
+            }
+          }
+        },
+        {
+          "status": "active",
+          "when": {
+            "days_since_last": {
+              "buckets": ["create", "accept"],
+              "lte": 30
+            }
+          }
+        },
+        {
+          "status": "at_risk",
+          "when": {
+            "days_since_last": {
+              "buckets": ["create", "accept", "reject"],
+              "between": [31, 90]
+            }
+          }
+        },
+        {
+          "status": "inactive",
+          "when": "default"
+        }
+      ],
       "item_schemas": {
         "profile_1.0": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -39,12 +73,50 @@
             }
           }
         }
+      },
+      "dashboard_tiles": {
+        "total_items": "Total Seekers",
+        "complete_profiles": "Profiles Complete",
+        "has_applications": "Made Applications"
       }
     },
     {
+      "id": "provider",
       "name": "provider",
       "description": "Employers and recruiters posting jobs.",
       "minimum_cache_ttl_seconds": 300,
+      "status_rules": [
+        {
+          "status": "new",
+          "when": {
+            "item_age_days": {
+              "lte": 7
+            }
+          }
+        },
+        {
+          "status": "active",
+          "when": {
+            "days_since_last": {
+              "buckets": ["create", "accept"],
+              "lte": 30
+            }
+          }
+        },
+        {
+          "status": "at_risk",
+          "when": {
+            "days_since_last": {
+              "buckets": ["create", "accept", "reject"],
+              "between": [31, 90]
+            }
+          }
+        },
+        {
+          "status": "inactive",
+          "when": "default"
+        }
+      ],
       "item_schemas": {
         "job_posting_1.0": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -79,30 +151,29 @@
             }
           }
         }
+      },
+      "dashboard_tiles": {
+        "total_items": "Total Providers",
+        "complete_profiles": "Profiles Complete",
+        "has_applications": "Received Applications"
       }
     }
   ],
   "instances": [
     {
-      "domain_name": "seeker",
+      "domain_id": "seeker",
       "instance_name": "Blue Dot Seeker Localhost",
       "instance_url": "__PUBLIC_API_URL__",
       "custom_item_schema_urls": {}
     },
     {
-      "domain_name": "provider",
+      "domain_id": "provider",
       "instance_name": "Blue Dot Provider Localhost",
       "instance_url": "__PUBLIC_API_URL__",
       "custom_item_schema_urls": {}
     }
   ],
-  "cross_network_origins": [
-    {
-      "name": "yellow_dot",
-      "display_name": "Yellow Dot",
-      "schema_url": "__SCHEMAS_URL__/yellow_dot.json"
-    }
-  ],
+  "cross_network_origins": [],
   "actions": {
     "invite": {
       "description": "Lets a provider invite a seeker to apply to one of their job postings.",
@@ -149,6 +220,11 @@
                 "type": "string"
               }
             }
+          },
+          "metric_categories": {
+            "create": ["sent"],
+            "accept": ["accepted"],
+            "reject": ["declined"]
           }
         }
       ]
@@ -186,9 +262,9 @@
             }
           },
           "metric_categories": {
-            "shortlisted": ["shortlisted"],
-            "rejected": ["rejected"],
-            "pending": ["submitted"]
+            "create": ["submitted"],
+            "accept": ["shortlisted"],
+            "reject": ["rejected"]
           }
         },
         {
@@ -236,12 +312,26 @@
             }
           },
           "metric_categories": {
-            "shortlisted": ["shortlisted"],
-            "rejected": ["rejected"],
-            "pending": ["submitted"]
+            "create": ["submitted"],
+            "accept": ["shortlisted"],
+            "reject": ["rejected"]
           }
         }
       ]
+    }
+  },
+  "dashboard_buckets": {
+    "by_status": {
+      "new": "New",
+      "active": "Active",
+      "at_risk": "At Risk",
+      "inactive": "Inactive"
+    },
+    "by_action_status": {
+      "create": "Applied",
+      "accept": "Shortlisted",
+      "reject": "Rejected",
+      "cancel": "Cancelled"
     }
   }
 }
