@@ -168,7 +168,7 @@ web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
     tag: 'sha-d2b9d6c'
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   service:
     port: 3000
   resources:
@@ -186,7 +186,7 @@ api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
     tag: '4f1b7cd'
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   service:
     port: 4000
   resources:

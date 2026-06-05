@@ -2,7 +2,7 @@ replicaCount: 1
 image:
   repository: aggregator-dpg/api
   tag: ""
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 service:
   port: 4000
 resources:
