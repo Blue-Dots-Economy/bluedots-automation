@@ -9,6 +9,8 @@ bootstrapAdminUsername: admin
 # at runtime — `--optimized` rejects build-time mismatches and exits.
 optimized: true
 smsProvider: log
+msg91TemplateId: ''
+msg91OtpVarName: ''
 awsRegion: ap-south-1
 service:
   port: 8080
@@ -24,6 +26,6 @@ realmRenderer:
 # `blue_dot-v1`, `purple_dot-v1`); leave `themesInit: null` in values
 # (or omit the block) to fall back to the JAR-baked theme.
 themesInit:
-  image: docker.io/vinodbbhorge/aggregator-kc-theme
-  tag: orange_dot-develop
-  pullPolicy: IfNotPresent
+  image: shashank04515/aggregator-kc-theme
+  tag: develop
+  pullPolicy: Always

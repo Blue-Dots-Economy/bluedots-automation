@@ -10,11 +10,11 @@
 images:
   api: &api_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-877366c"
+    tag: "develop"
     pullPolicy: Always
   ui: &ui_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-877366c"
+    tag: "develop"
     pullPolicy: Always
   notificationService: &notification_service_image
     repository: vinodbbhorge/notification-service

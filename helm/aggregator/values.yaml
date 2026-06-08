@@ -137,6 +137,7 @@ secrets:
   twilioAccountSid: ''
   twilioAuthToken: ''
   twilioFromNumber: ''
+  msg91AuthKey: ''
   awsAccessKeyId: ''
   awsSecretAccessKey: ''
   # Raw apikey for signals-DPG admin onboard. Must match the value in the
@@ -166,8 +167,8 @@ web:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: 'sha-0753550'
-    pullPolicy: IfNotPresent
+    tag: 'develop'
+    pullPolicy: Always
   service:
     port: 3000
   resources:
@@ -184,8 +185,8 @@ api:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: 'sha-0753550'
-    pullPolicy: IfNotPresent
+    tag: 'develop'
+    pullPolicy: Always
   service:
     port: 4000
   resources:
@@ -213,8 +214,8 @@ worker:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: 'sha-2f3b71f'
-    pullPolicy: IfNotPresent
+    tag: 'develop'
+    pullPolicy: Always
   resources:
     requests: { cpu: 100m, memory: 384Mi }
     limits: { cpu: 1, memory: 1Gi }
@@ -233,15 +234,17 @@ worker:
 keycloak:
   replicaCount: 1
   image:
-    repository: vinodbbhorge/aggregator-dpg-keycloak
-    tag: 'test'
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-server
+    tag: 'develop'
     pullPolicy: IfNotPresent
   # Set true when the image was built with `kc.sh build` matching all
   # build-time SPI options (faster cold start). Current v1.0.0 image lacks
   # KC_SPI_SMS_PROVIDER baked in → keep false until image is rebuilt.
   optimized: false
   bootstrapAdminUsername: admin
-  smsProvider: log # log | twilio | sns
+  smsProvider: msg91 # log | twilio | sns
+  msg91TemplateId: ''
+  msg91OtpVarName: 'var'
   awsRegion: ap-south-1
   service:
     port: 8080
