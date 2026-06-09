@@ -57,12 +57,16 @@ api:
     crossNetworkUrl: "https://${signals_ui_host}"
   ingress:
     enabled: true
-    className: nginx
+    className: kong
     # Same-origin: the API is served under /api on the UI host, so the browser
     # calls the same domain (no separate api DNS record, no CORS). The UI
     # ingress owns the TLS cert for this host (signals-ui-tls); no cert-manager
     # annotation here, to avoid issuing a duplicate cert for the same host.
-    annotations: {}
+    annotations:
+      # signals-api serves under /api — preserve the prefix (do NOT strip).
+      konghq.com/strip-path: "false"
+      # Rate-limit tier (KongClusterPlugin in common-services).
+      konghq.com/plugins: rl-api
     hosts:
       - host: ${signals_ui_host}
         paths:
@@ -92,9 +96,11 @@ ui:
     targetPort: 80
   ingress:
     enabled: true
-    className: nginx
+    className: kong
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
+      # Rate-limit tier (KongClusterPlugin in common-services).
+      konghq.com/plugins: rl-public
     hosts:
       - host: ${signals_ui_host}
         paths:

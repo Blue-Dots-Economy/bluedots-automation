@@ -1,0 +1,42 @@
+{{- /*
+Rate-limit tiers → one KongClusterPlugin each (cluster-scoped, referenced by
+any Ingress in any namespace via  konghq.com/plugins: <tier>).
+
+policy: redis  → counters live in the shared common-services Redis, so the
+configured limit stays correct regardless of how many Kong proxy replicas run.
+limit_by: ip   → key on the client IP (Kong sees the real client because the
+proxy sets real_ip_header / trusted_ips — see the kong.env block in values).
+fault_tolerant → if Redis is briefly unreachable, fail OPEN (serve traffic)
+rather than reject every request.
+
+Pinned Kong Gateway 3.9 uses the nested `config.redis` block (not flat
+`redis_host`/`redis_port`). Password is rendered from credentials.redisPassword,
+the same value secrets.yaml writes into the `data-redis` secret.
+*/ -}}
+{{- if and .Values.kong.enabled .Values.kong.rateLimitTiers }}
+{{- $redis := .Values.kong.redis }}
+{{- $pw := .Values.credentials.redisPassword }}
+{{- range $name, $cfg := .Values.kong.rateLimitTiers }}
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: {{ $name }}
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+plugin: rate-limiting
+config:
+  minute: {{ required (printf "rateLimitTiers.%s needs a `minute` value" $name) $cfg.minute }}
+  policy: redis
+  limit_by: ip
+  fault_tolerant: true
+  redis:
+    host: {{ $redis.host | quote }}
+    port: {{ $redis.port }}
+    {{- if $pw }}
+    password: {{ $pw | quote }}
+    {{- end }}
+---
+{{- end }}
+{{- end }}
