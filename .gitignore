@@ -29,3 +29,6 @@ opentofu/aws/**/global-cloud-values.yaml
 .vscode/
 *.swp
 *~
+
+# temp files
+DOCUMENT/*

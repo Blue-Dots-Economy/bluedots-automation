@@ -1,0 +1,21 @@
+dependencies:
+- name: kube-prometheus-stack
+  repository: https://prometheus-community.github.io/helm-charts
+  version: 65.1.1
+- name: grafana
+  repository: https://grafana.github.io/helm-charts
+  version: 8.4.2
+- name: loki
+  repository: https://grafana.github.io/helm-charts
+  version: 6.7.1
+- name: promtail
+  repository: https://grafana.github.io/helm-charts
+  version: 6.16.6
+- name: jaeger
+  repository: https://jaegertracing.github.io/helm-charts
+  version: 3.1.1
+- name: opentelemetry-collector
+  repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+  version: 0.108.0
+digest: sha256:2767e226fd4d5c20fc7335afc6505f66e13372edb5c2e623353b420248f3153a
+generated: "2026-06-09T12:22:48.829791204+05:30"

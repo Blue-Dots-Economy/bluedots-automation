@@ -1,0 +1,23 @@
+# =============================================================================
+# Monitoring umbrella chart — enable/disable each component here.
+# Config for each component will be added section by section during
+# implementation so you understand what each value does before it goes in.
+# =============================================================================
+
+prometheus:
+  enabled: true
+
+grafana:
+  enabled: false
+
+loki:
+  enabled: false
+
+promtail:
+  enabled: false
+
+jaeger:
+  enabled: false
+
+otelcollector:
+  enabled: false
