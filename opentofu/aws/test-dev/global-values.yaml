@@ -1,0 +1,85 @@
+global:
+  building_block: "test"             # Naming prefix for all resources
+  environment: "dev"                 # Environment name (1-9 lowercase alphanumeric characters)
+  # signals_host: "api.purpledots.servehalflife.com" # FQDN for signals API ingress
+  signals_ui_host: "dev-signals.sunbirddpi.in" # FQDN for signals UI ingress
+  aggregator_host: "dev-aggregators.sunbirddpi.in" # FQDN for aggregator ingress (optional override)
+
+  # AWS region for all resources
+  cloud_storage_region: "ap-south-1"  # e.g., us-east-1
+
+  # Network configuration (optional - set create_network: false to use an existing VPC)
+  create_network: true
+  # vpc_id: ""                         # If create_network: false, provide existing VPC ID
+  # private_subnet_ids: []             # If create_network: false
+  # public_subnet_ids: []              # If create_network: false
+  # vpc_cidr: "10.0.0.0/16"            # CIDR block for the new VPC
+  # ingress_cidr_blocks: ["0.0.0.0/0"] # Allowed CIDRs for HTTP/HTTPS inbound security group
+
+  # Subnet definitions — add/remove entries to control what gets provisioned.
+  # Each key becomes the subnet logical name (used in tags and outputs).
+  # cidr_netnum is the offset for cidrsubnet(vpc_cidr, 8, N):
+  #   101 → 10.0.101.0/24 | 102 → 10.0.102.0/24 | 201 → 10.0.201.0/24, etc.
+  subnet_config:
+    public-a:
+      type: public
+      availability_zone: "a"
+      cidr_netnum: 101
+    public-b:
+      type: public
+      availability_zone: "b"
+      cidr_netnum: 102
+    # Add private subnets below to enable private networking.
+    # A NAT Gateway is automatically created when private subnets exist (see nat_gateway_enabled).
+    # private-a:
+    #   type: private
+    #   availability_zone: "a"
+    #   cidr_netnum: 201
+    # private-b:
+    #   type: private
+    #   availability_zone: "b"
+    #   cidr_netnum: 202
+
+  # NAT Gateway — default: false. Set to true only when private subnets need outbound internet
+  # access (e.g. pulling images, calling external APIs). Each NAT Gateway costs ~$32/month per AZ.
+  # Has no effect when no private subnets are defined.
+  # nat_gateway_enabled: false
+
+  # EKS configuration
+  eks_cluster_version: "1.35"
+  eks_node_instance_type: "m6a.large"  # 2 vCPU / 8 GB
+  eks_node_disk_size_gb: 30
+  eks_node_count_min: 1
+  eks_node_count_max: 2
+  # eks_endpoint_public_access: true   # Expose EKS API server publicly
+  # eks_endpoint_private_access: false # Expose EKS API server within VPC
+  # eks_node_count_desired: 3          # pre-warm above min
+  # eks_ebs_csi_addon_version: "v1.28.0-eksbuild.1"  # pin addon version
+
+  # S3 bucket definitions — add as many buckets as needed.
+  # Key becomes the suffix: <building_block>-<environment>-<account_id>-<key>
+  # type: "public"  → publicly readable, optional CORS
+  # type: "private" → fully blocked public access, optional versioning
+  buckets:
+    public:
+      type: public
+      cors_enabled: true
+    # private:
+    #   type: private
+    #   versioning_enabled: true
+
+  # S3 CORS (optional override)
+  cors_max_age_seconds: 3000          # Max-age for CORS preflight cache on cors-enabled buckets
+
+  # IAM service account subjects (optional override — IRSA principals allowed to assume the app role)
+  service_account_subjects:
+    - "system:serviceaccount:aggregator:aggregator-api"
+    - "system:serviceaccount:aggregator:aggregator-worker"
+  # CloudWatch observability (Container Insights add-on)
+  enable_cloudwatch_observability: false
+  cloudwatch_enabled_log_types:
+    - api
+    - audit
+    - authenticator
+    - controllerManager
+    - scheduler
