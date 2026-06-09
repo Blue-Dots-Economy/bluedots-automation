@@ -1,38 +1,45 @@
 {{- if .Values.ingress.enabled -}}
+{{- /*
+  Template-driven ingress for the signals UI. The routing STRUCTURE is fixed
+  here — path / (catch-all). Only scalars come from values (ingress.host /
+  className / tlsSecret / clusterIssuer / plugin).
+
+  This object owns the cert-manager issuance for the shared host cert
+  (ingress.tlsSecret); the api subchart reuses the same secret.
+*/ -}}
 {{- $fullName := include "dpg-ui.fullname" . -}}
-{{- $svcPort := .Values.service.port -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $fullName }}
   labels:
     {{- include "dpg-ui.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
   annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- if .Values.ingress.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}
+    {{- end }}
+    {{- if .Values.ingress.plugin }}
+    konghq.com/plugins: {{ .Values.ingress.plugin | quote }}
+    {{- end }}
 spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
   {{- end }}
-  {{- with .Values.ingress.tls }}
+  {{- if .Values.ingress.tlsSecret }}
   tls:
-    {{- toYaml . | nindent 4 }}
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tlsSecret }}
   {{- end }}
   rules:
-    {{- range .Values.ingress.hosts }}
-    - host: {{ .host | quote }}
+    - host: {{ required "ui ingress.host is required" .Values.ingress.host | quote }}
       http:
         paths:
-          {{- range .paths }}
-          {{- $pathBackend := .service | default dict }}
-          - path: {{ .path }}
-            pathType: {{ .pathType }}
+          - path: /
+            pathType: Prefix
             backend:
               service:
-                name: {{ $pathBackend.name | default $fullName }}
+                name: {{ $fullName }}
                 port:
-                  number: {{ $pathBackend.port | default $svcPort }}
-          {{- end }}
-    {{- end }}
+                  number: {{ .Values.service.port }}
 {{- end }}

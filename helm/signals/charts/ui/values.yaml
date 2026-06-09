@@ -42,19 +42,16 @@ service:
   targetPort: 8080
   annotations: {}
 
+# Template-driven ingress (templates/ingress.yaml). Path / (catch-all) is fixed
+# in the template; only these scalars vary per environment. This object owns the
+# cert-manager issuance for the shared host cert.
 ingress:
   enabled: false
-  className: ""
-  annotations: {}
-  hosts:
-    - host: dpg.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
-    # - secretName: dpg-ui-tls
-    #   hosts:
-    #     - dpg.local
+  className: ""               # e.g. kong
+  host: dpg.local             # FQDN; shared with the api ingress (same host)
+  tlsSecret: ""               # cert-manager secret, e.g. signals-ui-tls
+  clusterIssuer: ""           # e.g. letsencrypt-prod
+  plugin: ""                  # KongClusterPlugin tier, e.g. rl-public
 
 resources: {}
   # limits:

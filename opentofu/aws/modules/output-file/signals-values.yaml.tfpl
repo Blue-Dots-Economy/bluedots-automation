@@ -55,27 +55,14 @@ api:
       - orange_dot
     apiInternalUrl: "https://${signals_ui_host}"
     crossNetworkUrl: "https://${signals_ui_host}"
+  # Template-driven ingress (charts/api/templates/ingress.yaml): path /api +
+  # strip-path are fixed in the template; only these scalars vary per env.
   ingress:
     enabled: true
     className: kong
-    # Same-origin: the API is served under /api on the UI host, so the browser
-    # calls the same domain (no separate api DNS record, no CORS). The UI
-    # ingress owns the TLS cert for this host (signals-ui-tls); no cert-manager
-    # annotation here, to avoid issuing a duplicate cert for the same host.
-    annotations:
-      # signals-api serves under /api — preserve the prefix (do NOT strip).
-      konghq.com/strip-path: "false"
-      # Rate-limit tier (KongClusterPlugin in common-services).
-      konghq.com/plugins: rl-api
-    hosts:
-      - host: ${signals_ui_host}
-        paths:
-          - path: /api
-            pathType: Prefix
-    tls:
-      - secretName: signals-ui-tls
-        hosts:
-          - ${signals_ui_host}
+    host: ${signals_ui_host}
+    tlsSecret: signals-ui-tls   # owned by the ui ingress; reused here
+    plugin: rl-api
 
 ui:
   # nginx proxies /api/* to the in-cluster signals API. The chart default
@@ -94,22 +81,15 @@ ui:
     # would leave readiness probe hitting a closed port. Pin to 80.
     port: 80
     targetPort: 80
+  # Template-driven ingress (charts/ui/templates/ingress.yaml): path / is fixed
+  # in the template; only these scalars vary per env. Owns the cert issuance.
   ingress:
     enabled: true
     className: kong
-    annotations:
-      cert-manager.io/cluster-issuer: letsencrypt-prod
-      # Rate-limit tier (KongClusterPlugin in common-services).
-      konghq.com/plugins: rl-public
-    hosts:
-      - host: ${signals_ui_host}
-        paths:
-          - path: /
-            pathType: Prefix
-    tls:
-      - secretName: signals-ui-tls
-        hosts:
-          - ${signals_ui_host}
+    host: ${signals_ui_host}
+    tlsSecret: signals-ui-tls
+    clusterIssuer: letsencrypt-prod
+    plugin: rl-public
 
 notification-service:
   secrets:
