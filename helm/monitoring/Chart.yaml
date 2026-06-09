@@ -2,10 +2,8 @@ apiVersion: v2
 name: monitoring
 description: >-
   Observability umbrella chart — kube-prometheus-stack (Prometheus + Alertmanager
-  + node-exporter + kube-state-metrics) + Grafana + Loki + Promtail + Jaeger +
-  OpenTelemetry Collector. Install after common-services. Telemetry flow:
-  metrics → Prometheus, logs → Loki, traces → Jaeger, all visualized in Grafana
-  with OtelCollector as the unified OTLP ingestion pipeline.
+  + node-exporter + kube-state-metrics + bundled Grafana) + Loki + Alloy +
+  Jaeger + OpenTelemetry Collector. Grafana is bundled inside kube-prometheus-stack.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
@@ -33,14 +31,6 @@ dependencies:
     alias: prometheus
     condition: prometheus.enabled
 
-  # Grafana: visualization layer. Configured via datasources to talk to
-  # Prometheus, Loki, and Jaeger automatically on startup.
-  # To find latest version: helm search repo grafana/grafana
-  - name: grafana
-    version: 8.4.2
-    repository: https://grafana.github.io/helm-charts
-    condition: grafana.enabled
-
   # Loki: log aggregation system. Stores and indexes log streams.
   # Queried from Grafana using LogQL.
   # To find latest version: helm search repo grafana/loki
@@ -49,13 +39,13 @@ dependencies:
     repository: https://grafana.github.io/helm-charts
     condition: loki.enabled
 
-  # Promtail: DaemonSet log shipper. Tails /var/log/pods on every node
-  # and pushes to Loki. Must be enabled whenever loki is enabled.
-  # To find latest version: helm search repo grafana/promtail
-  - name: promtail
-    version: 6.16.6
+  # Grafana Alloy: unified telemetry agent (replaces deprecated Promtail).
+  # Runs as a DaemonSet — one pod per node, tails /var/log/pods and ships to Loki.
+  # To find latest version: helm search repo grafana/alloy
+  - name: alloy
+    version: 1.8.2
     repository: https://grafana.github.io/helm-charts
-    condition: promtail.enabled
+    condition: alloy.enabled
 
   # Jaeger: distributed tracing backend. All-in-one mode for dev/staging.
   # To find latest version: helm search repo jaegertracing/jaeger

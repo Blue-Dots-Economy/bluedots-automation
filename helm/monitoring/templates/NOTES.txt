@@ -10,11 +10,11 @@ Components deployed:
      Alerts: http://localhost:9090/alerts
      Alertmanager: kubectl port-forward svc/{{ .Release.Name }}-kube-prometheus-alertmanager 9093:9093 -n {{ .Release.Namespace }}
 {{- end }}
-{{- if .Values.grafana.enabled }}
-  ✓  Grafana
+{{- if .Values.prometheus.grafana.enabled }}
+  ✓  Grafana (bundled inside kube-prometheus-stack)
      Port-forward: kubectl port-forward svc/{{ .Release.Name }}-grafana 3000:80 -n {{ .Release.Namespace }}
      UI: http://localhost:3000
-     Login: admin / {{ .Values.grafana.adminPassword }}
+     Login: admin / {{ .Values.prometheus.grafana.adminPassword | default "prom-operator" }}
 {{- end }}
 {{- if .Values.loki.enabled }}
   ✓  Loki (log aggregation)
@@ -47,7 +47,7 @@ Components deployed:
   DeploymentUnavailable   0 replicas 5m      (critical)
 
   Currently routing to: null receiver (no notifications sent).
-  To enable Slack: edit prometheus.alertmanager.config.receivers in values.yaml.
+  To enable email: edit prometheus.alertmanager.config in values.yaml.
 ------------------------------------------------------------
 
 See DOCUMENT/PLAN/ for step-by-step implementation guide.
