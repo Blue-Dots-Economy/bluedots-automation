@@ -5,6 +5,14 @@
 # =============================================================================
 
 # -----------------------------------------------------------------------------
+# Global — values Helm propagates to every subchart's .Values.global.
+# -----------------------------------------------------------------------------
+global:
+  # Public FQDN shared by /api (signals-api) and / (signals-ui). The api/ui
+  # ingress templates read this. UPDATE per environment via the overlay.
+  publicHost: dpg.example.com
+
+# -----------------------------------------------------------------------------
 # Images — single source for all 4 components
 # -----------------------------------------------------------------------------
 images:
@@ -146,8 +154,14 @@ api:
     type: ClusterIP
     port: 2742
     targetPort: 2742
+  # Template-driven ingress (charts/api/templates/ingress.yaml): path /api +
+  # strip-path are fixed in the template; these scalars are the config. The
+  # host comes from global.publicHost (overridden per env via the overlay).
   ingress:
-    enabled: false
+    enabled: true
+    className: kong
+    tlsSecret: signals-ui-tls    # owned by the ui ingress; reused here
+    plugin: rl-signals-api       # KongClusterPlugin tier (common-services)
   config:
     NODE_ENV: production
     INSTANCE_NAME: dpg
@@ -213,8 +227,15 @@ ui:
     type: ClusterIP
     port: 80
     targetPort: 8080
+  # Template-driven ingress (charts/ui/templates/ingress.yaml): path / is fixed
+  # in the template; these scalars are the config. This object owns the
+  # cert-manager issuance for the shared host cert. Host = global.publicHost.
   ingress:
-    enabled: false
+    enabled: true
+    className: kong
+    tlsSecret: signals-ui-tls
+    clusterIssuer: letsencrypt-prod
+    plugin: rl-signals-ui        # KongClusterPlugin tier (common-services)
   # nginx:alpine entrypoint chowns /var/cache/nginx/client_temp on startup,
   # so the pod must run as root and the container keeps CHOWN/SETGID/SETUID.
   podSecurityContext:

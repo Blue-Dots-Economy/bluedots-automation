@@ -1,5 +1,10 @@
 # Default values for dpg-api.
 
+# Shared host for the ingress. Overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: dpg.example.com
+
 replicaCount: 1
 
 image:
@@ -39,13 +44,13 @@ service:
   annotations: {}
 
 # Template-driven ingress (templates/ingress.yaml). Path /api + strip-path are
-# fixed in the template; only these scalars vary per environment.
+# fixed in the template; only these scalars vary per environment. Host comes
+# from global.publicHost.
 ingress:
   enabled: false
   className: ""        # e.g. kong
-  host: api.dpg.local  # FQDN; shared with the ui ingress (same host)
   tlsSecret: ""        # cert-manager secret owned by the ui ingress; reused here
-  plugin: ""           # KongClusterPlugin tier, e.g. rl-api
+  plugin: ""           # KongClusterPlugin tier, e.g. rl-signals-api
 
 resources: {}
   # limits:

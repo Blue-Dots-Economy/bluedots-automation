@@ -8,6 +8,12 @@
 # subchart paths (api.secrets.data, notification-service.secrets.data, …).
 # credentials.* still gets populated so signals/templates/secrets.yaml can
 # render the dpg-postgres + dpg-redis existingSecret bridges.
+
+# Public FQDN for the api + ui ingress (shared host). The only env-specific
+# ingress value; all other ingress config lives in helm/signals/values.yaml.
+global:
+  publicHost: ${signals_ui_host}
+
 credentials:
   postgresql:
     password: "${signals_postgres_password}"
@@ -55,14 +61,6 @@ api:
       - orange_dot
     apiInternalUrl: "https://${signals_ui_host}"
     crossNetworkUrl: "https://${signals_ui_host}"
-  # Template-driven ingress (charts/api/templates/ingress.yaml): path /api +
-  # strip-path are fixed in the template; only these scalars vary per env.
-  ingress:
-    enabled: true
-    className: kong
-    host: ${signals_ui_host}
-    tlsSecret: signals-ui-tls   # owned by the ui ingress; reused here
-    plugin: rl-api
 
 ui:
   # nginx proxies /api/* to the in-cluster signals API. The chart default
@@ -81,15 +79,6 @@ ui:
     # would leave readiness probe hitting a closed port. Pin to 80.
     port: 80
     targetPort: 80
-  # Template-driven ingress (charts/ui/templates/ingress.yaml): path / is fixed
-  # in the template; only these scalars vary per env. Owns the cert issuance.
-  ingress:
-    enabled: true
-    className: kong
-    host: ${signals_ui_host}
-    tlsSecret: signals-ui-tls
-    clusterIssuer: letsencrypt-prod
-    plugin: rl-public
 
 notification-service:
   secrets:
