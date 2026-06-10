@@ -9,9 +9,32 @@
 prometheus:
   enabled: true
 
-  # ── Disable bundled components we don't need yet ──────────────────────────
+  # ── Grafana ──────────────────────────────────────────────────────────────
   grafana:
-    enabled: false      # bundled Grafana — will enable in a later step
+    enabled: true
+
+    # Admin credentials for the Grafana UI.
+    # Login at http://localhost:3000 after port-forward.
+    adminUser: admin
+    adminPassword: "bluedots@123"
+
+    # Persist Grafana's own data (saved dashboards, user preferences, annotations).
+    # Without this, any dashboard you create manually is lost on pod restart.
+    persistence:
+      enabled: true
+      storageClassName: gp3
+      size: 5Gi
+
+    # Prometheus is already wired as the default datasource by kube-prometheus-stack.
+    # We only need to add Loki here — it's a separate chart kube-prometheus-stack
+    # knows nothing about.
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        # Internal cluster DNS — Grafana talks to Loki pod-to-pod, never leaves the cluster.
+        url: http://monitoring-loki.monitoring.svc.cluster.local:3100
+        access: proxy
+        isDefault: false
 
   windowsMonitoring:
     enabled: false      # Windows node metrics — not needed (Linux cluster)
