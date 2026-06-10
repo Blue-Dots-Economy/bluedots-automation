@@ -1,3 +1,16 @@
+# Shared host for the ingress; overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: aggregator.example.com
+
+# Template-driven ingress (templates/ingress.yaml): path /auth is fixed in the
+# template (Keycloak serves natively under /auth). Host = global.publicHost.
+ingress:
+  enabled: false
+  className: ""        # e.g. kong
+  plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-auth
+  annotations: {}
+
 replicaCount: 1
 image:
   repository: aggregator-dpg/keycloak

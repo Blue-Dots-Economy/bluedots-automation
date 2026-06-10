@@ -97,26 +97,23 @@ imagePullSecret:
   password: '' # GHCR PAT with read:packages scope
   email: ''
 
-# ─── Ingress (single host, multi-path) — Kong ingress controller ───────────
+# ─── Ingress (Kong) ────────────────────────────────────────────────────────
+# The Ingress OBJECTS are now template-driven and owned per subchart
+# (api/keycloak/web → templates/ingress.yaml in each). Per-route config lives
+# under each subchart's `ingress:` block below (api.ingress / keycloak.ingress /
+# web.ingress). The shared host comes from global.publicHost.
+#
+# This top-level block now only feeds the OPTIONAL in-chart ClusterIssuer
+# (templates/clusterissuer.yaml), which renders only when this chart also owns
+# cert-manager (cert-manager.enabled). On this platform common-services owns the
+# issuer, so it is inert here.
 ingress:
-  enabled: true
   className: kong
-  # UPDATE: cert-manager ClusterIssuer. Empty disables TLS issuance.
+  # cert-manager ClusterIssuer name (for the in-chart issuer + the web ingress
+  # cert annotation). Empty disables TLS issuance.
   clusterIssuer: letsencrypt-prod
-  # UPDATE: ACME registration email for Let's Encrypt account.
+  # ACME registration email for Let's Encrypt account.
   acmeEmail: ops@sanketika.in
-  # Rate-limit tiers (KongClusterPlugin names defined in the common-services
-  # release). One tier per route — empty disables rate limiting on that object.
-  apiPlugin: rl-agg-api      # /backend
-  authPlugin: rl-agg-auth    # /auth
-  webPlugin: rl-agg-web      # /
-    # /        (web BFF/UI) — loose, asset-heavy loads
-  # Kong per-route annotations shared by both Ingress objects. Timeouts in ms
-  # (was nginx proxy-read/send-timeout: 300). Body-size + buffers are global
-  # Kong proxy config in the common-services release, not per-Ingress.
-  annotations:
-    konghq.com/read-timeout: "300000"
-    konghq.com/write-timeout: "300000"
 
 # ─── Secrets ───────────────────────────────────────────────────────────────
 # All values land in Secret `<release>-secrets`. For prod, set
@@ -177,6 +174,17 @@ web:
     pullPolicy: Always
   service:
     port: 3000
+  # Template-driven ingress (charts/web/templates/ingress.yaml): path / is fixed
+  # in the template. This object owns the cert-manager issuance for the shared
+  # host cert; api + keycloak reuse it. Host = global.publicHost.
+  ingress:
+    enabled: true
+    className: kong
+    clusterIssuer: letsencrypt-prod
+    plugin: rl-agg-web
+    annotations:
+      konghq.com/read-timeout: "300000"
+      konghq.com/write-timeout: "300000"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 1, memory: 1Gi }
@@ -195,6 +203,15 @@ api:
     pullPolicy: Always
   service:
     port: 4000
+  # Template-driven ingress (charts/api/templates/ingress.yaml): path /backend +
+  # strip-path are fixed in the template. No issuer (web owns the shared cert).
+  ingress:
+    enabled: true
+    className: kong
+    plugin: rl-agg-api
+    annotations:
+      konghq.com/read-timeout: "300000"
+      konghq.com/write-timeout: "300000"
   resources:
     requests: { cpu: 200m, memory: 512Mi }
     limits: { cpu: 2, memory: 1Gi }
@@ -255,6 +272,16 @@ keycloak:
   service:
     port: 8080
     mgmtPort: 9000
+  # Template-driven ingress (charts/keycloak/templates/ingress.yaml): path /auth
+  # is fixed in the template (Keycloak serves natively under /auth). No issuer
+  # (web owns the shared cert). Object name: <release>-keycloak (was -auth).
+  ingress:
+    enabled: true
+    className: kong
+    plugin: rl-agg-auth
+    annotations:
+      konghq.com/read-timeout: "300000"
+      konghq.com/write-timeout: "300000"
   resources:
     requests: { cpu: 250m, memory: 768Mi }
     limits: { cpu: 1, memory: 1500Mi }
