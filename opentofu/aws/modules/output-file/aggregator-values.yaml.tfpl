@@ -64,3 +64,6 @@ mail:
     secure: false
     starttls: true
     auth: true
+
+keycloak:
+  msg91TemplateId: ""
