@@ -20,9 +20,9 @@ Components deployed:
   ✓  Loki (log aggregation)
      Endpoint: http://{{ .Release.Name }}-loki.{{ .Release.Namespace }}.svc.cluster.local:3100
 {{- end }}
-{{- if .Values.promtail.enabled }}
-  ✓  Promtail DaemonSet (log shipper)
-     Logs: kubectl logs daemonset/{{ .Release.Name }}-promtail -n {{ .Release.Namespace }}
+{{- if .Values.alloy.enabled }}
+  ✓  Grafana Alloy DaemonSet (log shipper → Loki)
+     Logs: kubectl logs daemonset/{{ .Release.Name }}-alloy -n {{ .Release.Namespace }}
 {{- end }}
 {{- if .Values.jaeger.enabled }}
   ✓  Jaeger (distributed tracing — all-in-one, memory storage)
