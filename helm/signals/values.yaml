@@ -131,6 +131,8 @@ credentials:
       REDIS_PASSWORD: *redis_password
       GMAIL_USER: ""         # e.g. notify@yourdomain.com
       GMAIL_PASS: ""    # 16-char App Password (2FA required)
+      MSG91_AUTH_KEY: ""     # MSG91 API key for SMS OTP
+      MSG91_TEMPLATE_ID: ""  # MSG91 template ID for OTP message
   matchScore: &match_score_secrets
     create: true
     existingSecret: ""
