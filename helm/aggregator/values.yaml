@@ -220,13 +220,13 @@ api:
     uploadUrlTtlSeconds: 900
     uploadMaxBytes: 10485760
     qrDownloadUrlTtlSeconds: 900
-  adminEmails: 'aniket@sanketika.in'
+  adminEmails: ''
   publicLinkBaseUrl: '' # empty => derived from global.publicProtocol+publicHost
   serviceAccount:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
   hpa:
     enabled: false
     minReplicas: 2
@@ -252,7 +252,7 @@ worker:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
 
 keycloak:
   replicaCount: 1
@@ -265,8 +265,8 @@ keycloak:
   # KC_SPI_SMS_PROVIDER baked in → keep false until image is rebuilt.
   optimized: false
   bootstrapAdminUsername: admin
-  smsProvider: msg91 # log | twilio | sns
-  msg91TemplateId: ''
+  smsProvider: msg91 # log | twilio | sns | msg91
+  msg91TemplateId: '' # REQUIRED if smsProvider=msg91
   msg91OtpVarName: 'var'
   awsRegion: ap-south-1
   service:
@@ -296,25 +296,11 @@ postgresql:
     username: aggregator
     database: aggregator
 
-# ─── ingress-nginx subchart toggle ─────────────────────────────────────────
-# Disabled on this cluster: a separate `platform` Helm release owns the shared
-# ingress-nginx controller. Enabling here would deploy a duplicate controller.
-# Set true only for a standalone cluster that has no pre-existing ingress-nginx.
-ingress-nginx:
-  enabled: false
-
-# ─── cert-manager subchart values (consumed verbatim) ──────────────────────
-# See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
+# ─── cert-manager toggle ───────────────────────────────────────────────────
+# The ingress-nginx + cert-manager subcharts were REMOVED from this chart: the
+# shared `common-services` release owns both controllers cluster-wide. This is
+# now only a feature flag read by templates/clusterissuer.yaml — keep it false
+# so the chart never tries to render its own ClusterIssuer (common-services
+# already provides `letsencrypt-prod`).
 cert-manager:
-  # Disabled on this cluster: the shared `platform` release owns cert-manager
-  # and its cluster-scoped CRDs. Enabling here causes CRD ownership conflicts
-  # ("exists and cannot be imported into the current release"). Set true only
-  # for a standalone cluster with no pre-existing cert-manager install.
   enabled: false
-  # Install all cert-manager CRDs (Certificate, Issuer, Order, Challenge, ...)
-  # as part of this Helm release. Subchart default is `false`, which leaves
-  # `challenges.acme.cert-manager.io` missing and breaks ACME HTTP-01 flow.
-  crds:
-    enabled: true
-    # Survive `helm uninstall` so reinstalls don't blow away in-flight orders.
-    keep: true
