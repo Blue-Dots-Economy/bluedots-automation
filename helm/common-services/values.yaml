@@ -107,9 +107,12 @@ kong:
   # upgrade` and every route referencing the tier updates — no per-Ingress edit.
   # Tune per environment from global-values.yaml (Phase 6).
   rateLimitTiers:
-    rl-auth:   { minute: 20 }    # login / OTP — tight
-    rl-api:    { minute: 600 }   # backend APIs
-    rl-public: { minute: 120 }   # UI / static
+    rl-agg-web:      { minute: 120 }   # / (web BFF/UI)
+    rl-agg-api:      { minute: 600 }   # /backend (api)
+    rl-agg-auth:     { minute: 20 }    # /auth (keycloak) — tight
+    # signals
+    rl-signals-api:  { minute: 600 }   # /api
+    rl-signals-ui:   { minute: 120 }   # /
 
   # Shared Redis backing the counters (policy: redis) so the limit stays correct
   # across Kong replicas. host/port point at the common-services Redis; the

@@ -107,9 +107,10 @@ ingress:
   acmeEmail: ops@sanketika.in
   # Rate-limit tiers (KongClusterPlugin names defined in the common-services
   # release). One tier per route — empty disables rate limiting on that object.
-  apiPlugin: rl-api       # /backend (api)
-  authPlugin: rl-auth     # /auth    (keycloak) — tight, protects login/OTP
-  webPlugin: rl-public    # /        (web BFF/UI) — loose, asset-heavy loads
+  apiPlugin: rl-agg-api      # /backend
+  authPlugin: rl-agg-auth    # /auth
+  webPlugin: rl-agg-web      # /
+    # /        (web BFF/UI) — loose, asset-heavy loads
   # Kong per-route annotations shared by both Ingress objects. Timeouts in ms
   # (was nginx proxy-read/send-timeout: 300). Body-size + buffers are global
   # Kong proxy config in the common-services release, not per-Ingress.
