@@ -291,7 +291,7 @@ prometheus:
     templateFiles:
       bluedots.tmpl: |-
         {{ define "email.default.subject" -}}
-        [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }} · {{ .GroupLabels.namespace | default "cluster" }}
+        [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }} · {{ if .GroupLabels.namespace }}{{ .GroupLabels.namespace }}{{ else }}cluster{{ end }}
         {{- end }}
 
         {{ define "email.default.html" -}}
