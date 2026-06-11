@@ -31,8 +31,4 @@ opentofu/aws/**/global-cloud-values.yaml
 *.swp
 *~
 
-# temp files
-DOCUMENT/*
-opentofu/aws/test-dev/*
-opentofu/aws/dev/*
 
