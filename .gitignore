@@ -33,3 +33,6 @@ opentofu/aws/**/global-cloud-values.yaml
 
 # temp files
 DOCUMENT/*
+opentofu/aws/test-dev/*
+opentofu/aws/dev/*
+

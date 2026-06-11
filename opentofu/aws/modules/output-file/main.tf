@@ -33,6 +33,12 @@ resource "local_sensitive_file" "aggregator_values" {
     aggregator_oidc_client_secret           = var.aggregator_oidc_client_secret
     signalstack_admin_key                   = var.signalstack_admin_key
     app_sa_role_arn                         = var.app_sa_role_arn
+    aggregator_smtp_user                    = var.aggregator_smtp_user
+    aggregator_smtp_password                = var.aggregator_smtp_password
+    aggregator_smtp_from                    = var.aggregator_smtp_from
+    aggregator_admin_emails                 = var.aggregator_admin_emails
+    aggregator_msg91_auth_key               = var.aggregator_msg91_auth_key
+    aggregator_msg91_template_id            = var.aggregator_msg91_template_id
   })
 }
 
@@ -51,14 +57,19 @@ resource "local_sensitive_file" "signals_values" {
   filename        = "${local.values_dir}/signals-values.yaml"
   file_permission = "0600"
   content = templatefile("${path.module}/signals-values.yaml.tfpl", {
-    signals_host                = var.signals_host
-    signals_ui_host             = var.signals_ui_host
-    signals_postgres_password   = var.signals_postgres_password
-    signals_redis_password      = var.signals_redis_password
-    signals_auth_secret         = var.signals_auth_secret
-    signals_pii_key             = var.signals_pii_key
-    signals_notification_secret = var.signals_notification_secret
-    signals_dpg_scoring_secret  = var.signals_dpg_scoring_secret
-    signalstack_admin_key       = var.signalstack_admin_key
+    signals_host                   = var.signals_host
+    signals_ui_host                = var.signals_ui_host
+    signals_postgres_password      = var.signals_postgres_password
+    signals_redis_password         = var.signals_redis_password
+    signals_auth_secret            = var.signals_auth_secret
+    signals_pii_key                = var.signals_pii_key
+    signals_notification_secret    = var.signals_notification_secret
+    signals_dpg_scoring_secret     = var.signals_dpg_scoring_secret
+    signalstack_admin_key          = var.signalstack_admin_key
+    signals_google_maps_api_key    = var.signals_google_maps_api_key
+    notification_gmail_user        = var.notification_gmail_user
+    notification_gmail_pass        = var.notification_gmail_pass
+    notification_msg91_auth_key    = var.notification_msg91_auth_key
+    notification_msg91_template_id = var.notification_msg91_template_id
   })
 }

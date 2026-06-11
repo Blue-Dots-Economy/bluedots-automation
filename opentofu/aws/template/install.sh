@@ -64,6 +64,35 @@ function create_tf_resources() {
     terragrunt run --all apply
 }
 
+# Run plan or apply for a single terragrunt module by directory name.
+function _plan_tf_module() {
+    local module="$1"
+    source tf.sh
+    echo -e "\nPlanning module: $module"
+    ( cd "$module" && terragrunt init && terragrunt plan )
+}
+
+function _apply_tf_module() {
+    local module="$1"
+    source tf.sh
+    echo -e "\nApplying module: $module"
+    ( cd "$module" && terragrunt init && terragrunt apply )
+}
+
+function plan_tf_network()          { _plan_tf_module "network"; }
+function plan_tf_eks()              { _plan_tf_module "eks"; }
+function plan_tf_iam()              { _plan_tf_module "iam"; }
+function plan_tf_storage()          { _plan_tf_module "storage"; }
+function plan_tf_random_passwords() { _plan_tf_module "random_passwords"; }
+function plan_tf_output_file()      { _plan_tf_module "output-file"; }
+
+function apply_tf_network()          { _apply_tf_module "network"; }
+function apply_tf_eks()              { _apply_tf_module "eks"; }
+function apply_tf_iam()              { _apply_tf_module "iam"; }
+function apply_tf_storage()          { _apply_tf_module "storage"; }
+function apply_tf_random_passwords() { _apply_tf_module "random_passwords"; }
+function apply_tf_output_file()      { _apply_tf_module "output-file"; }
+
 function apply_gp3_default_sc() {
     echo -e "\nApplying gp3 StorageClass as cluster default"
     kubectl apply -f "$SCRIPT_DIR/gp3-sc.yaml"
