@@ -44,6 +44,8 @@ spec:
           env:
             - name: API_UPSTREAM
               value: {{ .Values.apiUpstream | quote }}
+            - name: UI_VARIANT
+              value: {{ .Values.uiVariant | default "signals" | quote }}
           volumeMounts:
             - name: runtime-config
               mountPath: /usr/share/nginx/html/config.js

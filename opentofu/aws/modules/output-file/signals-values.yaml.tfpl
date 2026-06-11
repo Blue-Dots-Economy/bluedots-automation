@@ -67,6 +67,8 @@ ui:
   # (http://dpg-api:2742) assumes a release named `dpg`; this release is
   # `signals`, so the service is `signals-api`. Wrong upstream = blank UI.
   apiUpstream: "http://signals-api:2742"
+  # Exposed to the ui container as the UI_VARIANT env var (chart default: signals).
+  uiVariant: " "
   runtimeConfig:
     VITE_DEFAULT_VIEW_MODE: "map"
     VITE_MAP_PROVIDER: "google-maps"
