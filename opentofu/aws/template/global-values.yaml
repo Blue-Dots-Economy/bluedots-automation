@@ -75,6 +75,14 @@ global:
   service_account_subjects:
     - "system:serviceaccount:aggregator:aggregator-api"
     - "system:serviceaccount:aggregator:aggregator-worker"
+  # ── Monitoring stack ────────────────────────────────────────────────────────
+  # SMTP sender account for Alertmanager email notifications.
+  # smtp_password must be a Gmail App Password (not your account password).
+  # To generate one: Google Account → Security → 2-Step Verification → App passwords
+  monitoring_alert_email: "alerts@example.com"       # Who receives alerts
+  monitoring_smtp_from: "sender@example.com"         # Gmail sender account
+  monitoring_smtp_password: "changeme"               # Gmail App Password
+
   # CloudWatch observability (Container Insights add-on)
   enable_cloudwatch_observability: false
   cloudwatch_enabled_log_types:

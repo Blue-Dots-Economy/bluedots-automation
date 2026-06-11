@@ -20,6 +20,7 @@ opentofu/**/.terragrunt-cache/
 opentofu/aws/**/common-services-values.yaml
 opentofu/aws/**/signals-values.yaml
 opentofu/aws/**/aggregator-values.yaml
+opentofu/aws/**/monitoring-values.yaml
 # Legacy single combined file (pre-split) — still ignore if present locally.
 opentofu/aws/**/global-cloud-values.yaml
 
