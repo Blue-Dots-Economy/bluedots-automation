@@ -1,108 +1,64 @@
 # =============================================================================
-# Monitoring umbrella chart values.
-# We enable components one at a time as we understand and configure them.
+# Monitoring umbrella chart — kube-prometheus-stack + Loki + Alloy
+# Secrets and email config are injected via the OpenTofu-generated overlay.
+# For standalone use, update the placeholder values marked below.
 # =============================================================================
 
-# ── Phase 1: Prometheus ───────────────────────────────────────────────────────
-# "prometheus" here is the alias we gave kube-prometheus-stack in Chart.yaml.
-# Everything under this key flows into the kube-prometheus-stack subchart.
 prometheus:
   enabled: true
 
-  # ── Grafana ──────────────────────────────────────────────────────────────
   grafana:
     enabled: true
-
-    # Admin credentials for the Grafana UI.
-    # adminPassword is overridden by the opentofu-generated monitoring-values.yaml
-    # overlay when deploying via install.sh. For standalone use, change this value.
+    # Override via overlay for install.sh deployments. Change for standalone use.
     adminUser: admin
     adminPassword: "admin@bluedots"
 
-    # Persist Grafana's own data (saved dashboards, user preferences, annotations).
-    # Without this, any dashboard you create manually is lost on pod restart.
     persistence:
       enabled: true
       storageClassName: gp3
       size: 5Gi
 
-    # Prometheus is already wired as the default datasource by kube-prometheus-stack.
-    # We only need to add Loki here — it's a separate chart kube-prometheus-stack
-    # knows nothing about.
+    # Loki datasource — kube-prometheus-stack doesn't know about Loki, so we add it here.
     additionalDataSources:
       - name: Loki
         type: loki
-        # Internal cluster DNS — Grafana talks to Loki pod-to-pod, never leaves the cluster.
         url: http://monitoring-loki.monitoring.svc.cluster.local:3100
         access: proxy
         isDefault: false
 
   windowsMonitoring:
-    enabled: false      # Windows node metrics — not needed (Linux cluster)
+    enabled: false
 
-  # ── Disable built-in rules that are false positives on EKS ───────────────
-  # KubeSchedulerDown / KubeControllerManagerDown: these components run on
-  # AWS-managed master nodes that are outside our cluster — Prometheus can
-  # never reach them, so absent() always fires. Not a real problem.
-  # KubeletTooManyPods: replaced below with a cluster-level version so a full
-  # node doesn't fire if the other node still has capacity.
+  # Disable built-in rules that are false positives on EKS managed control plane.
+  # KubeSchedulerDown / KubeControllerManagerDown / etcdHighNumberOfLeaderChanges:
+  #   absent()-based rules that always fire because AWS hides these components.
+  # KubeletTooManyPods: replaced below with ClusterPodCapacityHigh (cluster-level).
   defaultRules:
     disabled:
-      # EKS false positives — these components run on AWS-managed master nodes
-      # that are outside our cluster. Prometheus can never reach them.
       KubeSchedulerDown: true
       KubeControllerManagerDown: true
-      # etcd also runs on AWS-managed master nodes — not reachable.
-      # This rule uses absent() so it fires when etcd metrics are missing (always on EKS).
-      # The other 14 etcd rules are safe — they use actual metric values and stay
-      # inactive when no etcd data exists.
       etcdHighNumberOfLeaderChanges: true
-      # Replaced below with ClusterPodCapacityHigh — cluster-level instead of per-node.
       KubeletTooManyPods: true
 
-  # ── Keep these enabled — our alerts depend on the metrics they collect ─────
   nodeExporter:
-    enabled: true       # hardware metrics per node (CPU, memory, disk)
+    enabled: true
 
   kubeStateMetrics:
-    enabled: true       # Kubernetes object metrics (pod restarts, replicas)
+    enabled: true
 
-  # ── Prometheus instance config ────────────────────────────────────────────
-  # Note the double nesting: outer "prometheus" = our alias,
-  # inner "prometheus" = the Prometheus component inside kube-prometheus-stack.
   prometheus:
     prometheusSpec:
-      # How often Prometheus visits each target's /metrics endpoint.
-      # 30s is the standard default — enough granularity without overloading targets.
       scrapeInterval: 30s
-
-      # How often Prometheus evaluates all alert rules.
-      # Keeping this equal to scrapeInterval so rules are checked on fresh data.
       evaluationInterval: 30s
 
-      # These three flags control which ServiceMonitors, PodMonitors, and
-      # PrometheusRules Prometheus discovers.
-      #
-      # Default (true): only discover objects created by THIS helm chart.
-      # Problem: when we add postgres-exporter, redis-exporter, or app-level
-      # ServiceMonitors in signals/aggregator/common-services namespaces later,
-      # Prometheus would never find them.
-      #
-      # Setting to false: discover ALL ServiceMonitors, PodMonitors, and
-      # PrometheusRules from ALL namespaces in the cluster.
+      # Discover ServiceMonitors/PodMonitors/Rules from all namespaces, not just
+      # the ones created by this chart. Required for signals/aggregator exporters.
       serviceMonitorSelectorNilUsesHelmValues: false
       podMonitorSelectorNilUsesHelmValues: false
       ruleSelectorNilUsesHelmValues: false
 
-      # How long to keep metrics before auto-deleting old data.
-      # 7 days is enough for active debugging. Increase later if needed
-      # (gp3 supports volume expansion without recreating the PVC).
       retention: 7d
 
-      # Persistent storage for metrics data.
-      # gp3 = newer AWS EBS SSD (default StorageClass on this cluster).
-      # ALLOWVOLUMEEXPANSION=true on gp3 means we can resize later if needed.
-      # 20Gi is enough for 7 days of metrics from a small-medium cluster.
       storageSpec:
         volumeClaimTemplate:
           spec:
@@ -112,18 +68,10 @@ prometheus:
               requests:
                 storage: 20Gi
 
-  # ── Custom alert rules ───────────────────────────────────────────────────
-  # additionalPrometheusRulesMap creates a new PrometheusRule CRD in the cluster.
-  # The Operator picks it up automatically — no Prometheus restart needed.
-  # Rules are grouped by concern: infra (node-level), then per application namespace.
-  # Pod CPU/memory alerts require resource limits to be set on containers —
-  # if limits are not set, the join produces no result and the alert stays INACTIVE.
   additionalPrometheusRulesMap:
     bluedots-cluster-alerts:
       groups:
 
-        # ── Infrastructure (node-level) ──────────────────────────────────────
-        # These apply cluster-wide — no namespace filter needed.
         - name: infra.alerts
           rules:
             - alert: NodeHighCPUUsage
@@ -166,11 +114,8 @@ prometheus:
                 summary: "Node {{ $labels.node }} is not Ready"
                 description: "Node {{ $labels.node }} has been NotReady for more than 5 minutes"
 
-            # Cluster-level pod capacity alert — replaces the default KubeletTooManyPods
-            # which fires per-node. This fires only when the TOTAL cluster pod count
-            # exceeds 85% of total cluster capacity across ALL nodes.
-            # Example: node1=29/29, node2=10/29 → cluster=39/58=67% → no alert.
-            # Example: node1=29/29, node2=26/29 → cluster=55/58=94% → alert fires.
+            # Cluster-level replacement for KubeletTooManyPods.
+            # Fires only when total cluster pod usage exceeds 85% across ALL nodes.
             - alert: ClusterPodCapacityHigh
               expr: |
                 sum(kube_pod_info{job="kube-state-metrics"})
@@ -183,9 +128,8 @@ prometheus:
                 group: infra
               annotations:
                 summary: "Cluster pod capacity above 85%"
-                description: "Cluster is using {{ $value | printf \"%.1f\" }}% of total pod capacity ({{ $value | printf \"%.0f\" }}% across all nodes). Consider scaling the nodegroup."
+                description: "Cluster is using {{ $value | printf \"%.1f\" }}% of total pod capacity. Consider scaling the nodegroup."
 
-        # ── Signals namespace ────────────────────────────────────────────────
         - name: signals.alerts
           rules:
             - alert: PodHighRestartCount
@@ -208,7 +152,6 @@ prometheus:
                 summary: "OOMKilled: signals/{{ $labels.pod }}"
                 description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
 
-            # Requires memory limits to be set on the container.
             - alert: PodHighCPUUsage
               expr: (rate(container_cpu_usage_seconds_total{namespace="signals",container!="",container!="POD"}[2m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="signals",resource="cpu"}) * 100 > 80
               for: 5m
@@ -219,7 +162,6 @@ prometheus:
                 summary: "High CPU: signals/{{ $labels.pod }}"
                 description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its CPU limit"
 
-            # Requires memory limits to be set on the container.
             - alert: PodHighMemoryUsage
               expr: (container_memory_working_set_bytes{namespace="signals",container!="",container!="POD"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="signals",resource="memory"}) * 100 > 80
               for: 5m
@@ -240,7 +182,6 @@ prometheus:
                 summary: "Deployment signals/{{ $labels.deployment }} has 0 replicas"
                 description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
 
-        # ── Aggregator namespace ─────────────────────────────────────────────
         - name: aggregator.alerts
           rules:
             - alert: PodHighRestartCount
@@ -293,7 +234,6 @@ prometheus:
                 summary: "Deployment aggregator/{{ $labels.deployment }} has 0 replicas"
                 description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
 
-        # ── Common-services namespace ────────────────────────────────────────
         - name: common-services.alerts
           rules:
             - alert: PodHighRestartCount
@@ -346,11 +286,8 @@ prometheus:
                 summary: "Deployment common-services/{{ $labels.deployment }} has 0 replicas"
                 description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
 
-  # ── Alertmanager email template ──────────────────────────────────────────
-  # templateFiles are mounted into /etc/alertmanager/config/ inside the pod.
-  # Define named Go templates here; reference them in email_configs below.
-  # The html template produces a styled card email instead of the bare default.
   alertmanager:
+    # Styled HTML email template — named templates referenced by email_configs.
     templateFiles:
       bluedots.tmpl: |-
         {{ define "email.default.subject" -}}
@@ -424,8 +361,7 @@ prometheus:
       global:
         resolve_timeout: 5m
         smtp_smarthost: 'smtp.gmail.com:587'
-        # Override smtp_from, smtp_auth_username, smtp_auth_password per-org
-        # via the opentofu-generated overlay. For standalone use, change these.
+        # Override per-org via monitoring-values.yaml overlay. Change for standalone use.
         smtp_from: 'alerts@example.com'
         smtp_auth_username: 'alerts@example.com'
         smtp_auth_password: 'changeme'
@@ -444,8 +380,7 @@ prometheus:
         - name: 'null'
         - name: email-notifications
           email_configs:
-            # Override the recipient address per-org via the opentofu-generated overlay.
-            # For standalone use, change this to your alert recipient.
+            # Override per-org via monitoring-values.yaml overlay. Change for standalone use.
             - to: 'alerts@example.com'
               send_resolved: true
       inhibit_rules:
@@ -461,11 +396,7 @@ prometheus:
           equal: [namespace, alertname]
 
     alertmanagerSpec:
-      # How long Alertmanager keeps fired alert history.
-      # 168h = 7 days — keeping it consistent with Prometheus retention.
       retention: 168h
-
-      # Alertmanager only stores alert history (not metrics), so 2Gi is plenty.
       storage:
         volumeClaimTemplate:
           spec:
@@ -476,33 +407,20 @@ prometheus:
                 storage: 2Gi
 
 
-# ── Phase 2: Loki ─────────────────────────────────────────────────────────────
 loki:
   enabled: true
 
-  # SingleBinary: one pod runs all Loki jobs (ingester + querier + compactor).
-  # Right for our cluster size. Switch to SimpleScalable when log volume grows.
   deploymentMode: SingleBinary
 
   loki:
-    # Single-tenant mode — no X-Scope-OrgID header needed.
-    # We have one cluster, one team. Multi-tenancy would add unnecessary complexity.
     auth_enabled: false
 
     commonConfig:
-      # Only 1 copy of each chunk — we have 1 pod, writing 3 copies to the same
-      # disk is pointless. Use 3 in HA multi-pod setups.
       replication_factor: 1
 
-    # Store log chunks on the PVC attached to this pod (10Gi gp3).
-    # Alternative is s3 for production-grade durability at scale.
     storage:
       type: filesystem
 
-    # How Loki indexes and organizes chunks on disk.
-    # tsdb = modern index format (replaced boltdb-shipper).
-    # schema v13 = current recommended version.
-    # period: 24h = new index file per day → fast time-range queries.
     schemaConfig:
       configs:
         - from: "2024-01-01"
@@ -514,19 +432,13 @@ loki:
             period: 24h
 
     limits_config:
-      # Keep logs for 7 days — matches Prometheus retention.
-      # Compactor deletes chunks older than this every day.
       retention_period: 168h
 
     compactor:
-      # Must be true for retention_period to actually delete old chunks.
-      # Without this, the 10Gi PVC would fill up and Loki would stop accepting logs.
       retention_enabled: true
-      # Loki 3.x requires this to be set when retention is enabled.
-      # Tells the compactor where delete requests are stored — same backend as our chunks.
+      # Required when retention is enabled — tells compactor where delete requests are stored.
       delete_request_store: filesystem
 
-  # SingleBinary pod — 1 replica with a 10Gi gp3 PVC for storing log chunks.
   singleBinary:
     replicas: 1
     persistence:
@@ -534,7 +446,7 @@ loki:
       storageClass: gp3
       size: 10Gi
 
-  # Explicitly disable SimpleScalable components — not needed in SingleBinary mode.
+  # Disable SimpleScalable components — not needed in SingleBinary mode.
   read:
     replicas: 0
   write:
@@ -542,116 +454,72 @@ loki:
   backend:
     replicas: 0
 
-  # Loki chart 6.x enables these by default even in SingleBinary mode.
-  # Disabling all of them — they add pods but are unnecessary for our cluster size.
-
-  # chunks-cache: memcached instance that caches recently written log chunks.
-  # Useful at high ingest volume. Overkill for us — SingleBinary handles this in memory.
   chunksCache:
     enabled: false
-
-  # results-cache: memcached instance that caches query results.
-  # Useful when many users run the same queries repeatedly. Not needed for now.
   resultsCache:
     enabled: false
-
-  # gateway: nginx pod that sits in front of Loki and routes read/write traffic.
-  # Needed in SimpleScalable mode to route reads to read-pods and writes to write-pods.
-  # In SingleBinary, everything goes to one pod — the gateway adds nothing.
   gateway:
     enabled: false
-
-  # lokiCanary: a test pod that continuously writes and reads logs to verify Loki works.
-  # Useful for uptime monitoring. Unnecessary extra pod for our setup.
   lokiCanary:
     enabled: false
-
-  # test: helm test hooks that verify Loki is working post-deploy.
-  # Requires lokiCanary — disabled since we disabled the canary.
   test:
     enabled: false
 
-# ── Phase 2: Alloy ────────────────────────────────────────────────────────────
+
 alloy:
   enabled: true
 
   alloy:
-    # River config — Alloy's pipeline definition.
-    # Each block is a component; outputs wire into the next component's input.
     configMap:
       content: |
 
-        // ── Step 1: Discover all pods in the cluster ─────────────────────────
-        // Alloy talks to the Kubernetes API and gets a live list of all pods.
-        // role = "pod" means: give me one target entry per pod container.
         discovery.kubernetes "pods" {
           role = "pod"
         }
 
-        // ── Step 2: Extract useful metadata as log labels ─────────────────────
-        // Raw Kubernetes metadata uses internal names like __meta_kubernetes_namespace.
-        // We rename them to short labels: namespace, pod, container.
-        // These labels appear in Grafana so you can filter: namespace="signals".
+        // Rename Kubernetes metadata to short labels: namespace, pod, container, node.
         discovery.relabel "pod_logs" {
           targets = discovery.kubernetes.pods.targets
 
-          // namespace label — which namespace the pod lives in
           rule {
             source_labels = ["__meta_kubernetes_namespace"]
             target_label  = "namespace"
           }
-
-          // pod label — the pod name (e.g. signals-api-7d9f8b-xyz)
           rule {
             source_labels = ["__meta_kubernetes_pod_name"]
             target_label  = "pod"
           }
-
-          // container label — container name inside the pod
           rule {
             source_labels = ["__meta_kubernetes_pod_container_name"]
             target_label  = "container"
           }
-
-          // node label — which node the pod is running on
           rule {
             source_labels = ["__meta_kubernetes_pod_node_name"]
             target_label  = "node"
           }
         }
 
-        // ── Step 3: Read logs from discovered pods ────────────────────────────
-        // loki.source.kubernetes streams logs via the Kubernetes API (same as
-        // kubectl logs). No host path mounts or file access needed.
-        // forward_to wires the output of this component into loki.write below.
         loki.source.kubernetes "pod_logs" {
           targets    = discovery.relabel.pod_logs.output
           forward_to = [loki.write.loki_endpoint.receiver]
         }
 
-        // ── Step 4: Send collected logs to Loki ───────────────────────────────
-        // monitoring-loki is the Service name created by our Loki subchart.
-        // monitoring namespace, port 3100 is Loki's HTTP API port.
         loki.write "loki_endpoint" {
           endpoint {
             url = "http://monitoring-loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
           }
         }
 
-  # Alloy needs permission to read pod logs and talk to the Kubernetes API.
-  # rbac.create = true creates the ClusterRole and ClusterRoleBinding automatically.
   rbac:
     create: true
 
   serviceAccount:
     create: true
 
-  # Run as a DaemonSet — one Alloy pod per node.
-  # This ensures every node's pod logs are collected.
   controller:
     type: daemonset
 
-# ── Not yet started ───────────────────────────────────────────────────────────
+
 jaeger:
   enabled: false
 

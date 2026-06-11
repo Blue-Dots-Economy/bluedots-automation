@@ -113,7 +113,6 @@ function deploy_monitoring() {
     echo -e "\nDeploying monitoring"
     helm upgrade --install "$MON_REL" "$MON_DIR" \
         -n "$MON_NS" --create-namespace \
-        -f "$MON_DIR/values.yaml" \
         -f "$MON_VALUES" \
         --wait --timeout 10m
 }
@@ -126,7 +125,6 @@ function deploy_common_services() {
     echo -e "\nDeploying common-services"
     helm upgrade --install "$CS_REL" "$CS_DIR" \
         -n "$CS_NS" --create-namespace \
-        -f "$CS_DIR/values.yaml" \
         -f "$CS_VALUES" \
         --wait --timeout 5m
 }
@@ -136,7 +134,6 @@ function deploy_signals() {
     echo -e "\nDeploying signals"
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" \
         -n "$SIGNALS_NS" --create-namespace \
-        -f "$SIGNALS_DIR/values.yaml" \
         -f "$SIGNALS_VALUES" \
         --wait --timeout 10m
 }
@@ -146,7 +143,6 @@ function deploy_aggregator() {
     echo -e "\nDeploying aggregator"
     helm upgrade --install "$AGG_REL" "$AGG_DIR" \
         -n "$AGG_NS" --create-namespace \
-        -f "$AGG_DIR/values.yaml" \
         -f "$AGG_VALUES" \
         --wait --timeout 10m
 }
@@ -301,13 +297,13 @@ function lint() {
 function dry_run() {
     preflight
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
-        -f "$MON_DIR/values.yaml" -f "$MON_VALUES" --dry-run
+        -f "$MON_VALUES" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$CS_DIR/values.yaml" -f "$CS_VALUES" --dry-run
+        -f "$CS_VALUES" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$SIGNALS_DIR/values.yaml" -f "$SIGNALS_VALUES" --dry-run
+        -f "$SIGNALS_VALUES" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$AGG_DIR/values.yaml" -f "$AGG_VALUES" --dry-run
+        -f "$AGG_VALUES" --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────
