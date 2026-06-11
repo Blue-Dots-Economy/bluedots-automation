@@ -7,6 +7,22 @@ locals {
   signals_host           = try(local.global_vars.global.signals_host, "api.purpledots.servehalflife.com")
   signals_ui_host        = try(local.global_vars.global.signals_ui_host, "purpledots.servehalflife.com")
   aggregator_host        = try(local.global_vars.global.aggregator_host, "aggregator.servehalflife.com")
+  signals_google_maps_api_key  = try(local.global_vars.global.signals_google_maps_api_key, "")
+  notification_gmail_user      = try(local.global_vars.global.notification_gmail_user, "")
+  notification_gmail_pass      = try(local.global_vars.global.notification_gmail_pass, "")
+  notification_msg91_auth_key  = try(local.global_vars.global.notification_msg91_auth_key, "")
+  notification_msg91_template_id = try(local.global_vars.global.notification_msg91_template_id, "")
+
+  aggregator_smtp_user          = try(local.global_vars.global.aggregator_smtp_user, "")
+  aggregator_smtp_password      = try(local.global_vars.global.aggregator_smtp_password, "")
+  aggregator_smtp_from          = try(local.global_vars.global.aggregator_smtp_from, "")
+  aggregator_admin_emails       = try(local.global_vars.global.aggregator_admin_emails, "")
+  aggregator_msg91_auth_key     = try(local.global_vars.global.aggregator_msg91_auth_key, "")
+  aggregator_msg91_template_id  = try(local.global_vars.global.aggregator_msg91_template_id, "")
+
+  monitoring_alert_email   = try(local.global_vars.global.monitoring_alert_email, "")
+  monitoring_smtp_from     = try(local.global_vars.global.monitoring_smtp_from, "")
+  monitoring_smtp_password = try(local.global_vars.global.monitoring_smtp_password, "")
 }
 
 terraform {
@@ -81,6 +97,7 @@ dependency "random_passwords" {
     aggregator_approval_token_secret        = "0000000000000000000000000000000000000000000000000000000000000009"
     aggregator_session_key                  = "000000000000000000000000000000000000000000000000000000000000000a"
     aggregator_oidc_client_secret           = "000000000000000000000000000000000000000000000000000000000000000b"
+    monitoring_grafana_password             = "dummy-grafana-password"
   }
 }
 
@@ -139,4 +156,22 @@ inputs = {
   aggregator_approval_token_secret        = dependency.random_passwords.outputs.aggregator_approval_token_secret
   aggregator_session_key                  = dependency.random_passwords.outputs.aggregator_session_key
   aggregator_oidc_client_secret           = dependency.random_passwords.outputs.aggregator_oidc_client_secret
+
+  signals_google_maps_api_key    = local.signals_google_maps_api_key
+  notification_gmail_user        = local.notification_gmail_user
+  notification_gmail_pass        = local.notification_gmail_pass
+  notification_msg91_auth_key    = local.notification_msg91_auth_key
+  notification_msg91_template_id = local.notification_msg91_template_id
+
+  aggregator_smtp_user         = local.aggregator_smtp_user
+  aggregator_smtp_password     = local.aggregator_smtp_password
+  aggregator_smtp_from         = local.aggregator_smtp_from
+  aggregator_admin_emails      = local.aggregator_admin_emails
+  aggregator_msg91_auth_key    = local.aggregator_msg91_auth_key
+  aggregator_msg91_template_id = local.aggregator_msg91_template_id
+
+  monitoring_grafana_password  = dependency.random_passwords.outputs.monitoring_grafana_password
+  monitoring_smtp_from         = local.monitoring_smtp_from
+  monitoring_smtp_password     = local.monitoring_smtp_password
+  monitoring_alert_email       = local.monitoring_alert_email
 }

@@ -1,0 +1,64 @@
+apiVersion: v2
+name: monitoring
+description: >-
+  Observability umbrella chart — kube-prometheus-stack (Prometheus + Alertmanager
+  + node-exporter + kube-state-metrics + bundled Grafana) + Loki + Alloy +
+  Jaeger + OpenTelemetry Collector. Grafana is bundled inside kube-prometheus-stack.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.24.0-0"
+keywords:
+  - prometheus
+  - grafana
+  - loki
+  - jaeger
+  - opentelemetry
+  - monitoring
+  - observability
+maintainers:
+  - name: sanketika
+    email: ops@sanketika.in
+
+dependencies:
+  # kube-prometheus-stack: Prometheus Operator + Prometheus + Alertmanager +
+  # node-exporter + kube-state-metrics. Also installs CRDs (ServiceMonitor,
+  # PodMonitor, PrometheusRule) that the rest of the stack depends on.
+  # To find latest version: helm search repo prometheus-community/kube-prometheus-stack
+  - name: kube-prometheus-stack
+    version: 65.1.1
+    repository: https://prometheus-community.github.io/helm-charts
+    alias: prometheus
+    condition: prometheus.enabled
+
+  # Loki: log aggregation system. Stores and indexes log streams.
+  # Queried from Grafana using LogQL.
+  # To find latest version: helm search repo grafana/loki
+  - name: loki
+    version: 6.7.1
+    repository: https://grafana.github.io/helm-charts
+    condition: loki.enabled
+
+  # Grafana Alloy: unified telemetry agent (replaces deprecated Promtail).
+  # Runs as a DaemonSet — one pod per node, tails /var/log/pods and ships to Loki.
+  # To find latest version: helm search repo grafana/alloy
+  - name: alloy
+    version: 1.8.2
+    repository: https://grafana.github.io/helm-charts
+    condition: alloy.enabled
+
+  # Jaeger: distributed tracing backend. All-in-one mode for dev/staging.
+  # To find latest version: helm search repo jaegertracing/jaeger
+  - name: jaeger
+    version: 3.1.1
+    repository: https://jaegertracing.github.io/helm-charts
+    condition: jaeger.enabled
+
+  # OpenTelemetry Collector: vendor-neutral telemetry ingestion pipeline.
+  # Apps send OTLP; collector fans out to Prometheus, Loki, and Jaeger.
+  # To find latest version: helm search repo open-telemetry/opentelemetry-collector
+  - name: opentelemetry-collector
+    version: 0.108.0
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    alias: otelcollector
+    condition: otelcollector.enabled

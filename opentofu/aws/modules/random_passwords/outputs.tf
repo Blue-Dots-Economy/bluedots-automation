@@ -67,6 +67,13 @@ output "aggregator_oidc_client_secret" {
   sensitive = true
 }
 
+# ─── Monitoring chart ───────────────────────────────────────────────────────
+output "monitoring_grafana_password" {
+  description = "Generated Grafana admin password"
+  value       = random_password.monitoring_grafana_password.result
+  sensitive   = true
+}
+
 # ─── Shared ─────────────────────────────────────────────────────────────────
 output "encryption_string" {
   description = "Generated 32-char encryption string"
