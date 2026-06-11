@@ -36,6 +36,17 @@ resource "local_sensitive_file" "aggregator_values" {
   })
 }
 
+resource "local_sensitive_file" "monitoring_values" {
+  filename        = "${local.values_dir}/monitoring-values.yaml"
+  file_permission = "0600"
+  content = templatefile("${path.module}/monitoring-values.yaml.tfpl", {
+    monitoring_grafana_password = var.monitoring_grafana_password
+    monitoring_smtp_from        = var.monitoring_smtp_from
+    monitoring_smtp_password    = var.monitoring_smtp_password
+    monitoring_alert_email      = var.monitoring_alert_email
+  })
+}
+
 resource "local_sensitive_file" "signals_values" {
   filename        = "${local.values_dir}/signals-values.yaml"
   file_permission = "0600"

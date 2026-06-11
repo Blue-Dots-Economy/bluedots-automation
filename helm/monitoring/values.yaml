@@ -14,9 +14,10 @@ prometheus:
     enabled: true
 
     # Admin credentials for the Grafana UI.
-    # Login at http://localhost:3000 after port-forward.
+    # adminPassword is overridden by the opentofu-generated monitoring-values.yaml
+    # overlay when deploying via install.sh. For standalone use, change this value.
     adminUser: admin
-    adminPassword: "bluedots@123"
+    adminPassword: "admin@bluedots"
 
     # Persist Grafana's own data (saved dashboards, user preferences, annotations).
     # Without this, any dashboard you create manually is lost on pod restart.
@@ -38,6 +39,26 @@ prometheus:
 
   windowsMonitoring:
     enabled: false      # Windows node metrics — not needed (Linux cluster)
+
+  # ── Disable built-in rules that are false positives on EKS ───────────────
+  # KubeSchedulerDown / KubeControllerManagerDown: these components run on
+  # AWS-managed master nodes that are outside our cluster — Prometheus can
+  # never reach them, so absent() always fires. Not a real problem.
+  # KubeletTooManyPods: replaced below with a cluster-level version so a full
+  # node doesn't fire if the other node still has capacity.
+  defaultRules:
+    disabled:
+      # EKS false positives — these components run on AWS-managed master nodes
+      # that are outside our cluster. Prometheus can never reach them.
+      KubeSchedulerDown: true
+      KubeControllerManagerDown: true
+      # etcd also runs on AWS-managed master nodes — not reachable.
+      # This rule uses absent() so it fires when etcd metrics are missing (always on EKS).
+      # The other 14 etcd rules are safe — they use actual metric values and stay
+      # inactive when no etcd data exists.
+      etcdHighNumberOfLeaderChanges: true
+      # Replaced below with ClusterPodCapacityHigh — cluster-level instead of per-node.
+      KubeletTooManyPods: true
 
   # ── Keep these enabled — our alerts depend on the metrics they collect ─────
   nodeExporter:
@@ -144,6 +165,25 @@ prometheus:
               annotations:
                 summary: "Node {{ $labels.node }} is not Ready"
                 description: "Node {{ $labels.node }} has been NotReady for more than 5 minutes"
+
+            # Cluster-level pod capacity alert — replaces the default KubeletTooManyPods
+            # which fires per-node. This fires only when the TOTAL cluster pod count
+            # exceeds 85% of total cluster capacity across ALL nodes.
+            # Example: node1=29/29, node2=10/29 → cluster=39/58=67% → no alert.
+            # Example: node1=29/29, node2=26/29 → cluster=55/58=94% → alert fires.
+            - alert: ClusterPodCapacityHigh
+              expr: |
+                sum(kube_pod_info{job="kube-state-metrics"})
+                /
+                sum(kube_node_status_capacity{job="kube-state-metrics",resource="pods"})
+                * 100 > 85
+              for: 5m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "Cluster pod capacity above 85%"
+                description: "Cluster is using {{ $value | printf \"%.1f\" }}% of total pod capacity ({{ $value | printf \"%.0f\" }}% across all nodes). Consider scaling the nodegroup."
 
         # ── Signals namespace ────────────────────────────────────────────────
         - name: signals.alerts
@@ -380,48 +420,34 @@ prometheus:
         </html>
         {{- end }}
 
-    # Full alertmanager routing config. Setting this key REPLACES the default
-    # config entirely, so we must explicitly include:
-    #   - null route for Watchdog/InfoInhibitor (suppress heartbeat emails)
-    #   - inhibit_rules (critical suppresses warning/info for same namespace)
     config:
       global:
         resolve_timeout: 5m
-        # Gmail SMTP — app password required (not your account password).
-        # TODO: move smtp_auth_password to a Kubernetes Secret before production.
         smtp_smarthost: 'smtp.gmail.com:587'
-        smtp_from: 'dummysender111@gmail.com'
-        smtp_auth_username: 'dummysender111@gmail.com'
-        smtp_auth_password: ''
+        # Override smtp_from, smtp_auth_username, smtp_auth_password per-org
+        # via the opentofu-generated overlay. For standalone use, change these.
+        smtp_from: 'alerts@example.com'
+        smtp_auth_username: 'alerts@example.com'
+        smtp_auth_password: 'changeme'
         smtp_require_tls: true
-
       route:
-        # Default receiver for all alerts not matched by a sub-route below.
         receiver: email-notifications
         group_by: ['alertname', 'namespace']
-        # Wait 30s after first alert before sending — collects related alerts together.
         group_wait: 30s
-        # If new alerts arrive for an existing group, wait 5m before re-notifying.
         group_interval: 5m
-        # If an alert is still firing, resend every 4h (not every 30s).
         repeat_interval: 4h
         routes:
-          # Watchdog and InfoInhibitor are internal heartbeat/helper alerts.
-          # Route them to null so they never reach your inbox.
           - receiver: 'null'
             matchers:
               - alertname =~ "InfoInhibitor|Watchdog"
-
       receivers:
         - name: 'null'
         - name: email-notifications
           email_configs:
-            - to: 'shashankp@sanketika.in'
+            # Override the recipient address per-org via the opentofu-generated overlay.
+            # For standalone use, change this to your alert recipient.
+            - to: 'alerts@example.com'
               send_resolved: true
-
-      # Suppress lower-severity alerts when a higher-severity fires for the same thing.
-      # Example: NodeHighCPUUsage (warning) won't fire if NodeNotReady (critical)
-      # is already firing for the same namespace.
       inhibit_rules:
         - source_matchers:
             - severity = critical

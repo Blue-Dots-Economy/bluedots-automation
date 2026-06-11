@@ -15,21 +15,25 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CS_VALUES="${CS_VALUES:-$SCRIPT_DIR/common-services-values.yaml}"
 SIGNALS_VALUES="${SIGNALS_VALUES:-$SCRIPT_DIR/signals-values.yaml}"
 AGG_VALUES="${AGG_VALUES:-$SCRIPT_DIR/aggregator-values.yaml}"
+MON_VALUES="${MON_VALUES:-$SCRIPT_DIR/monitoring-values.yaml}"
 
 # Namespaces.
 CS_NS="${CS_NS:-common-services}"
 SIGNALS_NS="${SIGNALS_NS:-signals}"
 AGG_NS="${AGG_NS:-aggregator}"
+MON_NS="${MON_NS:-monitoring}"
 
 # Helm release names.
 CS_REL="${CS_REL:-common-services}"
 SIGNALS_REL="${SIGNALS_REL:-signals}"
 AGG_REL="${AGG_REL:-aggregator}"
+MON_REL="${MON_REL:-monitoring}"
 
 # Chart directories.
 CS_DIR="$REPO_ROOT/helm/common-services"
 SIGNALS_DIR="$REPO_ROOT/helm/signals"
 AGG_DIR="$REPO_ROOT/helm/aggregator"
+MON_DIR="$REPO_ROOT/helm/monitoring"
 
 # ═══ terraform / cluster bootstrap ════════════════════════════════════════════
 
@@ -103,6 +107,17 @@ function create_namespaces_and_secrets() {
 # opentofu-generated per-chart overlay (-f order = precedence). The overlay
 # already holds values at root level, so it feeds helm directly — no slicing.
 
+# 2a-pre) monitoring (Prometheus + Alertmanager + Loki + Alloy + Grafana)
+# Deployed before app charts so metrics and alerts are live from first deploy.
+function deploy_monitoring() {
+    echo -e "\nDeploying monitoring"
+    helm upgrade --install "$MON_REL" "$MON_DIR" \
+        -n "$MON_NS" --create-namespace \
+        -f "$MON_DIR/values.yaml" \
+        -f "$MON_VALUES" \
+        --wait --timeout 10m
+}
+
 # 2a) common-services (ingress-nginx + cert-manager + ClusterIssuer + Postgres + Redis)
 # Ensure gp3 is the cluster-default StorageClass first — common-services Postgres
 # and Redis provision PVCs that must bind to gp3 (Makefile enforced this as a dep).
@@ -142,11 +157,12 @@ function deploy_aggregator() {
 function deploy_all_services() {
     preflight
     create_namespaces_and_secrets
+    deploy_monitoring
     deploy_common_services
     deploy_signals
     deploy_aggregator
     fix_acme_issuer_uri
-    echo -e "\n✔ all releases deployed: common-services, signals, aggregator"
+    echo -e "\n✔ all releases deployed: monitoring, common-services, signals, aggregator"
 }
 
 # cert-manager v1.20.2 bug (cert-manager/cert-manager#7846): the controller
@@ -196,6 +212,12 @@ function fix_acme_issuer_uri() {
 # ═══ helm: destroy individual services ════════════════════════════════════════
 # 4) Uninstall each release and delete its namespace. Reverse of deploy order.
 
+function destroy_monitoring() {
+    echo -e "\nDestroying monitoring"
+    helm uninstall "$MON_REL" -n "$MON_NS" || true
+    kubectl delete namespace "$MON_NS" --wait=true --timeout=120s || true
+}
+
 function destroy_aggregator() {
     echo -e "\nDestroying aggregator"
     helm uninstall "$AGG_REL" -n "$AGG_NS" || true
@@ -238,11 +260,12 @@ function destroy_signals() {
 }
 
 # ═══ helm: cleanup everything ═════════════════════════════════════════════════
-# 5) Tear down all 3 in reverse dependency order.
+# 5) Tear down all 4 in reverse dependency order.
 function cleanup_all_services() {
     destroy_aggregator
     destroy_signals
     destroy_common_services
+    destroy_monitoring
     echo -e "\n✔ all releases removed"
 }
 
@@ -254,7 +277,7 @@ function preflight() {
     command -v helm    >/dev/null || { echo "ERROR: helm not installed"    >&2; exit 1; }
     command -v kubectl >/dev/null || { echo "ERROR: kubectl not installed" >&2; exit 1; }
     kubectl cluster-info >/dev/null 2>&1 || { echo "ERROR: cluster unreachable; check kubeconfig" >&2; exit 1; }
-    for f in "$CS_VALUES" "$SIGNALS_VALUES" "$AGG_VALUES"; do
+    for f in "$CS_VALUES" "$SIGNALS_VALUES" "$AGG_VALUES" "$MON_VALUES"; do
         test -f "$f" || {
             echo "ERROR: values file not found: $f" >&2
             echo "       Run \`terragrunt run --all apply\` from $SCRIPT_DIR first." >&2
@@ -262,20 +285,23 @@ function preflight() {
         }
     done
     echo "context : $(kubectl config current-context)"
-    echo "values  : $CS_VALUES, $SIGNALS_VALUES, $AGG_VALUES"
+    echo "values  : $CS_VALUES, $SIGNALS_VALUES, $AGG_VALUES, $MON_VALUES"
 }
 
-# helm lint all 3 charts.
+# helm lint all 4 charts.
 function lint() {
+    helm lint "$MON_DIR"
     helm lint "$CS_DIR"
     helm lint "$SIGNALS_DIR"
     helm lint "$AGG_DIR"
 }
 
-# helm --dry-run all 3 against the current cluster (renders + server-side checks,
+# helm --dry-run all 4 charts against the current cluster (renders + server-side checks,
 # installs nothing). Runs preflight first.
 function dry_run() {
     preflight
+    helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
+        -f "$MON_DIR/values.yaml" -f "$MON_VALUES" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
         -f "$CS_DIR/values.yaml" -f "$CS_VALUES" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \

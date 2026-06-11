@@ -7,6 +7,9 @@ locals {
   signals_host           = try(local.global_vars.global.signals_host, "api.purpledots.servehalflife.com")
   signals_ui_host        = try(local.global_vars.global.signals_ui_host, "purpledots.servehalflife.com")
   aggregator_host        = try(local.global_vars.global.aggregator_host, "aggregator.servehalflife.com")
+  monitoring_alert_email = try(local.global_vars.global.monitoring_alert_email, "")
+  monitoring_smtp_from   = try(local.global_vars.global.monitoring_smtp_from, "")
+  monitoring_smtp_password = try(local.global_vars.global.monitoring_smtp_password, "")
 }
 
 terraform {
@@ -81,6 +84,7 @@ dependency "random_passwords" {
     aggregator_approval_token_secret        = "0000000000000000000000000000000000000000000000000000000000000009"
     aggregator_session_key                  = "000000000000000000000000000000000000000000000000000000000000000a"
     aggregator_oidc_client_secret           = "000000000000000000000000000000000000000000000000000000000000000b"
+    monitoring_grafana_password             = "dummy-grafana-password"
   }
 }
 
@@ -139,4 +143,9 @@ inputs = {
   aggregator_approval_token_secret        = dependency.random_passwords.outputs.aggregator_approval_token_secret
   aggregator_session_key                  = dependency.random_passwords.outputs.aggregator_session_key
   aggregator_oidc_client_secret           = dependency.random_passwords.outputs.aggregator_oidc_client_secret
+
+  monitoring_grafana_password  = dependency.random_passwords.outputs.monitoring_grafana_password
+  monitoring_smtp_from         = local.monitoring_smtp_from
+  monitoring_smtp_password     = local.monitoring_smtp_password
+  monitoring_alert_email       = local.monitoring_alert_email
 }

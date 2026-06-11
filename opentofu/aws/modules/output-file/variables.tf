@@ -162,6 +162,28 @@ variable "signalstack_admin_key" {
   description = "Shared API key for aggregator.signalstackAdminKey and signals AGGREGATOR_DPG_API_KEY (same value, two consumers)"
 }
 
+# ─── Monitoring chart secrets ──────────────────────────────────────────────
+variable "monitoring_grafana_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "monitoring_smtp_from" {
+  type        = string
+  description = "Gmail sender address for Alertmanager email notifications"
+}
+
+variable "monitoring_smtp_password" {
+  type        = string
+  sensitive   = true
+  description = "Gmail App Password for Alertmanager SMTP"
+}
+
+variable "monitoring_alert_email" {
+  type        = string
+  description = "Recipient address for Alertmanager email notifications"
+}
+
 # ─── Common-services (shared postgres+redis) ───────────────────────────────
 variable "postgres_admin_password" {
   type      = string

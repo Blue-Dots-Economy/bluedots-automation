@@ -56,6 +56,12 @@ resource "random_id" "aggregator_oidc_client_secret" {
   byte_length = var.aggregator_oidc_client_secret_bytes
 }
 
+# ─── Monitoring chart secrets ───────────────────────────────────────────────
+resource "random_password" "monitoring_grafana_password" {
+  length  = var.monitoring_grafana_password_length
+  special = false
+}
+
 # ─── Shared application-layer secrets ───────────────────────────────────────
 # 32-char encryption key used by application-layer field encryption.
 resource "random_password" "encryption_string" {
