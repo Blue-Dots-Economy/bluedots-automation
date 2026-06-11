@@ -89,8 +89,37 @@ kong:
   proxy:
     enabled: true
     type: LoadBalancer
+    # Preserve the real client IP through the AWS LB. With the default "Cluster"
+    # policy, kube-proxy SNATs cross-node traffic to the node IP, so Kong sees
+    # node IPs and rate-limiting (limit_by: ip) keys on the node — splitting the
+    # limit across nodes (effective limit = configured x node count). "Local"
+    # removes that cross-node SNAT so the counter is a single coherent bucket.
+    externalTrafficPolicy: Local
     # NLB / static-IP / cross-zone annotations go here if needed.
     annotations: {}
+    # ── FOLLOW-UP: true per-client rate limiting ──────────────────────────────
+    # This is an in-tree Classic ELB (TCP mode): it opens its own connection to
+    # the node, so Kong still sees the ELB's IP, not the real client IP. With
+    # externalTrafficPolicy: Local the limit is now a single coherent bucket, but
+    # keyed on the ELB IP — i.e. effectively GLOBAL, not per-client. For genuine
+    # per-client limiting, hand Kong the client IP via Proxy Protocol v2:
+    #   annotations:
+    #     service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"
+    #   + Kong proxy listener `proxy_protocol` and env real_ip_header: proxy_protocol
+    # (or migrate this Service to an NLB with client-IP preservation).
+
+  # Inject the shared Redis password into the proxy container as REDIS_PASSWORD,
+  # sourced from the data-redis Secret. Kong's built-in `env` vault resolves it
+  # at runtime via the {vault://env/redis-password} reference in the rate-limit
+  # plugins (templates/kong-ratelimit.yaml) — so the password is NEVER rendered
+  # in plaintext on the KongClusterPlugin CRs. (customEnv keys are uppercased:
+  # redis_password -> REDIS_PASSWORD.)
+  customEnv:
+    redis_password:
+      valueFrom:
+        secretKeyRef:
+          name: data-redis
+          key: redis-password
 
   resources:
     requests:
@@ -116,8 +145,9 @@ kong:
 
   # Shared Redis backing the counters (policy: redis) so the limit stays correct
   # across Kong replicas. host/port point at the common-services Redis; the
-  # password is sourced from credentials.redisPassword (the same value
-  # secrets.yaml writes into the `data-redis` secret the Redis subchart uses).
+  # password is NOT set here — Kong resolves it at runtime from the env vault
+  # ({vault://env/redis-password}), fed by customEnv above from the data-redis
+  # Secret, so it never lands in plaintext on the KongClusterPlugin CRs.
   redis:
     host: common-services-redis-master.common-services.svc.cluster.local
     port: 6379

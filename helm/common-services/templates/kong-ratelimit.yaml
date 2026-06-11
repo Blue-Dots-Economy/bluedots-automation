@@ -10,12 +10,13 @@ fault_tolerant → if Redis is briefly unreachable, fail OPEN (serve traffic)
 rather than reject every request.
 
 Pinned Kong Gateway 3.9 uses the nested `config.redis` block (not flat
-`redis_host`/`redis_port`). Password is rendered from credentials.redisPassword,
-the same value secrets.yaml writes into the `data-redis` secret.
+`redis_host`/`redis_port`). The Redis password is NOT rendered here: it is a
+Kong `env` vault reference ({vault://env/redis-password}) resolved at runtime
+from the REDIS_PASSWORD env var (kong.customEnv → data-redis Secret), so the
+plaintext never lands on these cluster-scoped CRs.
 */ -}}
 {{- if and .Values.kong.enabled .Values.kong.rateLimitTiers }}
 {{- $redis := .Values.kong.redis }}
-{{- $pw := .Values.credentials.redisPassword }}
 {{- range $name, $cfg := .Values.kong.rateLimitTiers }}
 apiVersion: configuration.konghq.com/v1
 kind: KongClusterPlugin
@@ -34,9 +35,10 @@ config:
   redis:
     host: {{ $redis.host | quote }}
     port: {{ $redis.port }}
-    {{- if $pw }}
-    password: {{ $pw | quote }}
-    {{- end }}
+    # Resolved at runtime by Kong's `env` vault from the REDIS_PASSWORD env var
+    # (kong.customEnv → data-redis Secret). The CR stores only this reference,
+    # never the plaintext password.
+    password: "{vault://env/redis-password}"
 ---
 {{- end }}
 {{- end }}
