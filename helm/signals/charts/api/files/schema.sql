@@ -551,7 +551,7 @@ ALTER TABLE items ADD COLUMN IF NOT EXISTS item_locations JSONB NOT NULL DEFAULT
 
 -- Lifecycle status (2026-06-03 spec).
 ALTER TABLE items
-  ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'draft';
+  ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'live';
 
 DO $$
 BEGIN
