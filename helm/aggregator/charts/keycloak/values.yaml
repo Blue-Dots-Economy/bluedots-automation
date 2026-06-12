@@ -39,6 +39,6 @@ realmRenderer:
 # `blue_dot-v1`, `purple_dot-v1`); leave `themesInit: null` in values
 # (or omit the block) to fall back to the JAR-baked theme.
 themesInit:
-  image: shashank04515/aggregator-kc-theme
-  tag: develop
+  image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
+  tag: orange_dot-develop
   pullPolicy: Always
