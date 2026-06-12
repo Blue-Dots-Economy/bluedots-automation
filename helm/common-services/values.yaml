@@ -152,6 +152,34 @@ kong:
     host: common-services-redis-master.common-services.svc.cluster.local
     port: 6379
 
+  # ─── Prometheus metrics (global) ───────────────────────────────────────────
+  # Renders one cluster-wide, GLOBAL KongClusterPlugin (templates/kong-prometheus.yaml)
+  # so EVERY route is instrumented automatically — no per-Ingress annotation.
+  # Metrics are exposed on Kong's status listener at /metrics; add a Prometheus
+  # scrape / ServiceMonitor against the Kong status port to collect them.
+  prometheus:
+    enabled: true
+    # Kong 3.x emits only a minimal metric set by default; opt in to the rest.
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+      per_consumer: false
+
+  # ─── ServiceMonitor: let Prometheus scrape Kong's /metrics ─────────────────
+  # The prometheus plugin above exposes metrics on Kong's status listener
+  # (port 8100, /metrics) and the ingress controller exposes its own on the
+  # cmetrics port. This subchart-native ServiceMonitor targets both. The
+  # monitoring chart's Prometheus discovers ServiceMonitors in ALL namespaces
+  # (serviceMonitorSelectorNilUsesHelmValues: false), so no extra labels are
+  # needed. It selects the proxy Service (labelled enable-metrics: "true" by
+  # default) and scrapes the pods behind it. The CRD ships with the monitoring
+  # chart, which deploy_all_services installs before common-services.
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+
 # ─── cert-manager subchart values (consumed verbatim) ────────────────────────
 # See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
 cert-manager:
