@@ -60,7 +60,6 @@ function plan_tf_resources() {
 function create_tf_resources() {
     source tf.sh
     echo -e "\nCreating resources on AWS"
-    terragrunt run --all init
     terragrunt run --all apply
 }
 
@@ -151,11 +150,24 @@ function deploy_monitoring() {
 # and Redis provision PVCs that must bind to gp3 (Makefile enforced this as a dep).
 function deploy_common_services() {
     apply_gp3_default_sc
+    apply_kong_crds
     echo -e "\nDeploying common-services"
     helm upgrade --install "$CS_REL" "$CS_DIR" \
         -n "$CS_NS" --create-namespace \
         -f "$CS_VALUES" \
         --wait --timeout 5m
+}
+
+# Kong's CRDs ship inside the vendored subchart (charts/kong/crds/), but Helm
+# installs CRDs ONLY from the top-level chart's crds/ dir and ONLY on first
+# install — never from a subchart, never on upgrade. So a plain `helm upgrade`
+# of an existing release will NOT lay down (or update) the Kong CRDs, and the
+# ingress controller then crash-watches missing KongClusterPlugin/KongPlugin
+# kinds. Apply them explicitly here (idempotent, server-side) before every
+# common-services deploy. Source of truth: helm/common-services/crds/.
+function apply_kong_crds() {
+    echo -e "\nApplying Kong CRDs (helm skips subchart/upgrade CRDs)"
+    kubectl apply --server-side -f "$CS_DIR/crds/"
 }
 
 # 2b) signals (api, ui, notification, match-score) — uses shared common-services DBs

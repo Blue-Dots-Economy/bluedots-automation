@@ -1,3 +1,16 @@
+# Shared host for the ingress; overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: aggregator.example.com
+
+# Template-driven ingress (templates/ingress.yaml): path /auth is fixed in the
+# template (Keycloak serves natively under /auth). Host = global.publicHost.
+ingress:
+  enabled: false
+  className: ""        # e.g. kong
+  plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-auth
+  annotations: {}
+
 replicaCount: 1
 image:
   repository: aggregator-dpg/keycloak
@@ -9,6 +22,8 @@ bootstrapAdminUsername: admin
 # at runtime — `--optimized` rejects build-time mismatches and exits.
 optimized: true
 smsProvider: log
+msg91TemplateId: ''
+msg91OtpVarName: ''
 awsRegion: ap-south-1
 service:
   port: 8080
@@ -24,6 +39,6 @@ realmRenderer:
 # `blue_dot-v1`, `purple_dot-v1`); leave `themesInit: null` in values
 # (or omit the block) to fall back to the JAR-baked theme.
 themesInit:
-  image:  ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
+  image: shashank04515/aggregator-kc-theme
   tag: develop
-  pullPolicy: IfNotPresent
+  pullPolicy: Always

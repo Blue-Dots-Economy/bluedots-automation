@@ -1,3 +1,16 @@
+# Shared host for the ingress; overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: aggregator.example.com
+
+# Template-driven ingress (templates/ingress.yaml): path /backend + strip-path
+# are fixed in the template; only these scalars vary. Host = global.publicHost.
+ingress:
+  enabled: false
+  className: ""        # e.g. kong
+  plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-api
+  annotations: {}
+
 replicaCount: 1
 image:
   repository: aggregator-dpg/api
