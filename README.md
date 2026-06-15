@@ -1,4 +1,4 @@
-# bluedots-devops
+# bluedots-automation
 
 Infrastructure-as-code and deployment tooling for the **Blue Dots Economy**
 platform. This repo does two things:
@@ -59,13 +59,48 @@ each component. Keep this table handy:
 
 ## Which branch?
 
-`origin/dev` is the latest and is a **strict superset** of every other branch —
-it carries both the Helm charts and the OpenTofu infra. `develop` has only the
-infra, `helmcharts` has only the charts, `main` is the base. **Deploy from `dev`.**
+There are two kinds of branches: **trunk** branches that integrate work, and
+**per-deployment** branches that hold one deployment's config.
+
+### Trunk: where work is integrated
+
+Work flows up a promotion chain. **`main` is the canonical branch** — it is the
+standard you branch a new deployment from.
+
+```
+<your-feature-branch>  →  feature  →  develop  →  main
+   (one branch per task)   integration   pre-release   canonical/standard
+```
+
+- **`main`** — the standard. New deployment branches are cut from here.
+- **`develop`** — pre-release integration.
+- **`feature`** — where in-progress work is collected before promotion. At any
+  given time this is usually the *newest* trunk branch (promotion to `develop`/
+  `main` lags), so check it if you need the latest unreleased changes.
 
 ```bash
-git switch dev && git pull origin dev
+git switch main && git pull origin main
 ```
+
+### Per-deployment branches
+
+Each live deployment is maintained on its **own long-lived branch**, branched
+from the trunk and carrying only that deployment's config (network JSON schemas,
+image tags, public hostnames, and its own `opentofu/aws/<env>/` directory).
+**Do not deploy a customer environment from `main`** — use its branch:
+
+| Branch              | Environment | Notes                                              |
+|---------------------|-------------|----------------------------------------------------|
+| `blue-dots-dev`     | dev         |                                                    |
+| `orange-dots-dev`   | dev         |                                                    |
+| `orange-dot-prod`   | prod        | carries Kong ingress (`kong-nginx-impl`)           |
+| `purple-dots-prod`  | prod        | **legacy** — still on the old `helmcharts/` layout |
+
+### In-progress feature branches
+
+`kong-nginx-impl` (Kong as an ingress alternative) and `deploy-release-changes`
+are work-in-progress. `gcp-support` (GCP provider) and `otel-monitoring`
+(observability stack) have already been folded into `feature`.
 
 ---
 
