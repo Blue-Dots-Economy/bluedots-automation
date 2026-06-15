@@ -40,5 +40,5 @@ realmRenderer:
 # (or omit the block) to fall back to the JAR-baked theme.
 themesInit:
   image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
-  tag: orange_dot-develop
+  tag: blue_dot-develop
   pullPolicy: Always
