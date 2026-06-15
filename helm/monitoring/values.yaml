@@ -1,0 +1,527 @@
+# =============================================================================
+# Monitoring umbrella chart — kube-prometheus-stack + Loki + Alloy
+# Secrets and email config are injected via the OpenTofu-generated overlay.
+# For standalone use, update the placeholder values marked below.
+# =============================================================================
+
+prometheus:
+  enabled: true
+
+  grafana:
+    enabled: true
+    # Override via overlay for install.sh deployments. Change for standalone use.
+    adminUser: admin
+    adminPassword: "admin@bluedots"
+
+    persistence:
+      enabled: true
+      storageClassName: gp3
+      size: 5Gi
+
+    # Loki datasource — kube-prometheus-stack doesn't know about Loki, so we add it here.
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        url: http://monitoring-loki.monitoring.svc.cluster.local:3100
+        access: proxy
+        isDefault: false
+
+  windowsMonitoring:
+    enabled: false
+
+  # Disable built-in rules that are false positives on EKS managed control plane.
+  # KubeSchedulerDown / KubeControllerManagerDown / etcdHighNumberOfLeaderChanges:
+  #   absent()-based rules that always fire because AWS hides these components.
+  # KubeletTooManyPods: replaced below with ClusterPodCapacityHigh (cluster-level).
+  defaultRules:
+    disabled:
+      KubeSchedulerDown: true
+      KubeControllerManagerDown: true
+      etcdHighNumberOfLeaderChanges: true
+      KubeletTooManyPods: true
+
+  nodeExporter:
+    enabled: true
+
+  kubeStateMetrics:
+    enabled: true
+
+  prometheus:
+    prometheusSpec:
+      scrapeInterval: 30s
+      evaluationInterval: 30s
+
+      # Discover ServiceMonitors/PodMonitors/Rules from all namespaces, not just
+      # the ones created by this chart. Required for signals/aggregator exporters.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+
+      retention: 7d
+
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: gp3
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 20Gi
+
+  additionalPrometheusRulesMap:
+    bluedots-cluster-alerts:
+      groups:
+
+        - name: infra.alerts
+          rules:
+            - alert: NodeHighCPUUsage
+              expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "High CPU on {{ $labels.instance }}"
+                description: "CPU usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 80%)"
+
+            - alert: NodeHighMemoryUsage
+              expr: 100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "High memory on {{ $labels.instance }}"
+                description: "Memory usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 80%)"
+
+            - alert: NodeHighDiskUsage
+              expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) > 80
+              for: 10m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "High disk on {{ $labels.instance }}"
+                description: "Disk usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} at / (threshold: 80%)"
+
+            - alert: NodeNotReady
+              expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+              for: 5m
+              labels:
+                severity: critical
+                group: infra
+              annotations:
+                summary: "Node {{ $labels.node }} is not Ready"
+                description: "Node {{ $labels.node }} has been NotReady for more than 5 minutes"
+
+            # Cluster-level replacement for KubeletTooManyPods.
+            # Fires only when total cluster pod usage exceeds 85% across ALL nodes.
+            - alert: ClusterPodCapacityHigh
+              expr: |
+                sum(kube_pod_info{job="kube-state-metrics"})
+                /
+                sum(kube_node_status_capacity{job="kube-state-metrics",resource="pods"})
+                * 100 > 85
+              for: 5m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "Cluster pod capacity above 85%"
+                description: "Cluster is using {{ $value | printf \"%.1f\" }}% of total pod capacity. Consider scaling the nodegroup."
+
+        - name: signals.alerts
+          rules:
+            - alert: PodHighRestartCount
+              expr: increase(kube_pod_container_status_restarts_total{namespace="signals"}[1h]) > 5
+              for: 0m
+              labels:
+                severity: warning
+                group: signals
+              annotations:
+                summary: "Pod {{ $labels.pod }} restarting in signals"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last hour"
+
+            - alert: PodOOMKilled
+              expr: kube_pod_container_status_last_terminated_reason{namespace="signals",reason="OOMKilled"} == 1
+              for: 0m
+              labels:
+                severity: warning
+                group: signals
+              annotations:
+                summary: "OOMKilled: signals/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
+
+            - alert: PodHighCPUUsage
+              expr: (rate(container_cpu_usage_seconds_total{namespace="signals",container!="",container!="POD"}[2m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="signals",resource="cpu"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: signals
+              annotations:
+                summary: "High CPU: signals/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its CPU limit"
+
+            - alert: PodHighMemoryUsage
+              expr: (container_memory_working_set_bytes{namespace="signals",container!="",container!="POD"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="signals",resource="memory"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: signals
+              annotations:
+                summary: "High memory: signals/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
+
+            - alert: DeploymentUnavailable
+              expr: kube_deployment_status_replicas_available{namespace="signals"} == 0
+              for: 5m
+              labels:
+                severity: critical
+                group: signals
+              annotations:
+                summary: "Deployment signals/{{ $labels.deployment }} has 0 replicas"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+
+        - name: aggregator.alerts
+          rules:
+            - alert: PodHighRestartCount
+              expr: increase(kube_pod_container_status_restarts_total{namespace="aggregator"}[1h]) > 5
+              for: 0m
+              labels:
+                severity: warning
+                group: aggregator
+              annotations:
+                summary: "Pod {{ $labels.pod }} restarting in aggregator"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last hour"
+
+            - alert: PodOOMKilled
+              expr: kube_pod_container_status_last_terminated_reason{namespace="aggregator",reason="OOMKilled"} == 1
+              for: 0m
+              labels:
+                severity: warning
+                group: aggregator
+              annotations:
+                summary: "OOMKilled: aggregator/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
+
+            - alert: PodHighCPUUsage
+              expr: (rate(container_cpu_usage_seconds_total{namespace="aggregator",container!="",container!="POD"}[2m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="aggregator",resource="cpu"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: aggregator
+              annotations:
+                summary: "High CPU: aggregator/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its CPU limit"
+
+            - alert: PodHighMemoryUsage
+              expr: (container_memory_working_set_bytes{namespace="aggregator",container!="",container!="POD"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="aggregator",resource="memory"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: aggregator
+              annotations:
+                summary: "High memory: aggregator/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
+
+            - alert: DeploymentUnavailable
+              expr: kube_deployment_status_replicas_available{namespace="aggregator"} == 0
+              for: 5m
+              labels:
+                severity: critical
+                group: aggregator
+              annotations:
+                summary: "Deployment aggregator/{{ $labels.deployment }} has 0 replicas"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+
+        - name: common-services.alerts
+          rules:
+            - alert: PodHighRestartCount
+              expr: increase(kube_pod_container_status_restarts_total{namespace="common-services"}[1h]) > 5
+              for: 0m
+              labels:
+                severity: warning
+                group: common-services
+              annotations:
+                summary: "Pod {{ $labels.pod }} restarting in common-services"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last hour"
+
+            - alert: PodOOMKilled
+              expr: kube_pod_container_status_last_terminated_reason{namespace="common-services",reason="OOMKilled"} == 1
+              for: 0m
+              labels:
+                severity: warning
+                group: common-services
+              annotations:
+                summary: "OOMKilled: common-services/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
+
+            - alert: PodHighCPUUsage
+              expr: (rate(container_cpu_usage_seconds_total{namespace="common-services",container!="",container!="POD"}[2m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="common-services",resource="cpu"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: common-services
+              annotations:
+                summary: "High CPU: common-services/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its CPU limit"
+
+            - alert: PodHighMemoryUsage
+              expr: (container_memory_working_set_bytes{namespace="common-services",container!="",container!="POD"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="common-services",resource="memory"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: common-services
+              annotations:
+                summary: "High memory: common-services/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
+
+            - alert: DeploymentUnavailable
+              expr: kube_deployment_status_replicas_available{namespace="common-services"} == 0
+              for: 5m
+              labels:
+                severity: critical
+                group: common-services
+              annotations:
+                summary: "Deployment common-services/{{ $labels.deployment }} has 0 replicas"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+
+  alertmanager:
+    # Styled HTML email template — named templates referenced by email_configs.
+    templateFiles:
+      bluedots.tmpl: |-
+        {{ define "email.default.subject" -}}
+        [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }} · {{ if .GroupLabels.namespace }}{{ .GroupLabels.namespace }}{{ else }}cluster{{ end }}
+        {{- end }}
+
+        {{ define "email.default.html" -}}
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="UTF-8">
+        <style>
+          body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f0f2f5;margin:0;padding:24px}
+          .card{max-width:620px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+          .hdr{padding:20px 24px;border-bottom:1px solid #e8e8e8}
+          .hdr h2{margin:0;font-size:17px;color:#1a1a2e}
+          .hdr .sub{margin-top:4px;font-size:13px;color:#888}
+          .item{padding:16px 24px;border-bottom:1px solid #f0f0f0}
+          .badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;text-transform:uppercase}
+          .critical{background:#fff1f0;color:#cf1322;border:1px solid #ffa39e}
+          .warning{background:#fff7e6;color:#d46b08;border:1px solid #ffd591}
+          .resolved{background:#f6ffed;color:#389e0d;border:1px solid #b7eb8f}
+          .title{font-size:15px;font-weight:600;color:#262626;margin:8px 0 4px}
+          .desc{font-size:13px;color:#595959;margin:0 0 12px}
+          .meta{background:#fafafa;border-radius:4px;padding:10px 12px}
+          .row{display:flex;gap:8px;font-size:12px;padding:2px 0}
+          .k{color:#8c8c8c;min-width:120px}
+          .v{color:#262626;font-family:monospace}
+          .ts{font-size:12px;color:#bfbfbf;margin-top:10px}
+          .footer{padding:14px 24px;text-align:center;font-size:12px;color:#bfbfbf;background:#fafafa}
+        </style>
+        </head>
+        <body>
+        <div class="card">
+          <div class="hdr">
+            <h2>Blue Dots — Alert Notification</h2>
+            <div class="sub">
+              {{- if gt (.Alerts.Firing | len) 0 }}{{ .Alerts.Firing | len }} firing{{ end -}}
+              {{- if and (gt (.Alerts.Firing | len) 0) (gt (.Alerts.Resolved | len) 0) }} · {{ end -}}
+              {{- if gt (.Alerts.Resolved | len) 0 }}{{ .Alerts.Resolved | len }} resolved{{ end }}
+            </div>
+          </div>
+          {{ range .Alerts.Firing -}}
+          <div class="item">
+            <span class="badge {{ .Labels.severity }}">{{ .Labels.severity }}</span>
+            <div class="title">{{ .Annotations.summary }}</div>
+            <div class="desc">{{ .Annotations.description }}</div>
+            <div class="meta">
+              {{ range .Labels.SortedPairs -}}
+              <div class="row"><span class="k">{{ .Name }}</span><span class="v">{{ .Value }}</span></div>
+              {{ end -}}
+            </div>
+            <div class="ts">Fired: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}</div>
+          </div>
+          {{ end -}}
+          {{ range .Alerts.Resolved -}}
+          <div class="item">
+            <span class="badge resolved">resolved</span>
+            <div class="title">{{ .Annotations.summary }}</div>
+            <div class="desc">{{ .Annotations.description }}</div>
+            <div class="ts">Resolved: {{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}</div>
+          </div>
+          {{ end -}}
+          <div class="footer">Blue Dots Economy &nbsp;·&nbsp; test-dev-cluster</div>
+        </div>
+        </body>
+        </html>
+        {{- end }}
+
+    config:
+      global:
+        resolve_timeout: 5m
+        smtp_smarthost: 'smtp.gmail.com:587'
+        # Override per-org via monitoring-values.yaml overlay. Change for standalone use.
+        smtp_from: 'alerts@example.com'
+        smtp_auth_username: 'alerts@example.com'
+        smtp_auth_password: 'changeme'
+        smtp_require_tls: true
+      route:
+        receiver: email-notifications
+        group_by: ['alertname', 'namespace']
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        routes:
+          - receiver: 'null'
+            matchers:
+              - alertname =~ "InfoInhibitor|Watchdog"
+      receivers:
+        - name: 'null'
+        - name: email-notifications
+          email_configs:
+            # Override per-org via monitoring-values.yaml overlay. Change for standalone use.
+            - to: 'alerts@example.com'
+              send_resolved: true
+      inhibit_rules:
+        - source_matchers:
+            - severity = critical
+          target_matchers:
+            - severity =~ warning|info
+          equal: [namespace, alertname]
+        - source_matchers:
+            - severity = warning
+          target_matchers:
+            - severity = info
+          equal: [namespace, alertname]
+
+    alertmanagerSpec:
+      retention: 168h
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: gp3
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 2Gi
+
+
+loki:
+  enabled: true
+
+  deploymentMode: SingleBinary
+
+  loki:
+    auth_enabled: false
+
+    commonConfig:
+      replication_factor: 1
+
+    storage:
+      type: filesystem
+
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+
+    limits_config:
+      retention_period: 168h
+
+    compactor:
+      retention_enabled: true
+      # Required when retention is enabled — tells compactor where delete requests are stored.
+      delete_request_store: filesystem
+
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      storageClass: gp3
+      size: 10Gi
+
+  # Disable SimpleScalable components — not needed in SingleBinary mode.
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+  gateway:
+    enabled: false
+  lokiCanary:
+    enabled: false
+  test:
+    enabled: false
+
+
+alloy:
+  enabled: true
+
+  alloy:
+    configMap:
+      content: |
+
+        discovery.kubernetes "pods" {
+          role = "pod"
+        }
+
+        // Rename Kubernetes metadata to short labels: namespace, pod, container, node.
+        discovery.relabel "pod_logs" {
+          targets = discovery.kubernetes.pods.targets
+
+          rule {
+            source_labels = ["__meta_kubernetes_namespace"]
+            target_label  = "namespace"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_name"]
+            target_label  = "pod"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_name"]
+            target_label  = "container"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_node_name"]
+            target_label  = "node"
+          }
+        }
+
+        loki.source.kubernetes "pod_logs" {
+          targets    = discovery.relabel.pod_logs.output
+          forward_to = [loki.write.loki_endpoint.receiver]
+        }
+
+        loki.write "loki_endpoint" {
+          endpoint {
+            url = "http://monitoring-loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+          }
+        }
+
+  rbac:
+    create: true
+
+  serviceAccount:
+    create: true
+
+  controller:
+    type: daemonset
+
+
+jaeger:
+  enabled: false
+
+otelcollector:
+  enabled: false

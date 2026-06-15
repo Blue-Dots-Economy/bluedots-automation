@@ -1,0 +1,54 @@
+============================================================
+  Monitoring stack deployed to: {{ .Release.Namespace }}
+============================================================
+
+Components deployed:
+{{- if .Values.prometheus.enabled }}
+  ✓  Prometheus + Alertmanager + node-exporter + kube-state-metrics
+     Port-forward: kubectl port-forward svc/{{ .Release.Name }}-kube-prometheus-prometheus 9090:9090 -n {{ .Release.Namespace }}
+     UI: http://localhost:9090
+     Alerts: http://localhost:9090/alerts
+     Alertmanager: kubectl port-forward svc/{{ .Release.Name }}-kube-prometheus-alertmanager 9093:9093 -n {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.prometheus.grafana.enabled }}
+  ✓  Grafana (bundled inside kube-prometheus-stack)
+     Port-forward: kubectl port-forward svc/{{ .Release.Name }}-grafana 3000:80 -n {{ .Release.Namespace }}
+     UI: http://localhost:3000
+     Login: admin / {{ .Values.prometheus.grafana.adminPassword | default "prom-operator" }}
+{{- end }}
+{{- if .Values.loki.enabled }}
+  ✓  Loki (log aggregation)
+     Endpoint: http://{{ .Release.Name }}-loki.{{ .Release.Namespace }}.svc.cluster.local:3100
+{{- end }}
+{{- if .Values.alloy.enabled }}
+  ✓  Grafana Alloy DaemonSet (log shipper → Loki)
+     Logs: kubectl logs daemonset/{{ .Release.Name }}-alloy -n {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.jaeger.enabled }}
+  ✓  Jaeger (distributed tracing — all-in-one, memory storage)
+     Port-forward: kubectl port-forward svc/{{ .Release.Name }}-jaeger-query 16686:16686 -n {{ .Release.Namespace }}
+     UI: http://localhost:16686
+{{- end }}
+{{- if .Values.otelcollector.enabled }}
+  ✓  OpenTelemetry Collector
+     OTLP gRPC:  {{ .Release.Name }}-opentelemetry-collector.{{ .Release.Namespace }}.svc.cluster.local:4317
+     OTLP HTTP:  {{ .Release.Name }}-opentelemetry-collector.{{ .Release.Namespace }}.svc.cluster.local:4318
+{{- end }}
+
+------------------------------------------------------------
+  HIGH PRIORITY ALERTS (already configured)
+------------------------------------------------------------
+  NodeHighCPUUsage        > 80% CPU for 5m   (warning)
+  NodeHighMemoryUsage     > 80% RAM for 5m   (warning)
+  NodeHighDiskUsage       > 80% disk for 10m (warning)
+  PodHighRestartCount     > 5 restarts/hour  (warning)
+  PodOOMKilled            container OOMKilled (warning)
+  NodeNotReady            node not Ready 5m  (critical)
+  DeploymentUnavailable   0 replicas 5m      (critical)
+
+  Currently routing to: null receiver (no notifications sent).
+  To enable email: edit prometheus.alertmanager.config in values.yaml.
+------------------------------------------------------------
+
+See DOCUMENT/PLAN/ for step-by-step implementation guide.
+See DOCUMENT/KT/  for learning resources on each component.

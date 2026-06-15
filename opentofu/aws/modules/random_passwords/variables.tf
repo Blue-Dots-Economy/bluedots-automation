@@ -76,6 +76,15 @@ variable "aggregator_oidc_client_secret_bytes" {
 }
 
 # -----------------------------------------------------------------------------
+# Monitoring chart secrets
+# -----------------------------------------------------------------------------
+variable "monitoring_grafana_password_length" {
+  type        = number
+  description = "Length of the generated Grafana admin password"
+  default     = 16
+}
+
+# -----------------------------------------------------------------------------
 # Shared / application-layer secrets
 # -----------------------------------------------------------------------------
 variable "encryption_string_length" {
