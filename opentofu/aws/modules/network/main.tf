@@ -62,7 +62,7 @@ resource "aws_subnet" "this" {
   for_each = var.create_network ? var.subnet_config : {}
 
   vpc_id                  = aws_vpc.vpc[0].id
-  cidr_block              = cidrsubnet(aws_vpc.vpc[0].cidr_block, 8, each.value.cidr_netnum)
+  cidr_block              = cidrsubnet(aws_vpc.vpc[0].cidr_block, 24 - tonumber(split("/", aws_vpc.vpc[0].cidr_block)[1]), each.value.cidr_netnum)
   availability_zone       = "${var.aws_region}${each.value.availability_zone}"
   map_public_ip_on_launch = each.value.type == "public"
 

@@ -26,9 +26,9 @@ if ! aws sts get-caller-identity &> /dev/null; then
 fi
 
 # Read values from global-values.yaml
-building_block=$(yq -r '.global.building_block' global-values.yaml)
-environment_name=$(yq -r '.global.environment' global-values.yaml)
-aws_region=$(yq -r '.global.cloud_storage_region' global-values.yaml)
+building_block=$(yq 'explode(.) | .global.building_block' global-values.yaml)
+environment_name=$(yq 'explode(.) | .global.environment' global-values.yaml)
+aws_region=$(yq 'explode(.) | .global.cloud_storage_region' global-values.yaml)
 
 # Validate required values
 if [[ -z "$building_block" || -z "$environment_name" || -z "$aws_region" ]]; then

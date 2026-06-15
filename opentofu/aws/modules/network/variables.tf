@@ -27,13 +27,15 @@ variable "vpc_cidr" {
 
 variable "subnet_config" {
   description = <<-EOT
-    Map of logical subnet name to configuration. The subnet CIDR is derived as:
-      cidrsubnet(vpc_cidr, 8, cidr_netnum)
+    Map of logical subnet name to configuration. Each subnet is always /24 (256 IPs).
+    The CIDR is derived as: cidrsubnet(vpc_cidr, 24 - vpc_prefix, cidr_netnum)
 
     Fields:
       type              - "public" or "private" (required)
       availability_zone - AZ suffix, e.g. "a", "b", "c" (required)
-      cidr_netnum       - unique integer offset for cidrsubnet(), e.g. 101, 102, 201, 202 (required)
+      cidr_netnum       - sequential index starting at 0 (required, must be unique)
+                          Max valid value = 2^(24 - vpc_prefix) - 1
+                          e.g. /22 VPC → max 3 | /20 → max 15 | /16 → max 255
 
     Public subnets  -> Internet Gateway route, map_public_ip_on_launch = true.
     Private subnets -> NAT Gateway route (when nat_gateway_enabled = true), no public IPs.
@@ -44,8 +46,8 @@ variable "subnet_config" {
     cidr_netnum       = number
   }))
   default = {
-    public-a = { type = "public", availability_zone = "a", cidr_netnum = 101 }
-    public-b = { type = "public", availability_zone = "b", cidr_netnum = 102 }
+    public-a = { type = "public", availability_zone = "a", cidr_netnum = 0 }
+    public-b = { type = "public", availability_zone = "b", cidr_netnum = 1 }
   }
 
   validation {
