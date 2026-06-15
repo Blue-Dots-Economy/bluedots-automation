@@ -1,0 +1,47 @@
+{{- if .Values.ingress.enabled -}}
+{{- /*
+  Template-driven ingress for the web BFF (catch-all). Routing STRUCTURE fixed
+  here: path / (lowest router priority), strip-path "false". Host comes from
+  global.publicHost. This object OWNS the cert-manager issuance for the shared
+  host cert (ingress.clusterIssuer); the api + keycloak ingresses reuse the
+  resulting TLS secret.
+*/ -}}
+{{- $svc := include "web.fullname" . -}}
+{{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $svc }}
+  labels:
+    {{- include "web.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "false"
+    {{- if .Values.ingress.plugin }}
+    konghq.com/plugins: {{ .Values.ingress.plugin | quote }}
+    {{- end }}
+    {{- if .Values.ingress.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  tls:
+    - hosts:
+        - {{ $host }}
+      secretName: {{ printf "%s-tls" ($host | replace "." "-") }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $svc }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

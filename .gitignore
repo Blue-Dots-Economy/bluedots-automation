@@ -18,6 +18,7 @@ opentofu/aws/**/aggregator-values.yaml
 opentofu/aws/**/monitoring-values.yaml
 # Legacy single combined file (pre-split) — still ignore if present locally.
 opentofu/aws/**/global-cloud-values.yaml
+tf.sh
 
 # Editor / OS junk
 .DS_Store
@@ -26,4 +27,9 @@ opentofu/aws/**/global-cloud-values.yaml
 *.swp
 *~
 
+# devops/
+support-scripts/
+
+# Local-only docs (kept out of version control)
+docs/
 

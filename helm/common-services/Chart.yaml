@@ -21,6 +21,11 @@ dependencies:
     repository: file://charts/ingress-nginx
     condition: ingress-nginx.enabled
 
+  - name: kong
+    version: 3.2.0
+    repository: file://charts/kong
+    condition: kong.enabled
+
   - name: cert-manager
     version: v1.20.2
     repository: file://charts/cert-manager

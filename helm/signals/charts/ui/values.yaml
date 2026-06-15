@@ -1,5 +1,10 @@
 # Default values for dpg-ui.
 
+# Shared host for the ingress. Overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: dpg.example.com
+
 replicaCount: 1
 
 # nginx in the UI image reverse-proxies /api/* to this upstream.
@@ -42,19 +47,15 @@ service:
   targetPort: 8080
   annotations: {}
 
+# Template-driven ingress (templates/ingress.yaml). Path / (catch-all) is fixed
+# in the template; only these scalars vary per environment. This object owns the
+# cert-manager issuance for the shared host cert. Host comes from global.publicHost.
 ingress:
   enabled: false
-  className: ""
-  annotations: {}
-  hosts:
-    - host: dpg.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
-    # - secretName: dpg-ui-tls
-    #   hosts:
-    #     - dpg.local
+  className: ""               # e.g. kong
+  tlsSecret: ""               # cert-manager secret, e.g. signals-ui-tls
+  clusterIssuer: ""           # e.g. letsencrypt-prod
+  plugin: ""                  # KongClusterPlugin tier, e.g. rl-signals-ui
 
 resources: {}
   # limits:

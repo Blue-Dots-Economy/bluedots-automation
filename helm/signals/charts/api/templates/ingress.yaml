@@ -1,37 +1,45 @@
 {{- if .Values.ingress.enabled -}}
+{{- /*
+  Template-driven ingress for the signals API. The routing STRUCTURE is fixed
+  here — path /api, strip-path "false" (signals-api serves natively under /api).
+  Host comes from global.publicHost; other scalars from ingress.* (className /
+  tlsSecret / plugin).
+
+  No cert-manager annotation: the ui subchart owns issuance of the shared host
+  cert (ingress.tlsSecret); this object only references it, avoiding a duplicate
+  certificate for the same host.
+*/ -}}
 {{- $fullName := include "dpg-api.fullname" . -}}
-{{- $svcPort := .Values.service.port -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $fullName }}
   labels:
     {{- include "dpg-api.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
   annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+    konghq.com/strip-path: "false"
+    {{- if .Values.ingress.plugin }}
+    konghq.com/plugins: {{ .Values.ingress.plugin | quote }}
+    {{- end }}
 spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
   {{- end }}
-  {{- with .Values.ingress.tls }}
+  {{- if .Values.ingress.tlsSecret }}
   tls:
-    {{- toYaml . | nindent 4 }}
+    - hosts:
+        - {{ .Values.global.publicHost }}
+      secretName: {{ .Values.ingress.tlsSecret }}
   {{- end }}
   rules:
-    {{- range .Values.ingress.hosts }}
-    - host: {{ .host | quote }}
+    - host: {{ required "global.publicHost is required" .Values.global.publicHost | quote }}
       http:
         paths:
-          {{- range .paths }}
-          - path: {{ .path }}
-            pathType: {{ .pathType }}
+          - path: /api
+            pathType: Prefix
             backend:
               service:
                 name: {{ $fullName }}
                 port:
-                  number: {{ $svcPort }}
-          {{- end }}
-    {{- end }}
+                  number: {{ .Values.service.port }}
 {{- end }}

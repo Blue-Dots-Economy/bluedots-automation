@@ -13,13 +13,17 @@ issuer:
   # ACME server. Use the staging URL while debugging to avoid rate limits:
   #   https://acme-staging-v02.api.letsencrypt.org/directory
   server: https://acme-v02.api.letsencrypt.org/directory
-  # Ingress class used by HTTP-01 solver. Must match ingress-nginx.controller.ingressClass.
-  ingressClass: nginx
+  # Ingress class used by the cert-manager HTTP-01 solver. Now Kong (the sole
+  # controller); solver Ingresses are created with class "kong".
+  ingressClass: kong
 
 # ─── ingress-nginx subchart values (consumed verbatim) ───────────────────────
 # See: https://artifacthub.io/packages/helm/ingress-nginx/ingress-nginx
+# RETIRED (Phase 5): Kong is now the sole ingress controller. Disabling removes
+# the nginx controller + its LoadBalancer. All Ingress objects (signals,
+# aggregator) and the cert-manager issuer have been migrated to class "kong".
 ingress-nginx:
-  enabled: true
+  enabled: false
   controller:
     # IngressClass + controller selector. Single controller per cluster keeps
     # routing simple; multiple controllers need distinct classes.
@@ -46,6 +50,117 @@ ingress-nginx:
       limits:
         cpu: 500m
         memory: 512Mi
+
+# ─── Kong Ingress Controller (DB-less) ───────────────────────────────────────
+# Vendored chart 3.2.0 (Kong Gateway 3.9 → rate-limiting uses nested config.redis).
+# PHASE 1: deploy ALONGSIDE ingress-nginx — Kong is NOT the default IngressClass
+# yet, so no existing Ingress routes through it until its className is flipped
+# (Phases 3-4). cert-manager issuer + nginx default stay as-is until Phase 5.
+# Values under `kong:` are passed verbatim to the kong subchart.
+kong:
+  enabled: true
+
+  # DB-less mode + parity with the proxy tuning ingress-nginx does today.
+  # (deep-merged onto the subchart's env defaults — database:"off" etc.)
+  env:
+    database: "off"
+    nginx_http_client_max_body_size: "1024m"   # was nginx proxy-body-size: 1024m
+    # Large upstream-response header buffer (was nginx proxy-buffer-size: 32k).
+    # nginx requires proxy_busy_buffers_size <= (total proxy_buffers - one buffer),
+    # so the three directives must be set together — bumping proxy_buffer_size
+    # alone fails nginx config validation and crash-loops the proxy.
+    nginx_proxy_proxy_buffer_size: "32k"
+    nginx_proxy_proxy_buffers: "4 32k"          # 4 x 32k = 128k total
+    nginx_proxy_proxy_busy_buffers_size: "64k"  # <= 128k - 32k = 96k  ✓
+    # ── Real client IP (SECURITY — do NOT widen trusted_ips back to 0.0.0.0/0) ─
+    # The LB is an AWS Classic ELB at L4 (TCP passthrough — Kong terminates TLS).
+    # An L4 LB does NOT sanitise X-Forwarded-For, so trusting XFF from any source
+    # (the old `trusted_ips: 0.0.0.0/0` + `real_ip_header: XFF`) let a client forge
+    # its IP by rotating the X-Forwarded-For header per request — every request
+    # looked like a new IP and `limit_by: ip` never counted past 1 (rate limiter
+    # fully bypassable). Take the client IP from the PROXY-protocol header the ELB
+    # prepends at the connection layer (not a client-settable HTTP header), and
+    # trust it ONLY from the in-VPC LB. The ELB sends PROXY protocol via the
+    # aws-load-balancer-proxy-protocol annotation on the proxy Service below, and
+    # the proxy listeners enable `proxy_protocol` (proxy.http/tls.parameters).
+    real_ip_header: "proxy_protocol"
+    trusted_ips: "10.0.0.0/16"   # VPC CIDR — the ELB's source range; NOT 0.0.0.0/0
+
+  ingressController:
+    enabled: true
+    ingressClass: kong
+    createIngressClass: true
+    # Kong is the cluster-default IngressClass (Phase 5 — nginx retired). New
+    # Ingress objects with no explicit class are picked up by Kong.
+    ingressClassAnnotations:
+      ingressclass.kubernetes.io/is-default-class: "true"
+
+  proxy:
+    enabled: true
+    type: LoadBalancer
+    annotations:
+      # Classic ELB at L4: prepend PROXY protocol (v1) on all listeners so Kong
+      # receives the real client IP at the connection layer — the secure source
+      # for limit_by: ip (a client cannot forge it, unlike X-Forwarded-For).
+      # Pairs with env.real_ip_header: proxy_protocol + the listener parameters
+      # below — the annotation and the listeners MUST change together, or Kong
+      # expects a PROXY header the LB isn't sending (or vice versa) and all
+      # proxied requests fail.
+      service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"
+    # Enable proxy_protocol on the proxy listeners so Kong parses the PROXY
+    # header the ELB sends (gives the true client IP through any SNAT, so no
+    # externalTrafficPolicy: Local needed).
+    http:
+      parameters:
+        - "proxy_protocol"
+    tls:
+      parameters:
+        - "http2"
+        - "proxy_protocol"
+
+  # Inject the shared Redis password into the proxy container as REDIS_PASSWORD,
+  # sourced from the data-redis Secret. Kong's built-in `env` vault resolves it
+  # at runtime via the {vault://env/redis-password} reference in the rate-limit
+  # plugins (templates/kong-ratelimit.yaml) — so the password is NEVER rendered
+  # in plaintext on the KongClusterPlugin CRs. (customEnv keys are uppercased:
+  # redis_password -> REDIS_PASSWORD.)
+  customEnv:
+    redis_password:
+      valueFrom:
+        secretKeyRef:
+          name: data-redis
+          key: redis-password
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # ─── Rate-limit tiers (PHASE 2) ────────────────────────────────────────────
+  # Each entry renders one cluster-wide KongClusterPlugin (see
+  # templates/kong-ratelimit.yaml). Ingress objects opt in by name via the
+  # annotation  konghq.com/plugins: <tier>.  Change a number here + `helm
+  # upgrade` and every route referencing the tier updates — no per-Ingress edit.
+  # Tune per environment from global-values.yaml (Phase 6).
+  rateLimitTiers:
+    rl-agg-web:      { minute: 120 }   # / (web BFF/UI)
+    rl-agg-api:      { minute: 600 }   # /backend (api)
+    rl-agg-auth:     { minute: 20 }    # /auth (keycloak) — tight
+    # signals
+    rl-signals-api:  { minute: 600 }   # /api
+    rl-signals-ui:   { minute: 120 }   # /
+
+  # Shared Redis backing the counters (policy: redis) so the limit stays correct
+  # across Kong replicas. host/port point at the common-services Redis; the
+  # password is NOT set here — Kong resolves it at runtime from the env vault
+  # ({vault://env/redis-password}), fed by customEnv above from the data-redis
+  # Secret, so it never lands in plaintext on the KongClusterPlugin CRs.
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+    port: 6379
 
 # ─── cert-manager subchart values (consumed verbatim) ────────────────────────
 # See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
