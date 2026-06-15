@@ -162,6 +162,89 @@ variable "signalstack_admin_key" {
   description = "Shared API key for aggregator.signalstackAdminKey and signals AGGREGATOR_DPG_API_KEY (same value, two consumers)"
 }
 
+# ─── Signals notification service ─────────────────────────────────────────
+variable "notification_gmail_user" {
+  type    = string
+  default = ""
+}
+
+variable "notification_gmail_pass" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "notification_msg91_auth_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "notification_msg91_template_id" {
+  type    = string
+  default = ""
+}
+
+# ─── Aggregator mail ───────────────────────────────────────────────────────
+variable "aggregator_smtp_user" {
+  type    = string
+  default = ""
+}
+
+variable "aggregator_smtp_password" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "aggregator_smtp_from" {
+  type    = string
+  default = ""
+}
+
+variable "aggregator_admin_emails" {
+  type    = string
+  default = ""
+}
+
+variable "aggregator_msg91_auth_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "aggregator_msg91_template_id" {
+  type    = string
+  default = ""
+}
+
+variable "signals_google_maps_api_key" {
+  type    = string
+  default = ""
+}
+
+# ─── Monitoring chart secrets ──────────────────────────────────────────────
+variable "monitoring_grafana_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "monitoring_smtp_from" {
+  type        = string
+  description = "Gmail sender address for Alertmanager email notifications"
+}
+
+variable "monitoring_smtp_password" {
+  type        = string
+  sensitive   = true
+  description = "Gmail App Password for Alertmanager SMTP"
+}
+
+variable "monitoring_alert_email" {
+  type        = string
+  description = "Recipient address for Alertmanager email notifications"
+}
+
 # ─── Common-services (shared postgres+redis) ───────────────────────────────
 variable "postgres_admin_password" {
   type      = string

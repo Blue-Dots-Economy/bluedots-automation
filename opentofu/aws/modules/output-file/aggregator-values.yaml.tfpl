@@ -10,7 +10,7 @@ global:
   # otherwise SIGNALSTACK_ORG_NOT_REGISTERED. Read after signals is up:
   #   SELECT id FROM organization WHERE type='network_service';
   signalstack:
-    actingOrgId:
+    actingOrgId: ""
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   
   dataPlatform:
@@ -33,14 +33,14 @@ secrets:
   sessionKey: "${aggregator_session_key}"
   oidcClientSecret: "${aggregator_oidc_client_secret}"
   signalstackAdminKey: "${signalstack_admin_key}"
-  smtpUser: ""
-  smtpPassword: ""
-  msg91AuthKey: ""
+  smtpUser: "${aggregator_smtp_user}"
+  smtpPassword: "${aggregator_smtp_password}"
+  msg91AuthKey: "${aggregator_msg91_auth_key}"
 
 # IRSA service account injected into every pod-running sub-chart (api + worker)
 # so they assume the S3/SES role via the SA token.
 api:
-  adminEmails: ''
+  adminEmails: '${aggregator_admin_emails}'
   serviceAccount:
     create: true
     annotations:
@@ -59,11 +59,11 @@ mail:
     # SendGrid / Workspace SMTP / etc. Empty value disables SMTP wiring.
     host: 'smtp.gmail.com'
     port: 587
-    from: vinodb@sanketika.in
+    from: ${aggregator_smtp_from}
     fromDisplay: 'Aggregator'
     secure: false
     starttls: true
     auth: true
 
 keycloak:
-  msg91TemplateId: ""
+  msg91TemplateId: "${aggregator_msg91_template_id}"
