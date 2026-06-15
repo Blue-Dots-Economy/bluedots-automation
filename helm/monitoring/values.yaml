@@ -173,7 +173,10 @@ prometheus:
                 description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
 
             - alert: DeploymentUnavailable
-              expr: kube_deployment_status_replicas_available{namespace="signals"} == 0
+              expr: |
+                kube_deployment_status_replicas_available{namespace="signals"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="signals"} == 0
               for: 5m
               labels:
                 severity: critical
@@ -225,7 +228,10 @@ prometheus:
                 description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
 
             - alert: DeploymentUnavailable
-              expr: kube_deployment_status_replicas_available{namespace="aggregator"} == 0
+              expr: |
+                kube_deployment_status_replicas_available{namespace="aggregator"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="aggregator"} == 0
               for: 5m
               labels:
                 severity: critical
@@ -277,7 +283,10 @@ prometheus:
                 description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
 
             - alert: DeploymentUnavailable
-              expr: kube_deployment_status_replicas_available{namespace="common-services"} == 0
+              expr: |
+                kube_deployment_status_replicas_available{namespace="common-services"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="common-services"} == 0
               for: 5m
               labels:
                 severity: critical
@@ -285,6 +294,28 @@ prometheus:
               annotations:
                 summary: "Deployment common-services/{{ $labels.deployment }} has 0 replicas"
                 description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+
+        - name: kong.alerts
+          rules:
+            - alert: KongServiceHighTraffic
+              expr: sum by(exported_service) (rate(kong_http_requests_total[1m])) * 60 > 5000
+              for: 1m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "High traffic on Kong service {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} is receiving {{ $value | printf \"%.0f\" }} requests/min (threshold: 5000)"
+
+            - alert: KongRateLimitSustained
+              expr: sum by(exported_service) (rate(kong_http_requests_total{code="429"}[1m])) * 60 > 100
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Sustained rate limiting on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 requests/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min)"
 
   alertmanager:
     # Styled HTML email template — named templates referenced by email_configs.

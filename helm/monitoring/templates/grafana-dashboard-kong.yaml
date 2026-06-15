@@ -31,8 +31,8 @@ data:
         },
         {
           "type": "panel",
-          "id": "stat",
-          "name": "Stat",
+          "id": "bargauge",
+          "name": "Bar gauge",
           "version": ""
         },
         {
@@ -65,59 +65,30 @@ data:
       "links": [],
       "panels": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
+              "color": {"mode": "thresholds"},
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "dark-green",
-                    "value": 0
-                  },
-                  {
-                    "color": "dark-orange",
-                    "value": 5
-                  },
-                  {
-                    "color": "red",
-                    "value": 15
-                  }
+                  {"color": "dark-green", "value": null},
+                  {"color": "dark-orange", "value": 5},
+                  {"color": "red", "value": 15}
                 ]
               },
               "unit": "percent"
             },
             "overrides": []
           },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 0
-          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
           "id": 3,
           "options": {
             "minVizHeight": 75,
             "minVizWidth": 75,
             "orientation": "auto",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
             "showThresholdLabels": false,
             "showThresholdMarkers": true,
             "sizing": "auto"
@@ -125,32 +96,23 @@ data:
           "pluginVersion": "11.2.1",
           "targets": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "sum(rate(kong_http_requests_total{code=~\"4..|5..\"}[5m])) / sum(rate(kong_http_requests_total[5m])) * 100",
+              "expr": "sum(rate(kong_http_requests_total{code=~\"5..\"}[5m])) / sum(rate(kong_http_requests_total[5m])) * 100",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Error Rate %",
+          "title": "Error Rate % (5xx only)",
           "type": "gauge"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
-              "color": {
-                "fixedColor": "dark-orange",
-                "mode": "fixed"
-              },
+              "color": {"fixedColor": "dark-orange", "mode": "fixed"},
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -162,92 +124,51 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
+                "scaleDistribution": {"type": "linear"},
                 "showPoints": "auto",
                 "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
               },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
+                "steps": [{"color": "green", "value": null}]
               },
               "unit": "reqps"
             },
             "overrides": []
           },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 0
-          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
           "id": 4,
           "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
+            "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "single", "sort": "none"}
           },
           "targets": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "sum by (exported_service) (rate(kong_http_requests_total{code=\"429\"}[5m]))",
+              "expr": "sum by (exported_service) (rate(kong_http_requests_total{code=\"429\"}[1m])) * 60",
               "instant": false,
               "legendFormat": "{{`{{exported_service}}`}}",
               "range": true,
               "refId": "A"
             }
           ],
-          "title": "Rate Limited Requests (429s)",
+          "title": "Rate Limited Requests (429s/min)",
           "type": "timeseries"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
+              "color": {"mode": "palette-classic"},
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -259,71 +180,35 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 0,
                 "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 1,
                 "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
+                "scaleDistribution": {"type": "linear"},
                 "showPoints": "auto",
                 "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
               },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
+                "steps": [{"color": "green", "value": null}]
               },
               "unit": "reqps"
             },
             "overrides": []
           },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 8
-          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
           "id": 2,
           "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "table",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
+            "legend": {"calcs": [], "displayMode": "table", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "single", "sort": "none"}
           },
           "targets": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
               "expr": "sum by (code) (rate(kong_http_requests_total[5m]))",
               "instant": false,
@@ -336,88 +221,10 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 0
-                  },
-                  {
-                    "color": "dark-green",
-                    "value": 1
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 8
-          },
-          "id": 1,
-          "options": {
-            "colorMode": "background",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "percentChangeColorMode": "standard",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showPercentChange": false,
-            "textMode": "auto",
-            "wideLayout": true
-          },
-          "pluginVersion": "11.2.1",
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "editorMode": "code",
-              "expr": "kong_datastore_reachable",
-              "instant": false,
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Kong Health",
-          "type": "stat"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
+              "color": {"mode": "palette-classic"},
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -429,67 +236,172 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 10,
                 "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 2,
                 "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
+                "scaleDistribution": {"type": "linear"},
                 "showPoints": "never",
                 "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
               },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
+                "steps": [{"color": "green", "value": null}]
               },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+          "id": 7,
+          "options": {
+            "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "none"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by(exported_service) (rate(kong_http_requests_total[1m])) * 60",
+              "instant": false,
+              "legendFormat": "{{`{{exported_service}}`}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Requests per Minute by Service",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{"color": "green", "value": null}]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+          "id": 8,
+          "options": {
+            "displayMode": "basic",
+            "minVizHeight": 10,
+            "minVizWidth": 0,
+            "namePlacement": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "pluginVersion": "11.2.1",
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by(exported_service) (increase(kong_http_requests_total[24h])) / 1440",
+              "instant": true,
+              "legendFormat": "{{`{{exported_service}}`}}",
+              "range": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Avg Requests/min per Service — Last 24h",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{"color": "green", "value": null}]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+          "id": 9,
+          "options": {
+            "displayMode": "basic",
+            "minVizHeight": 10,
+            "minVizWidth": 0,
+            "namePlacement": "auto",
+            "orientation": "horizontal",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+            "showUnfilled": true,
+            "sizing": "auto",
+            "valueMode": "color"
+          },
+          "pluginVersion": "11.2.1",
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by(exported_service) (increase(kong_http_requests_total[7d])) / 10080",
+              "instant": true,
+              "legendFormat": "{{`{{exported_service}}`}}",
+              "range": false,
+              "refId": "A"
+            }
+          ],
+          "title": "Avg Requests/min per Service — Last 7d",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
+              },
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
               "unit": "ms"
             },
             "overrides": []
           },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 16
-          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
           "id": 5,
           "options": {
-            "legend": {
-              "calcs": ["mean", "max"],
-              "displayMode": "table",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "none"
-            }
+            "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "none"}
           },
           "targets": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum by (service, le) (rate(kong_request_latency_ms_bucket[5m])))",
               "instant": false,
@@ -498,10 +410,7 @@ data:
               "refId": "A"
             },
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum by (service, le) (rate(kong_request_latency_ms_bucket[5m])))",
               "instant": false,
@@ -510,10 +419,7 @@ data:
               "refId": "B"
             },
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
               "expr": "histogram_quantile(0.50, sum by (service, le) (rate(kong_request_latency_ms_bucket[5m])))",
               "instant": false,
@@ -526,15 +432,10 @@ data:
           "type": "timeseries"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
+              "color": {"mode": "palette-classic"},
               "custom": {
                 "axisBorderShow": false,
                 "axisCenteredZero": false,
@@ -546,67 +447,32 @@ data:
                 "drawStyle": "line",
                 "fillOpacity": 10,
                 "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
                 "insertNulls": false,
                 "lineInterpolation": "linear",
                 "lineWidth": 2,
                 "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
+                "scaleDistribution": {"type": "linear"},
                 "showPoints": "never",
                 "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "off"}
               },
               "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              },
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
               "unit": "ms"
             },
             "overrides": []
           },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 16
-          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
           "id": 6,
           "options": {
-            "legend": {
-              "calcs": ["mean", "max"],
-              "displayMode": "table",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "none"
-            }
+            "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "none"}
           },
           "targets": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
               "expr": "histogram_quantile(0.99, sum by (service, le) (rate(kong_upstream_latency_ms_bucket[5m])))",
               "instant": false,
@@ -615,10 +481,7 @@ data:
               "refId": "A"
             },
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
               "expr": "histogram_quantile(0.95, sum by (service, le) (rate(kong_upstream_latency_ms_bucket[5m])))",
               "instant": false,
@@ -627,10 +490,7 @@ data:
               "refId": "B"
             },
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
               "expr": "histogram_quantile(0.50, sum by (service, le) (rate(kong_upstream_latency_ms_bucket[5m])))",
               "instant": false,
