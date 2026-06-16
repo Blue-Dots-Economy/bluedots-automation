@@ -15,6 +15,14 @@ locals {
   public_subnets  = { for k, v in var.subnet_config : k => v if v.type == "public" }
   private_subnets = { for k, v in var.subnet_config : k => v if v.type == "private" }
 
+  # Every subnet is sized to a /24. The bits added to the VPC prefix are derived
+  # from the VPC size rather than hard-coded, so the result is always /24:
+  #   /16 → +8 (netnum is the 3rd octet: 101 → 10.0.101.0/24)
+  #   /22 → +2 (netnum is the /24 index 0..3: 0 → 10.0.0.0/24, 1 → 10.0.1.0/24)
+  #   /23 → +1 (netnum 0..1)
+  # cidr_netnum must therefore be in range 0 .. (2^subnet_newbits - 1).
+  subnet_newbits = 24 - tonumber(split("/", var.vpc_cidr)[1])
+
   # NAT Gateway is created only when private subnets exist, nat_gateway_enabled is true,
   # and at least one public subnet exists to host it.
   create_nat_gw = (
@@ -62,7 +70,7 @@ resource "aws_subnet" "this" {
   for_each = var.create_network ? var.subnet_config : {}
 
   vpc_id                  = aws_vpc.vpc[0].id
-  cidr_block              = cidrsubnet(aws_vpc.vpc[0].cidr_block, 24 - tonumber(split("/", aws_vpc.vpc[0].cidr_block)[1]), each.value.cidr_netnum)
+  cidr_block              = cidrsubnet(aws_vpc.vpc[0].cidr_block, local.subnet_newbits, each.value.cidr_netnum)
   availability_zone       = "${var.aws_region}${each.value.availability_zone}"
   map_public_ip_on_launch = each.value.type == "public"
 
@@ -72,9 +80,9 @@ resource "aws_subnet" "this" {
       Name = "${local.environment_name}-${each.key}-subnet"
       Tier = each.value.type == "public" ? "Public" : "Private"
       # EKS load-balancer discovery tags
-      "kubernetes.io/role/elb"                                    = each.value.type == "public" ? "1" : "0"
-      "kubernetes.io/role/internal-elb"                           = each.value.type == "private" ? "1" : "0"
-      "kubernetes.io/cluster/${local.environment_name}-cluster"   = "shared"
+      "kubernetes.io/role/elb"                                  = each.value.type == "public" ? "1" : "0"
+      "kubernetes.io/role/internal-elb"                         = each.value.type == "private" ? "1" : "0"
+      "kubernetes.io/cluster/${local.environment_name}-cluster" = "shared"
     }
   )
 }
