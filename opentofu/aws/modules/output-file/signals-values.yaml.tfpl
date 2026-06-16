@@ -8,6 +8,12 @@
 # subchart paths (api.secrets.data, notification-service.secrets.data, …).
 # credentials.* still gets populated so signals/templates/secrets.yaml can
 # render the dpg-postgres + dpg-redis existingSecret bridges.
+
+# Public FQDN for the api + ui ingress (shared host). The only env-specific
+# ingress value; all other ingress config lives in helm/signals/values.yaml.
+global:
+  publicHost: ${signals_ui_host}
+
 credentials:
   postgresql:
     password: "${signals_postgres_password}"
@@ -55,23 +61,6 @@ api:
       - orange_dot
     apiInternalUrl: "https://${signals_ui_host}"
     crossNetworkUrl: "https://${signals_ui_host}"
-  ingress:
-    enabled: true
-    className: nginx
-    # Same-origin: the API is served under /api on the UI host, so the browser
-    # calls the same domain (no separate api DNS record, no CORS). The UI
-    # ingress owns the TLS cert for this host (signals-ui-tls); no cert-manager
-    # annotation here, to avoid issuing a duplicate cert for the same host.
-    annotations: {}
-    hosts:
-      - host: ${signals_ui_host}
-        paths:
-          - path: /api
-            pathType: Prefix
-    tls:
-      - secretName: signals-ui-tls
-        hosts:
-          - ${signals_ui_host}
 
 ui:
   # nginx proxies /api/* to the in-cluster signals API. The chart default
@@ -90,20 +79,6 @@ ui:
     # would leave readiness probe hitting a closed port. Pin to 80.
     port: 80
     targetPort: 80
-  ingress:
-    enabled: true
-    className: nginx
-    annotations:
-      cert-manager.io/cluster-issuer: letsencrypt-prod
-    hosts:
-      - host: ${signals_ui_host}
-        paths:
-          - path: /
-            pathType: Prefix
-    tls:
-      - secretName: signals-ui-tls
-        hosts:
-          - ${signals_ui_host}
 
 notification-service:
   secrets:

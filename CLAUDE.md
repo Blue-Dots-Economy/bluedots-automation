@@ -172,14 +172,37 @@ Helper scripts `helm/signals/rotate-ghcr-pull.sh` and `helm/aggregator/rotate-gh
 
 ## Branch Strategy
 
-- **`dev`** — latest, strict superset of all branches; contains both Helm and OpenTofu. **Deploy from `dev`.**
-- **`develop`** — infrastructure only.
-- **`helmcharts`** — Helm charts only.
-- **`main`** — base.
+Two kinds of branches: **trunk** branches that integrate work, and
+**per-deployment** branches that hold one deployment's config.
+
+### Trunk (promotion chain)
+
+Work flows up: `<your-feature-branch>` → `feature` → `develop` → `main`.
+
+- **`main`** — the canonical/standard branch. **Cut new deployment branches from here.**
+- **`develop`** — pre-release integration.
+- **`feature`** — collects in-progress work before promotion; usually the *newest* trunk branch, so check it for the latest unreleased changes.
 
 ```bash
-git switch dev && git pull origin dev
+git switch main && git pull origin main
 ```
+
+### Per-deployment branches
+
+Each live deployment has its **own long-lived branch** (branched from trunk),
+carrying only that deployment's config — network JSON schemas, image tags,
+public hostnames, and its own `opentofu/aws/<env>/` directory. **Never deploy a
+customer environment from `main`; use its branch.**
+
+| Branch | Env | Notes |
+|--------|-----|-------|
+| `blue-dots-dev` | dev | |
+| `orange-dots-dev` | dev | |
+| `orange-dot-prod` | prod | carries Kong ingress (`kong-nginx-impl`) |
+| `purple-dots-prod` | prod | **legacy** — still on the old `helmcharts/` layout |
+
+In-progress feature branches: `kong-nginx-impl`, `deploy-release-changes`
+(`gcp-support` and `otel-monitoring` are already folded into `feature`).
 
 ---
 
