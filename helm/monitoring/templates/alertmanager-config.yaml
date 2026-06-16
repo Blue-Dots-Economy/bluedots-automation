@@ -1,0 +1,104 @@
+{{- $email := .Values.alerting.email }}
+{{- $discord := .Values.alerting.discord }}
+{{- $emailOn := $email.enabled }}
+{{- $discordOn := $discord.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: monitoring-alertmanager-config
+  namespace: {{ .Release.Namespace }}
+stringData:
+  alertmanager.yaml: |
+    global:
+      resolve_timeout: 5m
+      {{- if $emailOn }}
+      smtp_smarthost: 'smtp.gmail.com:587'
+      smtp_from: '{{ $email.smtpFrom }}'
+      smtp_auth_username: '{{ $email.smtpAuthUsername }}'
+      smtp_auth_password: '{{ $email.smtpAuthPassword }}'
+      smtp_require_tls: true
+      {{- end }}
+
+    route:
+      {{- if $discordOn }}
+      receiver: discord-info
+      {{- else if $emailOn }}
+      receiver: email-notifications
+      {{- else }}
+      receiver: 'null'
+      {{- end }}
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - receiver: 'null'
+          matchers:
+            - alertname =~ "InfoInhibitor|Watchdog"
+        {{- if $discordOn }}
+        - receiver: discord-critical
+          matchers:
+            - severity = "critical"
+        - receiver: discord-warning
+          matchers:
+            - severity = "warning"
+        {{- end }}
+
+    receivers:
+      - name: 'null'
+
+      {{- if $discordOn }}
+      - name: discord-critical
+        discord_configs:
+          - webhook_url: '{{ $discord.criticalWebhook }}'
+            send_resolved: true
+            title: '{{ "{{" }} template "discord.bluedots.title" . {{ "}}" }}'
+            message: '{{ "{{" }} template "discord.bluedots.message" . {{ "}}" }}'
+        {{- if $emailOn }}
+        email_configs:
+          - to: '{{ $email.to }}'
+            send_resolved: true
+        {{- end }}
+
+      - name: discord-warning
+        discord_configs:
+          - webhook_url: '{{ $discord.warningWebhook }}'
+            send_resolved: true
+            title: '{{ "{{" }} template "discord.bluedots.title" . {{ "}}" }}'
+            message: '{{ "{{" }} template "discord.bluedots.message" . {{ "}}" }}'
+        {{- if $emailOn }}
+        email_configs:
+          - to: '{{ $email.to }}'
+            send_resolved: true
+        {{- end }}
+
+      - name: discord-info
+        discord_configs:
+          - webhook_url: '{{ $discord.infoWebhook }}'
+            send_resolved: true
+            title: '{{ "{{" }} template "discord.bluedots.title" . {{ "}}" }}'
+            message: '{{ "{{" }} template "discord.bluedots.message" . {{ "}}" }}'
+        {{- if $emailOn }}
+        email_configs:
+          - to: '{{ $email.to }}'
+            send_resolved: true
+        {{- end }}
+
+      {{- else if $emailOn }}
+      - name: email-notifications
+        email_configs:
+          - to: '{{ $email.to }}'
+            send_resolved: true
+      {{- end }}
+
+    inhibit_rules:
+      - source_matchers:
+          - severity = critical
+        target_matchers:
+          - severity =~ warning|info
+        equal: [namespace, alertname]
+      - source_matchers:
+          - severity = warning
+        target_matchers:
+          - severity = info
+        equal: [namespace, alertname]

@@ -36,6 +36,12 @@ _monitoring_alert_email:  &monitoring_alert_email  "alerts@example.com"
 _aggregator_admin_emails:   &aggregator_admin_emails   "admin@example.com"
 _signals_google_maps_api_key: &signals_google_maps_api_key ""
 
+# ── Discord alert webhooks (set these when monitoring_discord_enabled: true) ──
+# Create one webhook per channel in Discord: Channel Settings → Integrations → Webhooks
+# _discord_critical_webhook: &discord_critical_webhook "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+# _discord_warning_webhook:  &discord_warning_webhook  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+# _discord_info_webhook:     &discord_info_webhook     "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+
 # =============================================================================
 # Structure — do not edit below unless you know what you're changing.
 # =============================================================================
@@ -125,6 +131,12 @@ global:
   monitoring_alert_email:   *monitoring_alert_email
   monitoring_smtp_from:     *smtp_user
   monitoring_smtp_password: *smtp_password
+  # Toggle channels — set discord to true and uncomment webhooks to enable Discord:
+  monitoring_email_enabled:   true
+  monitoring_discord_enabled: false
+  # monitoring_discord_critical_webhook: *discord_critical_webhook
+  # monitoring_discord_warning_webhook:  *discord_warning_webhook
+  # monitoring_discord_info_webhook:     *discord_info_webhook
 
   # CloudWatch observability (Container Insights add-on)
   enable_cloudwatch_observability: false

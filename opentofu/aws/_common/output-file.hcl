@@ -23,6 +23,12 @@ locals {
   monitoring_alert_email   = try(local.global_vars.global.monitoring_alert_email, "")
   monitoring_smtp_from     = try(local.global_vars.global.monitoring_smtp_from, "")
   monitoring_smtp_password = try(local.global_vars.global.monitoring_smtp_password, "")
+
+  monitoring_email_enabled            = try(local.global_vars.global.monitoring_email_enabled, true)
+  monitoring_discord_enabled          = try(local.global_vars.global.monitoring_discord_enabled, false)
+  monitoring_discord_critical_webhook = try(local.global_vars.global.monitoring_discord_critical_webhook, "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME")
+  monitoring_discord_warning_webhook  = try(local.global_vars.global.monitoring_discord_warning_webhook, "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME")
+  monitoring_discord_info_webhook     = try(local.global_vars.global.monitoring_discord_info_webhook, "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME")
 }
 
 terraform {
@@ -174,4 +180,10 @@ inputs = {
   monitoring_smtp_from         = local.monitoring_smtp_from
   monitoring_smtp_password     = local.monitoring_smtp_password
   monitoring_alert_email       = local.monitoring_alert_email
+
+  monitoring_email_enabled            = local.monitoring_email_enabled
+  monitoring_discord_enabled          = local.monitoring_discord_enabled
+  monitoring_discord_critical_webhook = local.monitoring_discord_critical_webhook
+  monitoring_discord_warning_webhook  = local.monitoring_discord_warning_webhook
+  monitoring_discord_info_webhook     = local.monitoring_discord_info_webhook
 }
