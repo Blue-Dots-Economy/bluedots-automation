@@ -15,6 +15,7 @@ locals {
   encryption_string_length                      = try(local.global_vars.global.encryption_string_length, 32)
   random_string_length                          = try(local.global_vars.global.random_string_length, 24)
   signalstack_admin_key_length                  = try(local.global_vars.global.signalstack_admin_key_length, 48)
+  monitoring_grafana_password_length            = try(local.global_vars.global.monitoring_grafana_password_length, 16)
 }
 
 terraform {
@@ -37,4 +38,5 @@ inputs = {
   encryption_string_length                      = local.encryption_string_length
   random_string_length                          = local.random_string_length
   signalstack_admin_key_length                  = local.signalstack_admin_key_length
+  monitoring_grafana_password_length            = local.monitoring_grafana_password_length
 }

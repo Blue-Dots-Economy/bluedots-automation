@@ -72,10 +72,19 @@ kong:
     nginx_proxy_proxy_buffer_size: "32k"
     nginx_proxy_proxy_buffers: "4 32k"          # 4 x 32k = 128k total
     nginx_proxy_proxy_busy_buffers_size: "64k"  # <= 128k - 32k = 96k  ✓
-    # Honor X-Forwarded-For from the AWS LB so rate limiting (Phase 2) keys on
-    # the real client IP, not the load balancer's address.
-    trusted_ips: "0.0.0.0/0,::/0"
-    real_ip_header: "X-Forwarded-For"
+    # ── Real client IP (SECURITY — do NOT widen trusted_ips back to 0.0.0.0/0) ─
+    # The LB is an AWS Classic ELB at L4 (TCP passthrough — Kong terminates TLS).
+    # An L4 LB does NOT sanitise X-Forwarded-For, so trusting XFF from any source
+    # (the old `trusted_ips: 0.0.0.0/0` + `real_ip_header: XFF`) let a client forge
+    # its IP by rotating the X-Forwarded-For header per request — every request
+    # looked like a new IP and `limit_by: ip` never counted past 1 (rate limiter
+    # fully bypassable). Take the client IP from the PROXY-protocol header the ELB
+    # prepends at the connection layer (not a client-settable HTTP header), and
+    # trust it ONLY from the in-VPC LB. The ELB sends PROXY protocol via the
+    # aws-load-balancer-proxy-protocol annotation on the proxy Service below, and
+    # the proxy listeners enable `proxy_protocol` (proxy.http/tls.parameters).
+    real_ip_header: "proxy_protocol"
+    trusted_ips: "10.0.0.0/16"   # VPC CIDR — the ELB's source range; NOT 0.0.0.0/0
 
   ingressController:
     enabled: true
@@ -89,8 +98,38 @@ kong:
   proxy:
     enabled: true
     type: LoadBalancer
-    # NLB / static-IP / cross-zone annotations go here if needed.
-    annotations: {}
+    annotations:
+      # Classic ELB at L4: prepend PROXY protocol (v1) on all listeners so Kong
+      # receives the real client IP at the connection layer — the secure source
+      # for limit_by: ip (a client cannot forge it, unlike X-Forwarded-For).
+      # Pairs with env.real_ip_header: proxy_protocol + the listener parameters
+      # below — the annotation and the listeners MUST change together, or Kong
+      # expects a PROXY header the LB isn't sending (or vice versa) and all
+      # proxied requests fail.
+      service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"
+    # Enable proxy_protocol on the proxy listeners so Kong parses the PROXY
+    # header the ELB sends (gives the true client IP through any SNAT, so no
+    # externalTrafficPolicy: Local needed).
+    http:
+      parameters:
+        - "proxy_protocol"
+    tls:
+      parameters:
+        - "http2"
+        - "proxy_protocol"
+
+  # Inject the shared Redis password into the proxy container as REDIS_PASSWORD,
+  # sourced from the data-redis Secret. Kong's built-in `env` vault resolves it
+  # at runtime via the {vault://env/redis-password} reference in the rate-limit
+  # plugins (templates/kong-ratelimit.yaml) — so the password is NEVER rendered
+  # in plaintext on the KongClusterPlugin CRs. (customEnv keys are uppercased:
+  # redis_password -> REDIS_PASSWORD.)
+  customEnv:
+    redis_password:
+      valueFrom:
+        secretKeyRef:
+          name: data-redis
+          key: redis-password
 
   resources:
     requests:
@@ -116,8 +155,9 @@ kong:
 
   # Shared Redis backing the counters (policy: redis) so the limit stays correct
   # across Kong replicas. host/port point at the common-services Redis; the
-  # password is sourced from credentials.redisPassword (the same value
-  # secrets.yaml writes into the `data-redis` secret the Redis subchart uses).
+  # password is NOT set here — Kong resolves it at runtime from the env vault
+  # ({vault://env/redis-password}), fed by customEnv above from the data-redis
+  # Secret, so it never lands in plaintext on the KongClusterPlugin CRs.
   redis:
     host: common-services-redis-master.common-services.svc.cluster.local
     port: 6379
