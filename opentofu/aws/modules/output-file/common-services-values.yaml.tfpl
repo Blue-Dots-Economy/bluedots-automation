@@ -5,3 +5,15 @@ credentials:
   aggregatorPassword: "${aggregator_postgres_password}"
   dpgPassword: "${signals_postgres_password}"
   redisPassword: "${signals_redis_password}"
+
+# Postgres now lives in AWS RDS (managed). The in-cluster Bitnami subchart is
+# disabled; the bootstrap Job connects to this endpoint as the master user to
+# create the per-tenant roles/databases/extensions. Redis stays in-cluster.
+postgresql:
+  enabled: false
+
+postgres:
+  host: "${postgres_host}"
+
+postgresBootstrap:
+  enabled: true

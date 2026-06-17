@@ -74,6 +74,14 @@ dependency "storage" {
   }
 }
 
+dependency "rds" {
+  config_path                            = "../rds"
+  mock_outputs_merge_strategy_with_state = "shallow"
+  mock_outputs = {
+    db_address = "dummy-postgres.cluster.ap-south-1.rds.amazonaws.com"
+  }
+}
+
 dependency "random_passwords" {
   config_path                            = "../random_passwords"
   mock_outputs_merge_strategy_with_state = "shallow"
@@ -135,6 +143,9 @@ inputs = {
   # Storage
   storage_bucket_public  = dependency.storage.outputs.storage_bucket_public == null ? "" : dependency.storage.outputs.storage_bucket_public
   storage_bucket_private = dependency.storage.outputs.storage_bucket_private == null ? "" : dependency.storage.outputs.storage_bucket_private
+
+  # RDS (managed Postgres) — endpoint hostname injected into all three chart overlays
+  postgres_host = dependency.rds.outputs.db_address
 
   # Random secrets
   random_string         = dependency.random_passwords.outputs.random_string

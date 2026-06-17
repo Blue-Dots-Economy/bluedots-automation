@@ -10,6 +10,7 @@ resource "local_sensitive_file" "common_services_values" {
   filename        = "${local.values_dir}/common-services-values.yaml"
   file_permission = "0600"
   content = templatefile("${path.module}/common-services-values.yaml.tfpl", {
+    postgres_host                = var.postgres_host
     postgres_admin_password      = var.postgres_admin_password
     aggregator_postgres_password = var.aggregator_postgres_password
     signals_postgres_password    = var.signals_postgres_password
@@ -24,6 +25,7 @@ resource "local_sensitive_file" "aggregator_values" {
     aggregator_host                         = var.aggregator_host
     cloud_storage_region                    = var.cloud_storage_region
     storage_bucket_public                   = var.storage_bucket_public
+    postgres_host                           = var.postgres_host
     aggregator_postgres_password            = var.aggregator_postgres_password
     signals_redis_password                  = var.signals_redis_password
     aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
@@ -59,6 +61,7 @@ resource "local_sensitive_file" "signals_values" {
   content = templatefile("${path.module}/signals-values.yaml.tfpl", {
     signals_host                   = var.signals_host
     signals_ui_host                = var.signals_ui_host
+    postgres_host                  = var.postgres_host
     signals_postgres_password      = var.signals_postgres_password
     signals_redis_password         = var.signals_redis_password
     signals_auth_secret            = var.signals_auth_secret
