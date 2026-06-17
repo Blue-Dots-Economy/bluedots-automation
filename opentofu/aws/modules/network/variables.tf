@@ -50,8 +50,8 @@ variable "subnet_config" {
     cidr_netnum       = number
   }))
   default = {
-    public-a = { type = "public", availability_zone = "a", cidr_netnum = 101 }
-    public-b = { type = "public", availability_zone = "b", cidr_netnum = 102 }
+    public-a = { type = "public", availability_zone = "a", cidr_netnum = 0 }
+    public-b = { type = "public", availability_zone = "b", cidr_netnum = 1 }
   }
 
   validation {
