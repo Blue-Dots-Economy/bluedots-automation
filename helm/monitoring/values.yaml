@@ -156,7 +156,7 @@ prometheus:
               expr: increase(kube_pod_container_status_restarts_total{namespace="signals"}[1h]) > 5
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: signals
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in signals"
@@ -166,7 +166,7 @@ prometheus:
               expr: kube_pod_container_status_last_terminated_reason{namespace="signals",reason="OOMKilled"} == 1
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: signals
               annotations:
                 summary: "OOMKilled: signals/{{ $labels.pod }}"
@@ -211,7 +211,7 @@ prometheus:
               expr: increase(kube_pod_container_status_restarts_total{namespace="aggregator"}[1h]) > 5
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: aggregator
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in aggregator"
@@ -221,7 +221,7 @@ prometheus:
               expr: kube_pod_container_status_last_terminated_reason{namespace="aggregator",reason="OOMKilled"} == 1
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: aggregator
               annotations:
                 summary: "OOMKilled: aggregator/{{ $labels.pod }}"
@@ -266,7 +266,7 @@ prometheus:
               expr: increase(kube_pod_container_status_restarts_total{namespace="common-services"}[1h]) > 5
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: common-services
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in common-services"
@@ -276,7 +276,7 @@ prometheus:
               expr: kube_pod_container_status_last_terminated_reason{namespace="common-services",reason="OOMKilled"} == 1
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: common-services
               annotations:
                 summary: "OOMKilled: common-services/{{ $labels.pod }}"
@@ -337,6 +337,88 @@ prometheus:
                 summary: "Sustained rate limiting on {{ $labels.exported_service }}"
                 description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 requests/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min)"
 
+            # 5xx error rate > 5% of total — critical, act fast.
+            - alert: KongHigh5xxRate
+              expr: |
+                (
+                  sum by(exported_service) (rate(kong_http_requests_total{code=~"5.."}[5m]))
+                  /
+                  sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                ) * 100 > 5
+              for: 2m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "High 5xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate over the last 5 minutes (threshold: 5%)"
+
+            # 4xx error rate 10–25% — warning.
+            - alert: KongHigh4xxRate
+              expr: |
+                (
+                  (
+                    sum by(exported_service) (rate(kong_http_requests_total{code=~"4.."}[5m]))
+                    /
+                    sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                  ) * 100 > 10
+                ) < 25
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Elevated 4xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 10–25%)"
+
+            # 4xx error rate > 25% — critical.
+            - alert: KongCritical4xxRate
+              expr: |
+                (
+                  sum by(exported_service) (rate(kong_http_requests_total{code=~"4.."}[5m]))
+                  /
+                  sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                ) * 100 > 25
+              for: 2m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "Critical 4xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 25%)"
+
+        # Daily summary fires at 7:00 PM IST (13:30 UTC).
+        # Uses label_replace+or so both total-requests and 5xx-count arrive as
+        # one grouped Discord message.  Time gate: 13:30–13:44 UTC.
+        - name: daily.alerts
+          rules:
+            - alert: DailyKongSummary
+              expr: |
+                label_replace(
+                  (
+                    sum(increase(kong_http_requests_total[24h]))
+                    * on() group_left()
+                    (vector(1) * (hour() == 13) * (minute() >= 30) * (minute() < 45))
+                  ) > 0,
+                  "metric_type", "total_requests", "", ""
+                )
+                or
+                label_replace(
+                  (
+                    sum(increase(kong_http_requests_total{code=~"5.."}[24h]))
+                    * on() group_left()
+                    (vector(1) * (hour() == 13) * (minute() >= 30) * (minute() < 45))
+                  ) > 0,
+                  "metric_type", "5xx_errors", "", ""
+                )
+              for: 0m
+              labels:
+                severity: info
+                group: kong
+              annotations:
+                summary: "Daily Kong report — {{ $labels.metric_type }}: {{ $value | printf \"%.0f\" }}"
+                description: "{{ $labels.metric_type }}: {{ $value | printf \"%.0f\" }} in the last 24 hours"
+
   alertmanager:
     # Templates are loaded via helm/monitoring/files/*.tmpl, included as keys
     # in the monitoring-alertmanager-config Secret (see templates/alertmanager-config.yaml).
@@ -358,6 +440,10 @@ prometheus:
       # helm/monitoring/templates/alertmanager-config.yaml). This overrides the
       # auto-generated secret from `config:` above.
       configSecret: monitoring-alertmanager-config
+      # Set timezone so .Local.Format in alert templates renders IST (UTC+5:30).
+      env:
+        - name: TZ
+          value: "Asia/Kolkata"
       # Mount the templates ConfigMap so Alertmanager can load *.tmpl files.
       # The operator only mounts the config key from configSecret, so templates
       # must come from a separately-mounted volume.

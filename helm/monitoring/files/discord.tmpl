@@ -6,17 +6,13 @@
 {{ range .Alerts.Firing -}}
 **{{ .Annotations.summary }}**
 {{ .Annotations.description }}
-
-**Labels**
-{{ range .Labels.SortedPairs -}}
-`{{ .Name }}` = `{{ .Value }}`
-{{ end -}}
-Fired: `{{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}`
+Severity: `{{ .Labels.severity }}`{{ if .Labels.namespace }}  ·  Namespace: `{{ .Labels.namespace }}`{{ end }}{{ if .Labels.pod }}  ·  Pod: `{{ .Labels.pod }}`{{ end }}
+Fired: `{{ .StartsAt.Local.Format "2006-01-02 15:04:05 IST" }}`
 
 ---
 {{ end -}}
 {{ range .Alerts.Resolved -}}
 **{{ .Annotations.summary }}** — ✅ Resolved
-Resolved: `{{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}`
+Resolved: `{{ .EndsAt.Local.Format "2006-01-02 15:04:05 IST" }}`
 {{ end -}}
 {{- end }}

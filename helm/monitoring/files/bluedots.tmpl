@@ -48,7 +48,7 @@
       <div class="row"><span class="k">{{ .Name }}</span><span class="v">{{ .Value }}</span></div>
       {{ end -}}
     </div>
-    <div class="ts">Fired: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}</div>
+    <div class="ts">Fired: {{ .StartsAt.Local.Format "2006-01-02 15:04:05 IST" }}</div>
   </div>
   {{ end -}}
   {{ range .Alerts.Resolved -}}
@@ -56,7 +56,7 @@
     <span class="badge resolved">resolved</span>
     <div class="title">{{ .Annotations.summary }}</div>
     <div class="desc">{{ .Annotations.description }}</div>
-    <div class="ts">Resolved: {{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}</div>
+    <div class="ts">Resolved: {{ .EndsAt.Local.Format "2006-01-02 15:04:05 IST" }}</div>
   </div>
   {{ end -}}
   <div class="footer">Blue Dots Economy</div>

@@ -38,6 +38,12 @@ stringData:
           matchers:
             - alertname =~ "InfoInhibitor|Watchdog"
         {{- if $discordOn }}
+        - receiver: discord-info
+          matchers:
+            - alertname =~ "Daily.*"
+          group_by: []
+          group_wait: 0s
+          repeat_interval: 24h
         - receiver: discord-critical
           matchers:
             - severity = "critical"
@@ -77,13 +83,13 @@ stringData:
       - name: discord-info
         discord_configs:
           - webhook_url: '{{ $discord.infoWebhook }}'
-            send_resolved: true
+            send_resolved: false
             title: '{{ "{{" }} template "discord.bluedots.title" . {{ "}}" }}'
             message: '{{ "{{" }} template "discord.bluedots.message" . {{ "}}" }}'
         {{- if $emailOn }}
         email_configs:
           - to: '{{ $email.to }}'
-            send_resolved: true
+            send_resolved: false
         {{- end }}
 
       {{- else if $emailOn }}
