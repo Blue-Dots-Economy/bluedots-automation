@@ -368,3 +368,36 @@ match-score:
 # above MUST match the common-services `dpg-password` / `redis-password`
 # (injected by the Makefile `dpg-install` target from the common-services Secrets).
 
+# ─── Signals search engine (TEI embeddings + ingestion worker + query API) ──
+# `search` indexes items into item_search (pgvector+PostGIS) and serves
+# POST /v1/search. `search-embeddings` is the in-cluster TEI service.
+# Real DB/Redis passwords are injected by the opentofu values template
+# (signals-values.yaml.tfpl) into the dpg-search-secrets Secret.
+search-embeddings:
+  enabled: true
+  imagePullSecrets: *image_pull_secrets
+
+search:
+  enabled: true
+  imagePullSecrets: *image_pull_secrets
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  embedding:
+    baseUrl: "http://signals-search-embeddings:80/v1"
+    rerankBaseUrl: "http://signals-search-embeddings:8081"
+  # Keep aligned with api.SERVED_DOMAINS / api.schemas.networks.
+  schemas:
+    networks:
+      - purple_dot
+  secrets:
+    create: true
+    existingSecret: dpg-search-secrets
+    data:
+      POSTGRES_USER: "dpg"
+      POSTGRES_DB: "dpg"
+      POSTGRES_PASSWORD: ""
+      REDIS_PASSWORD: ""
+      EMBEDDING_API_KEY: ""
+
