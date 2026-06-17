@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "search.fullname" . }}
+  labels: {{- include "search.labels" . | nindent 4 }}
+data:
+  POSTGRES_HOST: {{ .Values.postgres.host | quote }}
+  POSTGRES_PORT: {{ .Values.postgres.port | quote }}
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+  EMBEDDING_BASE_URL: {{ .Values.embedding.baseUrl | quote }}
+  RERANK_BASE_URL: {{ .Values.embedding.rerankBaseUrl | quote }}
+  EMBEDDING_MODEL: {{ .Values.embedding.model | quote }}
+  EMBEDDING_DIM: {{ .Values.embedding.dim | quote }}
+  NETWORK_CONFIG_PATH: {{ .Values.networkConfigPath | quote }}
+  {{- range $k, $v := .Values.config }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

@@ -1,0 +1,54 @@
+# One image serves both the worker and the API; the deployments pick the
+# entrypoint via `command` (node dist/worker/main.js | node dist/api/main.js).
+image:
+  repository: ghcr.io/blue-dots-economy/signals-search
+  tag: "develop"
+  pullPolicy: Always
+imagePullSecrets:
+  - name: ghcr-pull
+worker:
+  replicaCount: 1
+  resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 1, memory: 1Gi } }
+api:
+  replicaCount: 1
+  port: 3100
+  resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 1, memory: 512Mi } }
+  ingress:
+    enabled: false
+serviceAccount:
+  create: true
+postgres:
+  host: common-services-postgresql.common-services.svc.cluster.local
+  port: 5432
+redis:
+  host: common-services-redis-master.common-services.svc.cluster.local
+  port: 6379
+embedding:
+  baseUrl: "http://signals-search-embeddings:80/v1"
+  rerankBaseUrl: "http://signals-search-embeddings:8081"
+  model: "BAAI/bge-m3"
+  dim: "1024"
+# Network configs mounted from a ConfigMap (files/networks/<name>.json) at
+# networkConfigPath. The signals-search registry loads every *.json in that
+# directory. Keep `schemas.networks` aligned with the api subchart's served set.
+networkConfigPath: /app/schemas
+schemas:
+  networks:
+    - purple_dot
+config:
+  # RUN_MIGRATIONS off: Signals-DPG owns the item_search DDL (applied by the api
+  # migrate-job). The worker fails fast if the table is absent.
+  RUN_MIGRATIONS: "false"
+  INGEST_STREAM: "signals:item-events"
+  INGEST_CONSUMER_GROUP: "signals-search"
+  SWEEP_INTERVAL_MS: "60000"
+  SWEEP_BATCH_SIZE: "200"
+secrets:
+  create: true
+  existingSecret: dpg-search-secrets
+  data:
+    POSTGRES_USER: "dpg"
+    POSTGRES_DB: "dpg"
+    POSTGRES_PASSWORD: ""
+    REDIS_PASSWORD: ""
+    EMBEDDING_API_KEY: ""

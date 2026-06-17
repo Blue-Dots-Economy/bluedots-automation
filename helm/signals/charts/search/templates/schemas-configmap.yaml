@@ -1,0 +1,15 @@
+{{- if .Values.schemas.networks }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "search.schemasConfigMapName" . }}
+  labels: {{- include "search.labels" . | nindent 4 }}
+data:
+{{- range .Values.schemas.networks }}
+{{- $file := printf "files/networks/%s.json" . -}}
+{{- $raw := $.Files.Get $file -}}
+{{- if not $raw }}{{ fail (printf "missing schema file %s for network %s" $file .) }}{{- end }}
+  {{ . }}.json: |
+{{ $raw | indent 4 }}
+{{- end }}
+{{- end }}
