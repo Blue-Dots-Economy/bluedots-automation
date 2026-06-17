@@ -75,7 +75,8 @@ function _apply_tf_module() {
     local module="$1"
     source tf.sh
     echo -e "\nApplying module: $module"
-    ( cd "$module" && terragrunt init && terragrunt apply )
+    # Set AUTO_APPROVE=1 for non-interactive apply (CI / scripted runs).
+    ( cd "$module" && terragrunt init -input=false && terragrunt apply -input=false ${AUTO_APPROVE:+-auto-approve} )
 }
 
 function plan_tf_network()          { _plan_tf_module "network"; }
