@@ -6,5 +6,5 @@ metadata:
 data:
   discord.tmpl: |
 {{ .Files.Get "files/discord.tmpl" | indent 4 }}
-  bluedots.tmpl: |
-{{ .Files.Get "files/bluedots.tmpl" | indent 4 }}
+  dots.tmpl: |
+{{ .Files.Get "files/dots.tmpl" | indent 4 }}
