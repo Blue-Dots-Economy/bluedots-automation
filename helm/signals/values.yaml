@@ -11,6 +11,14 @@ global:
   # Public FQDN shared by /api (signals-api) and / (signals-ui). The api/ui
   # ingress templates read this. UPDATE per environment via the overlay.
   publicHost: dpg.example.com
+  # publicHosts: all hostnames this release serves (the ONE place to list them).
+  # Empty -> [publicHost] (single host, unchanged). Both the ui and api ingress
+  # read this, so every host serving the UI also serves /api (same-origin per
+  # portal). Set this + ui.hostBindings for single-instance multi-domain:
+  # publicHosts:
+  #   - bluedotssignals.provider.org
+  #   - bluedotssignals.seeker.org
+  publicHosts: []
 
 # -----------------------------------------------------------------------------
 # Images — single source for all 4 components
@@ -231,13 +239,19 @@ ui:
     targetPort: 8080
   # Template-driven ingress (charts/ui/templates/ingress.yaml): path / is fixed
   # in the template; these scalars are the config. This object owns the
-  # cert-manager issuance for the shared host cert. Host = global.publicHost.
+  # cert-manager issuance for the shared host cert. Hosts = global.publicHosts
+  # (falls back to global.publicHost).
   ingress:
     enabled: true
     className: kong
     tlsSecret: signals-ui-tls
     clusterIssuer: letsencrypt-prod
     plugin: rl-signals-ui        # KongClusterPlugin tier (common-services)
+  # Host -> VITE_SERVED_BINDINGS routing (empty = single static binding, today's
+  # behaviour). When set, one instance serves several per-domain portals; nginx
+  # picks the binding per request from the Host header. Hosts here MUST also be
+  # in global.publicHosts (above) so the ui + api ingresses route them.
+  # hostBindings: "bluedotssignals.provider.org=purple_dot/provider;bluedotssignals.seeker.org=purple_dot/seeker"
   # nginx:alpine entrypoint chowns /var/cache/nginx/client_temp on startup,
   # so the pod must run as root and the container keeps CHOWN/SETGID/SETUID.
   podSecurityContext:
