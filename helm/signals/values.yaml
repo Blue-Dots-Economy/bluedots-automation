@@ -199,6 +199,9 @@ api:
     networks:
       - yellow_dot
       - blue_dot
+      # purple_dot is the served network (SERVED_DOMAINS / NETWORK_CONFIG_LOCAL_FILE
+      # below) and must be mounted; it also carries the search vectorize markers.
+      - purple_dot
 
 ui:
   image: *ui_image
@@ -387,10 +390,8 @@ search:
   embedding:
     baseUrl: "http://signals-search-embeddings:80/v1"
     rerankBaseUrl: "http://signals-search-embeddings:8081"
-  # Keep aligned with api.SERVED_DOMAINS / api.schemas.networks.
-  schemas:
-    networks:
-      - purple_dot
+  # Reuses the api's {release}-api-schemas ConfigMap (set via the subchart
+  # default) — search indexes exactly the networks api.schemas.networks serves.
   secrets:
     create: true
     existingSecret: dpg-search-secrets
