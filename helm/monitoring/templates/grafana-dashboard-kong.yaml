@@ -11,45 +11,17 @@ data:
       "__inputs": [],
       "__elements": {},
       "__requires": [
-        {
-          "type": "panel",
-          "id": "gauge",
-          "name": "Gauge",
-          "version": ""
-        },
-        {
-          "type": "grafana",
-          "id": "grafana",
-          "name": "Grafana",
-          "version": "11.2.1"
-        },
-        {
-          "type": "datasource",
-          "id": "prometheus",
-          "name": "Prometheus",
-          "version": "1.0.0"
-        },
-        {
-          "type": "panel",
-          "id": "bargauge",
-          "name": "Bar gauge",
-          "version": ""
-        },
-        {
-          "type": "panel",
-          "id": "timeseries",
-          "name": "Time series",
-          "version": ""
-        }
+        {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.2.1"},
+        {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+        {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+        {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+        {"type": "panel", "id": "table", "name": "Table", "version": ""}
       ],
       "annotations": {
         "list": [
           {
             "builtIn": 1,
-            "datasource": {
-              "type": "grafana",
-              "uid": "-- Grafana --"
-            },
+            "datasource": {"type": "grafana", "uid": "-- Grafana --"},
             "enable": true,
             "hide": true,
             "iconColor": "rgba(0, 211, 255, 1)",
@@ -63,50 +35,220 @@ data:
       "graphTooltip": 0,
       "id": null,
       "links": [],
+      "time": {"from": "now/d", "to": "now"},
       "panels": [
         {
           "datasource": {"type": "prometheus", "uid": "prometheus"},
           "fieldConfig": {
             "defaults": {
+              "color": {"fixedColor": "blue", "mode": "fixed"},
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]},
+              "decimals": 0,
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 4, "x": 0, "y": 0},
+          "id": 20,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[$__range]))", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"}],
+          "title": "Total Requests",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"fixedColor": "green", "mode": "fixed"},
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "decimals": 0,
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 4, "x": 4, "y": 0},
+          "id": 21,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"2..\"}[$__range]))", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"}],
+          "title": "Success 2xx",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"fixedColor": "semi-dark-orange", "mode": "fixed"},
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "semi-dark-orange", "value": null}]},
+              "decimals": 0,
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 4, "x": 8, "y": 0},
+          "id": 23,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"4..\"}[$__range]))", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"}],
+          "title": "Client Errors 4xx",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"fixedColor": "red", "mode": "fixed"},
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}]},
+              "decimals": 0,
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 4, "x": 12, "y": 0},
+          "id": 24,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"5..\"}[$__range]))", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"}],
+          "title": "Server Errors 5xx",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
               "color": {"mode": "thresholds"},
+              "mappings": [{"options": {"match": "null+nan", "result": {"index": 0, "text": "0%"}}, "type": "special"}],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "semi-dark-orange", "value": 1},
+                  {"color": "orange", "value": 5},
+                  {"color": "red", "value": 10}
+                ]
+              },
+              "decimals": 1,
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 4, "x": 16, "y": 0},
+          "id": 25,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"4..\"}[$__range])) / sum(increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[$__range])) * 100", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"}],
+          "title": "4xx Rate %",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "mappings": [{"options": {"match": "null+nan", "result": {"index": 0, "text": "0%"}}, "type": "special"}],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 1},
+                  {"color": "red", "value": 5}
+                ]
+              },
+              "decimals": 1,
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 4, "x": 20, "y": 0},
+          "id": 26,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"5..\"}[$__range])) / sum(increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[$__range])) * 100", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"}],
+          "title": "5xx Rate %",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {"legend": false, "tooltip": false, "viz": false},
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {"type": "linear"},
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {"group": "A", "mode": "none"},
+                "thresholdsStyle": {"mode": "line+area"}
+              },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
-                  {"color": "dark-green", "value": null},
-                  {"color": "dark-orange", "value": 5},
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 5},
                   {"color": "red", "value": 15}
                 ]
               },
               "unit": "percent"
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "5xx Error Rate %"},
+                "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]
+              },
+              {
+                "matcher": {"id": "byName", "options": "4xx Error Rate %"},
+                "properties": [{"id": "color", "value": {"fixedColor": "semi-dark-orange", "mode": "fixed"}}]
+              }
+            ]
           },
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
           "id": 3,
           "options": {
-            "minVizHeight": 75,
-            "minVizWidth": 75,
-            "orientation": "auto",
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true,
-            "sizing": "auto"
+            "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "none"}
           },
-          "pluginVersion": "11.2.1",
           "targets": [
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "sum(rate(kong_http_requests_total{code=~\"5..\"}[5m])) / sum(rate(kong_http_requests_total[5m])) * 100",
+              "expr": "sum(rate(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"5..\"}[5m])) / sum(rate(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m])) * 100",
               "instant": false,
-              "legendFormat": "__auto",
+              "legendFormat": "5xx Error Rate %",
               "range": true,
               "refId": "A"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum(rate(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"4..\"}[5m])) / sum(rate(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m])) * 100",
+              "instant": false,
+              "legendFormat": "4xx Error Rate %",
+              "range": true,
+              "refId": "B"
             }
           ],
-          "title": "Error Rate % (5xx only)",
-          "type": "gauge"
+          "title": "Error Rate Trend (5m avg)",
+          "type": "timeseries"
         },
         {
           "datasource": {"type": "prometheus", "uid": "prometheus"},
@@ -136,15 +278,12 @@ data:
                 "thresholdsStyle": {"mode": "off"}
               },
               "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [{"color": "green", "value": null}]
-              },
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
               "unit": "reqps"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
           "id": 4,
           "options": {
             "legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true},
@@ -154,7 +293,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "sum by (exported_service) (rate(kong_http_requests_total{code=\"429\"}[1m])) * 60",
+              "expr": "sum by (exported_service) (rate(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=\"429\"}[1m])) * 60",
               "instant": false,
               "legendFormat": "{{`{{exported_service}}`}}",
               "range": true,
@@ -192,15 +331,12 @@ data:
                 "thresholdsStyle": {"mode": "off"}
               },
               "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [{"color": "green", "value": null}]
-              },
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
               "unit": "reqps"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 12},
           "id": 2,
           "options": {
             "legend": {"calcs": [], "displayMode": "table", "placement": "bottom", "showLegend": true},
@@ -210,7 +346,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "sum by (code) (rate(kong_http_requests_total[5m]))",
+              "expr": "sum by (code) (rate(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m]))",
               "instant": false,
               "legendFormat": "{{`{{code}}`}}",
               "range": true,
@@ -248,15 +384,12 @@ data:
                 "thresholdsStyle": {"mode": "off"}
               },
               "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [{"color": "green", "value": null}]
-              },
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
               "unit": "short"
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 20},
           "id": 7,
           "options": {
             "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
@@ -266,7 +399,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "sum by(exported_service) (rate(kong_http_requests_total[1m])) * 60",
+              "expr": "sum by(exported_service) (rate(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[1m])) * 60",
               "instant": false,
               "legendFormat": "{{`{{exported_service}}`}}",
               "range": true,
@@ -275,90 +408,6 @@ data:
           ],
           "title": "Requests per Minute by Service",
           "type": "timeseries"
-        },
-        {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
-          "fieldConfig": {
-            "defaults": {
-              "color": {"mode": "palette-classic"},
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [{"color": "green", "value": null}]
-              },
-              "unit": "short"
-            },
-            "overrides": []
-          },
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
-          "id": 8,
-          "options": {
-            "displayMode": "basic",
-            "minVizHeight": 10,
-            "minVizWidth": 0,
-            "namePlacement": "auto",
-            "orientation": "horizontal",
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
-            "showUnfilled": true,
-            "sizing": "auto",
-            "valueMode": "color"
-          },
-          "pluginVersion": "11.2.1",
-          "targets": [
-            {
-              "datasource": {"type": "prometheus", "uid": "prometheus"},
-              "editorMode": "code",
-              "expr": "sum by(exported_service) (increase(kong_http_requests_total[24h])) / 1440",
-              "instant": true,
-              "legendFormat": "{{`{{exported_service}}`}}",
-              "range": false,
-              "refId": "A"
-            }
-          ],
-          "title": "Avg Requests/min per Service — Last 24h",
-          "type": "bargauge"
-        },
-        {
-          "datasource": {"type": "prometheus", "uid": "prometheus"},
-          "fieldConfig": {
-            "defaults": {
-              "color": {"mode": "palette-classic"},
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [{"color": "green", "value": null}]
-              },
-              "unit": "short"
-            },
-            "overrides": []
-          },
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
-          "id": 9,
-          "options": {
-            "displayMode": "basic",
-            "minVizHeight": 10,
-            "minVizWidth": 0,
-            "namePlacement": "auto",
-            "orientation": "horizontal",
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
-            "showUnfilled": true,
-            "sizing": "auto",
-            "valueMode": "color"
-          },
-          "pluginVersion": "11.2.1",
-          "targets": [
-            {
-              "datasource": {"type": "prometheus", "uid": "prometheus"},
-              "editorMode": "code",
-              "expr": "sum by(exported_service) (increase(kong_http_requests_total[7d])) / 10080",
-              "instant": true,
-              "legendFormat": "{{`{{exported_service}}`}}",
-              "range": false,
-              "refId": "A"
-            }
-          ],
-          "title": "Avg Requests/min per Service — Last 7d",
-          "type": "bargauge"
         },
         {
           "datasource": {"type": "prometheus", "uid": "prometheus"},
@@ -393,7 +442,7 @@ data:
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
           "id": 5,
           "options": {
             "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
@@ -403,7 +452,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum by (service, le) (rate(kong_request_latency_ms_bucket[5m])))",
+              "expr": "histogram_quantile(0.99, sum by (service, le) (rate(kong_request_latency_ms_bucket{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m])))",
               "instant": false,
               "legendFormat": "p99 - {{`{{service}}`}}",
               "range": true,
@@ -412,7 +461,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum by (service, le) (rate(kong_request_latency_ms_bucket[5m])))",
+              "expr": "histogram_quantile(0.95, sum by (service, le) (rate(kong_request_latency_ms_bucket{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m])))",
               "instant": false,
               "legendFormat": "p95 - {{`{{service}}`}}",
               "range": true,
@@ -421,7 +470,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "histogram_quantile(0.50, sum by (service, le) (rate(kong_request_latency_ms_bucket[5m])))",
+              "expr": "histogram_quantile(0.50, sum by (service, le) (rate(kong_request_latency_ms_bucket{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m])))",
               "instant": false,
               "legendFormat": "p50 - {{`{{service}}`}}",
               "range": true,
@@ -464,7 +513,7 @@ data:
             },
             "overrides": []
           },
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
           "id": 6,
           "options": {
             "legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true},
@@ -474,7 +523,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum by (service, le) (rate(kong_upstream_latency_ms_bucket[5m])))",
+              "expr": "histogram_quantile(0.99, sum by (service, le) (rate(kong_upstream_latency_ms_bucket{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m])))",
               "instant": false,
               "legendFormat": "p99 - {{`{{service}}`}}",
               "range": true,
@@ -483,7 +532,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum by (service, le) (rate(kong_upstream_latency_ms_bucket[5m])))",
+              "expr": "histogram_quantile(0.95, sum by (service, le) (rate(kong_upstream_latency_ms_bucket{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m])))",
               "instant": false,
               "legendFormat": "p95 - {{`{{service}}`}}",
               "range": true,
@@ -492,7 +541,7 @@ data:
             {
               "datasource": {"type": "prometheus", "uid": "prometheus"},
               "editorMode": "code",
-              "expr": "histogram_quantile(0.50, sum by (service, le) (rate(kong_upstream_latency_ms_bucket[5m])))",
+              "expr": "histogram_quantile(0.50, sum by (service, le) (rate(kong_upstream_latency_ms_bucket{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[5m])))",
               "instant": false,
               "legendFormat": "p50 - {{`{{service}}`}}",
               "range": true,
@@ -501,13 +550,268 @@ data:
           ],
           "title": "Upstream Latency Percentiles (P99 / P95 / P50)",
           "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": false},
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 500},
+                  {"color": "red", "value": 5000}
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Service"},
+                "properties": [{"id": "custom.width", "value": 320}]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Total (30d)"},
+                "properties": [
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                  {"id": "custom.align", "value": "center"},
+                  {"id": "custom.width", "value": 160}
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Today"},
+                "properties": [
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                  {"id": "custom.align", "value": "center"},
+                  {"id": "custom.width", "value": 160}
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 36},
+          "id": 10,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {"show": false},
+            "showHeader": true,
+            "sortBy": [{"desc": true, "displayName": "Total (30d)"}]
+          },
+          "pluginVersion": "11.2.1",
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by (exported_service) (increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[30d]))",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "__auto",
+              "range": false,
+              "refId": "A"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by (exported_service) (increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[$__range]))",
+              "format": "table",
+              "instant": true,
+              "legendFormat": "__auto",
+              "range": false,
+              "refId": "B"
+            }
+          ],
+          "title": "Request Counts by Service",
+          "transformations": [
+            {"id": "merge", "options": {}},
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {"Time": true},
+                "renameByName": {
+                  "exported_service": "Service",
+                  "Value #A": "Total (30d)",
+                  "Value #B": "Today"
+                }
+              }
+            }
+          ],
+          "type": "table"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": false},
+              "decimals": 0,
+              "mappings": [],
+              "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]},
+              "unit": "none"
+            },
+            "overrides": [
+              {
+                "matcher": {"id": "byName", "options": "Service"},
+                "properties": [{"id": "custom.width", "value": 280}]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Total (30d)"},
+                "properties": [
+                  {"id": "custom.align", "value": "center"},
+                  {"id": "custom.width", "value": 110}
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Success 2xx"},
+                "properties": [
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                  {"id": "custom.align", "value": "center"},
+                  {"id": "custom.width", "value": 110},
+                  {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Client Errors 4xx"},
+                "properties": [
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                  {"id": "custom.align", "value": "center"},
+                  {"id": "custom.width", "value": 130},
+                  {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "semi-dark-orange", "value": 1}, {"color": "orange", "value": 50}]}}
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Server Errors 5xx"},
+                "properties": [
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                  {"id": "custom.align", "value": "center"},
+                  {"id": "custom.width", "value": 130},
+                  {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 10}]}}
+                ]
+              },
+              {
+                "matcher": {"id": "byName", "options": "Error Rate %"},
+                "properties": [
+                  {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}},
+                  {"id": "custom.align", "value": "center"},
+                  {"id": "custom.width", "value": 110},
+                  {"id": "unit", "value": "percent"},
+                  {"id": "decimals", "value": 2},
+                  {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "orange", "value": 5}, {"color": "red", "value": 10}]}}
+                ]
+              }
+            ]
+          },
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 44},
+          "id": 11,
+          "options": {
+            "cellHeight": "sm",
+            "footer": {"show": false},
+            "showHeader": true,
+            "sortBy": [{"desc": true, "displayName": "Total (30d)"}]
+          },
+          "pluginVersion": "11.2.1",
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by (exported_service) (increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\"}[30d]))",
+              "format": "table", "instant": true, "legendFormat": "__auto", "range": false, "refId": "A"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by (exported_service) (increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"2..\"}[30d]))",
+              "format": "table", "instant": true, "legendFormat": "__auto", "range": false, "refId": "B"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by (exported_service) (increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"4..\"}[30d]))",
+              "format": "table", "instant": true, "legendFormat": "__auto", "range": false, "refId": "C"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "editorMode": "code",
+              "expr": "sum by (exported_service) (increase(kong_http_requests_total{service=~\"^$namespace[.].*\", exported_service=~\"$service\", code=~\"5..\"}[30d]))",
+              "format": "table", "instant": true, "legendFormat": "__auto", "range": false, "refId": "D"
+            }
+          ],
+          "title": "Service-Level Breakdown (Last 30d)",
+          "transformations": [
+            {"id": "merge", "options": {}},
+            {
+              "id": "calculateField",
+              "options": {
+                "alias": "Error Rate %",
+                "mode": "binaryOperation",
+                "binary": {"left": "Value #D", "operator": "/", "right": "Value #A", "reducer": "sum"}
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {"Time": true},
+                "renameByName": {
+                  "exported_service": "Service",
+                  "Value #A": "Total (30d)",
+                  "Value #B": "Success 2xx",
+                  "Value #C": "Client Errors 4xx",
+                  "Value #D": "Server Errors 5xx"
+                }
+              }
+            }
+          ],
+          "type": "table"
         }
       ],
       "refresh": "",
       "schemaVersion": 39,
       "tags": [],
       "templating": {
-        "list": []
+        "list": [
+          {
+            "allValue": ".*",
+            "current": {"selected": false, "text": "All", "value": "$__all"},
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "definition": "label_values(kong_http_requests_total, service)",
+            "hide": 0,
+            "includeAll": true,
+            "label": "Namespace",
+            "multi": false,
+            "name": "namespace",
+            "options": [],
+            "query": {
+              "query": "label_values(kong_http_requests_total, service)",
+              "refId": "StandardVariableQuery"
+            },
+            "refresh": 2,
+            "regex": "^([^.]+)[.]",
+            "sort": 1,
+            "type": "query"
+          },
+          {
+            "allValue": ".*",
+            "current": {"selected": false, "text": ["All"], "value": ["$__all"]},
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "definition": "label_values(kong_http_requests_total{service=~\"^$namespace[.].*\"}, exported_service)",
+            "hide": 0,
+            "includeAll": true,
+            "label": "Service",
+            "multi": true,
+            "name": "service",
+            "options": [],
+            "query": {
+              "query": "label_values(kong_http_requests_total{service=~\"^$namespace[.].*\"}, exported_service)",
+              "refId": "StandardVariableQuery"
+            },
+            "refresh": 2,
+            "regex": "",
+            "sort": 1,
+            "type": "query"
+          }
+        ]
       },
       "timepicker": {},
       "timezone": "browser",
