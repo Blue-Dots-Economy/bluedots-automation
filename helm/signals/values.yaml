@@ -387,9 +387,8 @@ search:
     host: common-services-postgresql.common-services.svc.cluster.local
   redis:
     host: common-services-redis-master.common-services.svc.cluster.local
-  embedding:
-    baseUrl: "http://signals-search-embeddings:80/v1"
-    rerankBaseUrl: "http://signals-search-embeddings:8081"
+  # Embedding/rerank host defaults to {release}-search-embeddings (configmap.yaml);
+  # no override needed for the in-cluster TEI service.
   # Reuses the api's {release}-api-schemas ConfigMap (set via the subchart
   # default) — search indexes exactly the networks api.schemas.networks serves.
   secrets:

@@ -24,17 +24,20 @@ redis:
   host: common-services-redis-master.common-services.svc.cluster.local
   port: 6379
 embedding:
-  baseUrl: "http://signals-search-embeddings:80/v1"
-  rerankBaseUrl: "http://signals-search-embeddings:8081"
+  # Host defaults to {release}-search-embeddings (the in-cluster TEI service of
+  # this release; see configmap.yaml). Set baseUrl/rerankBaseUrl only to point at
+  # an external embedding/rerank endpoint.
+  baseUrl: ""
+  rerankBaseUrl: ""
   model: "BAAI/bge-m3"
   dim: "1024"
-# Network configs mounted from a ConfigMap (files/networks/<name>.json) at
-# networkConfigPath. The signals-search registry loads every *.json in that
-# directory. Keep `schemas.networks` aligned with the api subchart's served set.
+# Search reuses the api subchart's network-schema ConfigMap (single source of
+# network configs — no duplication) mounted at networkConfigPath; the registry
+# loads every *.json in it, so search indexes exactly the networks the api
+# serves (api.schemas.networks). Defaults to "{release}-api-schemas"; override
+# only if the api ConfigMap is named differently.
 networkConfigPath: /app/schemas
-schemas:
-  networks:
-    - purple_dot
+networkSchemasConfigMap: ""
 config:
   # RUN_MIGRATIONS off: Signals-DPG owns the item_search DDL (applied by the api
   # migrate-job). The worker fails fast if the table is absent.
