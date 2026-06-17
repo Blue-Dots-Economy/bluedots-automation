@@ -247,6 +247,28 @@ credentials:
   redisPassword: ""  # REDIS_PW
 
 # -----------------------------------------------------------------------------
+# Managed Postgres (AWS RDS). The Bitnami subchart below is disabled
+# (postgresql.enabled=false); apps and this chart's bootstrap Job connect here.
+# postgres.host is injected by opentofu (output-file → common-services overlay).
+# -----------------------------------------------------------------------------
+postgres:
+  host: ""        # RDS endpoint hostname (populated by the opentofu overlay)
+  port: 5432
+
+# Bootstrap Job — runs as a post-install/post-upgrade hook, connects to RDS as
+# the master (`postgres`) user and creates the per-tenant roles, databases and
+# extensions that the Bitnami initdb script used to create. Fully idempotent.
+postgresBootstrap:
+  enabled: false  # set true by the opentofu overlay once postgres.host is known
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+
+# -----------------------------------------------------------------------------
 # Bitnami Postgres subchart — single shared instance, multi-tenant.
 #
 # Bootstrap:
@@ -256,7 +278,9 @@ credentials:
 #     databases, and pgcrypto/cube/earthdistance extensions for `dpg`
 # -----------------------------------------------------------------------------
 postgresql:
-  enabled: true
+  # DISABLED — Postgres migrated to AWS RDS (managed). Block kept for reference /
+  # rollback; the bootstrap Job (above) now owns role/database/extension creation.
+  enabled: false
   image:
     registry: docker.io
     repository: bitnamilegacy/postgresql
