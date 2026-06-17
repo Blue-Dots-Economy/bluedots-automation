@@ -441,9 +441,13 @@ prometheus:
       # auto-generated secret from `config:` above.
       configSecret: monitoring-alertmanager-config
       # Set timezone so .Local.Format in alert templates renders IST (UTC+5:30).
-      env:
-        - name: TZ
-          value: "Asia/Kolkata"
+      # Must use containers override — env: is not a valid top-level field on
+      # the Alertmanager CR spec and is silently ignored by the operator.
+      containers:
+        - name: alertmanager
+          env:
+            - name: TZ
+              value: "Asia/Kolkata"
       # Mount the templates ConfigMap so Alertmanager can load *.tmpl files.
       # The operator only mounts the config key from configSecret, so templates
       # must come from a separately-mounted volume.
