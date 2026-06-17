@@ -235,10 +235,16 @@ variable "monitoring_email_enabled" {
   description = "Enable email (SMTP) alert notifications"
 }
 
+variable "monitoring_smtp_host" {
+  type        = string
+  default     = "smtp.gmail.com:587"
+  description = "SMTP server host:port for Alertmanager email notifications"
+}
+
 variable "monitoring_smtp_from" {
   type        = string
   default     = ""
-  description = "Gmail sender address for Alertmanager email notifications"
+  description = "Sender address for Alertmanager email notifications"
 }
 
 variable "monitoring_smtp_password" {

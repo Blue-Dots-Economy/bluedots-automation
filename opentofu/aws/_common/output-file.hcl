@@ -21,6 +21,7 @@ locals {
   aggregator_msg91_template_id  = try(local.global_vars.global.aggregator_msg91_template_id, "")
 
   monitoring_alert_email   = try(local.global_vars.global.monitoring_alert_email, "")
+  monitoring_smtp_host     = try(local.global_vars.global.monitoring_smtp_host, "smtp.gmail.com:587")
   monitoring_smtp_from     = try(local.global_vars.global.monitoring_smtp_from, "")
   monitoring_smtp_password = try(local.global_vars.global.monitoring_smtp_password, "")
 
@@ -177,6 +178,7 @@ inputs = {
   aggregator_msg91_template_id = local.aggregator_msg91_template_id
 
   monitoring_grafana_password  = dependency.random_passwords.outputs.monitoring_grafana_password
+  monitoring_smtp_host         = local.monitoring_smtp_host
   monitoring_smtp_from         = local.monitoring_smtp_from
   monitoring_smtp_password     = local.monitoring_smtp_password
   monitoring_alert_email       = local.monitoring_alert_email

@@ -12,7 +12,7 @@
 # =============================================================================
 alerting:
   email:
-    enabled: true
+    enabled: false
     smtpHost: "smtp.gmail.com:587"
     smtpFrom: "alerts@example.com"
     smtpAuthUsername: "alerts@example.com"
