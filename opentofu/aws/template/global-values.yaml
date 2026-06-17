@@ -58,8 +58,10 @@ global:
   # vpc_cidr: "10.0.0.0/16"            # CIDR block for the new VPC
   # ingress_cidr_blocks: ["0.0.0.0/0"] # Allowed CIDRs for HTTP/HTTPS inbound security group
 
-  # cidr_netnum is the offset for cidrsubnet(vpc_cidr, 8, N):
-  #   101 → 10.0.101.0/24 | 102 → 10.0.102.0/24 | 201 → 10.0.201.0/24, etc.
+  # Each subnet defaults to /24; cidr_netnum is the block index for that size.
+  #   /16 VPC: 101 → 10.0.101.0/24 | 102 → 10.0.102.0/24 | 201 → 10.0.201.0/24
+  # Set prefix_length per subnet for a different size — then cidr_netnum indexes
+  # blocks OF THAT size (e.g. a /28 in a /22 → cidr_netnum is the /28 index 0..63).
   subnet_config:
     public-a:
       type: public
@@ -69,14 +71,16 @@ global:
       type: public
       availability_zone: "b"
       cidr_netnum: 102
-    # private-a:
-    #   type: private
-    #   availability_zone: "a"
-    #   cidr_netnum: 201
-    # private-b:
-    #   type: private
-    #   availability_zone: "b"
-    #   cidr_netnum: 202
+    # Private subnets for the RDS DB subnet group (RDS needs ≥2 AZs). Kept /24 here
+    # for a roomy /16 VPC; for a tight VPC add `prefix_length: 28` to shrink them.
+    private-a:
+      type: private
+      availability_zone: "a"
+      cidr_netnum: 201
+    private-b:
+      type: private
+      availability_zone: "b"
+      cidr_netnum: 202
 
   # NAT Gateway — costs ~$32/month per AZ. Only needed when private subnets exist.
   # nat_gateway_enabled: false
@@ -90,6 +94,19 @@ global:
   # eks_endpoint_private_access: false
   # eks_node_count_desired: 3
   # eks_ebs_csi_addon_version: "v1.28.0-eksbuild.1"
+
+  # ── RDS (managed Postgres) ──────────────────────────────────────────────────
+  # Single multi-tenant instance; databases/roles created by the common-services
+  # bootstrap Job, not here. Lives in the private subnets above.
+  rds_instance_class:        "db.t4g.micro"   # bump to db.t4g.small (+ multi_az) for prod
+  rds_allocated_storage:     20               # gp3 minimum
+  rds_max_allocated_storage: 50               # storage autoscaling cap (0 disables)
+  rds_engine_version:        "17"
+  rds_multi_az:              false            # set true for prod HA
+  rds_backup_retention_days: 7                # automated backups + PITR
+  # rds_deletion_protection: true             # default true
+  # rds_skip_final_snapshot: false            # default false
+  # rds_force_ssl: false                      # default false; true to require TLS
 
   # Key becomes suffix: <building_block>-<environment>-<account_id>-<key>
   buckets:
