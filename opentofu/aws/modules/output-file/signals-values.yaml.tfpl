@@ -40,6 +40,7 @@ api:
       NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
       NOTIFICATION_SERVICE_SECRET: "${signals_notification_secret}"
       DPG_SCORING_SECRET: "${signals_dpg_scoring_secret}"
+      GOOGLE_GEOCODING_API_KEY: "${signals_google_maps_api_key}"
   # Cross-namespace FQDNs for shared common-services postgres/redis. Service
   # names derive from the helm release name (common-services-postgresql,
   # common-services-redis-master).
@@ -67,6 +68,8 @@ ui:
   # (http://dpg-api:2742) assumes a release named `dpg`; this release is
   # `signals`, so the service is `signals-api`. Wrong upstream = blank UI.
   apiUpstream: "http://signals-api:2742"
+  # Exposed to the ui container as the UI_VARIANT env var (chart default: signals).
+  uiVariant: " "
   runtimeConfig:
     VITE_DEFAULT_VIEW_MODE: "map"
     VITE_MAP_PROVIDER: "google-maps"
@@ -74,6 +77,7 @@ ui:
     VITE_ACTION_POLL_INTERVAL_MS: "30000"
     # Show only the network this cluster serves (chart default is purple_dot).
     VITE_NETWORK_NAME: "orange_dot"
+    VITE_ANALYTICS_GA_ID: ""
   service:
     # nginx in the ui image listens on 80; chart default targetPort 8080
     # would leave readiness probe hitting a closed port. Pin to 80.
