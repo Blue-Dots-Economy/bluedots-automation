@@ -13,6 +13,7 @@
 alerting:
   email:
     enabled: true
+    smtpHost: "smtp.gmail.com:587"
     smtpFrom: "alerts@example.com"
     smtpAuthUsername: "alerts@example.com"
     smtpAuthPassword: "changeme"
@@ -337,99 +338,10 @@ prometheus:
                 description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 requests/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min)"
 
   alertmanager:
-    # Styled HTML email template — named templates referenced by email_configs.
-    templateFiles:
-      bluedots.tmpl: |-
-        {{ define "email.default.subject" -}}
-        [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }} · {{ if .GroupLabels.namespace }}{{ .GroupLabels.namespace }}{{ else }}cluster{{ end }}
-        {{- end }}
-
-        {{ define "email.default.html" -}}
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="UTF-8">
-        <style>
-          body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f0f2f5;margin:0;padding:24px}
-          .card{max-width:620px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.12)}
-          .hdr{padding:20px 24px;border-bottom:1px solid #e8e8e8}
-          .hdr h2{margin:0;font-size:17px;color:#1a1a2e}
-          .hdr .sub{margin-top:4px;font-size:13px;color:#888}
-          .item{padding:16px 24px;border-bottom:1px solid #f0f0f0}
-          .badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;text-transform:uppercase}
-          .critical{background:#fff1f0;color:#cf1322;border:1px solid #ffa39e}
-          .warning{background:#fff7e6;color:#d46b08;border:1px solid #ffd591}
-          .resolved{background:#f6ffed;color:#389e0d;border:1px solid #b7eb8f}
-          .title{font-size:15px;font-weight:600;color:#262626;margin:8px 0 4px}
-          .desc{font-size:13px;color:#595959;margin:0 0 12px}
-          .meta{background:#fafafa;border-radius:4px;padding:10px 12px}
-          .row{display:flex;gap:8px;font-size:12px;padding:2px 0}
-          .k{color:#8c8c8c;min-width:120px}
-          .v{color:#262626;font-family:monospace}
-          .ts{font-size:12px;color:#bfbfbf;margin-top:10px}
-          .footer{padding:14px 24px;text-align:center;font-size:12px;color:#bfbfbf;background:#fafafa}
-        </style>
-        </head>
-        <body>
-        <div class="card">
-          <div class="hdr">
-            <h2>Blue Dots — Alert Notification</h2>
-            <div class="sub">
-              {{- if gt (.Alerts.Firing | len) 0 }}{{ .Alerts.Firing | len }} firing{{ end -}}
-              {{- if and (gt (.Alerts.Firing | len) 0) (gt (.Alerts.Resolved | len) 0) }} · {{ end -}}
-              {{- if gt (.Alerts.Resolved | len) 0 }}{{ .Alerts.Resolved | len }} resolved{{ end }}
-            </div>
-          </div>
-          {{ range .Alerts.Firing -}}
-          <div class="item">
-            <span class="badge {{ .Labels.severity }}">{{ .Labels.severity }}</span>
-            <div class="title">{{ .Annotations.summary }}</div>
-            <div class="desc">{{ .Annotations.description }}</div>
-            <div class="meta">
-              {{ range .Labels.SortedPairs -}}
-              <div class="row"><span class="k">{{ .Name }}</span><span class="v">{{ .Value }}</span></div>
-              {{ end -}}
-            </div>
-            <div class="ts">Fired: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}</div>
-          </div>
-          {{ end -}}
-          {{ range .Alerts.Resolved -}}
-          <div class="item">
-            <span class="badge resolved">resolved</span>
-            <div class="title">{{ .Annotations.summary }}</div>
-            <div class="desc">{{ .Annotations.description }}</div>
-            <div class="ts">Resolved: {{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}</div>
-          </div>
-          {{ end -}}
-          <div class="footer">Blue Dots Economy &nbsp;·&nbsp; test-dev-cluster</div>
-        </div>
-        </body>
-        </html>
-        {{- end }}
-
-      discord.tmpl: |-
-        {{ define "discord.bluedots.title" -}}
-        {{ if eq .Status "firing" }}🔴 FIRING{{ else }}✅ RESOLVED{{ end }} · {{ .GroupLabels.alertname }}{{ if .GroupLabels.namespace }} · {{ .GroupLabels.namespace }}{{ end }}
-        {{- end }}
-
-        {{ define "discord.bluedots.message" -}}
-        {{ range .Alerts.Firing -}}
-        **{{ .Annotations.summary }}**
-        {{ .Annotations.description }}
-
-        **Labels**
-        {{ range .Labels.SortedPairs -}}
-        `{{ .Name }}` = `{{ .Value }}`
-        {{ end -}}
-        Fired: `{{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}`
-
-        ---
-        {{ end -}}
-        {{ range .Alerts.Resolved -}}
-        **{{ .Annotations.summary }}** — ✅ Resolved
-        Resolved: `{{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}`
-        {{ end -}}
-        {{- end }}
+    # Templates are loaded via helm/monitoring/files/*.tmpl, included as keys
+    # in the monitoring-alertmanager-config Secret (see templates/alertmanager-config.yaml).
+    # templateFiles is intentionally empty — it fed the auto-generated kube-prometheus-stack
+    # secret which the operator ignores when configSecret is set.
 
     # Minimal fallback config — actual routing is generated by
     # helm/monitoring/templates/alertmanager-config.yaml (referenced via configSecret).
@@ -446,6 +358,17 @@ prometheus:
       # helm/monitoring/templates/alertmanager-config.yaml). This overrides the
       # auto-generated secret from `config:` above.
       configSecret: monitoring-alertmanager-config
+      # Mount the templates ConfigMap so Alertmanager can load *.tmpl files.
+      # The operator only mounts the config key from configSecret, so templates
+      # must come from a separately-mounted volume.
+      volumes:
+        - name: alertmanager-templates
+          configMap:
+            name: monitoring-alertmanager-templates
+      volumeMounts:
+        - name: alertmanager-templates
+          mountPath: /etc/alertmanager/templates
+          readOnly: true
       retention: 168h
       storage:
         volumeClaimTemplate:

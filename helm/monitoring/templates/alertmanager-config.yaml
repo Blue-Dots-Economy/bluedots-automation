@@ -9,10 +9,12 @@ metadata:
   namespace: {{ .Release.Namespace }}
 stringData:
   alertmanager.yaml: |
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
     global:
       resolve_timeout: 5m
       {{- if $emailOn }}
-      smtp_smarthost: 'smtp.gmail.com:587'
+      smtp_smarthost: '{{ $email.smtpHost }}'
       smtp_from: '{{ $email.smtpFrom }}'
       smtp_auth_username: '{{ $email.smtpAuthUsername }}'
       smtp_auth_password: '{{ $email.smtpAuthPassword }}'

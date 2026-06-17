@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-alertmanager-templates
+  namespace: {{ .Release.Namespace }}
+data:
+  discord.tmpl: |
+{{ .Files.Get "files/discord.tmpl" | indent 4 }}
+  bluedots.tmpl: |
+{{ .Files.Get "files/bluedots.tmpl" | indent 4 }}
