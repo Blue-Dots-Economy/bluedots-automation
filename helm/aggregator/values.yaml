@@ -170,7 +170,7 @@ web:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: 'develop'
+    tag: 'sha-15afbce'
     pullPolicy: Always
   service:
     port: 3000
@@ -199,7 +199,7 @@ api:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: 'develop'
+    tag: 'sha-9321f28'
     pullPolicy: Always
   service:
     port: 4000
@@ -237,7 +237,7 @@ worker:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: 'develop'
+    tag: 'sha-9321f28'
     pullPolicy: Always
   resources:
     requests: { cpu: 100m, memory: 384Mi }
