@@ -59,6 +59,8 @@ prometheus:
       KubeControllerManagerDown: true
       etcdHighNumberOfLeaderChanges: true
       KubeletTooManyPods: true
+      # Replaced by PodHighRestartCount (critical) in additionalPrometheusRulesMap.
+      KubePodCrashLooping: true
 
   nodeExporter:
     enabled: true
