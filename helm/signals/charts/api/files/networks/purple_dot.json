@@ -110,6 +110,8 @@
               "type": "array",
               "title": "Looking For",
               "description": "What are you looking for?",
+              "vectorize": true,
+              "vector_weight": 1,
               "minItems": 1,
               "items": {
                 "type": "string",
@@ -131,6 +133,8 @@
               "type": "string",
               "title": "Details",
               "description": "Explain your choice in more detail",
+              "vectorize": true,
+              "vector_weight": 2,
               "minLength": 1
             },
             "address": {
@@ -189,7 +193,8 @@
         ],
         "user": [
           { "field": "total_users", "label": "Total Beneficiaries" },
-          { "field": "avg_items_per_user", "label": "Avg Profiles per Beneficiary" }
+          { "field": "avg_items_per_user", "label": "Avg Profiles per User" },
+          { "field": "avg_actions_per_user", "label": "Avg Actions per User" }
         ]
       }
     },
@@ -259,6 +264,8 @@
               "type": "string",
               "title": "Organisation",
               "description": "Name of your organisation (or your name if individual)",
+              "vectorize": true,
+              "vector_weight": 1,
               "minLength": 1
             },
             "disabilities_served": {
@@ -301,6 +308,8 @@
               "type": "array",
               "title": "Services Offered",
               "description": "What services or support do you provide?",
+              "vectorize": true,
+              "vector_weight": 1,
               "minItems": 1,
               "items": {
                 "type": "string",
@@ -340,6 +349,8 @@
               "type": "string",
               "title": "Service Details",
               "description": "Share more about the service, opportunity, or support provided",
+              "vectorize": true,
+              "vector_weight": 2,
               "minLength": 1
             },
             "catalog_url": {
@@ -365,7 +376,8 @@
         ],
         "user": [
           { "field": "total_users", "label": "Total Service Providers" },
-          { "field": "avg_items_per_user", "label": "Avg Profiles per Provider" }
+          { "field": "avg_items_per_user", "label": "Avg Profiles per User" },
+          { "field": "avg_actions_per_user", "label": "Avg Actions per User" }
         ]
       }
     }
