@@ -5,8 +5,16 @@ metadata:
   labels:
     {{- include "dpg-ui.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  {{- $autoscaling := dict }}
+  {{- $replicaCount := 0 }}
+  {{- with .Values.global }}{{- with .signals }}{{- with .ui }}
+    {{- if .autoscaling }}{{- $autoscaling = .autoscaling }}{{- end }}
+    {{- if .replicaCount }}{{- $replicaCount = .replicaCount }}{{- end }}
+  {{- end }}{{- end }}{{- end }}
+  {{- if not $autoscaling }}{{- $autoscaling = .Values.autoscaling }}{{- end }}
+  {{- if not $replicaCount }}{{- $replicaCount = .Values.replicaCount }}{{- end }}
+  {{- if not $autoscaling.enabled }}
+  replicas: {{ $replicaCount }}
   {{- end }}
   selector:
     matchLabels:

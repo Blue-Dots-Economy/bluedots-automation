@@ -1,0 +1,18 @@
+{{- $pdb := dict }}
+{{- with .Values.global }}{{- with .signals }}{{- with .matchScore }}
+  {{- if .podDisruptionBudget }}{{- $pdb = .podDisruptionBudget }}{{- end }}
+{{- end }}{{- end }}{{- end }}
+{{- if not $pdb }}{{- $pdb = .Values.podDisruptionBudget }}{{- end }}
+{{- if $pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dpg-match-score.fullname" . }}
+  labels:
+    {{- include "dpg-match-score.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ $pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "dpg-match-score.selectorLabels" . | nindent 6 }}
+{{- end }}

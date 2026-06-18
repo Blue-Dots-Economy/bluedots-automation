@@ -36,3 +36,7 @@ hpa:
   minReplicas: 2
   maxReplicas: 6
   targetCPU: 70
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

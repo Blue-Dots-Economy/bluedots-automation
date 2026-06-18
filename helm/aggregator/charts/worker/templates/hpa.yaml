@@ -1,5 +1,5 @@
 {{- $hpa := dict }}
-{{- with .Values.global }}{{- with .aggregator }}{{- with .web }}
+{{- with .Values.global }}{{- with .aggregator }}{{- with .worker }}
   {{- if .hpa }}{{- $hpa = .hpa }}{{- end }}
 {{- end }}{{- end }}{{- end }}
 {{- if not $hpa }}{{- $hpa = .Values.hpa }}{{- end }}
@@ -7,14 +7,14 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ include "web.fullname" . }}
+  name: {{ include "worker.fullname" . }}
   labels:
-    {{- include "web.labels" . | nindent 4 }}
+    {{- include "worker.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ include "web.fullname" . }}
+    name: {{ include "worker.fullname" . }}
   minReplicas: {{ $hpa.minReplicas }}
   maxReplicas: {{ $hpa.maxReplicas }}
   metrics:

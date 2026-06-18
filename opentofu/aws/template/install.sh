@@ -35,6 +35,10 @@ SIGNALS_DIR="$REPO_ROOT/helm/signals"
 AGG_DIR="$REPO_ROOT/helm/aggregator"
 MON_DIR="$REPO_ROOT/helm/monitoring"
 
+# Resource overrides (replica counts, HPA, PDB) for all charts.
+# Edit helm/global-resources.yaml to change settings across all environments.
+GLOBAL_RESOURCES="$REPO_ROOT/helm/global-resources.yaml"
+
 # ═══ terraform / cluster bootstrap ════════════════════════════════════════════
 
 function create_tf_backend() {
@@ -175,6 +179,7 @@ function deploy_signals() {
     echo -e "\nDeploying signals"
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" \
         -n "$SIGNALS_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" \
         -f "$SIGNALS_VALUES" \
         --wait --timeout 10m
 }
@@ -184,6 +189,7 @@ function deploy_aggregator() {
     echo -e "\nDeploying aggregator"
     helm upgrade --install "$AGG_REL" "$AGG_DIR" \
         -n "$AGG_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" \
         -f "$AGG_VALUES" \
         --wait --timeout 10m
 }
@@ -342,9 +348,9 @@ function dry_run() {
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
         -f "$CS_VALUES" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$SIGNALS_VALUES" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$SIGNALS_VALUES" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$AGG_VALUES" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$AGG_VALUES" --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────

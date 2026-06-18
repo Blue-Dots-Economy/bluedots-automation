@@ -1,0 +1,18 @@
+{{- $pdb := dict }}
+{{- with .Values.global }}{{- with .aggregator }}{{- with .api }}
+  {{- if .podDisruptionBudget }}{{- $pdb = .podDisruptionBudget }}{{- end }}
+{{- end }}{{- end }}{{- end }}
+{{- if not $pdb }}{{- $pdb = .Values.podDisruptionBudget }}{{- end }}
+{{- if $pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "api.fullname" . }}
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ $pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "api.selectorLabels" . | nindent 6 }}
+{{- end }}

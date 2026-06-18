@@ -1,0 +1,127 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Global resource configuration — single source of truth for replica counts,
+# HPA, and PDB across every service.  Change values here and redeploy;
+# templates fall back to their local chart defaults when a key is absent.
+# ─────────────────────────────────────────────────────────────────────────────
+
+global:
+
+  # ── Signals (dpg) stack ──────────────────────────────────────────────────
+
+  signals:
+
+    # api: core backend — scaled and guarded for production availability
+    api:
+      replicaCount: 2
+
+      autoscaling:
+        enabled: true
+        minReplicas: 2
+        maxReplicas: 3
+        targetCPUUtilizationPercentage: 70
+
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+    # ui: static frontend — single replica is sufficient
+    ui:
+      replicaCount: 1
+
+      autoscaling:
+        enabled: false
+        minReplicas: 1
+        maxReplicas: 3
+        targetCPUUtilizationPercentage: 70
+
+      podDisruptionBudget:
+        enabled: false
+        minAvailable: 1
+
+    # notification-service: async notifications
+    notificationService:
+      replicaCount: 1
+
+      autoscaling:
+        enabled: false
+        minReplicas: 1
+        maxReplicas: 3
+        targetCPUUtilizationPercentage: 70
+
+      podDisruptionBudget:
+        enabled: false
+        minAvailable: 1
+
+    # match-score: scoring worker
+    matchScore:
+      replicaCount: 1
+
+      autoscaling:
+        enabled: false
+        minReplicas: 1
+        maxReplicas: 3
+        targetCPUUtilizationPercentage: 70
+
+      podDisruptionBudget:
+        enabled: false
+        minAvailable: 1
+
+  # ── Aggregator stack ─────────────────────────────────────────────────────
+
+  aggregator:
+
+    # api: core backend — scaled and guarded for production availability
+    api:
+      replicaCount: 2
+
+      hpa:
+        enabled: true
+        minReplicas: 2
+        maxReplicas: 3
+        targetCPU: 70
+
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+
+    # web: frontend portal
+    web:
+      replicaCount: 1
+
+      hpa:
+        enabled: false
+        minReplicas: 1
+        maxReplicas: 3
+        targetCPU: 70
+
+      podDisruptionBudget:
+        enabled: false
+        minAvailable: 1
+
+    # worker: background job processor
+    worker:
+      replicaCount: 1
+
+      hpa:
+        enabled: false
+        minReplicas: 1
+        maxReplicas: 3
+        targetCPU: 70
+
+      podDisruptionBudget:
+        enabled: false
+        minAvailable: 1
+
+    # keycloak: identity provider — uses Recreate strategy, keep HPA disabled
+    keycloak:
+      replicaCount: 1
+
+      hpa:
+        enabled: false
+        minReplicas: 1
+        maxReplicas: 1
+        targetCPU: 70
+
+      podDisruptionBudget:
+        enabled: false
+        minAvailable: 1

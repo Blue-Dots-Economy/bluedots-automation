@@ -5,7 +5,17 @@ metadata:
   labels:
     {{- include "keycloak.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  {{- $hpa := dict }}
+  {{- $replicaCount := 0 }}
+  {{- with .Values.global }}{{- with .aggregator }}{{- with .keycloak }}
+    {{- if .hpa }}{{- $hpa = .hpa }}{{- end }}
+    {{- if .replicaCount }}{{- $replicaCount = .replicaCount }}{{- end }}
+  {{- end }}{{- end }}{{- end }}
+  {{- if not $hpa }}{{- $hpa = .Values.hpa }}{{- end }}
+  {{- if not $replicaCount }}{{- $replicaCount = .Values.replicaCount }}{{- end }}
+  {{- if not $hpa.enabled }}
+  replicas: {{ $replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "keycloak.selectorLabels" . | nindent 6 }}
