@@ -1,9 +1,4 @@
-{{- $autoscaling := dict }}
-{{- with .Values.global }}{{- with .signals }}{{- with .api }}
-  {{- if .autoscaling }}{{- $autoscaling = .autoscaling }}{{- end }}
-{{- end }}{{- end }}{{- end }}
-{{- if not $autoscaling }}{{- $autoscaling = .Values.autoscaling }}{{- end }}
-{{- if $autoscaling.enabled -}}
+{{- if .Values.autoscaling.enabled -}}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -15,23 +10,23 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "dpg-api.fullname" . }}
-  minReplicas: {{ $autoscaling.minReplicas }}
-  maxReplicas: {{ $autoscaling.maxReplicas }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
   metrics:
-    {{- if $autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ $autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if $autoscaling.targetMemoryUtilizationPercentage }}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ $autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
 {{- end }}

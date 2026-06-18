@@ -1,9 +1,4 @@
-{{- $pdb := dict }}
-{{- with .Values.global }}{{- with .aggregator }}{{- with .keycloak }}
-  {{- if .podDisruptionBudget }}{{- $pdb = .podDisruptionBudget }}{{- end }}
-{{- end }}{{- end }}{{- end }}
-{{- if not $pdb }}{{- $pdb = .Values.podDisruptionBudget }}{{- end }}
-{{- if $pdb.enabled }}
+{{- if .Values.podDisruptionBudget.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -11,7 +6,7 @@ metadata:
   labels:
     {{- include "keycloak.labels" . | nindent 4 }}
 spec:
-  minAvailable: {{ $pdb.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
   selector:
     matchLabels:
       {{- include "keycloak.selectorLabels" . | nindent 6 }}

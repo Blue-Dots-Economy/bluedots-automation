@@ -1,9 +1,4 @@
-{{- $hpa := dict }}
-{{- with .Values.global }}{{- with .aggregator }}{{- with .worker }}
-  {{- if .hpa }}{{- $hpa = .hpa }}{{- end }}
-{{- end }}{{- end }}{{- end }}
-{{- if not $hpa }}{{- $hpa = .Values.hpa }}{{- end }}
-{{- if $hpa.enabled }}
+{{- if .Values.hpa.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -15,13 +10,13 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "worker.fullname" . }}
-  minReplicas: {{ $hpa.minReplicas }}
-  maxReplicas: {{ $hpa.maxReplicas }}
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ $hpa.targetCPU }}
+          averageUtilization: {{ .Values.hpa.targetCPU }}
 {{- end }}

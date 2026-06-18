@@ -5,19 +5,8 @@ metadata:
   labels:
     {{- include "dpg-api.labels" . | nindent 4 }}
 spec:
-  {{- $autoscaling := dict }}
-  {{- $replicaCount := 0 }}
-  {{- $resources := dict }}
-  {{- with .Values.global }}{{- with .signals }}{{- with .api }}
-    {{- if .autoscaling }}{{- $autoscaling = .autoscaling }}{{- end }}
-    {{- if .replicaCount }}{{- $replicaCount = .replicaCount }}{{- end }}
-    {{- if .resources }}{{- $resources = .resources }}{{- end }}
-  {{- end }}{{- end }}{{- end }}
-  {{- if not $autoscaling }}{{- $autoscaling = .Values.autoscaling }}{{- end }}
-  {{- if not $replicaCount }}{{- $replicaCount = .Values.replicaCount }}{{- end }}
-  {{- if not $resources }}{{- $resources = .Values.resources }}{{- end }}
-  {{- if not $autoscaling.enabled }}
-  replicas: {{ $replicaCount }}
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
@@ -72,7 +61,7 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with $resources }}
+          {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
