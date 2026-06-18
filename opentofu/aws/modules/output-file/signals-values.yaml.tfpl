@@ -45,6 +45,7 @@ api:
       NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
       NOTIFICATION_SERVICE_SECRET: "${signals_notification_secret}"
       DPG_SCORING_SECRET: "${signals_dpg_scoring_secret}"
+      GOOGLE_GEOCODING_API_KEY: "${signals_google_maps_api_key}"
   # Cross-namespace FQDNs for shared common-services postgres/redis. Service
   # names derive from the helm release name (common-services-postgresql,
   # common-services-redis-master).
@@ -155,3 +156,16 @@ match-score:
           }
         }
       }
+
+# Signals search: inject the shared DB/Redis passwords into the
+# dpg-search-secrets Secret (same generated values as the api block above).
+search:
+  secrets:
+    create: true
+    existingSecret: dpg-search-secrets
+    data:
+      POSTGRES_USER: "dpg"
+      POSTGRES_DB: "dpg"
+      POSTGRES_PASSWORD: "${signals_postgres_password}"
+      REDIS_PASSWORD: "${signals_redis_password}"
+      EMBEDDING_API_KEY: ""

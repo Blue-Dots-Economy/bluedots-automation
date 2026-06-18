@@ -258,20 +258,62 @@ variable "monitoring_grafana_password" {
   sensitive = true
 }
 
+variable "monitoring_email_enabled" {
+  type        = bool
+  default     = true
+  description = "Enable email (SMTP) alert notifications"
+}
+
+variable "monitoring_smtp_host" {
+  type        = string
+  default     = "smtp.gmail.com:587"
+  description = "SMTP server host:port for Alertmanager email notifications"
+}
+
 variable "monitoring_smtp_from" {
   type        = string
-  description = "Gmail sender address for Alertmanager email notifications"
+  default     = ""
+  description = "Sender address for Alertmanager email notifications"
 }
 
 variable "monitoring_smtp_password" {
   type        = string
   sensitive   = true
+  default     = ""
   description = "Gmail App Password for Alertmanager SMTP"
 }
 
 variable "monitoring_alert_email" {
   type        = string
+  default     = ""
   description = "Recipient address for Alertmanager email notifications"
+}
+
+variable "monitoring_discord_enabled" {
+  type        = bool
+  default     = false
+  description = "Enable Discord alert notifications (3 channels: critical, warning, info)"
+}
+
+variable "monitoring_discord_critical_webhook" {
+  type        = string
+  sensitive   = true
+  default     = "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+  description = "Discord webhook URL for the #alerts-critical channel"
+}
+
+variable "monitoring_discord_warning_webhook" {
+  type        = string
+  sensitive   = true
+  default     = "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+  description = "Discord webhook URL for the #alerts-warning channel"
+}
+
+variable "monitoring_discord_info_webhook" {
+  type        = string
+  sensitive   = true
+  default     = "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+  description = "Discord webhook URL for the #alerts-info (catch-all) channel"
 }
 
 # ─── Common-services (shared postgres+redis) ───────────────────────────────

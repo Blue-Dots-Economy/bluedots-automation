@@ -1,8 +1,28 @@
 # =============================================================================
 # Monitoring umbrella chart — kube-prometheus-stack + Loki + Alloy
-# Secrets and email config are injected via the OpenTofu-generated overlay.
+# Secrets and alert-channel config are injected via the OpenTofu-generated overlay.
 # For standalone use, update the placeholder values marked below.
 # =============================================================================
+
+# =============================================================================
+# Alert channel toggles
+# Set enabled: true/false per channel. When both are true, each severity-routed
+# receiver fires both Discord and email simultaneously.
+# Override per-org via the OpenTofu-generated monitoring-values.yaml overlay.
+# =============================================================================
+alerting:
+  email:
+    enabled: false
+    smtpHost: "smtp.gmail.com:587"
+    smtpFrom: "alerts@example.com"
+    smtpAuthUsername: "alerts@example.com"
+    smtpAuthPassword: "changeme"
+    to: "alerts@example.com"
+  discord:
+    enabled: false
+    criticalWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+    warningWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+    infoWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
 
 prometheus:
   enabled: true
@@ -39,6 +59,8 @@ prometheus:
       KubeControllerManagerDown: true
       etcdHighNumberOfLeaderChanges: true
       KubeletTooManyPods: true
+      # Replaced by PodHighRestartCount (critical) in additionalPrometheusRulesMap.
+      KubePodCrashLooping: true
 
   nodeExporter:
     enabled: true
@@ -136,7 +158,7 @@ prometheus:
               expr: increase(kube_pod_container_status_restarts_total{namespace="signals"}[1h]) > 5
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: signals
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in signals"
@@ -146,7 +168,7 @@ prometheus:
               expr: kube_pod_container_status_last_terminated_reason{namespace="signals",reason="OOMKilled"} == 1
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: signals
               annotations:
                 summary: "OOMKilled: signals/{{ $labels.pod }}"
@@ -173,7 +195,10 @@ prometheus:
                 description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
 
             - alert: DeploymentUnavailable
-              expr: kube_deployment_status_replicas_available{namespace="signals"} == 0
+              expr: |
+                kube_deployment_status_replicas_available{namespace="signals"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="signals"} == 0
               for: 5m
               labels:
                 severity: critical
@@ -188,7 +213,7 @@ prometheus:
               expr: increase(kube_pod_container_status_restarts_total{namespace="aggregator"}[1h]) > 5
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: aggregator
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in aggregator"
@@ -198,7 +223,7 @@ prometheus:
               expr: kube_pod_container_status_last_terminated_reason{namespace="aggregator",reason="OOMKilled"} == 1
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: aggregator
               annotations:
                 summary: "OOMKilled: aggregator/{{ $labels.pod }}"
@@ -225,7 +250,10 @@ prometheus:
                 description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
 
             - alert: DeploymentUnavailable
-              expr: kube_deployment_status_replicas_available{namespace="aggregator"} == 0
+              expr: |
+                kube_deployment_status_replicas_available{namespace="aggregator"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="aggregator"} == 0
               for: 5m
               labels:
                 severity: critical
@@ -240,7 +268,7 @@ prometheus:
               expr: increase(kube_pod_container_status_restarts_total{namespace="common-services"}[1h]) > 5
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: common-services
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in common-services"
@@ -250,7 +278,7 @@ prometheus:
               expr: kube_pod_container_status_last_terminated_reason{namespace="common-services",reason="OOMKilled"} == 1
               for: 0m
               labels:
-                severity: warning
+                severity: critical
                 group: common-services
               annotations:
                 summary: "OOMKilled: common-services/{{ $labels.pod }}"
@@ -277,7 +305,10 @@ prometheus:
                 description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
 
             - alert: DeploymentUnavailable
-              expr: kube_deployment_status_replicas_available{namespace="common-services"} == 0
+              expr: |
+                kube_deployment_status_replicas_available{namespace="common-services"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="common-services"} == 0
               for: 5m
               labels:
                 severity: critical
@@ -286,116 +317,165 @@ prometheus:
                 summary: "Deployment common-services/{{ $labels.deployment }} has 0 replicas"
                 description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
 
+        - name: kong.alerts
+          rules:
+            - alert: KongServiceHighTraffic
+              expr: sum by(exported_service) (rate(kong_http_requests_total[1m])) * 60 > 5000
+              for: 1m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "High traffic on Kong service {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} is receiving {{ $value | printf \"%.0f\" }} requests/min (threshold: 5000)"
+
+            - alert: KongRateLimitSustained
+              expr: sum by(exported_service) (rate(kong_http_requests_total{code="429"}[1m])) * 60 > 100
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Sustained rate limiting on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 requests/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min)"
+
+            # 5xx error rate > 5% of total — critical, act fast.
+            - alert: KongHigh5xxRate
+              expr: |
+                (
+                  sum by(exported_service) (rate(kong_http_requests_total{code=~"5.."}[5m]))
+                  /
+                  sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                ) * 100 > 5
+              for: 2m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "High 5xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate over the last 5 minutes (threshold: 5%)"
+
+            # 4xx error rate 10–25% — warning.
+            - alert: KongHigh4xxRate
+              expr: |
+                (
+                  (
+                    sum by(exported_service) (rate(kong_http_requests_total{code=~"4.."}[5m]))
+                    /
+                    sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                  ) * 100 > 10
+                ) < 25
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Elevated 4xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 10–25%)"
+
+            # 4xx error rate > 25% — critical.
+            - alert: KongCritical4xxRate
+              expr: |
+                (
+                  sum by(exported_service) (rate(kong_http_requests_total{code=~"4.."}[5m]))
+                  /
+                  sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                ) * 100 > 25
+              for: 2m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "Critical 4xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 25%)"
+
+        - name: info.alerts
+          rules:
+            - alert: PodPending
+              expr: |
+                kube_pod_status_phase{phase="Pending",namespace=~"signals|aggregator|common-services|monitoring"} == 1
+              for: 5m
+              labels:
+                severity: info
+                group: workload
+              annotations:
+                summary: "Pod {{ $labels.pod }} pending in {{ $labels.namespace }}"
+                description: "Pod {{ $labels.pod }} has been stuck in Pending for more than 5 minutes — check node resources or image pull"
+
+            - alert: HPAAtMaxReplicas
+              expr: |
+                kube_horizontalpodautoscaler_status_current_replicas
+                == kube_horizontalpodautoscaler_spec_max_replicas
+              for: 15m
+              labels:
+                severity: info
+                group: workload
+              annotations:
+                summary: "HPA {{ $labels.horizontalpodautoscaler }} maxed out in {{ $labels.namespace }}"
+                description: "HPA {{ $labels.horizontalpodautoscaler }} has been at its maximum replica count ({{ $value | printf \"%.0f\" }}) for 15 minutes — consider raising the limit"
+
+            - alert: CertificateExpiringSoon
+              expr: |
+                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 30
+              for: 1h
+              labels:
+                severity: info
+                group: infra
+              annotations:
+                summary: "Certificate {{ $labels.name }} expires in {{ $value | printf \"%.0f\" }} days"
+                description: "Certificate {{ $labels.name }} in {{ $labels.namespace }} will expire in {{ $value | printf \"%.0f\" }} days — renew or check cert-manager issuer"
+
+            - alert: PVCUsageHigh
+              expr: |
+                (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) * 100 > 80
+              for: 5m
+              labels:
+                severity: info
+                group: storage
+              annotations:
+                summary: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | printf \"%.1f\" }}% full in {{ $labels.namespace }}"
+                description: "PVC {{ $labels.persistentvolumeclaim }} in {{ $labels.namespace }} has used {{ $value | printf \"%.1f\" }}% of its capacity — consider expanding or cleaning up data"
+
   alertmanager:
-    # Styled HTML email template — named templates referenced by email_configs.
-    templateFiles:
-      bluedots.tmpl: |-
-        {{ define "email.default.subject" -}}
-        [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .GroupLabels.alertname }} · {{ if .GroupLabels.namespace }}{{ .GroupLabels.namespace }}{{ else }}cluster{{ end }}
-        {{- end }}
+    # Templates are loaded via helm/monitoring/files/*.tmpl, included as keys
+    # in the monitoring-alertmanager-config Secret (see templates/alertmanager-config.yaml).
+    # templateFiles is intentionally empty — it fed the auto-generated kube-prometheus-stack
+    # secret which the operator ignores when configSecret is set.
 
-        {{ define "email.default.html" -}}
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta charset="UTF-8">
-        <style>
-          body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f0f2f5;margin:0;padding:24px}
-          .card{max-width:620px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.12)}
-          .hdr{padding:20px 24px;border-bottom:1px solid #e8e8e8}
-          .hdr h2{margin:0;font-size:17px;color:#1a1a2e}
-          .hdr .sub{margin-top:4px;font-size:13px;color:#888}
-          .item{padding:16px 24px;border-bottom:1px solid #f0f0f0}
-          .badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;text-transform:uppercase}
-          .critical{background:#fff1f0;color:#cf1322;border:1px solid #ffa39e}
-          .warning{background:#fff7e6;color:#d46b08;border:1px solid #ffd591}
-          .resolved{background:#f6ffed;color:#389e0d;border:1px solid #b7eb8f}
-          .title{font-size:15px;font-weight:600;color:#262626;margin:8px 0 4px}
-          .desc{font-size:13px;color:#595959;margin:0 0 12px}
-          .meta{background:#fafafa;border-radius:4px;padding:10px 12px}
-          .row{display:flex;gap:8px;font-size:12px;padding:2px 0}
-          .k{color:#8c8c8c;min-width:120px}
-          .v{color:#262626;font-family:monospace}
-          .ts{font-size:12px;color:#bfbfbf;margin-top:10px}
-          .footer{padding:14px 24px;text-align:center;font-size:12px;color:#bfbfbf;background:#fafafa}
-        </style>
-        </head>
-        <body>
-        <div class="card">
-          <div class="hdr">
-            <h2>Blue Dots — Alert Notification</h2>
-            <div class="sub">
-              {{- if gt (.Alerts.Firing | len) 0 }}{{ .Alerts.Firing | len }} firing{{ end -}}
-              {{- if and (gt (.Alerts.Firing | len) 0) (gt (.Alerts.Resolved | len) 0) }} · {{ end -}}
-              {{- if gt (.Alerts.Resolved | len) 0 }}{{ .Alerts.Resolved | len }} resolved{{ end }}
-            </div>
-          </div>
-          {{ range .Alerts.Firing -}}
-          <div class="item">
-            <span class="badge {{ .Labels.severity }}">{{ .Labels.severity }}</span>
-            <div class="title">{{ .Annotations.summary }}</div>
-            <div class="desc">{{ .Annotations.description }}</div>
-            <div class="meta">
-              {{ range .Labels.SortedPairs -}}
-              <div class="row"><span class="k">{{ .Name }}</span><span class="v">{{ .Value }}</span></div>
-              {{ end -}}
-            </div>
-            <div class="ts">Fired: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}</div>
-          </div>
-          {{ end -}}
-          {{ range .Alerts.Resolved -}}
-          <div class="item">
-            <span class="badge resolved">resolved</span>
-            <div class="title">{{ .Annotations.summary }}</div>
-            <div class="desc">{{ .Annotations.description }}</div>
-            <div class="ts">Resolved: {{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}</div>
-          </div>
-          {{ end -}}
-          <div class="footer">Blue Dots Economy &nbsp;·&nbsp; test-dev-cluster</div>
-        </div>
-        </body>
-        </html>
-        {{- end }}
-
+    # Minimal fallback config — actual routing is generated by
+    # helm/monitoring/templates/alertmanager-config.yaml (referenced via configSecret).
+    # This block exists so kube-prometheus-stack creates a valid (no-op) default
+    # secret; the operator ignores it in favour of the named configSecret.
     config:
-      global:
-        resolve_timeout: 5m
-        smtp_smarthost: 'smtp.gmail.com:587'
-        # Override per-org via monitoring-values.yaml overlay. Change for standalone use.
-        smtp_from: 'alerts@example.com'
-        smtp_auth_username: 'alerts@example.com'
-        smtp_auth_password: 'changeme'
-        smtp_require_tls: true
       route:
-        receiver: email-notifications
-        group_by: ['alertname', 'namespace']
-        group_wait: 30s
-        group_interval: 5m
-        repeat_interval: 4h
-        routes:
-          - receiver: 'null'
-            matchers:
-              - alertname =~ "InfoInhibitor|Watchdog"
+        receiver: 'null'
       receivers:
         - name: 'null'
-        - name: email-notifications
-          email_configs:
-            # Override per-org via monitoring-values.yaml overlay. Change for standalone use.
-            - to: 'alerts@example.com'
-              send_resolved: true
-      inhibit_rules:
-        - source_matchers:
-            - severity = critical
-          target_matchers:
-            - severity =~ warning|info
-          equal: [namespace, alertname]
-        - source_matchers:
-            - severity = warning
-          target_matchers:
-            - severity = info
-          equal: [namespace, alertname]
 
     alertmanagerSpec:
+      # Point the Prometheus operator to our template-generated Secret (see
+      # helm/monitoring/templates/alertmanager-config.yaml). This overrides the
+      # auto-generated secret from `config:` above.
+      configSecret: monitoring-alertmanager-config
+      # Set timezone so .Local.Format in alert templates renders IST (UTC+5:30).
+      # Must use containers override — env: is not a valid top-level field on
+      # the Alertmanager CR spec and is silently ignored by the operator.
+      containers:
+        - name: alertmanager
+          env:
+            - name: TZ
+              value: "Asia/Kolkata"
+      # Mount the templates ConfigMap so Alertmanager can load *.tmpl files.
+      # The operator only mounts the config key from configSecret, so templates
+      # must come from a separately-mounted volume.
+      volumes:
+        - name: alertmanager-templates
+          configMap:
+            name: monitoring-alertmanager-templates
+      volumeMounts:
+        - name: alertmanager-templates
+          mountPath: /etc/alertmanager/templates
+          readOnly: true
       retention: 168h
       storage:
         volumeClaimTemplate:

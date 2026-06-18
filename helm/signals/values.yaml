@@ -26,11 +26,15 @@ global:
 images:
   api: &api_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "develop"
+    tag: "sha-46c05dd"
     pullPolicy: Always
   ui: &ui_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
+<<<<<<< feat/host-routed-served-binding
     tag: "sha-36d9304"
+=======
+    tag: "sha-46c05dd"
+>>>>>>> feature
     pullPolicy: Always
   notificationService: &notification_service_image
     repository: vinodbbhorge/notification-service
@@ -223,6 +227,9 @@ api:
     networks:
       - yellow_dot
       - blue_dot
+      # purple_dot is the served network (SERVED_DOMAINS / NETWORK_CONFIG_LOCAL_FILE
+      # below) and must be mounted; it also carries the search vectorize markers.
+      - purple_dot
 
 ui:
   image: *ui_image
@@ -404,4 +411,34 @@ match-score:
 # Postgres bootstrap. credentials.postgresql.password / credentials.redis.password
 # above MUST match the common-services `dpg-password` / `redis-password`
 # (injected by the Makefile `dpg-install` target from the common-services Secrets).
+
+# ─── Signals search engine (TEI embeddings + ingestion worker + query API) ──
+# `search` indexes items into item_search (pgvector+PostGIS) and serves
+# POST /v1/search. `search-embeddings` is the in-cluster TEI service.
+# Real DB/Redis passwords are injected by the opentofu values template
+# (signals-values.yaml.tfpl) into the dpg-search-secrets Secret.
+search-embeddings:
+  enabled: true
+  imagePullSecrets: *image_pull_secrets
+
+search:
+  enabled: true
+  imagePullSecrets: *image_pull_secrets
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  # Embedding/rerank host defaults to {release}-search-embeddings (configmap.yaml);
+  # no override needed for the in-cluster TEI service.
+  # Reuses the api's {release}-api-schemas ConfigMap (set via the subchart
+  # default) — search indexes exactly the networks api.schemas.networks serves.
+  secrets:
+    create: true
+    existingSecret: dpg-search-secrets
+    data:
+      POSTGRES_USER: "dpg"
+      POSTGRES_DB: "dpg"
+      POSTGRES_PASSWORD: ""
+      REDIS_PASSWORD: ""
+      EMBEDDING_API_KEY: ""
 
