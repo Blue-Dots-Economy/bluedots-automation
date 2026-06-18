@@ -2,8 +2,8 @@
 
 {{- if .Values.ingress.enabled }}
 Reach the UI via:
-{{- range .Values.ingress.hosts }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- range (.Values.ingress.hosts | default (list .Values.global.publicHost)) }}
+  http{{ if $.Values.ingress.tlsSecret }}s{{ end }}://{{ . }}
 {{- end }}
 {{- else if eq .Values.service.type "ClusterIP" }}
 Port-forward to access locally:
