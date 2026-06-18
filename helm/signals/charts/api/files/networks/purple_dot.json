@@ -143,7 +143,7 @@
               "description": "Full address — house/flat, street, area, city, state, and pincode",
               "minLength": 1,
               "private": true,
-              "location": "single"
+              "location": "primary"
             },
             "documents_available": {
               "type": "array",
@@ -331,7 +331,7 @@
               "type": "array",
               "title": "Service Cities",
               "description": "Cities where seekers can access your services",
-              "location": "multiple",
+              "location": "primary",
               "minItems": 1,
               "maxItems": 5,
               "items": {
@@ -343,7 +343,8 @@
               "type": "string",
               "title": "Organisation Address",
               "description": "Your organisation's office or headquarters address",
-              "minLength": 1
+              "minLength": 1,
+              "location": "secondary"
             },
             "service_details": {
               "type": "string",
