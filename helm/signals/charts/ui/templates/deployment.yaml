@@ -7,12 +7,15 @@ metadata:
 spec:
   {{- $autoscaling := dict }}
   {{- $replicaCount := 0 }}
+  {{- $resources := dict }}
   {{- with .Values.global }}{{- with .signals }}{{- with .ui }}
     {{- if .autoscaling }}{{- $autoscaling = .autoscaling }}{{- end }}
     {{- if .replicaCount }}{{- $replicaCount = .replicaCount }}{{- end }}
+    {{- if .resources }}{{- $resources = .resources }}{{- end }}
   {{- end }}{{- end }}{{- end }}
   {{- if not $autoscaling }}{{- $autoscaling = .Values.autoscaling }}{{- end }}
   {{- if not $replicaCount }}{{- $replicaCount = .Values.replicaCount }}{{- end }}
+  {{- if not $resources }}{{- $resources = .Values.resources }}{{- end }}
   {{- if not $autoscaling.enabled }}
   replicas: {{ $replicaCount }}
   {{- end }}
@@ -75,8 +78,10 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with $resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
       volumes:
         - name: runtime-config
           configMap:

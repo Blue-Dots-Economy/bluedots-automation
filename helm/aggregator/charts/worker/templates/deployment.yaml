@@ -7,12 +7,15 @@ metadata:
 spec:
   {{- $hpa := dict }}
   {{- $replicaCount := 0 }}
+  {{- $resources := dict }}
   {{- with .Values.global }}{{- with .aggregator }}{{- with .worker }}
     {{- if .hpa }}{{- $hpa = .hpa }}{{- end }}
     {{- if .replicaCount }}{{- $replicaCount = .replicaCount }}{{- end }}
+    {{- if .resources }}{{- $resources = .resources }}{{- end }}
   {{- end }}{{- end }}{{- end }}
   {{- if not $hpa }}{{- $hpa = .Values.hpa }}{{- end }}
   {{- if not $replicaCount }}{{- $replicaCount = .Values.replicaCount }}{{- end }}
+  {{- if not $resources }}{{- $resources = .Values.resources }}{{- end }}
   {{- if not $hpa.enabled }}
   replicas: {{ $replicaCount }}
   {{- end }}
@@ -85,5 +88,7 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+          {{- with $resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

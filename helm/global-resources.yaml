@@ -1,7 +1,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Global resource configuration — single source of truth for replica counts,
-# HPA, and PDB across every service.  Change values here and redeploy;
-# templates fall back to their local chart defaults when a key is absent.
+# HPA, PDB, and container resources across every service.  Change values here
+# and redeploy; templates fall back to their local chart defaults when a key
+# is absent.
 # ─────────────────────────────────────────────────────────────────────────────
 
 global:
@@ -17,12 +18,20 @@ global:
       autoscaling:
         enabled: true
         minReplicas: 2
-        maxReplicas: 3
-        targetCPUUtilizationPercentage: 70
+        maxReplicas: 4
+        targetCPUUtilizationPercentage: 80
 
       podDisruptionBudget:
         enabled: true
         minAvailable: 1
+
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
 
     # ui: static frontend — single replica is sufficient
     ui:
@@ -38,6 +47,14 @@ global:
         enabled: false
         minAvailable: 1
 
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 300m
+          memory: 256Mi
+
     # notification-service: async notifications
     notificationService:
       replicaCount: 1
@@ -51,6 +68,14 @@ global:
       podDisruptionBudget:
         enabled: false
         minAvailable: 1
+
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
 
     # match-score: scoring worker
     matchScore:
@@ -66,6 +91,14 @@ global:
         enabled: false
         minAvailable: 1
 
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
   # ── Aggregator stack ─────────────────────────────────────────────────────
 
   aggregator:
@@ -77,12 +110,20 @@ global:
       hpa:
         enabled: true
         minReplicas: 2
-        maxReplicas: 3
+        maxReplicas: 4
         targetCPU: 70
 
       podDisruptionBudget:
         enabled: true
         minAvailable: 1
+
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
 
     # web: frontend portal
     web:
@@ -98,6 +139,14 @@ global:
         enabled: false
         minAvailable: 1
 
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 300m
+          memory: 256Mi
+
     # worker: background job processor
     worker:
       replicaCount: 1
@@ -112,7 +161,16 @@ global:
         enabled: false
         minAvailable: 1
 
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
     # keycloak: identity provider — uses Recreate strategy, keep HPA disabled
+    # resources left as chart defaults (keycloak has its own sizing requirements)
     keycloak:
       replicaCount: 1
 
