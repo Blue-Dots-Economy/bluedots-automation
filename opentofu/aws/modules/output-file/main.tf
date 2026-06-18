@@ -22,6 +22,7 @@ resource "local_sensitive_file" "aggregator_values" {
   file_permission = "0600"
   content = templatefile("${path.module}/aggregator-values.yaml.tfpl", {
     aggregator_host                         = var.aggregator_host
+    aggregator_network                      = var.aggregator_network
     cloud_storage_region                    = var.cloud_storage_region
     storage_bucket_public                   = var.storage_bucket_public
     aggregator_postgres_password            = var.aggregator_postgres_password
@@ -63,8 +64,12 @@ resource "local_sensitive_file" "signals_values" {
   filename        = "${local.values_dir}/signals-values.yaml"
   file_permission = "0600"
   content = templatefile("${path.module}/signals-values.yaml.tfpl", {
-    signals_host                   = var.signals_host
-    signals_ui_host                = var.signals_ui_host
+    signals_public_hosts           = var.signals_public_hosts
+    signals_host_bindings          = var.signals_host_bindings
+    signals_network                = var.signals_network
+    signals_served_domains         = var.signals_served_domains
+    signals_allowed_origins        = var.signals_allowed_origins
+    postgres_host                  = var.postgres_host
     signals_postgres_password      = var.signals_postgres_password
     signals_redis_password         = var.signals_redis_password
     signals_auth_secret            = var.signals_auth_secret
