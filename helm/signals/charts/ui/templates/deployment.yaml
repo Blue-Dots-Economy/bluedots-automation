@@ -44,7 +44,6 @@ spec:
           env:
             - name: API_UPSTREAM
               value: {{ .Values.apiUpstream | quote }}
-<<<<<<< feat/host-routed-served-binding
             {{- if .Values.hostBindings }}
             # Host-routed served binding: the image builds a per-request
             # host -> VITE_SERVED_BINDINGS map from this list so one instance
@@ -53,10 +52,8 @@ spec:
             - name: UI_HOST_BINDINGS
               value: {{ .Values.hostBindings | quote }}
             {{- end }}
-=======
             - name: UI_VARIANT
               value: {{ .Values.uiVariant | default "signals" | quote }}
->>>>>>> feature
           volumeMounts:
             - name: runtime-config
               mountPath: /usr/share/nginx/html/config.js
