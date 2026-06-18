@@ -7,13 +7,19 @@
 _building_block: &building_block "purple-dots"
 _environment:    &environment    "dev"
 
-# ── Hostnames ─────────────────────────────────────────────────────────────────
-# signals_public_hosts: the SOLE list of hosts the signals release serves
-# (UI + /api). One host = single domain; several = multi-domain (host-routed
-# served binding — also set signals_host_bindings / signals_network below).
+
 _signals_public_hosts: &signals_public_hosts
-  - "purpledots.servehalflife.com"
-_aggregator_host: &aggregator_host "aggregator.servehalflife.com"
+  - "example.domain.com"
+  - "example.domain.com"
+_signals_host_bindings: &signals_host_bindings "example.domain.com=blue_dot/provider;example.domain.com=blue_dot/seeker"
+
+# Network this deployment serves — SHARED by signals (NETWORK_CONFIG_LOCAL_FILE,
+# schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
+# served_domains lists the per-domain bindings the signals API serves (roles
+# differ per network, so set it explicitly).
+_network: &network "blue_dot"
+_signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
+_aggregator_host: &aggregator_host "aggregator.domain.com"
 
 # ── AWS ───────────────────────────────────────────────────────────────────────
 _cloud_storage_region: &cloud_storage_region "ap-south-1"
@@ -50,6 +56,9 @@ global:
   environment:    *environment
 
   signals_public_hosts: *signals_public_hosts
+  signals_host_bindings:  *signals_host_bindings
+  network:                *network
+  signals_served_domains: *signals_served_domains
   aggregator_host: *aggregator_host
 
   cloud_storage_region: *cloud_storage_region
