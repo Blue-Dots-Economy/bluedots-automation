@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Global image configuration — single source of truth for container image
+# repository, tag, and pull policy across every service.
+#
+# Keys map directly to subchart names/aliases in the umbrella charts:
+#   helm/signals/   → api, ui, notification-service, match-score
+#   helm/aggregator/ → aggregator-api, web, worker, keycloak
+#
+# Note: aggregator's api subchart carries the alias "aggregator-api" (Chart.yaml)
+# to avoid collision with signals' api key in this shared file.
+#
+# This file lives per-environment (opentofu/aws/<env>/) so each deployment can
+# pin its own image tags independently.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Signals (dpg) stack ──────────────────────────────────────────────────────
+
+api:
+  image:
+    repository: ghcr.io/blue-dots-economy/signals-dpg/api
+    tag: "sha-46c05dd"
+    pullPolicy: Always
+
+ui:
+  image:
+    repository: ghcr.io/blue-dots-economy/signals-dpg/ui
+    tag: "sha-36d9304"
+    pullPolicy: Always
+
+notification-service:
+  image:
+    repository: vinodbbhorge/notification-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+match-score:
+  image:
+    repository: vinodbbhorge/match-scoring
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+# ── Aggregator stack ─────────────────────────────────────────────────────────
+
+aggregator-api:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
+    tag: "sha-9321f28"
+    pullPolicy: Always
+
+web:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
+    tag: "sha-15afbce"
+    pullPolicy: Always
+
+worker:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
+    tag: "sha-9321f28"
+    pullPolicy: Always
+
+keycloak:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak
+    tag: "26.5.5-aggregator"
+    pullPolicy: IfNotPresent
+  themesInit:
+    image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
+    tag: blue_dot-develop
+    pullPolicy: Always
