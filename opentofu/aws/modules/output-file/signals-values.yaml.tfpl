@@ -143,3 +143,16 @@ match-score:
           }
         }
       }
+
+# Signals search: inject the shared DB/Redis passwords into the
+# dpg-search-secrets Secret (same generated values as the api block above).
+search:
+  secrets:
+    create: true
+    existingSecret: dpg-search-secrets
+    data:
+      POSTGRES_USER: "dpg"
+      POSTGRES_DB: "dpg"
+      POSTGRES_PASSWORD: "${signals_postgres_password}"
+      REDIS_PASSWORD: "${signals_redis_password}"
+      EMBEDDING_API_KEY: ""
