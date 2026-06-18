@@ -31,7 +31,7 @@ global:
           memory: 512Mi
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 1Gi
 
     # ui: static frontend — single replica is sufficient
     ui:
@@ -53,7 +53,7 @@ global:
           memory: 256Mi
         limits:
           cpu: 300m
-          memory: 256Mi
+          memory: 512Mi
 
     # notification-service: async notifications
     notificationService:
@@ -75,7 +75,7 @@ global:
           memory: 512Mi
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 1Gi
 
     # match-score: scoring worker
     matchScore:
@@ -97,7 +97,7 @@ global:
           memory: 512Mi
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 1Gi
 
   # ── Aggregator stack ─────────────────────────────────────────────────────
 
@@ -123,7 +123,7 @@ global:
           memory: 512Mi
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 1Gi
 
     # web: frontend portal
     web:
@@ -145,7 +145,7 @@ global:
           memory: 256Mi
         limits:
           cpu: 300m
-          memory: 256Mi
+          memory: 512Mi
 
     # worker: background job processor
     worker:
@@ -167,7 +167,7 @@ global:
           memory: 512Mi
         limits:
           cpu: 500m
-          memory: 512Mi
+          memory: 1Gi
 
     # keycloak: identity provider — uses Recreate strategy, keep HPA disabled
     # resources left as chart defaults (keycloak has its own sizing requirements)
