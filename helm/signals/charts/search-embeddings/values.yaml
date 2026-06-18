@@ -8,11 +8,15 @@ embeddings:
   modelId: BAAI/bge-m3
   port: 80
 reranker:
-  enabled: true
+  # Disabled for V1: the query API has rerank off by default (RERANK_DEFAULT=false),
+  # so this container would run unused — and bge-reranker-v2-m3 needs its own ~4-6Gi.
+  # Re-enable (and size the pod up) when rerank is actually turned on.
+  enabled: false
   modelId: BAAI/bge-reranker-v2-m3
   port: 8081
+# bge-m3 loads its ONNX model (~2.3Gi) on CPU; 4Gi OOMKills it. Give headroom.
 resources:
-  requests: { cpu: "1", memory: 2Gi }
-  limits:   { cpu: "2", memory: 4Gi }
+  requests: { cpu: "1", memory: 3Gi }
+  limits:   { cpu: "2", memory: 8Gi }
 serviceAccount:
   create: true
