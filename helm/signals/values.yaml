@@ -416,6 +416,12 @@ match-score:
 search-embeddings:
   enabled: true
   imagePullSecrets: *image_pull_secrets
+  embeddings:
+    # TEI warmup/inference batch ceiling. bge-m3 on CPU (fp32) OOMs at the TEI
+    # default 16384 even at 8Gi; 4096 is safe for short search texts. Lower
+    # (e.g. 2048) for a smaller memory limit, raise for higher throughput on a
+    # bigger node. Tune this together with search-embeddings.resources.limits.memory.
+    maxBatchTokens: 4096
 
 search:
   enabled: true
