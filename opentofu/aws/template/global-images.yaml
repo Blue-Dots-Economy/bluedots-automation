@@ -61,8 +61,8 @@ worker:
 
 keycloak:
   image:
-    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak
-    tag: "26.5.5-aggregator"
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-server
+    tag: "develop"
     pullPolicy: IfNotPresent
   themesInit:
     image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
