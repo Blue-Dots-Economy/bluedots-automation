@@ -1,11 +1,17 @@
 replicaCount: 1
+# TEI image with BAAI/bge-m3 baked in (docker/tei-bge-m3/Dockerfile) — no
+# runtime model download. Stock TEI (ghcr.io/huggingface/text-embeddings-inference)
+# would re-pull ~2.3Gi on every restart.
 image:
-  repository: ghcr.io/huggingface/text-embeddings-inference
-  tag: "cpu-1.7"
+  repository: ghcr.io/blue-dots-economy/tei-bge-m3
+  tag: "cpu-1.7-bge-m3"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 embeddings:
   modelId: BAAI/bge-m3
+  # MUST match the revision baked into the image; TEI loads snapshots/<revision>
+  # offline (HF_HUB_OFFLINE=1 in the image). Bump alongside the Dockerfile ARG.
+  revision: "5617a9f61b028005a4858fdac845db406aefb181"
   port: 80
 reranker:
   # Disabled for V1: the query API has rerank off by default (RERANK_DEFAULT=false),

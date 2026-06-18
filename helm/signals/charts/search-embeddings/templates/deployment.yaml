@@ -27,7 +27,15 @@ spec:
         - name: tei-embeddings
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["--model-id", "{{ .Values.embeddings.modelId }}", "--port", "{{ .Values.embeddings.port }}"]
+          args:
+            - "--model-id"
+            - {{ .Values.embeddings.modelId | quote }}
+            {{- if .Values.embeddings.revision }}
+            - "--revision"
+            - {{ .Values.embeddings.revision | quote }}
+            {{- end }}
+            - "--port"
+            - {{ .Values.embeddings.port | quote }}
           ports:
             - name: embed
               containerPort: {{ .Values.embeddings.port }}
