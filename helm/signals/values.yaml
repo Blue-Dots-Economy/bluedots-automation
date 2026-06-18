@@ -30,11 +30,7 @@ images:
     pullPolicy: Always
   ui: &ui_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-<<<<<<< feat/host-routed-served-binding
     tag: "sha-36d9304"
-=======
-    tag: "sha-46c05dd"
->>>>>>> feature
     pullPolicy: Always
   notificationService: &notification_service_image
     repository: vinodbbhorge/notification-service
