@@ -24,22 +24,51 @@ variable "cloud_storage_region" {
   type        = string
 }
 
-variable "signals_host" {
-  description = "FQDN for the signals API ingress (used as-is)"
-  type        = string
-  default     = "api.purpledots.servehalflife.com"
+# ─── Signals hosts (host-routed served binding, PR #23) ─────────────────────
+variable "signals_public_hosts" {
+  description = "All FQDNs the signals release serves (UI + /api). The SOLE source of served hostnames: one host = single domain, several = multi-domain. No legacy single-host fallback."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.signals_public_hosts) > 0
+    error_message = "signals_public_hosts must list at least one hostname (set it in global-values.yaml)."
+  }
 }
 
-variable "signals_ui_host" {
-  description = "FQDN for the signals UI ingress (used as-is)"
+variable "signals_host_bindings" {
+  description = "Host -> \"<network>/<domain>\" map for host-routed served binding. Empty = single static binding (config.js stays static)."
   type        = string
-  default     = "purpledots.servehalflife.com"
+  default     = ""
+}
+
+variable "signals_network" {
+  description = "Network this cluster serves: drives NETWORK_CONFIG_LOCAL_FILE, the schema mount, and VITE_NETWORK_NAME."
+  type        = string
+  default     = "orange_dot"
+}
+
+variable "signals_served_domains" {
+  description = "Comma-separated \"<network>/<domain>\" bindings the API serves (SERVED_DOMAINS)."
+  type        = string
+  default     = "orange_dot/tourist,orange_dot/practitioner"
+}
+
+variable "signals_allowed_origins" {
+  description = "Precomputed CORS ALLOWED_ORIGINS (localhost dev + https://<each public host>)."
+  type        = string
+  default     = "http://localhost:8080,http://127.0.0.1:8080"
 }
 
 variable "aggregator_host" {
   description = "FQDN for the aggregator public ingress (global.publicHost, used as-is)"
   type        = string
   default     = "aggregator.servehalflife.com"
+}
+
+variable "aggregator_network" {
+  description = "Network the aggregator portal serves (global.aggregatorNetwork); fed from the shared global.network."
+  type        = string
+  default     = "orange_dot"
 }
 
 # -----------------------------------------------------------------------------

@@ -4,9 +4,20 @@ locals {
   building_block         = local.global_vars.global.building_block
   cloud_storage_region   = local.global_vars.global.cloud_storage_region
   cloud_storage_provider = try(local.global_vars.global.cloud_storage_provider, "aws")
-  signals_host           = try(local.global_vars.global.signals_host, "api.purpledots.servehalflife.com")
-  signals_ui_host        = try(local.global_vars.global.signals_ui_host, "purpledots.servehalflife.com")
   aggregator_host        = try(local.global_vars.global.aggregator_host, "aggregator.servehalflife.com")
+
+  # ── Signals hosts (host-routed served binding) ─────────────────────────────
+  # signals_public_hosts is the SOLE source of the served hostnames (UI + /api).
+  # List one host for a single domain, several for multi-domain — no legacy
+  # single-host fallback. host_bindings maps each host to "<network>/<domain>".
+  signals_public_hosts    = local.global_vars.global.signals_public_hosts
+  signals_host_bindings   = try(local.global_vars.global.signals_host_bindings, "")
+  # Network served by this deployment — shared by signals (NETWORK_CONFIG_LOCAL_FILE,
+  # schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
+  network                 = try(local.global_vars.global.network, "orange_dot")
+  signals_served_domains  = try(local.global_vars.global.signals_served_domains, "orange_dot/tourist,orange_dot/practitioner")
+  # CORS origins: localhost dev + https://<each served host>.
+  signals_allowed_origins = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
   signals_google_maps_api_key  = try(local.global_vars.global.signals_google_maps_api_key, "")
   notification_gmail_user      = try(local.global_vars.global.notification_gmail_user, "")
   notification_gmail_pass      = try(local.global_vars.global.notification_gmail_pass, "")
@@ -107,9 +118,15 @@ inputs = {
   environment            = local.environment
   cloud_storage_provider = local.cloud_storage_provider
   cloud_storage_region   = local.cloud_storage_region
-  signals_host           = local.signals_host
-  signals_ui_host        = local.signals_ui_host
   aggregator_host        = local.aggregator_host
+  aggregator_network     = local.network
+
+  # Signals hosts (host-routed served binding)
+  signals_public_hosts    = local.signals_public_hosts
+  signals_host_bindings   = local.signals_host_bindings
+  signals_network         = local.network
+  signals_served_domains  = local.signals_served_domains
+  signals_allowed_origins = local.signals_allowed_origins
 
   # Network
   vpc_id                = dependency.network.outputs.vpc_id

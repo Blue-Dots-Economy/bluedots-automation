@@ -9,10 +9,15 @@
 # credentials.* still gets populated so signals/templates/secrets.yaml can
 # render the dpg-postgres + dpg-redis existingSecret bridges.
 
-# Public FQDN for the api + ui ingress (shared host). The only env-specific
-# ingress value; all other ingress config lives in helm/signals/values.yaml.
+# Public FQDNs for the api + ui ingress. publicHosts is the SOLE source of the
+# served hostnames — both the ui and api ingresses range over it (every host
+# that serves the UI also serves /api, same-origin per portal). One multi-SAN
+# cert covers all hosts. All other ingress config lives in helm/signals/values.yaml.
 global:
-  publicHost: ${signals_ui_host}
+  publicHosts:
+%{ for h in signals_public_hosts ~}
+    - ${h}
+%{ endfor ~}
 
 credentials:
   postgresql:
@@ -48,32 +53,43 @@ api:
   redis:
     host: common-services-redis-master.common-services.svc.cluster.local
   config:
-    API_DOMAIN: https://${signals_ui_host}
-    ALLOWED_ORIGINS: "http://localhost:8080,http://127.0.0.1:8080,https://${signals_ui_host}"
-    # This cluster serves the orange_dot network (chart default is purple_dot).
-    SERVED_DOMAINS: "orange_dot/tourist,orange_dot/practitioner"
-    NETWORK_CONFIG_LOCAL_FILE: "/app/schemas/orange_dot.json"
+    # Canonical public host = first of publicHosts. For multi-domain, both
+    # portals are same-origin (host/ + host/api); ALLOWED_ORIGINS lists every host.
+    API_DOMAIN: https://${signals_public_hosts[0]}
+    ALLOWED_ORIGINS: "${signals_allowed_origins}"
+    # Per-domain bindings the API serves (roles differ per network).
+    SERVED_DOMAINS: "${signals_served_domains}"
+    NETWORK_CONFIG_LOCAL_FILE: "/app/schemas/${signals_network}.json"
   schemas:
     networks:
-      - yellow_dot
-      - blue_dot
-      - purple_dot
-      - orange_dot
-    apiInternalUrl: "https://${signals_ui_host}"
-    crossNetworkUrl: "https://${signals_ui_host}"
+      - ${signals_network}
+    # apiInternalUrl / crossNetworkUrl intentionally omitted: they fall back to
+    # the chart default http://signals-api:2742 (the in-cluster signals API).
+    # instance_url substitution + server-side inter-instance fetch use the
+    # in-cluster service directly; no public host needed here.
 
 ui:
   # nginx proxies /api/* to the in-cluster signals API. The chart default
   # (http://dpg-api:2742) assumes a release named `dpg`; this release is
   # `signals`, so the service is `signals-api`. Wrong upstream = blank UI.
   apiUpstream: "http://signals-api:2742"
+  # Exposed to the ui container as the UI_VARIANT env var (chart default: signals).
+  uiVariant: "signals"
+%{ if signals_host_bindings != "" ~}
+  # Host -> VITE_SERVED_BINDINGS map (host-routed served binding). When set,
+  # config.js is forced to the "__SERVED_BINDINGS__" placeholder the UI image's
+  # nginx rewrites per request by Host header, so ONE instance backs several
+  # per-domain portals. REQUIRES a UI image with UI_HOST_BINDINGS support.
+  hostBindings: "${signals_host_bindings}"
+%{ endif ~}
   runtimeConfig:
     VITE_DEFAULT_VIEW_MODE: "map"
     VITE_MAP_PROVIDER: "google-maps"
     VITE_GOOGLE_MAPS_API_KEY: "${signals_google_maps_api_key}"
     VITE_ACTION_POLL_INTERVAL_MS: "30000"
     # Show only the network this cluster serves (chart default is purple_dot).
-    VITE_NETWORK_NAME: "orange_dot"
+    VITE_NETWORK_NAME: "${signals_network}"
+    VITE_ANALYTICS_GA_ID: ""
   service:
     # nginx in the ui image listens on 80; chart default targetPort 8080
     # would leave readiness probe hitting a closed port. Pin to 80.

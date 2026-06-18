@@ -8,7 +8,11 @@ _building_block: &building_block "purple-dots"
 _environment:    &environment    "dev"
 
 # ── Hostnames ─────────────────────────────────────────────────────────────────
-_signals_ui_host: &signals_ui_host "purpledots.servehalflife.com"
+# signals_public_hosts: the SOLE list of hosts the signals release serves
+# (UI + /api). One host = single domain; several = multi-domain (host-routed
+# served binding — also set signals_host_bindings / signals_network below).
+_signals_public_hosts: &signals_public_hosts
+  - "purpledots.servehalflife.com"
 _aggregator_host: &aggregator_host "aggregator.servehalflife.com"
 
 # ── AWS ───────────────────────────────────────────────────────────────────────
@@ -45,7 +49,7 @@ global:
   building_block: *building_block
   environment:    *environment
 
-  signals_ui_host: *signals_ui_host
+  signals_public_hosts: *signals_public_hosts
   aggregator_host: *aggregator_host
 
   cloud_storage_region: *cloud_storage_region
