@@ -34,6 +34,10 @@ spec:
             - "--revision"
             - {{ .Values.embeddings.revision | quote }}
             {{- end }}
+            {{- if .Values.embeddings.maxBatchTokens }}
+            - "--max-batch-tokens"
+            - {{ .Values.embeddings.maxBatchTokens | quote }}
+            {{- end }}
             - "--port"
             - {{ .Values.embeddings.port | quote }}
           ports:

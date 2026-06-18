@@ -13,6 +13,10 @@ embeddings:
   # offline (HF_HUB_OFFLINE=1 in the image). Bump alongside the Dockerfile ARG.
   revision: "5617a9f61b028005a4858fdac845db406aefb181"
   port: 80
+  # Bound the batch so TEI's warmup + inference fit in the memory limit. On CPU
+  # (fp32) bge-m3's warmup at the default 16384 OOMKills even at 8Gi; 4096 is
+  # ample for short search texts and keeps the resident set well under 8Gi.
+  maxBatchTokens: 4096
 reranker:
   # Disabled for V1: the query API has rerank off by default (RERANK_DEFAULT=false),
   # so this container would run unused — and bge-reranker-v2-m3 needs its own ~4-6Gi.
