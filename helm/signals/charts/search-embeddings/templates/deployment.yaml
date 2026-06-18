@@ -1,0 +1,52 @@
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "search-embeddings.serviceAccountName" . }}
+  labels: {{- include "search-embeddings.labels" . | nindent 4 }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "search-embeddings.fullname" . }}
+  labels: {{- include "search-embeddings.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "search-embeddings.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "search-embeddings.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "search-embeddings.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tei-embeddings
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--model-id", "{{ .Values.embeddings.modelId }}", "--port", "{{ .Values.embeddings.port }}"]
+          ports:
+            - name: embed
+              containerPort: {{ .Values.embeddings.port }}
+          readinessProbe:
+            httpGet: { path: /health, port: embed }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.reranker.enabled }}
+        - name: tei-reranker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--model-id", "{{ .Values.reranker.modelId }}", "--port", "{{ .Values.reranker.port }}"]
+          ports:
+            - name: rerank
+              containerPort: {{ .Values.reranker.port }}
+          readinessProbe:
+            httpGet: { path: /health, port: rerank }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+        {{- end }}

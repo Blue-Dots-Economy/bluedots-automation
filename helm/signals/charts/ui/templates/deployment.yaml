@@ -52,6 +52,8 @@ spec:
             - name: UI_HOST_BINDINGS
               value: {{ .Values.hostBindings | quote }}
             {{- end }}
+            - name: UI_VARIANT
+              value: {{ .Values.uiVariant | default "signals" | quote }}
           volumeMounts:
             - name: runtime-config
               mountPath: /usr/share/nginx/html/config.js

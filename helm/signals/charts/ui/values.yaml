@@ -16,6 +16,10 @@ replicaCount: 1
 # Default matches the umbrella release name `dpg` in the same namespace.
 apiUpstream: "http://dpg-api:2742"
 
+# UI variant exposed to the container as the UI_VARIANT env var.
+# Defaults to "signals"; override per environment via signals-values.yaml.
+uiVariant: "signals"
+
 image:
   repository: ghcr.io/blue-dots-economy/signals-dpg/ui
   tag: ""            # defaults to .Chart.AppVersion

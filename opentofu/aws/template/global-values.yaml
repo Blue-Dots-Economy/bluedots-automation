@@ -44,8 +44,8 @@ _msg91_template_id: &msg91_template_id "changeme"
 # ── Alert recipients ──────────────────────────────────────────────────────────
 _monitoring_alert_email:  &monitoring_alert_email  "alerts@example.com"
 _aggregator_admin_emails:   &aggregator_admin_emails   "admin@example.com"
-_aggregator_msg91_template_id: &aggregator_msg91_template_id "changeme"
 _signals_google_maps_api_key: &signals_google_maps_api_key ""
+
 
 # =============================================================================
 # Structure — do not edit below unless you know what you're changing.
@@ -71,25 +71,26 @@ global:
   # vpc_cidr: "10.0.0.0/16"            # CIDR block for the new VPC
   # ingress_cidr_blocks: ["0.0.0.0/0"] # Allowed CIDRs for HTTP/HTTPS inbound security group
 
-  # cidr_netnum is the offset for cidrsubnet(vpc_cidr, 8, N):
-  #   101 → 10.0.101.0/24 | 102 → 10.0.102.0/24 | 201 → 10.0.201.0/24, etc.
+  # cidr_netnum is a sequential index (0, 1, 2, …). Subnets are always /24 (256 IPs)
+  # regardless of VPC prefix. Max index = 2^(24 - vpc_prefix) - 1 (e.g. /22 → max 3).
+  # With 10.0.0.0/22: 0→10.0.0.0/24 | 1→10.0.1.0/24 | 2→10.0.2.0/24 | 3→10.0.3.0/24
   subnet_config:
     public-a:
       type: public
       availability_zone: "a"
-      cidr_netnum: 101
+      cidr_netnum: 0
     public-b:
       type: public
       availability_zone: "b"
-      cidr_netnum: 102
+      cidr_netnum: 1
     # private-a:
     #   type: private
     #   availability_zone: "a"
-    #   cidr_netnum: 201
+    #   cidr_netnum: 2
     # private-b:
     #   type: private
     #   availability_zone: "b"
-    #   cidr_netnum: 202
+    #   cidr_netnum: 3
 
   # NAT Gateway — costs ~$32/month per AZ. Only needed when private subnets exist.
   # nat_gateway_enabled: false
@@ -132,12 +133,20 @@ global:
   aggregator_smtp_from:     *smtp_user
   aggregator_admin_emails:      *aggregator_admin_emails
   aggregator_msg91_auth_key:    *msg91_auth_key
-  aggregator_msg91_template_id: *aggregator_msg91_template_id
+  aggregator_msg91_template_id: *msg91_template_id
 
   # ── Monitoring stack ────────────────────────────────────────────────────────
   monitoring_alert_email:   *monitoring_alert_email
   monitoring_smtp_from:     *smtp_user
   monitoring_smtp_password: *smtp_password
+  # monitoring_smtp_host: "smtp.gmail.com:587"  # default; override only for non-Gmail providers
+  # Set enabled: true for whichever channels you want active.
+  # Create one Discord webhook per channel: Channel Settings → Integrations → Webhooks
+  monitoring_email_enabled:   false
+  monitoring_discord_enabled: false
+  monitoring_discord_critical_webhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+  monitoring_discord_warning_webhook:  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+  monitoring_discord_info_webhook:     "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
 
   # CloudWatch observability (Container Insights add-on)
   enable_cloudwatch_observability: false
