@@ -12,8 +12,11 @@ FROM python:3.11-slim AS dl
 ARG BGE_M3_REVISION
 RUN pip install --no-cache-dir "huggingface_hub[hf_transfer]"
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
-# Whole-repo download (config, tokenizer, onnx/ + safetensors) into the HF cache layout.
-RUN huggingface-cli download BAAI/bge-m3 --revision "${BGE_M3_REVISION}" --cache-dir /hf \
+# Whole-repo download (config, tokenizer, onnx/ + safetensors) into the HF cache
+# layout. Use the stable snapshot_download API rather than the CLI, whose flags
+# churn across huggingface_hub versions (the huggingface-cli -> hf rename broke
+# `huggingface-cli download --cache-dir`).
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='BAAI/bge-m3', revision='${BGE_M3_REVISION}', cache_dir='/hf')" \
  && chmod -R a+rX /hf
 
 FROM ghcr.io/huggingface/text-embeddings-inference:cpu-1.7
