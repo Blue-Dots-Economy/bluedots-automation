@@ -4,7 +4,7 @@ replicaCount: 1
 # would re-pull ~2.3Gi on every restart.
 image:
   repository: ghcr.io/blue-dots-economy/tei-bge-m3
-  tag: "cpu-1.7-bge-m3"
+  tag: "sha-1c7d576d1af74f3e0cdf659cea033ecee26733c8"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 embeddings:
