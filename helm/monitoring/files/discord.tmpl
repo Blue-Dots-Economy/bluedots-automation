@@ -1,5 +1,8 @@
 {{ define "discord.bluedots.title" -}}
-{{ if eq .Status "firing" }}🔴 FIRING{{ else }}✅ RESOLVED{{ end }} · {{ .GroupLabels.alertname }}{{ if .GroupLabels.namespace }} · {{ .GroupLabels.namespace }}{{ end }}
+{{- $sev := .CommonLabels.severity -}}
+{{ if eq .Status "firing" -}}
+  {{- if eq $sev "critical" }}🔴{{ else if eq $sev "warning" }}🟡{{ else }}🔵{{ end }} FIRING
+{{- else }}✅ RESOLVED{{ end }} · {{ .GroupLabels.alertname }}{{ if .GroupLabels.namespace }} · {{ .GroupLabels.namespace }}{{ end }}
 {{- end }}
 
 {{ define "discord.bluedots.message" -}}

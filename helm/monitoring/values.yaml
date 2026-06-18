@@ -59,6 +59,8 @@ prometheus:
       KubeControllerManagerDown: true
       etcdHighNumberOfLeaderChanges: true
       KubeletTooManyPods: true
+      # Replaced by PodHighRestartCount (critical) in additionalPrometheusRulesMap.
+      KubePodCrashLooping: true
 
   nodeExporter:
     enabled: true
@@ -387,37 +389,52 @@ prometheus:
                 summary: "Critical 4xx rate on {{ $labels.exported_service }}"
                 description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 25%)"
 
-        # Daily summary fires at 7:00 PM IST (13:30 UTC).
-        # Uses label_replace+or so both total-requests and 5xx-count arrive as
-        # one grouped Discord message.  Time gate: 13:30–13:44 UTC.
-        - name: daily.alerts
+        - name: info.alerts
           rules:
-            - alert: DailyKongSummary
+            - alert: PodPending
               expr: |
-                label_replace(
-                  (
-                    sum(increase(kong_http_requests_total[24h]))
-                    * on() group_left()
-                    (vector(1) * (hour() == 13) * (minute() >= 30) * (minute() < 45))
-                  ) > 0,
-                  "metric_type", "total_requests", "", ""
-                )
-                or
-                label_replace(
-                  (
-                    sum(increase(kong_http_requests_total{code=~"5.."}[24h]))
-                    * on() group_left()
-                    (vector(1) * (hour() == 13) * (minute() >= 30) * (minute() < 45))
-                  ) > 0,
-                  "metric_type", "5xx_errors", "", ""
-                )
-              for: 0m
+                kube_pod_status_phase{phase="Pending",namespace=~"signals|aggregator|common-services|monitoring"} == 1
+              for: 5m
               labels:
                 severity: info
-                group: kong
+                group: workload
               annotations:
-                summary: "Daily Kong report — {{ $labels.metric_type }}: {{ $value | printf \"%.0f\" }}"
-                description: "{{ $labels.metric_type }}: {{ $value | printf \"%.0f\" }} in the last 24 hours"
+                summary: "Pod {{ $labels.pod }} pending in {{ $labels.namespace }}"
+                description: "Pod {{ $labels.pod }} has been stuck in Pending for more than 5 minutes — check node resources or image pull"
+
+            - alert: HPAAtMaxReplicas
+              expr: |
+                kube_horizontalpodautoscaler_status_current_replicas
+                == kube_horizontalpodautoscaler_spec_max_replicas
+              for: 15m
+              labels:
+                severity: info
+                group: workload
+              annotations:
+                summary: "HPA {{ $labels.horizontalpodautoscaler }} maxed out in {{ $labels.namespace }}"
+                description: "HPA {{ $labels.horizontalpodautoscaler }} has been at its maximum replica count ({{ $value | printf \"%.0f\" }}) for 15 minutes — consider raising the limit"
+
+            - alert: CertificateExpiringSoon
+              expr: |
+                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 30
+              for: 1h
+              labels:
+                severity: info
+                group: infra
+              annotations:
+                summary: "Certificate {{ $labels.name }} expires in {{ $value | printf \"%.0f\" }} days"
+                description: "Certificate {{ $labels.name }} in {{ $labels.namespace }} will expire in {{ $value | printf \"%.0f\" }} days — renew or check cert-manager issuer"
+
+            - alert: PVCUsageHigh
+              expr: |
+                (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) * 100 > 80
+              for: 5m
+              labels:
+                severity: info
+                group: storage
+              annotations:
+                summary: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | printf \"%.1f\" }}% full in {{ $labels.namespace }}"
+                description: "PVC {{ $labels.persistentvolumeclaim }} in {{ $labels.namespace }} has used {{ $value | printf \"%.1f\" }}% of its capacity — consider expanding or cleaning up data"
 
   alertmanager:
     # Templates are loaded via helm/monitoring/files/*.tmpl, included as keys
