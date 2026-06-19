@@ -87,20 +87,23 @@ keycloak:
 
 # ── Common services (platform) ────────────────────────────────────────────────
 # Released as: helm/common-services/  →  subchart keys: postgresql, redis, ingress-nginx
-# Tags taken from the vendored chart defaults (helm/common-services/charts/*/Chart.yaml).
-# Pin to specific digests/tags for production stability.
+# Pins mirror helm/common-services/values.yaml. Bitnami moved its public images
+# to the bitnamilegacy/* namespace, so keep these on bitnamilegacy or the pull
+# breaks. Pin to specific digests/tags for production stability.
 
 postgresql:
   image:
-    registry: registry-1.docker.io
-    repository: bitnami/postgresql
-    tag: "latest"        # bitnami chart default; pin to a specific tag for prod
+    registry: docker.io
+    repository: bitnamilegacy/postgresql
+    tag: "17.6.0"
+    pullPolicy: IfNotPresent
 
 redis:
   image:
     registry: docker.io
-    repository: bitnami/redis
-    tag: "7.2.5-debian-12-r4"    # bitnami chart default (chart v19.6.4)
+    repository: bitnamilegacy/redis
+    tag: "7.2.5"
+    pullPolicy: IfNotPresent
 
 ingress-nginx:
   controller:

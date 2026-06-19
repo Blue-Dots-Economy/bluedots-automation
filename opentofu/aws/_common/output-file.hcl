@@ -4,7 +4,6 @@ locals {
   building_block         = local.global_vars.global.building_block
   cloud_storage_region   = local.global_vars.global.cloud_storage_region
   cloud_storage_provider = try(local.global_vars.global.cloud_storage_provider, "aws")
-  aggregator_host        = try(local.global_vars.global.aggregator_host, "aggregator.servehalflife.com")
 
   # ── Signals hosts (host-routed served binding) ─────────────────────────────
   # signals_public_hosts is the SOLE source of the served hostnames (UI + /api).
@@ -15,7 +14,6 @@ locals {
   # Network served by this deployment — shared by signals (NETWORK_CONFIG_LOCAL_FILE,
   # schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
   network                 = try(local.global_vars.global.network, "orange_dot")
-  signals_served_domains  = try(local.global_vars.global.signals_served_domains, "orange_dot/tourist,orange_dot/practitioner")
   # CORS origins: localhost dev + https://<each served host>.
   signals_allowed_origins = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
   signals_google_maps_api_key  = try(local.global_vars.global.signals_google_maps_api_key, "")
@@ -24,23 +22,10 @@ locals {
   notification_msg91_auth_key  = try(local.global_vars.global.notification_msg91_auth_key, "")
   notification_msg91_template_id = try(local.global_vars.global.notification_msg91_template_id, "")
 
-  aggregator_smtp_user          = try(local.global_vars.global.aggregator_smtp_user, "")
-  aggregator_smtp_password      = try(local.global_vars.global.aggregator_smtp_password, "")
-  aggregator_smtp_from          = try(local.global_vars.global.aggregator_smtp_from, "")
-  aggregator_admin_emails       = try(local.global_vars.global.aggregator_admin_emails, "")
-  aggregator_msg91_auth_key     = try(local.global_vars.global.aggregator_msg91_auth_key, "")
-  aggregator_msg91_template_id  = try(local.global_vars.global.aggregator_msg91_template_id, "")
+  aggregator_smtp_user      = try(local.global_vars.global.aggregator_smtp_user, "")
+  aggregator_smtp_password  = try(local.global_vars.global.aggregator_smtp_password, "")
+  aggregator_msg91_auth_key = try(local.global_vars.global.aggregator_msg91_auth_key, "")
 
-  monitoring_alert_email   = try(local.global_vars.global.monitoring_alert_email, "")
-  monitoring_smtp_host     = try(local.global_vars.global.monitoring_smtp_host, "smtp.gmail.com:587")
-  monitoring_smtp_from     = try(local.global_vars.global.monitoring_smtp_from, "")
-  monitoring_smtp_password = try(local.global_vars.global.monitoring_smtp_password, "")
-
-  monitoring_email_enabled            = try(local.global_vars.global.monitoring_email_enabled, true)
-  monitoring_discord_enabled          = try(local.global_vars.global.monitoring_discord_enabled, false)
-  monitoring_discord_critical_webhook = try(local.global_vars.global.monitoring_discord_critical_webhook, "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME")
-  monitoring_discord_warning_webhook  = try(local.global_vars.global.monitoring_discord_warning_webhook, "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME")
-  monitoring_discord_info_webhook     = try(local.global_vars.global.monitoring_discord_info_webhook, "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME")
 }
 
 terraform {
@@ -125,14 +110,11 @@ inputs = {
   environment            = local.environment
   cloud_storage_provider = local.cloud_storage_provider
   cloud_storage_region   = local.cloud_storage_region
-  aggregator_host        = local.aggregator_host
-  aggregator_network     = local.network
 
-  # Signals hosts (host-routed served binding)
+  # Signals computed config inputs
   signals_public_hosts    = local.signals_public_hosts
   signals_host_bindings   = local.signals_host_bindings
   signals_network         = local.network
-  signals_served_domains  = local.signals_served_domains
   signals_allowed_origins = local.signals_allowed_origins
 
   # Network
@@ -187,22 +169,9 @@ inputs = {
   notification_msg91_auth_key    = local.notification_msg91_auth_key
   notification_msg91_template_id = local.notification_msg91_template_id
 
-  aggregator_smtp_user         = local.aggregator_smtp_user
-  aggregator_smtp_password     = local.aggregator_smtp_password
-  aggregator_smtp_from         = local.aggregator_smtp_from
-  aggregator_admin_emails      = local.aggregator_admin_emails
-  aggregator_msg91_auth_key    = local.aggregator_msg91_auth_key
-  aggregator_msg91_template_id = local.aggregator_msg91_template_id
+  aggregator_smtp_user      = local.aggregator_smtp_user
+  aggregator_smtp_password  = local.aggregator_smtp_password
+  aggregator_msg91_auth_key = local.aggregator_msg91_auth_key
 
-  monitoring_grafana_password  = dependency.random_passwords.outputs.monitoring_grafana_password
-  monitoring_smtp_host         = local.monitoring_smtp_host
-  monitoring_smtp_from         = local.monitoring_smtp_from
-  monitoring_smtp_password     = local.monitoring_smtp_password
-  monitoring_alert_email       = local.monitoring_alert_email
-
-  monitoring_email_enabled            = local.monitoring_email_enabled
-  monitoring_discord_enabled          = local.monitoring_discord_enabled
-  monitoring_discord_critical_webhook = local.monitoring_discord_critical_webhook
-  monitoring_discord_warning_webhook  = local.monitoring_discord_warning_webhook
-  monitoring_discord_info_webhook     = local.monitoring_discord_info_webhook
+  monitoring_grafana_password = dependency.random_passwords.outputs.monitoring_grafana_password
 }
