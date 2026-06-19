@@ -1,0 +1,51 @@
+{{- if .Values.api.ingress.enabled -}}
+{{- /*
+  Template-driven ingress for the signals search API. Path /signals-search +
+  strip-path "false" (search API serves natively under /signals-search).
+  Hosts come from global.publicHosts (defaulting to the single global.publicHost
+  — the SAME list the ui and api ingresses use), so every host that serves the
+  UI also serves /signals-search.
+
+  No cert-manager annotation: the ui subchart owns issuance of the shared host
+  cert (api.ingress.tlsSecret); this object only references it, avoiding a
+  duplicate certificate for the same host.
+*/ -}}
+{{- $fullName := include "search.fullname" . -}}
+{{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "search.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "true"
+    {{- if .Values.api.ingress.plugin }}
+    konghq.com/plugins: {{ .Values.api.ingress.plugin | quote }}
+    {{- end }}
+spec:
+  {{- with .Values.api.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.api.ingress.tlsSecret }}
+  tls:
+    - hosts:
+        {{- range $hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .Values.api.ingress.tlsSecret }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /signals-search
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $.Values.api.port }}
+    {{- end }}
+{{- end }}

@@ -435,6 +435,17 @@ search:
   # no override needed for the in-cluster TEI service.
   # Reuses the api's {release}-api-schemas ConfigMap (set via the subchart
   # default) — search indexes exactly the networks api.schemas.networks serves.
+  # Template-driven ingress (charts/search/templates/ingress.yaml): path
+  # /signals-search is fixed in the template; these scalars are the config.
+  # Hosts come from global.publicHosts (same list as ui + api ingresses).
+  # tlsSecret is owned by the ui ingress; reused here (no cert issuance).
+  api:
+    port: 3100
+    ingress:
+      enabled: true
+      className: kong
+      tlsSecret: signals-ui-tls
+      plugin: "rl-signals-api"
   secrets:
     create: true
     existingSecret: dpg-search-secrets
