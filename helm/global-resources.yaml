@@ -102,6 +102,43 @@ match-score:
       memory: 1Gi
 
 
+# search: two deployments (api + worker) sharing one image; resources are nested
+# under api.* and worker.* to match the subchart's values structure
+search:
+  api:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 1
+        memory: 512Mi
+
+  worker:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+
+
+# search-embeddings: TEI embedding model — CPU-heavy, sized accordingly
+search-embeddings:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: 3Gi
+    limits:
+      cpu: "2"
+      memory: 8Gi
+
+
 # ── Aggregator ────────────────────────────────────────────────────────────────
 # helm/aggregator/  →  subchart keys: aggregator-api, web, worker, keycloak
 # Note: aggregator's api subchart carries alias "aggregator-api" (Chart.yaml)
