@@ -17,6 +17,7 @@ resource "local_sensitive_file" "credential_values" {
     aggregator_postgres_password = var.aggregator_postgres_password
     signals_postgres_password    = var.signals_postgres_password
     signals_redis_password       = var.signals_redis_password
+    monitoring_grafana_password  = var.monitoring_grafana_password
   })
 }
 
@@ -43,23 +44,6 @@ resource "local_sensitive_file" "aggregator_values" {
     aggregator_admin_emails                 = var.aggregator_admin_emails
     aggregator_msg91_auth_key               = var.aggregator_msg91_auth_key
     aggregator_msg91_template_id            = var.aggregator_msg91_template_id
-  })
-}
-
-resource "local_sensitive_file" "monitoring_values" {
-  filename        = "${local.values_dir}/monitoring-values.yaml"
-  file_permission = "0600"
-  content = templatefile("${path.module}/monitoring-values.yaml.tfpl", {
-    monitoring_grafana_password             = var.monitoring_grafana_password
-    monitoring_email_enabled                = var.monitoring_email_enabled
-    monitoring_smtp_host                    = var.monitoring_smtp_host
-    monitoring_smtp_from                    = var.monitoring_smtp_from
-    monitoring_smtp_password                = var.monitoring_smtp_password
-    monitoring_alert_email                  = var.monitoring_alert_email
-    monitoring_discord_enabled              = var.monitoring_discord_enabled
-    monitoring_discord_critical_webhook     = var.monitoring_discord_critical_webhook
-    monitoring_discord_warning_webhook      = var.monitoring_discord_warning_webhook
-    monitoring_discord_info_webhook         = var.monitoring_discord_info_webhook
   })
 }
 

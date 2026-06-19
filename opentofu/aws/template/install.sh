@@ -12,12 +12,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Per-chart values files produced by opentofu (modules/output-file). Each holds
 # its chart's overrides at ROOT level, so a single `-f` feeds helm directly —
 # no slicing/yq projection needed.
-# Shared credential file (secrets + infra outputs) — common-services reads this;
-# other charts migrate onto it one at a time and drop their own *-values.yaml.
+# Shared credential file (secrets + infra outputs) — grows one chart at a time
+# as each migrates off its own *-values.yaml.
 CRED_VALUES="${CRED_VALUES:-$SCRIPT_DIR/credential-values.yaml}"
+# Non-sensitive config passed directly to Helm via -f (keys match chart schemas).
+GLOBAL_VALUES="${GLOBAL_VALUES:-$SCRIPT_DIR/global-values.yaml}"
 SIGNALS_VALUES="${SIGNALS_VALUES:-$SCRIPT_DIR/signals-values.yaml}"
 AGG_VALUES="${AGG_VALUES:-$SCRIPT_DIR/aggregator-values.yaml}"
-MON_VALUES="${MON_VALUES:-$SCRIPT_DIR/monitoring-values.yaml}"
 
 # Namespaces.
 CS_NS="${CS_NS:-common-services}"
@@ -152,7 +153,8 @@ function deploy_monitoring() {
     echo -e "\nDeploying monitoring"
     helm upgrade --install "$MON_REL" "$MON_DIR" \
         -n "$MON_NS" --create-namespace \
-        -f "$MON_VALUES" \
+        -f "$GLOBAL_VALUES" \
+        -f "$CRED_VALUES" \
         --wait --timeout 10m
 }
 
@@ -331,7 +333,7 @@ function preflight() {
     command -v helm    >/dev/null || { echo "ERROR: helm not installed"    >&2; exit 1; }
     command -v kubectl >/dev/null || { echo "ERROR: kubectl not installed" >&2; exit 1; }
     kubectl cluster-info >/dev/null 2>&1 || { echo "ERROR: cluster unreachable; check kubeconfig" >&2; exit 1; }
-    for f in "$CRED_VALUES" "$SIGNALS_VALUES" "$AGG_VALUES" "$MON_VALUES"; do
+    for f in "$CRED_VALUES" "$SIGNALS_VALUES" "$AGG_VALUES"; do
         test -f "$f" || {
             echo "ERROR: values file not found: $f" >&2
             echo "       Run \`terragrunt run --all apply\` from $SCRIPT_DIR first." >&2
@@ -339,7 +341,8 @@ function preflight() {
         }
     done
     echo "context : $(kubectl config current-context)"
-    echo "values  : $CRED_VALUES, $SIGNALS_VALUES, $AGG_VALUES, $MON_VALUES"
+    echo "values  : $CRED_VALUES (shared creds), $SIGNALS_VALUES, $AGG_VALUES"
+    echo "config  : $GLOBAL_VALUES (alerting + non-secret config)"
 }
 
 # helm lint all 4 charts.
@@ -355,7 +358,7 @@ function lint() {
 function dry_run() {
     preflight
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
-        -f "$MON_VALUES" --dry-run
+        -f "$GLOBAL_VALUES" -f "$CRED_VALUES" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$CRED_VALUES" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
