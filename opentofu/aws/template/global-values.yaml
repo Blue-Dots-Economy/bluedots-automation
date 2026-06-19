@@ -66,6 +66,10 @@ global:
   publicHost:         *aggregator_host
   aggregatorNetwork:  *network
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
+  signalstack:
+    # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
+    # Required before first aggregator login — SIGNALSTACK_ORG_NOT_REGISTERED otherwise.
+    actingOrgId: ""
   dataPlatform:
     namespace:       common-services
     postgresService: common-services-postgresql
