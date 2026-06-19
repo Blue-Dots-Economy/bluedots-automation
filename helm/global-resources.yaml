@@ -29,7 +29,7 @@ api:
 
   resources:
     requests:
-      cpu: 200m
+      cpu: 100m
       memory: 512Mi
     limits:
       cpu: 500m
@@ -73,7 +73,7 @@ notification-service:
 
   resources:
     requests:
-      cpu: 200m
+      cpu: 100m
       memory: 512Mi
     limits:
       cpu: 500m
@@ -95,7 +95,7 @@ match-score:
 
   resources:
     requests:
-      cpu: 200m
+      cpu: 100m
       memory: 512Mi
     limits:
       cpu: 500m
@@ -159,7 +159,7 @@ aggregator-api:
 
   resources:
     requests:
-      cpu: 200m
+      cpu: 100m
       memory: 512Mi
     limits:
       cpu: 500m
@@ -203,7 +203,7 @@ worker:
 
   resources:
     requests:
-      cpu: 200m
+      cpu: 100m
       memory: 512Mi
     limits:
       cpu: 500m
