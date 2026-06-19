@@ -35,22 +35,10 @@ variable "signals_public_hosts" {
   }
 }
 
-variable "signals_host_bindings" {
-  description = "Host -> \"<network>/<domain>\" map for host-routed served binding. Empty = single static binding (config.js stays static)."
-  type        = string
-  default     = ""
-}
-
 variable "signals_network" {
   description = "Network this cluster serves: drives NETWORK_CONFIG_LOCAL_FILE, the schema mount, and VITE_NETWORK_NAME."
   type        = string
   default     = "orange_dot"
-}
-
-variable "signals_served_domains" {
-  description = "Comma-separated \"<network>/<domain>\" bindings the API serves (SERVED_DOMAINS)."
-  type        = string
-  default     = "orange_dot/tourist,orange_dot/practitioner"
 }
 
 variable "signals_allowed_origins" {
