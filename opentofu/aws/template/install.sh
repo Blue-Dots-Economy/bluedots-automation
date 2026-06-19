@@ -35,6 +35,15 @@ SIGNALS_DIR="$REPO_ROOT/helm/signals"
 AGG_DIR="$REPO_ROOT/helm/aggregator"
 MON_DIR="$REPO_ROOT/helm/monitoring"
 
+# Resource overrides (replica counts, HPA, PDB, container resources) — shared across environments.
+# Edit helm/global-resources.yaml to change settings across all environments.
+GLOBAL_RESOURCES="$REPO_ROOT/helm/global-resources.yaml"
+
+# Image overrides (repository, tag, pullPolicy) — lives per-environment so each
+# deployment can pin its own image tags independently.
+# Edit opentofu/aws/<env>/global-images.yaml to change image tags for this environment.
+GLOBAL_IMAGES="${GLOBAL_IMAGES:-$SCRIPT_DIR/global-images.yaml}"
+
 # ═══ terraform / cluster bootstrap ════════════════════════════════════════════
 
 function create_tf_backend() {
@@ -154,6 +163,8 @@ function deploy_common_services() {
     echo -e "\nDeploying common-services"
     helm upgrade --install "$CS_REL" "$CS_DIR" \
         -n "$CS_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" \
+        -f "$GLOBAL_IMAGES" \
         -f "$CS_VALUES" \
         --wait --timeout 5m
 }
@@ -175,6 +186,8 @@ function deploy_signals() {
     echo -e "\nDeploying signals"
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" \
         -n "$SIGNALS_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" \
+        -f "$GLOBAL_IMAGES" \
         -f "$SIGNALS_VALUES" \
         --wait --timeout 10m
 }
@@ -184,6 +197,8 @@ function deploy_aggregator() {
     echo -e "\nDeploying aggregator"
     helm upgrade --install "$AGG_REL" "$AGG_DIR" \
         -n "$AGG_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" \
+        -f "$GLOBAL_IMAGES" \
         -f "$AGG_VALUES" \
         --wait --timeout 10m
 }
@@ -340,11 +355,11 @@ function dry_run() {
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
         -f "$MON_VALUES" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$CS_VALUES" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$CS_VALUES" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$SIGNALS_VALUES" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$SIGNALS_VALUES" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$AGG_VALUES" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$AGG_VALUES" --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────

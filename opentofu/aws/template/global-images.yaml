@@ -1,0 +1,115 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Global image configuration — single source of truth for container image
+# repository, tag, and pull policy across every service.
+#
+# Keys map directly to subchart names/aliases in the umbrella charts:
+#   helm/common-services/ → postgresql, redis, ingress-nginx, cert-manager
+#   helm/signals/         → api, ui, notification-service, match-score, search, search-embeddings
+#   helm/aggregator/      → aggregator-api, web, worker, keycloak
+#
+# Note: aggregator's api subchart carries the alias "aggregator-api" (Chart.yaml)
+# to avoid collision with signals' api key in this shared file.
+#
+# This file lives per-environment (opentofu/aws/<env>/) so each deployment can
+# pin its own image tags independently.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Signals (dpg) stack ──────────────────────────────────────────────────────
+
+api:
+  image:
+    repository: ghcr.io/blue-dots-economy/signals-dpg/api
+    tag: "sha-46c05dd"
+    pullPolicy: Always
+
+ui:
+  image:
+    repository: ghcr.io/blue-dots-economy/signals-dpg/ui
+    tag: "sha-36d9304"
+    pullPolicy: Always
+
+notification-service:
+  image:
+    repository: vinodbbhorge/notification-service
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+match-score:
+  image:
+    repository: vinodbbhorge/match-scoring
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+# search: api + worker share one image (entrypoint differs via command)
+search:
+  image:
+    repository: ghcr.io/blue-dots-economy/signals-search
+    tag: "sha-1c7d576"
+    pullPolicy: Always
+
+# search-embeddings: TEI model image with BAAI/bge-m3 baked in
+search-embeddings:
+  image:
+    repository: ghcr.io/blue-dots-economy/tei-bge-m3
+    tag: "sha-1c7d576d1af74f3e0cdf659cea033ecee26733c8"
+    pullPolicy: IfNotPresent
+
+# ── Aggregator stack ─────────────────────────────────────────────────────────
+
+aggregator-api:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
+    tag: "sha-9321f28"
+    pullPolicy: Always
+
+web:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
+    tag: "sha-15afbce"
+    pullPolicy: Always
+
+worker:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
+    tag: "sha-9321f28"
+    pullPolicy: Always
+
+keycloak:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-server
+    tag: "develop"
+    pullPolicy: IfNotPresent
+  themesInit:
+    image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
+    tag: blue_dot-develop
+    pullPolicy: Always
+
+
+# ── Common services (platform) ────────────────────────────────────────────────
+# Released as: helm/common-services/  →  subchart keys: postgresql, redis, ingress-nginx
+# Tags taken from the vendored chart defaults (helm/common-services/charts/*/Chart.yaml).
+# Pin to specific digests/tags for production stability.
+
+postgresql:
+  image:
+    registry: registry-1.docker.io
+    repository: bitnami/postgresql
+    tag: "latest"        # bitnami chart default; pin to a specific tag for prod
+
+redis:
+  image:
+    registry: docker.io
+    repository: bitnami/redis
+    tag: "7.2.5-debian-12-r4"    # bitnami chart default (chart v19.6.4)
+
+ingress-nginx:
+  controller:
+    image:
+      registry: registry.k8s.io
+      image: ingress-nginx/controller    # ingress-nginx uses "image" not "repository"
+      tag: "v1.15.1"                     # chart default (chart v4.15.1)
+      pullPolicy: IfNotPresent
+
+# cert-manager resolves its image internally from appVersion (v1.20.2 →
+# quay.io/jetstack/cert-manager-controller:v1.20.2); no override needed here
+# unless pinning to a different version.

@@ -1,0 +1,246 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Global resource configuration — single source of truth for replica counts,
+# HPA, PDB, and container resources across every service.
+#
+# Keys map directly to subchart names/aliases — Helm forwards them to the
+# subchart as .Values.* (same mechanism as global-images.yaml).  No global.*
+# nesting or template-side lookup logic needed.
+#
+# Pass order in install.sh:  -f global-resources.yaml  -f global-images.yaml  -f <env-values>
+# Last file wins, so per-environment values can always override these defaults.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── Signals (dpg) ─────────────────────────────────────────────────────────────
+# helm/signals/  →  subchart keys: api, ui, notification-service, match-score
+
+api:
+  replicaCount: 2
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+
+ui:
+  replicaCount: 1
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+
+
+notification-service:
+  replicaCount: 1
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+
+match-score:
+  replicaCount: 1
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+
+# search: two deployments (api + worker) sharing one image; resources are nested
+# under api.* and worker.* to match the subchart's values structure
+search:
+  api:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 1
+        memory: 512Mi
+
+  worker:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+
+
+# search-embeddings: TEI embedding model — CPU-heavy, sized accordingly
+search-embeddings:
+  replicaCount: 1
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: 3Gi
+    limits:
+      cpu: "2"
+      memory: 8Gi
+
+
+# ── Aggregator ────────────────────────────────────────────────────────────────
+# helm/aggregator/  →  subchart keys: aggregator-api, web, worker, keycloak
+# Note: aggregator's api subchart carries alias "aggregator-api" (Chart.yaml)
+# to avoid colliding with signals' api key above when both charts read this file.
+
+aggregator-api:
+  replicaCount: 2
+
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPU: 70
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+
+web:
+  replicaCount: 1
+
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPU: 70
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+
+
+worker:
+  replicaCount: 1
+
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPU: 70
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+
+keycloak:
+  replicaCount: 1
+
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 1
+    targetCPU: 70
+
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+  resources: {}    # keycloak has its own sizing requirements; tune per-cluster in env values
+
+
+# ── Common services (platform) ────────────────────────────────────────────────
+# helm/common-services/  →  subchart keys: postgresql, redis, ingress-nginx
+
+postgresql:
+  primary:
+    resources: {}    # bitnami default (resourcesPreset: nano); tune per-cluster in env values
+
+redis:
+  master:
+    resources: {}    # bitnami default (resourcesPreset: nano); tune per-cluster in env values
+
+ingress-nginx:
+  controller:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 90Mi
+      # limits: not set — matches ingress-nginx chart default

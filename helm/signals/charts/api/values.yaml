@@ -53,12 +53,6 @@ ingress:
   plugin: ""           # KongClusterPlugin tier, e.g. rl-signals-api
 
 resources: {}
-  # limits:
-  #   cpu: 500m
-  #   memory: 512Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 256Mi
 
 livenessProbe:
   httpGet:
@@ -84,6 +78,10 @@ autoscaling:
   maxReplicas: 5
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: ""
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
 
 nodeSelector: {}
 tolerations: []

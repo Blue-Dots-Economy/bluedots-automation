@@ -40,7 +40,7 @@ secrets:
 
 # IRSA service account injected into every pod-running sub-chart (api + worker)
 # so they assume the S3/SES role via the SA token.
-api:
+aggregator-api:
   adminEmails: '${aggregator_admin_emails}'
   serviceAccount:
     create: true
