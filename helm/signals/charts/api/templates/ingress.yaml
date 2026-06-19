@@ -2,14 +2,17 @@
 {{- /*
   Template-driven ingress for the signals API. The routing STRUCTURE is fixed
   here — path /api, strip-path "false" (signals-api serves natively under /api).
-  Host comes from global.publicHost; other scalars from ingress.* (className /
-  tlsSecret / plugin).
+  Hosts come from global.publicHosts (defaulting to the single global.publicHost
+  — the SAME list the ui ingress uses), so every host that serves the UI also
+  serves /api: each per-domain portal is fully same-origin (host/ + host/api),
+  no CORS. Other scalars from ingress.* (className / tlsSecret / plugin).
 
   No cert-manager annotation: the ui subchart owns issuance of the shared host
   cert (ingress.tlsSecret); this object only references it, avoiding a duplicate
   certificate for the same host.
 */ -}}
 {{- $fullName := include "dpg-api.fullname" . -}}
+{{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -28,11 +31,14 @@ spec:
   {{- if .Values.ingress.tlsSecret }}
   tls:
     - hosts:
-        - {{ .Values.global.publicHost }}
+        {{- range $hosts }}
+        - {{ . | quote }}
+        {{- end }}
       secretName: {{ .Values.ingress.tlsSecret }}
   {{- end }}
   rules:
-    - host: {{ required "global.publicHost is required" .Values.global.publicHost | quote }}
+    {{- range $hosts }}
+    - host: {{ . | quote }}
       http:
         paths:
           - path: /api
@@ -41,5 +47,6 @@ spec:
               service:
                 name: {{ $fullName }}
                 port:
-                  number: {{ .Values.service.port }}
+                  number: {{ $.Values.service.port }}
+    {{- end }}
 {{- end }}

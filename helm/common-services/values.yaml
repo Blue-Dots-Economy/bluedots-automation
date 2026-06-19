@@ -275,8 +275,25 @@ postgresBootstrap:
 #   - `postgres` superuser created by Bitnami initdb using postgresPassword
 #   - `auth.username/database` adds the `aggregator` user + DB out of the box
 #   - 00-bootstrap.sh creates the `dpg` user, the `dpg` + `keycloak`
-#     databases, and pgcrypto/cube/earthdistance extensions for `dpg`
+#     databases, and the pgcrypto/cube/earthdistance/vector/postgis extensions
+#     for `dpg` (fresh installs only; see dbExtensions for the catch-up hook)
 # -----------------------------------------------------------------------------
+# Ensure required extensions exist in the dpg DB on every deploy (post-install/
+# post-upgrade hook). initdb.scripts below only run on a fresh PGDATA, so a
+# cluster initialized before vector/postgis were added never gains them and a
+# helm upgrade won't re-run initdb. This hook is the idempotent catch-up that
+# repairs already-provisioned clusters; keep its list in sync with the initdb
+# CREATE EXTENSION block.
+dbExtensions:
+  enabled: true
+  database: dpg
+  list:
+    - pgcrypto
+    - cube
+    - earthdistance
+    - vector
+    - postgis
+
 postgresql:
   # DISABLED — Postgres migrated to AWS RDS (managed). Block kept for reference /
   # rollback; the bootstrap Job (above) now owns role/database/extension creation.
