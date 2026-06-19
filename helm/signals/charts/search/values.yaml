@@ -2,7 +2,7 @@
 # entrypoint via `command` (node dist/worker/main.js | node dist/api/main.js).
 image:
   repository: ghcr.io/blue-dots-economy/signals-search
-  tag: "sha-ed5e22f"
+  tag: "sha-48a3c65"
   pullPolicy: Always
 imagePullSecrets:
   - name: ghcr-pull

@@ -1,5 +1,12 @@
 {{- if .Values.schemas.networks }}
-{{- $internalUrl := .Values.schemas.apiInternalUrl | default (printf "http://%s" (include "dpg-api.fullname" .)) -}}
+{{- /*
+  Derives the public API URL from global.publicHosts (first entry) or
+  global.publicHost — the same source the ui/api ingresses use. This is the
+  externally reachable instance_url embedded in BECKN network schemas so other
+  participants can call this instance. It is NOT an in-cluster address.
+*/ -}}
+{{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
+{{- $publicApiUrl := printf "https://%s/api" (first $hosts) -}}
 {{- $schemasUrl := .Values.schemas.crossNetworkUrl | default "" -}}
 apiVersion: v1
 kind: ConfigMap
@@ -13,6 +20,6 @@ data:
 {{- $raw := $.Files.Get $file -}}
 {{- if not $raw }}{{ fail (printf "missing schema file %s for network %s" $file .) }}{{- end }}
   {{ . }}.json: |
-{{ $raw | replace "__PUBLIC_API_URL__" $internalUrl | replace "__SCHEMAS_URL__" $schemasUrl | indent 4 }}
+{{ $raw | replace "__PUBLIC_API_URL__" $publicApiUrl | replace "__SCHEMAS_URL__" $schemasUrl | indent 4 }}
 {{- end }}
 {{- end }}
