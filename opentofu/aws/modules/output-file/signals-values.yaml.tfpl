@@ -159,6 +159,9 @@ match-score:
 # Signals search: inject the shared DB/Redis passwords into the
 # dpg-search-secrets Secret (same generated values as the api block above).
 search:
+  # Postgres (dpg) now points at AWS RDS; Redis stays in-cluster (subchart default).
+  postgres:
+    host: "${postgres_host}"
   secrets:
     create: true
     existingSecret: dpg-search-secrets
