@@ -6,10 +6,13 @@ locals {
 # via a single `-f` with no slicing/yq projection. Shared secrets are templated
 # into each file directly (no cross-file YAML anchors needed).
 
-resource "local_sensitive_file" "common_services_values" {
-  filename        = "${local.values_dir}/common-services-values.yaml"
+# Single merged credential file for all charts. Holds secrets + infra outputs
+# at ROOT level so each chart reads it via a single `-f`. Grown one chart at a
+# time; non-secret config now lives in global-values.yaml / chart values.yaml.
+resource "local_sensitive_file" "credential_values" {
+  filename        = "${local.values_dir}/credential-values.yaml"
   file_permission = "0600"
-  content = templatefile("${path.module}/common-services-values.yaml.tfpl", {
+  content = templatefile("${path.module}/credential-values.yaml.tfpl", {
     postgres_admin_password      = var.postgres_admin_password
     aggregator_postgres_password = var.aggregator_postgres_password
     signals_postgres_password    = var.signals_postgres_password

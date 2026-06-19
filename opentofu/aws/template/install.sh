@@ -12,7 +12,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Per-chart values files produced by opentofu (modules/output-file). Each holds
 # its chart's overrides at ROOT level, so a single `-f` feeds helm directly —
 # no slicing/yq projection needed.
-CS_VALUES="${CS_VALUES:-$SCRIPT_DIR/common-services-values.yaml}"
+# Shared credential file (secrets + infra outputs) — common-services reads this;
+# other charts migrate onto it one at a time and drop their own *-values.yaml.
+CRED_VALUES="${CRED_VALUES:-$SCRIPT_DIR/credential-values.yaml}"
 SIGNALS_VALUES="${SIGNALS_VALUES:-$SCRIPT_DIR/signals-values.yaml}"
 AGG_VALUES="${AGG_VALUES:-$SCRIPT_DIR/aggregator-values.yaml}"
 MON_VALUES="${MON_VALUES:-$SCRIPT_DIR/monitoring-values.yaml}"
@@ -165,7 +167,7 @@ function deploy_common_services() {
         -n "$CS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
         -f "$GLOBAL_IMAGES" \
-        -f "$CS_VALUES" \
+        -f "$CRED_VALUES" \
         --wait --timeout 5m
 }
 
@@ -329,7 +331,7 @@ function preflight() {
     command -v helm    >/dev/null || { echo "ERROR: helm not installed"    >&2; exit 1; }
     command -v kubectl >/dev/null || { echo "ERROR: kubectl not installed" >&2; exit 1; }
     kubectl cluster-info >/dev/null 2>&1 || { echo "ERROR: cluster unreachable; check kubeconfig" >&2; exit 1; }
-    for f in "$CS_VALUES" "$SIGNALS_VALUES" "$AGG_VALUES" "$MON_VALUES"; do
+    for f in "$CRED_VALUES" "$SIGNALS_VALUES" "$AGG_VALUES" "$MON_VALUES"; do
         test -f "$f" || {
             echo "ERROR: values file not found: $f" >&2
             echo "       Run \`terragrunt run --all apply\` from $SCRIPT_DIR first." >&2
@@ -337,7 +339,7 @@ function preflight() {
         }
     done
     echo "context : $(kubectl config current-context)"
-    echo "values  : $CS_VALUES, $SIGNALS_VALUES, $AGG_VALUES, $MON_VALUES"
+    echo "values  : $CRED_VALUES, $SIGNALS_VALUES, $AGG_VALUES, $MON_VALUES"
 }
 
 # helm lint all 4 charts.
@@ -355,7 +357,7 @@ function dry_run() {
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
         -f "$MON_VALUES" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$CS_VALUES" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$CRED_VALUES" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$SIGNALS_VALUES" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
