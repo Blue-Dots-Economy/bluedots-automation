@@ -26,11 +26,11 @@ global:
 images:
   api: &api_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-46c05dd"
+    tag: "sha-4dcc2df"
     pullPolicy: Always
   ui: &ui_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-36d9304"
+    tag: "sha-4dcc2df"
     pullPolicy: Always
   notificationService: &notification_service_image
     repository: vinodbbhorge/notification-service
