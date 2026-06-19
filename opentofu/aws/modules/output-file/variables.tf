@@ -59,18 +59,6 @@ variable "signals_allowed_origins" {
   default     = "http://localhost:8080,http://127.0.0.1:8080"
 }
 
-variable "aggregator_host" {
-  description = "FQDN for the aggregator public ingress (global.publicHost, used as-is)"
-  type        = string
-  default     = "aggregator.servehalflife.com"
-}
-
-variable "aggregator_network" {
-  description = "Network the aggregator portal serves (global.aggregatorNetwork); fed from the shared global.network."
-  type        = string
-  default     = "orange_dot"
-}
-
 # -----------------------------------------------------------------------------
 # Network
 # -----------------------------------------------------------------------------
@@ -226,25 +214,10 @@ variable "aggregator_smtp_password" {
   default   = ""
 }
 
-variable "aggregator_smtp_from" {
-  type    = string
-  default = ""
-}
-
-variable "aggregator_admin_emails" {
-  type    = string
-  default = ""
-}
-
 variable "aggregator_msg91_auth_key" {
   type      = string
   sensitive = true
   default   = ""
-}
-
-variable "aggregator_msg91_template_id" {
-  type    = string
-  default = ""
 }
 
 variable "signals_google_maps_api_key" {

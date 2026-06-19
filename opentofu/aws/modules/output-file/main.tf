@@ -2,48 +2,39 @@ locals {
   values_dir = "${var.base_location}/.."
 }
 
-# One file per chart, each with values already at ROOT level so helm reads them
-# via a single `-f` with no slicing/yq projection. Shared secrets are templated
-# into each file directly (no cross-file YAML anchors needed).
-
-# Single merged credential file for all charts. Holds secrets + infra outputs
-# at ROOT level so each chart reads it via a single `-f`. Grown one chart at a
-# time; non-secret config now lives in global-values.yaml / chart values.yaml.
-resource "local_sensitive_file" "credential_values" {
-  filename        = "${local.values_dir}/credential-values.yaml"
+# Single credential file for all charts — secrets only at ROOT level.
+# Each chart reads this same file; helm ignores keys it doesn't recognise.
+# Grown one chart at a time; non-secret config lives in global-values.yaml.
+resource "local_sensitive_file" "global_credentials" {
+  filename        = "${local.values_dir}/global-credentials.yaml"
   file_permission = "0600"
-  content = templatefile("${path.module}/credential-values.yaml.tfpl", {
-    postgres_admin_password      = var.postgres_admin_password
-    aggregator_postgres_password = var.aggregator_postgres_password
-    signals_postgres_password    = var.signals_postgres_password
-    signals_redis_password       = var.signals_redis_password
-    monitoring_grafana_password  = var.monitoring_grafana_password
-  })
-}
-
-resource "local_sensitive_file" "aggregator_values" {
-  filename        = "${local.values_dir}/aggregator-values.yaml"
-  file_permission = "0600"
-  content = templatefile("${path.module}/aggregator-values.yaml.tfpl", {
-    aggregator_host                         = var.aggregator_host
-    aggregator_network                      = var.aggregator_network
-    cloud_storage_region                    = var.cloud_storage_region
-    storage_bucket_public                   = var.storage_bucket_public
+  content = templatefile("${path.module}/global-credentials.yaml.tfpl", {
+    postgres_admin_password                 = var.postgres_admin_password
     aggregator_postgres_password            = var.aggregator_postgres_password
+    signals_postgres_password               = var.signals_postgres_password
     signals_redis_password                  = var.signals_redis_password
+    monitoring_grafana_password             = var.monitoring_grafana_password
     aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
     aggregator_keycloak_admin_client_secret = var.aggregator_keycloak_admin_client_secret
     aggregator_approval_token_secret        = var.aggregator_approval_token_secret
     aggregator_session_key                  = var.aggregator_session_key
     aggregator_oidc_client_secret           = var.aggregator_oidc_client_secret
     signalstack_admin_key                   = var.signalstack_admin_key
-    app_sa_role_arn                         = var.app_sa_role_arn
     aggregator_smtp_user                    = var.aggregator_smtp_user
     aggregator_smtp_password                = var.aggregator_smtp_password
-    aggregator_smtp_from                    = var.aggregator_smtp_from
-    aggregator_admin_emails                 = var.aggregator_admin_emails
     aggregator_msg91_auth_key               = var.aggregator_msg91_auth_key
-    aggregator_msg91_template_id            = var.aggregator_msg91_template_id
+  })
+}
+
+# Cloud infra outputs — S3 bucket/region and IRSA ARN. Generated (depends on
+# provisioned resources), so kept separate from user-edited global-values.yaml.
+resource "local_sensitive_file" "global_cloud_values" {
+  filename        = "${local.values_dir}/global-cloud-values.yaml"
+  file_permission = "0600"
+  content = templatefile("${path.module}/global-cloud-values.yaml.tfpl", {
+    cloud_storage_region  = var.cloud_storage_region
+    storage_bucket_public = var.storage_bucket_public
+    app_sa_role_arn       = var.app_sa_role_arn
   })
 }
 

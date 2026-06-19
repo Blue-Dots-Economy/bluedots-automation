@@ -12,13 +12,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # Per-chart values files produced by opentofu (modules/output-file). Each holds
 # its chart's overrides at ROOT level, so a single `-f` feeds helm directly —
 # no slicing/yq projection needed.
-# Shared credential file (secrets + infra outputs) — grows one chart at a time
-# as each migrates off its own *-values.yaml.
-CRED_VALUES="${CRED_VALUES:-$SCRIPT_DIR/credential-values.yaml}"
+# Generated credential file — secrets only; shared by all charts.
+GLOBAL_CREDS="${GLOBAL_CREDS:-$SCRIPT_DIR/global-credentials.yaml}"
+# Generated cloud infra file — S3 bucket/region + IRSA ARN; non-secret but
+# generated (depends on provisioned resources).
+GLOBAL_CLOUD_VALUES="${GLOBAL_CLOUD_VALUES:-$SCRIPT_DIR/global-cloud-values.yaml}"
 # Non-sensitive config passed directly to Helm via -f (keys match chart schemas).
 GLOBAL_VALUES="${GLOBAL_VALUES:-$SCRIPT_DIR/global-values.yaml}"
 SIGNALS_VALUES="${SIGNALS_VALUES:-$SCRIPT_DIR/signals-values.yaml}"
-AGG_VALUES="${AGG_VALUES:-$SCRIPT_DIR/aggregator-values.yaml}"
 
 # Namespaces.
 CS_NS="${CS_NS:-common-services}"
@@ -154,7 +155,7 @@ function deploy_monitoring() {
     helm upgrade --install "$MON_REL" "$MON_DIR" \
         -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" \
-        -f "$CRED_VALUES" \
+        -f "$GLOBAL_CREDS" \
         --wait --timeout 10m
 }
 
@@ -169,7 +170,7 @@ function deploy_common_services() {
         -n "$CS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
         -f "$GLOBAL_IMAGES" \
-        -f "$CRED_VALUES" \
+        -f "$GLOBAL_CREDS" \
         --wait --timeout 5m
 }
 
@@ -203,7 +204,9 @@ function deploy_aggregator() {
         -n "$AGG_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
         -f "$GLOBAL_IMAGES" \
-        -f "$AGG_VALUES" \
+        -f "$GLOBAL_VALUES" \
+        -f "$GLOBAL_CLOUD_VALUES" \
+        -f "$GLOBAL_CREDS" \
         --wait --timeout 10m
 }
 
@@ -333,7 +336,7 @@ function preflight() {
     command -v helm    >/dev/null || { echo "ERROR: helm not installed"    >&2; exit 1; }
     command -v kubectl >/dev/null || { echo "ERROR: kubectl not installed" >&2; exit 1; }
     kubectl cluster-info >/dev/null 2>&1 || { echo "ERROR: cluster unreachable; check kubeconfig" >&2; exit 1; }
-    for f in "$CRED_VALUES" "$SIGNALS_VALUES" "$AGG_VALUES"; do
+    for f in "$GLOBAL_CREDS" "$GLOBAL_CLOUD_VALUES" "$SIGNALS_VALUES"; do
         test -f "$f" || {
             echo "ERROR: values file not found: $f" >&2
             echo "       Run \`terragrunt run --all apply\` from $SCRIPT_DIR first." >&2
@@ -341,8 +344,10 @@ function preflight() {
         }
     done
     echo "context : $(kubectl config current-context)"
-    echo "values  : $CRED_VALUES (shared creds), $SIGNALS_VALUES, $AGG_VALUES"
-    echo "config  : $GLOBAL_VALUES (alerting + non-secret config)"
+    echo "creds   : $GLOBAL_CREDS"
+    echo "cloud   : $GLOBAL_CLOUD_VALUES"
+    echo "signals : $SIGNALS_VALUES"
+    echo "config  : $GLOBAL_VALUES (user-edited non-secret config)"
 }
 
 # helm lint all 4 charts.
@@ -358,13 +363,13 @@ function lint() {
 function dry_run() {
     preflight
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
-        -f "$GLOBAL_VALUES" -f "$CRED_VALUES" --dry-run
+        -f "$GLOBAL_VALUES" -f "$GLOBAL_CREDS" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$CRED_VALUES" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CREDS" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$SIGNALS_VALUES" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$AGG_VALUES" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────

@@ -55,11 +55,21 @@ global:
   building_block: *building_block
   environment:    *environment
 
-  signals_public_hosts: *signals_public_hosts
+  signals_public_hosts:   *signals_public_hosts
   signals_host_bindings:  *signals_host_bindings
   network:                *network
   signals_served_domains: *signals_served_domains
-  aggregator_host: *aggregator_host
+
+  # ── Aggregator Helm config ─────────────────────────────────────────────────
+  # These keys match the aggregator chart's schema at root level so global-values.yaml
+  # can be passed directly via -f without any transformation.
+  publicHost:         *aggregator_host
+  aggregatorNetwork:  *network
+  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
+  dataPlatform:
+    namespace:       common-services
+    postgresService: common-services-postgresql
+    redisService:    common-services-redis-master
 
   cloud_storage_region: *cloud_storage_region
 
@@ -127,13 +137,10 @@ global:
   notification_msg91_auth_key:   *msg91_auth_key
   notification_msg91_template_id: *msg91_template_id
 
-  # ── Aggregator mail ──────────────────────────────────────────────────────────
+  # ── Aggregator mail (secrets only — non-secret config moved to root sections below) ──
   aggregator_smtp_user:     *smtp_user
   aggregator_smtp_password: *smtp_password
-  aggregator_smtp_from:     *smtp_user
-  aggregator_admin_emails:      *aggregator_admin_emails
-  aggregator_msg91_auth_key:    *msg91_auth_key
-  aggregator_msg91_template_id: *msg91_template_id
+  aggregator_msg91_auth_key: *msg91_auth_key
 
   # CloudWatch observability (Container Insights add-on)
   enable_cloudwatch_observability: false
@@ -168,3 +175,18 @@ alerting:
     criticalWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
     warningWebhook:  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
     infoWebhook:     "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+
+# =============================================================================
+# Aggregator chart config (non-sensitive, passed directly via -f global-values.yaml)
+# Keys match the aggregator chart's schema so no transformation is needed.
+# =============================================================================
+
+aggregator-api:
+  adminEmails: *aggregator_admin_emails
+
+mail:
+  smtp:
+    from: *smtp_user
+
+keycloak:
+  msg91TemplateId: *msg91_template_id
