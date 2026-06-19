@@ -394,3 +394,13 @@ networkPolicy:
   allowedFromNamespaces:
     - aggregator-dpg
     - dpg
+
+# ── metrics-server ────────────────────────────────────────────────────────────
+# Required for HPA (kubectl top also uses this).
+# On EKS the kubelet certificate is self-signed — kubelet-insecure-tls is
+# needed or the metrics-server pods will fail with x509 errors.
+metrics-server:
+  enabled: true
+  args:
+    - --kubelet-insecure-tls          # required on EKS (self-signed kubelet cert)
+    - --kubelet-preferred-address-types=InternalIP

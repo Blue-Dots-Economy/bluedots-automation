@@ -125,7 +125,7 @@ postgres://{{ .Values.postgresql.auth.username }}:$(POSTGRES_PASSWORD)@{{ includ
 {{/*
   Image reference helper.
   Usage:
-    {{- include "aggregator.image" (dict "top" $ "image" .Values.api.image) }}
+    {{- include "aggregator.image" (dict "top" $ "image" .Values.aggregator-api.image) }}
 */}}
 {{- define "aggregator.image" -}}
 {{- $top := .top -}}

@@ -199,7 +199,7 @@ web:
     maxReplicas: 6
     targetCPU: 70
 
-api:
+aggregator-api:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api

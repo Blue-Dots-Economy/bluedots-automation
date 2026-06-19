@@ -11,7 +11,9 @@ _environment:    &environment    "dev"
 _signals_public_hosts: &signals_public_hosts
   - "example.domain.com"
   - "example.domain.com"
-_signals_host_bindings: &signals_host_bindings "example.domain.com=blue_dot/provider;example.domain.com=blue_dot/seeker"
+# For multi-domain host-routing set: "host1.com=network/domain;host2.com=network/domain"
+# Leave empty for single-host mode (hostBindings will be omitted entirely).
+_signals_host_bindings: &signals_host_bindings ""
 
 # Network this deployment serves — SHARED by signals (NETWORK_CONFIG_LOCAL_FILE,
 # schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
@@ -34,16 +36,19 @@ _eks_node_count_max:     &eks_node_count_max     2
 # ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
 # smtp_password must be a Gmail App Password:
 #   Google Account → Security → 2-Step Verification → App passwords
-_smtp_user:     &smtp_user     "sender@example.com"
-_smtp_password: &smtp_password "changeme"
+_smtp_host:         &smtp_host         "smtp.gmail.com"
+_smtp_port:         &smtp_port         587
+_smtp_user:         &smtp_user         "sender@example.com"
+_smtp_password:     &smtp_password     "changeme"
+_smtp_from_display: &smtp_from_display "Blue Dots"
 
 # ── MSG91 (shared by notification service and aggregator) ────────────────────
 _msg91_auth_key:    &msg91_auth_key    "changeme"
 _msg91_template_id: &msg91_template_id "changeme"
 
 # ── Alert recipients ──────────────────────────────────────────────────────────
-_monitoring_alert_email:  &monitoring_alert_email  "alerts@example.com"
-_aggregator_admin_emails:   &aggregator_admin_emails   "admin@example.com"
+_alert_email:             &alert_email             "alerts@example.com"
+_aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
 _signals_google_maps_api_key: &signals_google_maps_api_key ""
 
 
@@ -55,11 +60,28 @@ global:
   building_block: *building_block
   environment:    *environment
 
-  signals_public_hosts: *signals_public_hosts
+  signals_public_hosts:   *signals_public_hosts
   signals_host_bindings:  *signals_host_bindings
   network:                *network
   signals_served_domains: *signals_served_domains
-  aggregator_host: *aggregator_host
+
+  # ── Signals Helm config ────────────────────────────────────────────────────
+  publicHosts: *signals_public_hosts
+
+  # ── Aggregator Helm config ─────────────────────────────────────────────────
+  # These keys match the aggregator chart's schema at root level so global-values.yaml
+  # can be passed directly via -f without any transformation.
+  publicHost:         *aggregator_host
+  aggregatorNetwork:  *network
+  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
+  signalstack:
+    # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
+    # Required before first aggregator login — SIGNALSTACK_ORG_NOT_REGISTERED otherwise.
+    actingOrgId: ""
+  dataPlatform:
+    namespace:       common-services
+    postgresService: common-services-postgresql
+    redisService:    common-services-redis-master
 
   cloud_storage_region: *cloud_storage_region
 
@@ -143,26 +165,10 @@ global:
   notification_msg91_auth_key:   *msg91_auth_key
   notification_msg91_template_id: *msg91_template_id
 
-  # ── Aggregator mail ──────────────────────────────────────────────────────────
+  # ── Aggregator mail (secrets only — non-secret config moved to root sections below) ──
   aggregator_smtp_user:     *smtp_user
   aggregator_smtp_password: *smtp_password
-  aggregator_smtp_from:     *smtp_user
-  aggregator_admin_emails:      *aggregator_admin_emails
-  aggregator_msg91_auth_key:    *msg91_auth_key
-  aggregator_msg91_template_id: *msg91_template_id
-
-  # ── Monitoring stack ────────────────────────────────────────────────────────
-  monitoring_alert_email:   *monitoring_alert_email
-  monitoring_smtp_from:     *smtp_user
-  monitoring_smtp_password: *smtp_password
-  # monitoring_smtp_host: "smtp.gmail.com:587"  # default; override only for non-Gmail providers
-  # Set enabled: true for whichever channels you want active.
-  # Create one Discord webhook per channel: Channel Settings → Integrations → Webhooks
-  monitoring_email_enabled:   false
-  monitoring_discord_enabled: false
-  monitoring_discord_critical_webhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-  monitoring_discord_warning_webhook:  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-  monitoring_discord_info_webhook:     "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+  aggregator_msg91_auth_key: *msg91_auth_key
 
   # CloudWatch observability (Container Insights add-on)
   enable_cloudwatch_observability: false
@@ -172,3 +178,130 @@ global:
     - authenticator
     - controllerManager
     - scheduler
+
+# =============================================================================
+# Alerting — monitoring chart config (passed directly via -f global-values.yaml)
+# Keys match the monitoring Helm chart's schema at root level so no transformation
+# is needed. Helm ignores the global: section above.
+# =============================================================================
+
+# ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
+# smtp_password must be a Gmail App Password:
+#   Google Account → Security → 2-Step Verification → App passwords
+alerting:
+  email:
+    enabled: false
+    smtpHost: "smtp.gmail.com:587"  # host:port combined — keep in sync with _smtp_host/_smtp_port
+    smtpFrom: *smtp_user
+    smtpAuthUsername: *smtp_user
+    smtpAuthPassword: *smtp_password
+    to: *alert_email
+  discord:
+    # Set enabled: true and replace webhooks to activate Discord notifications.
+    # Create one webhook per channel: Channel Settings → Integrations → Webhooks.
+    enabled: false
+    criticalWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+    warningWebhook:  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+    infoWebhook:     "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+
+# =============================================================================
+# Aggregator chart config (non-sensitive, passed directly via -f global-values.yaml)
+# Keys match the aggregator chart's schema so no transformation is needed.
+# =============================================================================
+
+aggregator-api:
+  adminEmails: *aggregator_admin_emails
+
+mail:
+  provider: smtp  # smtp | ses
+  smtp:
+    host: *smtp_host
+    port: *smtp_port
+    from: *smtp_user
+    fromDisplay: *smtp_from_display
+    secure: false
+    starttls: true
+    auth: true
+
+keycloak:
+  msg91TemplateId: *msg91_template_id
+
+# =============================================================================
+# Signals chart config (non-sensitive, passed directly via -f global-values.yaml)
+# Keys match the signals chart's schema so no transformation is needed.
+# Computed values (API_DOMAIN, ALLOWED_ORIGINS, NETWORK_CONFIG_LOCAL_FILE) are
+# in global-cloud-values.yaml (require HCL list indexing / join).
+# =============================================================================
+
+api:
+  secrets:
+    create: true
+    existingSecret: dpg-api-secrets
+    notificationKeyId: "dpg-api-client"
+  config:
+    NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
+    SERVED_DOMAINS: *signals_served_domains
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  schemas:
+    networks:
+      - *network
+
+ui:
+  apiUpstream: "http://signals-api:2742"
+  uiVariant: "signals"
+  # hostBindings is conditionally set in global-cloud-values.yaml — only emitted
+  # when signals_host_bindings is non-empty, to avoid nginx conflicting parameter error.
+  runtimeConfig:
+    VITE_DEFAULT_VIEW_MODE: "map"
+    VITE_MAP_PROVIDER: "google-maps"
+    VITE_GOOGLE_MAPS_API_KEY: *signals_google_maps_api_key
+    VITE_ACTION_POLL_INTERVAL_MS: "30000"
+    VITE_NETWORK_NAME: *network
+    VITE_ANALYTICS_GA_ID: ""
+  service:
+    port: 80
+    targetPort: 80
+
+notification-service:
+  secrets:
+    create: true
+    existingSecret: ""
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  internalSecrets:
+    create: true
+    existingSecret: ""
+    fileName: internal-secrets.json
+    mountPath: /app/config
+
+match-score:
+  secrets:
+    create: true
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  configFiles:
+    create: true
+    aiProvidersFileName: ai.providers.local.json
+    aiProvidersJson: |
+      {
+        "providers": {
+          "openai": {
+            "apiKey": "REPLACE_WITH_OPENAI_API_KEY"
+          },
+          "gemini": {
+            "apiKey": "REPLACE_WITH_GEMINI_API_KEY"
+          }
+        }
+      }
+
+search:
+  secrets:
+    create: true
+    existingSecret: dpg-search-secrets
+    data:
+      POSTGRES_USER: "dpg"
+      POSTGRES_DB: "dpg"
+      EMBEDDING_API_KEY: ""

@@ -36,7 +36,7 @@ variable "signals_public_hosts" {
 }
 
 variable "signals_host_bindings" {
-  description = "Host -> \"<network>/<domain>\" map for host-routed served binding. Empty = single static binding (config.js stays static)."
+  description = "Host -> \"<network>/<domain>\" map for host-routed served binding. Empty = single-host mode (ui.hostBindings omitted entirely)."
   type        = string
   default     = ""
 }
@@ -47,28 +47,10 @@ variable "signals_network" {
   default     = "orange_dot"
 }
 
-variable "signals_served_domains" {
-  description = "Comma-separated \"<network>/<domain>\" bindings the API serves (SERVED_DOMAINS)."
-  type        = string
-  default     = "orange_dot/tourist,orange_dot/practitioner"
-}
-
 variable "signals_allowed_origins" {
   description = "Precomputed CORS ALLOWED_ORIGINS (localhost dev + https://<each public host>)."
   type        = string
   default     = "http://localhost:8080,http://127.0.0.1:8080"
-}
-
-variable "aggregator_host" {
-  description = "FQDN for the aggregator public ingress (global.publicHost, used as-is)"
-  type        = string
-  default     = "aggregator.servehalflife.com"
-}
-
-variable "aggregator_network" {
-  description = "Network the aggregator portal serves (global.aggregatorNetwork); fed from the shared global.network."
-  type        = string
-  default     = "orange_dot"
 }
 
 # -----------------------------------------------------------------------------
@@ -235,25 +217,10 @@ variable "aggregator_smtp_password" {
   default   = ""
 }
 
-variable "aggregator_smtp_from" {
-  type    = string
-  default = ""
-}
-
-variable "aggregator_admin_emails" {
-  type    = string
-  default = ""
-}
-
 variable "aggregator_msg91_auth_key" {
   type      = string
   sensitive = true
   default   = ""
-}
-
-variable "aggregator_msg91_template_id" {
-  type    = string
-  default = ""
 }
 
 variable "signals_google_maps_api_key" {
@@ -265,64 +232,6 @@ variable "signals_google_maps_api_key" {
 variable "monitoring_grafana_password" {
   type      = string
   sensitive = true
-}
-
-variable "monitoring_email_enabled" {
-  type        = bool
-  default     = true
-  description = "Enable email (SMTP) alert notifications"
-}
-
-variable "monitoring_smtp_host" {
-  type        = string
-  default     = "smtp.gmail.com:587"
-  description = "SMTP server host:port for Alertmanager email notifications"
-}
-
-variable "monitoring_smtp_from" {
-  type        = string
-  default     = ""
-  description = "Sender address for Alertmanager email notifications"
-}
-
-variable "monitoring_smtp_password" {
-  type        = string
-  sensitive   = true
-  default     = ""
-  description = "Gmail App Password for Alertmanager SMTP"
-}
-
-variable "monitoring_alert_email" {
-  type        = string
-  default     = ""
-  description = "Recipient address for Alertmanager email notifications"
-}
-
-variable "monitoring_discord_enabled" {
-  type        = bool
-  default     = false
-  description = "Enable Discord alert notifications (3 channels: critical, warning, info)"
-}
-
-variable "monitoring_discord_critical_webhook" {
-  type        = string
-  sensitive   = true
-  default     = "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-  description = "Discord webhook URL for the #alerts-critical channel"
-}
-
-variable "monitoring_discord_warning_webhook" {
-  type        = string
-  sensitive   = true
-  default     = "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-  description = "Discord webhook URL for the #alerts-warning channel"
-}
-
-variable "monitoring_discord_info_webhook" {
-  type        = string
-  sensitive   = true
-  default     = "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-  description = "Discord webhook URL for the #alerts-info (catch-all) channel"
 }
 
 # ─── Common-services (shared postgres+redis) ───────────────────────────────
