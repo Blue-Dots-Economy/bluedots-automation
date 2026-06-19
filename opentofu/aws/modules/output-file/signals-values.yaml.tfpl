@@ -46,11 +46,10 @@ api:
       NOTIFICATION_SERVICE_SECRET: "${signals_notification_secret}"
       DPG_SCORING_SECRET: "${signals_dpg_scoring_secret}"
       GOOGLE_GEOCODING_API_KEY: "${signals_google_maps_api_key}"
-  # Cross-namespace FQDNs for shared common-services postgres/redis. Service
-  # names derive from the helm release name (common-services-postgresql,
-  # common-services-redis-master).
+  # Postgres now points at AWS RDS (managed); Redis stays in-cluster via the
+  # common-services release FQDN (common-services-redis-master).
   postgres:
-    host: common-services-postgresql.common-services.svc.cluster.local
+    host: "${postgres_host}"
   redis:
     host: common-services-redis-master.common-services.svc.cluster.local
   config:

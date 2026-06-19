@@ -67,6 +67,10 @@ global:
   # common-services release name `platform` in namespace `common-services`.
   dataPlatform:
     namespace: common-services
+    # Full Postgres endpoint (e.g. an RDS hostname). When set, it takes precedence
+    # over postgresService in the aggregator.postgresHost helper + keycloak KC_DB_URL.
+    # Populated by the opentofu overlay; empty falls back to the in-cluster FQDN.
+    postgresHost: ""
     postgresService: platform-postgresql
     redisService: platform-redis-master
     redisPort: 6379

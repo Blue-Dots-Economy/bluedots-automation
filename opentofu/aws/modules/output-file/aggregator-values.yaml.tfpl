@@ -16,6 +16,9 @@ global:
   
   dataPlatform:
     namespace: common-services
+    # Postgres is managed (RDS). postgresHost (full endpoint) takes precedence over
+    # postgresService in the chart helper; redisService stays in-cluster.
+    postgresHost: ${postgres_host}
     postgresService: common-services-postgresql
     redisService: common-services-redis-master
   # S3 wiring for bulk uploads, QR PNGs, error CSVs — sourced from the storage

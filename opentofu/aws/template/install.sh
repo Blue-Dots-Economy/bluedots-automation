@@ -75,7 +75,8 @@ function _apply_tf_module() {
     local module="$1"
     source tf.sh
     echo -e "\nApplying module: $module"
-    ( cd "$module" && terragrunt init && terragrunt apply )
+    # Set AUTO_APPROVE=1 for non-interactive apply (CI / scripted runs).
+    ( cd "$module" && terragrunt init -input=false && terragrunt apply -input=false ${AUTO_APPROVE:+-auto-approve} )
 }
 
 function plan_tf_network()          { _plan_tf_module "network"; }
@@ -84,6 +85,7 @@ function plan_tf_iam()              { _plan_tf_module "iam"; }
 function plan_tf_storage()          { _plan_tf_module "storage"; }
 function plan_tf_random_passwords() { _plan_tf_module "random_passwords"; }
 function plan_tf_output_file()      { _plan_tf_module "output-file"; }
+function plan_tf_rds()              { _plan_tf_module "rds"; }
 
 function apply_tf_network()          { _apply_tf_module "network"; }
 function apply_tf_eks()              { _apply_tf_module "eks"; }
@@ -91,6 +93,7 @@ function apply_tf_iam()              { _apply_tf_module "iam"; }
 function apply_tf_storage()          { _apply_tf_module "storage"; }
 function apply_tf_random_passwords() { _apply_tf_module "random_passwords"; }
 function apply_tf_output_file()      { _apply_tf_module "output-file"; }
+function apply_tf_rds()              { _apply_tf_module "rds"; }
 
 function apply_gp3_default_sc() {
     echo -e "\nApplying gp3 StorageClass as cluster default"

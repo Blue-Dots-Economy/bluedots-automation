@@ -1,0 +1,101 @@
+{{- /*
+Bootstrap the managed (RDS) Postgres: create the per-tenant roles, databases and
+extensions that the Bitnami initdb script used to create in-cluster. Runs as a
+post-install/post-upgrade hook so it executes after the `data-postgres` Secret
+(rendered by secrets.yaml) exists, and before signals/aggregator deploy.
+
+Idempotent: roles are created-if-missing then password-synced; databases use the
+SELECT ... \gexec guard (CREATE DATABASE cannot run inside a transaction/DO block);
+extensions use CREATE EXTENSION IF NOT EXISTS.
+
+Renders only when bootstrap is enabled AND the RDS host + admin password are known,
+so `helm template`/`lint` stay clean before the opentofu overlay populates them.
+*/}}
+{{- if and .Values.postgresBootstrap.enabled .Values.postgres.host .Values.credentials.postgresAdminPassword }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-postgres-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: common-services
+    app.kubernetes.io/component: postgres-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: common-services
+        app.kubernetes.io/component: postgres-bootstrap
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: postgres-bootstrap
+          image: "{{ .Values.postgresBootstrap.image.repository }}:{{ .Values.postgresBootstrap.image.tag }}"
+          imagePullPolicy: {{ .Values.postgresBootstrap.image.pullPolicy }}
+          env:
+            - name: PGHOST
+              value: {{ .Values.postgres.host | quote }}
+            - name: PGPORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: PGUSER
+              value: postgres
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: data-postgres
+                  key: postgres-password
+            - name: AGG_PW
+              valueFrom:
+                secretKeyRef:
+                  name: data-postgres
+                  key: aggregator-password
+            - name: DPG_PW
+              valueFrom:
+                secretKeyRef:
+                  name: data-postgres
+                  key: dpg-password
+          command:
+            - sh
+            - -ec
+            - |
+              echo "waiting for postgres at $PGHOST:$PGPORT"
+              i=0
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U postgres >/dev/null 2>&1; do
+                i=$((i+1)); [ "$i" -gt 60 ] && { echo "postgres not reachable" >&2; exit 1; }
+                sleep 3
+              done
+              echo "postgres ready; creating roles + databases"
+              # Roles + databases on the default `postgres` db. Passwords passed as
+              # psql variables (:'var') so they are safely quoted, never interpolated.
+              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" <<-'EOSQL'
+                SELECT 'CREATE ROLE aggregator LOGIN'
+                  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aggregator')\gexec
+                SELECT 'CREATE ROLE dpg LOGIN'
+                  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='dpg')\gexec
+                ALTER ROLE aggregator WITH PASSWORD :'agg_pw';
+                ALTER ROLE dpg        WITH PASSWORD :'dpg_pw';
+                SELECT 'CREATE DATABASE aggregator OWNER aggregator'
+                  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='aggregator')\gexec
+                SELECT 'CREATE DATABASE dpg OWNER dpg'
+                  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='dpg')\gexec
+                SELECT 'CREATE DATABASE keycloak OWNER aggregator'
+                  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='keycloak')\gexec
+              EOSQL
+              echo "creating extensions on the dpg database"
+              psql -v ON_ERROR_STOP=1 -d dpg <<-'EOSQL'
+                CREATE EXTENSION IF NOT EXISTS pgcrypto;
+                CREATE EXTENSION IF NOT EXISTS cube;
+                CREATE EXTENSION IF NOT EXISTS earthdistance;
+              EOSQL
+              echo "[common-services] postgres bootstrap complete"
+          resources: {{- toYaml .Values.postgresBootstrap.resources | nindent 12 }}
+{{- end }}
