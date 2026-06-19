@@ -267,6 +267,21 @@ postgresBootstrap:
   resources:
     requests: { cpu: 50m,  memory: 64Mi }
     limits:   { cpu: 250m, memory: 256Mi }
+  # Per-tenant databases the Job ensures exist (owner must be a role the Job
+  # creates: aggregator or dpg) and the extensions created in each. Extensions
+  # are created as the master (rds_superuser on RDS) — REQUIRED for postgis/vector,
+  # which the non-superuser app roles cannot create. Keep this in sync with what
+  # the apps actually use (matches the live in-cluster Postgres).
+  databases:
+    - name: aggregator
+      owner: aggregator
+      extensions: [pgcrypto]
+    - name: dpg
+      owner: dpg
+      extensions: [pgcrypto, cube, earthdistance, postgis, vector]
+    - name: keycloak
+      owner: aggregator
+      extensions: []
 
 # -----------------------------------------------------------------------------
 # Bitnami Postgres subchart — single shared instance, multi-tenant.
@@ -284,8 +299,11 @@ postgresBootstrap:
 # helm upgrade won't re-run initdb. This hook is the idempotent catch-up that
 # repairs already-provisioned clusters; keep its list in sync with the initdb
 # CREATE EXTENSION block.
+# SUPERSEDED by postgresBootstrap (above), which creates extensions per-database on
+# RDS as the master. This legacy catch-up job is hardcoded to the in-cluster host
+# ({release}-postgresql) and cannot reach RDS — keep disabled. Left for reference.
 dbExtensions:
-  enabled: true
+  enabled: false
   database: dpg
   list:
     - pgcrypto
