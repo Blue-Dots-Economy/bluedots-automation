@@ -35,6 +35,12 @@ variable "signals_public_hosts" {
   }
 }
 
+variable "signals_host_bindings" {
+  description = "Host -> \"<network>/<domain>\" map for host-routed served binding. Empty = single-host mode (ui.hostBindings omitted entirely)."
+  type        = string
+  default     = ""
+}
+
 variable "signals_network" {
   description = "Network this cluster serves: drives NETWORK_CONFIG_LOCAL_FILE, the schema mount, and VITE_NETWORK_NAME."
   type        = string

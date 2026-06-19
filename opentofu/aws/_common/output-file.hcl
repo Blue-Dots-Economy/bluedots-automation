@@ -10,6 +10,7 @@ locals {
   # List one host for a single domain, several for multi-domain — no legacy
   # single-host fallback. host_bindings maps each host to "<network>/<domain>".
   signals_public_hosts    = local.global_vars.global.signals_public_hosts
+  signals_host_bindings   = try(local.global_vars.global.signals_host_bindings, "")
   # Network served by this deployment — shared by signals (NETWORK_CONFIG_LOCAL_FILE,
   # schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
   network                 = try(local.global_vars.global.network, "orange_dot")
@@ -112,6 +113,7 @@ inputs = {
 
   # Signals computed config inputs
   signals_public_hosts    = local.signals_public_hosts
+  signals_host_bindings   = local.signals_host_bindings
   signals_network         = local.network
   signals_allowed_origins = local.signals_allowed_origins
 

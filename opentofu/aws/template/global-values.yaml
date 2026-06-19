@@ -11,7 +11,9 @@ _environment:    &environment    "dev"
 _signals_public_hosts: &signals_public_hosts
   - "example.domain.com"
   - "example.domain.com"
-_signals_host_bindings: &signals_host_bindings "example.domain.com=blue_dot/provider;example.domain.com=blue_dot/seeker"
+# For multi-domain host-routing set: "host1.com=network/domain;host2.com=network/domain"
+# Leave empty for single-host mode (hostBindings will be omitted entirely).
+_signals_host_bindings: &signals_host_bindings ""
 
 # Network this deployment serves — SHARED by signals (NETWORK_CONFIG_LOCAL_FILE,
 # schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
@@ -224,7 +226,8 @@ api:
 ui:
   apiUpstream: "http://signals-api:2742"
   uiVariant: "signals"
-  hostBindings: *signals_host_bindings
+  # hostBindings is conditionally set in global-cloud-values.yaml — only emitted
+  # when signals_host_bindings is non-empty, to avoid nginx conflicting parameter error.
   runtimeConfig:
     VITE_DEFAULT_VIEW_MODE: "map"
     VITE_MAP_PROVIDER: "google-maps"

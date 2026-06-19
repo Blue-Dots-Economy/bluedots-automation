@@ -47,5 +47,6 @@ resource "local_sensitive_file" "global_cloud_values" {
     signals_public_hosts    = var.signals_public_hosts
     signals_allowed_origins = var.signals_allowed_origins
     signals_network         = var.signals_network
+    signals_host_bindings   = var.signals_host_bindings
   })
 }

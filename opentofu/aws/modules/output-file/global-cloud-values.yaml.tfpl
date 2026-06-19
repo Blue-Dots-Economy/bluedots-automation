@@ -24,10 +24,14 @@ worker:
       eks.amazonaws.com/role-arn: ${app_sa_role_arn}
 
 # ─── signals chart — computed config ─────────────────────────────────────────
-# These three values require HCL operations that plain YAML anchors can't do:
-# list indexing ([0]), string join, and path concatenation.
+# Values that require HCL operations plain YAML anchors can't do:
+# list indexing ([0]), string join, path concatenation, and conditional output.
 api:
   config:
     API_DOMAIN: https://${signals_public_hosts[0]}
     ALLOWED_ORIGINS: "${signals_allowed_origins}"
     NETWORK_CONFIG_LOCAL_FILE: "/app/schemas/${signals_network}.json"
+%{ if signals_host_bindings != "" ~}
+ui:
+  hostBindings: "${signals_host_bindings}"
+%{ endif ~}
