@@ -68,6 +68,7 @@ variable "engine_version" {
   default     = "17"
 }
 
+# This is the default instance class for dev (db.t4g.micro). For prod with large databases it is recommended to use the larger instance type (eg. m7g.large). Module users can override this variable to use a different instance class if needed.
 variable "instance_class" {
   description = "RDS instance class, e.g. db.t4g.micro (dev) / db.t4g.small (prod)."
   type        = string
