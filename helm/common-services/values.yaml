@@ -152,6 +152,8 @@ kong:
     # signals
     rl-signals-api:  { minute: 600 }   # /api
     rl-signals-ui:   { minute: 120 }   # /
+    # monitoring
+    rl-monitoring:   { minute: 120 }   # /grafana — same ceiling as UI tiers
 
   # Shared Redis backing the counters (policy: redis) so the limit stays correct
   # across Kong replicas. host/port point at the common-services Redis; the

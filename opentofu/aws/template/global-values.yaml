@@ -180,10 +180,26 @@ global:
     - scheduler
 
 # =============================================================================
-# Alerting — monitoring chart config (passed directly via -f global-values.yaml)
+# Monitoring chart config (passed directly via -f global-values.yaml)
 # Keys match the monitoring Helm chart's schema at root level so no transformation
 # is needed. Helm ignores the global: section above.
 # =============================================================================
+
+# ── Grafana ingress hostname ────────────────────────────────────────────────
+# By default (hosts: []) Kong matches /grafana on ANY hostname — including the
+# raw NLB address — so devs can open http://<nlb>/grafana/ with zero DNS setup.
+#
+# Set hosts to restrict routing to a specific domain and enable TLS:
+#   prometheus:
+#     grafana:
+#       ingress:
+#         hosts:
+#           - "grafana.your-domain.com"
+#         tls:
+#           - secretName: grafana-tls
+#             hosts:
+#               - "grafana.your-domain.com"
+
 
 # ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
 # smtp_password must be a Gmail App Password:
