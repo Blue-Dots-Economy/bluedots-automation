@@ -26,11 +26,11 @@ global:
 images:
   api: &api_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-46c05dd"
+    tag: "sha-56aad4d"
     pullPolicy: Always
   ui: &ui_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-36d9304"
+    tag: "sha-56aad4d"
     pullPolicy: Always
   notificationService: &notification_service_image
     repository: vinodbbhorge/notification-service
@@ -212,13 +212,14 @@ api:
     host: platform-redis-master.common-services.svc.cluster.local
     port: 6379
 
-  # Network schema ConfigMap mounted into this pod. apiInternalUrl is the
-  # in-cluster URL substituted into instance_url fields at render time.
+  # Network schema ConfigMap mounted into this pod.
+  # __PUBLIC_API_URL__ is derived from global.publicHosts[0] (or global.publicHost)
+  # at render time — https://<host>/api — so BECKN participants get the correct
+  # externally reachable instance_url. No override needed here.
   # crossNetworkUrl substitutes into cross_network_origins[].schema_url —
   # local mode skips cross-network fetches but NetworkConfigSchema still
   # validates schema_url as a URL, so it must be a valid URL.
   schemas:
-    apiInternalUrl: "http://signals-api:2742"
     crossNetworkUrl: "http://signals-api:2742"
     networks:
       - yellow_dot
@@ -434,6 +435,17 @@ search:
   # no override needed for the in-cluster TEI service.
   # Reuses the api's {release}-api-schemas ConfigMap (set via the subchart
   # default) — search indexes exactly the networks api.schemas.networks serves.
+  # Template-driven ingress (charts/search/templates/ingress.yaml): path
+  # /signals-search is fixed in the template; these scalars are the config.
+  # Hosts come from global.publicHosts (same list as ui + api ingresses).
+  # tlsSecret is owned by the ui ingress; reused here (no cert issuance).
+  api:
+    port: 3100
+    ingress:
+      enabled: true
+      className: kong
+      tlsSecret: signals-ui-tls
+      plugin: "rl-signals-api"
   secrets:
     create: true
     existingSecret: dpg-search-secrets

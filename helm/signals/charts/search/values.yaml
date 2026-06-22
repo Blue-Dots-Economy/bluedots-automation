@@ -2,7 +2,7 @@
 # entrypoint via `command` (node dist/worker/main.js | node dist/api/main.js).
 image:
   repository: ghcr.io/blue-dots-economy/signals-search
-  tag: "sha-1c7d576"
+  tag: "sha-48a3c65"
   pullPolicy: Always
 imagePullSecrets:
   - name: ghcr-pull
@@ -18,7 +18,7 @@ api:
 serviceAccount:
   create: true
 postgres:
-  host: common-services-postgresql.common-services.svc.cluster.local
+  host: up-blue-dots-prod-postgres.cbo8sc80w9ld.ap-south-1.rds.amazonaws.com
   port: 5432
 redis:
   host: common-services-redis-master.common-services.svc.cluster.local

@@ -67,6 +67,10 @@ global:
   # common-services release name `platform` in namespace `common-services`.
   dataPlatform:
     namespace: common-services
+    # Full Postgres endpoint (e.g. an RDS hostname). When set, it takes precedence
+    # over postgresService in the aggregator.postgresHost helper + keycloak KC_DB_URL.
+    # Populated by the opentofu overlay; empty falls back to the in-cluster FQDN.
+    postgresHost: ""
     postgresService: platform-postgresql
     redisService: platform-redis-master
     redisPort: 6379
@@ -170,7 +174,7 @@ web:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: 'sha-15afbce'
+    tag: 'sha-a374c46'
     pullPolicy: Always
   service:
     port: 3000
@@ -199,7 +203,7 @@ aggregator-api:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: 'sha-9321f28'
+    tag: 'sha-a374c46'
     pullPolicy: Always
   service:
     port: 4000
@@ -237,7 +241,7 @@ worker:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: 'sha-9321f28'
+    tag: 'sha-a374c46'
     pullPolicy: Always
   resources:
     requests: { cpu: 100m, memory: 384Mi }

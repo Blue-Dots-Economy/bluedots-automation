@@ -247,6 +247,43 @@ credentials:
   redisPassword: ""  # REDIS_PW
 
 # -----------------------------------------------------------------------------
+# Managed Postgres (AWS RDS). The Bitnami subchart below is disabled
+# (postgresql.enabled=false); apps and this chart's bootstrap Job connect here.
+# postgres.host is injected by opentofu (output-file → common-services overlay).
+# -----------------------------------------------------------------------------
+postgres:
+  host: ""        # RDS endpoint hostname (populated by the opentofu overlay)
+  port: 5432
+
+# Bootstrap Job — runs as a post-install/post-upgrade hook, connects to RDS as
+# the master (`postgres`) user and creates the per-tenant roles, databases and
+# extensions that the Bitnami initdb script used to create. Fully idempotent.
+postgresBootstrap:
+  enabled: false  # set true by the opentofu overlay once postgres.host is known
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+  resources:
+    requests: { cpu: 50m,  memory: 64Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+  # Per-tenant databases the Job ensures exist (owner must be a role the Job
+  # creates: aggregator or dpg) and the extensions created in each. Extensions
+  # are created as the master (rds_superuser on RDS) — REQUIRED for postgis/vector,
+  # which the non-superuser app roles cannot create. Keep this in sync with what
+  # the apps actually use (matches the live in-cluster Postgres).
+  databases:
+    - name: aggregator
+      owner: aggregator
+      extensions: [pgcrypto]
+    - name: dpg
+      owner: dpg
+      extensions: [pgcrypto, cube, earthdistance, postgis, vector]
+    - name: keycloak
+      owner: aggregator
+      extensions: []
+
+# -----------------------------------------------------------------------------
 # Bitnami Postgres subchart — single shared instance, multi-tenant.
 #
 # Bootstrap:
@@ -262,8 +299,11 @@ credentials:
 # helm upgrade won't re-run initdb. This hook is the idempotent catch-up that
 # repairs already-provisioned clusters; keep its list in sync with the initdb
 # CREATE EXTENSION block.
+# SUPERSEDED by postgresBootstrap (above), which creates extensions per-database on
+# RDS as the master. This legacy catch-up job is hardcoded to the in-cluster host
+# ({release}-postgresql) and cannot reach RDS — keep disabled. Left for reference.
 dbExtensions:
-  enabled: true
+  enabled: false
   database: dpg
   list:
     - pgcrypto
@@ -274,6 +314,18 @@ dbExtensions:
 
 postgresql:
   enabled: true
+  database: dpg
+  list:
+    - pgcrypto
+    - cube
+    - earthdistance
+    - vector
+    - postgis
+
+postgresql:
+  # DISABLED — Postgres migrated to AWS RDS (managed). Block kept for reference /
+  # rollback; the bootstrap Job (above) now owns role/database/extension creation.
+  enabled: false
   image:
     registry: docker.io
     repository: bitnamilegacy/postgresql
