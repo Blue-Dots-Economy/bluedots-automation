@@ -127,7 +127,7 @@ prometheus:
         - name: infra.alerts
           rules:
             - alert: NodeHighCPUUsage
-              expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 80
+              expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
               for: 5m
               labels:
                 severity: warning
@@ -185,17 +185,20 @@ prometheus:
         - name: signals.alerts
           rules:
             - alert: PodHighRestartCount
-              expr: increase(kube_pod_container_status_restarts_total{namespace="signals"}[1h]) > 5
+              expr: increase(kube_pod_container_status_restarts_total{namespace="signals"}[15m]) > 3
               for: 0m
               labels:
                 severity: critical
                 group: signals
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in signals"
-                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last hour"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last 15 minutes — possible CrashLoopBackOff"
 
             - alert: PodOOMKilled
-              expr: kube_pod_container_status_last_terminated_reason{namespace="signals",reason="OOMKilled"} == 1
+              expr: |
+                kube_pod_container_status_last_terminated_reason{namespace="signals",reason="OOMKilled"} == 1
+                and
+                increase(kube_pod_container_status_restarts_total{namespace="signals"}[15m]) > 0
               for: 0m
               labels:
                 severity: critical
@@ -205,7 +208,7 @@ prometheus:
                 description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
 
             - alert: PodHighCPUUsage
-              expr: (rate(container_cpu_usage_seconds_total{namespace="signals",container!="",container!="POD"}[2m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="signals",resource="cpu"}) * 100 > 80
+              expr: (rate(container_cpu_usage_seconds_total{namespace="signals",container!="",container!="POD"}[5m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="signals",resource="cpu"}) * 100 > 80
               for: 5m
               labels:
                 severity: warning
@@ -240,17 +243,20 @@ prometheus:
         - name: aggregator.alerts
           rules:
             - alert: PodHighRestartCount
-              expr: increase(kube_pod_container_status_restarts_total{namespace="aggregator"}[1h]) > 5
+              expr: increase(kube_pod_container_status_restarts_total{namespace="aggregator"}[15m]) > 3
               for: 0m
               labels:
                 severity: critical
                 group: aggregator
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in aggregator"
-                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last hour"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last 15 minutes — possible CrashLoopBackOff"
 
             - alert: PodOOMKilled
-              expr: kube_pod_container_status_last_terminated_reason{namespace="aggregator",reason="OOMKilled"} == 1
+              expr: |
+                kube_pod_container_status_last_terminated_reason{namespace="aggregator",reason="OOMKilled"} == 1
+                and
+                increase(kube_pod_container_status_restarts_total{namespace="aggregator"}[15m]) > 0
               for: 0m
               labels:
                 severity: critical
@@ -260,7 +266,7 @@ prometheus:
                 description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
 
             - alert: PodHighCPUUsage
-              expr: (rate(container_cpu_usage_seconds_total{namespace="aggregator",container!="",container!="POD"}[2m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="aggregator",resource="cpu"}) * 100 > 80
+              expr: (rate(container_cpu_usage_seconds_total{namespace="aggregator",container!="",container!="POD"}[5m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="aggregator",resource="cpu"}) * 100 > 80
               for: 5m
               labels:
                 severity: warning
@@ -295,17 +301,20 @@ prometheus:
         - name: common-services.alerts
           rules:
             - alert: PodHighRestartCount
-              expr: increase(kube_pod_container_status_restarts_total{namespace="common-services"}[1h]) > 5
+              expr: increase(kube_pod_container_status_restarts_total{namespace="common-services"}[15m]) > 3
               for: 0m
               labels:
                 severity: critical
                 group: common-services
               annotations:
                 summary: "Pod {{ $labels.pod }} restarting in common-services"
-                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last hour"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last 15 minutes — possible CrashLoopBackOff"
 
             - alert: PodOOMKilled
-              expr: kube_pod_container_status_last_terminated_reason{namespace="common-services",reason="OOMKilled"} == 1
+              expr: |
+                kube_pod_container_status_last_terminated_reason{namespace="common-services",reason="OOMKilled"} == 1
+                and
+                increase(kube_pod_container_status_restarts_total{namespace="common-services"}[15m]) > 0
               for: 0m
               labels:
                 severity: critical
@@ -315,7 +324,7 @@ prometheus:
                 description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
 
             - alert: PodHighCPUUsage
-              expr: (rate(container_cpu_usage_seconds_total{namespace="common-services",container!="",container!="POD"}[2m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="common-services",resource="cpu"}) * 100 > 80
+              expr: (rate(container_cpu_usage_seconds_total{namespace="common-services",container!="",container!="POD"}[5m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="common-services",resource="cpu"}) * 100 > 80
               for: 5m
               labels:
                 severity: warning
@@ -349,27 +358,47 @@ prometheus:
 
         - name: kong.alerts
           rules:
+            # Traffic volume warning — early heads-up before the critical threshold.
+            - alert: KongServiceElevatedTraffic
+              expr: |
+                (sum by(exported_service) (rate(kong_http_requests_total[5m])) * 60 > 3000)
+                < 5000
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Elevated traffic on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} is receiving {{ $value | printf \"%.0f\" }} requests/min — approaching critical threshold (3000–5000 req/min)"
+
+            # Traffic volume critical — sustained extreme load, act now.
             - alert: KongServiceHighTraffic
-              expr: sum by(exported_service) (rate(kong_http_requests_total[1m])) * 60 > 5000
-              for: 1m
+              expr: sum by(exported_service) (rate(kong_http_requests_total[5m])) * 60 > 5000
+              for: 5m
               labels:
                 severity: critical
                 group: kong
               annotations:
-                summary: "High traffic on Kong service {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} is receiving {{ $value | printf \"%.0f\" }} requests/min (threshold: 5000)"
+                summary: "Critical traffic volume on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} is receiving {{ $value | printf \"%.0f\" }} requests/min (threshold: 5000 req/min)"
 
+            # 429 rate sustained — a client is ignoring rate limit responses.
+            # Uses [5m] window (matches for: 5m) for a stable measurement over 2-point [1m].
             - alert: KongRateLimitSustained
-              expr: sum by(exported_service) (rate(kong_http_requests_total{code="429"}[1m])) * 60 > 100
+              expr: sum by(exported_service) (rate(kong_http_requests_total{code="429"}[5m])) * 60 > 100
               for: 5m
               labels:
                 severity: warning
                 group: kong
               annotations:
                 summary: "Sustained rate limiting on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 requests/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min)"
+                description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 req/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min) — a client is not respecting the rate limit"
 
-            # 5xx error rate > 5% of total — critical, act fast.
+            # 5xx error rate > 5% — critical, act fast.
+            # Two-tier guard:
+            #   - If total requests >= 100 in 5m: percentage alone triggers (high enough traffic).
+            #   - If total requests < 100: also require >= 15 actual 5xx errors so that
+            #     3 crashes out of 50 requests (6%) doesn't page anyone.
             - alert: KongHigh5xxRate
               expr: |
                 (
@@ -377,47 +406,91 @@ prometheus:
                   /
                   sum by(exported_service) (rate(kong_http_requests_total[5m]))
                 ) * 100 > 5
-              for: 2m
+                and
+                (
+                  sum by(exported_service) (
+                    increase(kong_http_requests_total[5m])
+                  ) >= 100
+                  or
+                  sum by(exported_service) (
+                    increase(kong_http_requests_total{code=~"5.."}[5m])
+                  ) >= 15
+                )
+              for: 5m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "High 5xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate over the last 5 minutes (threshold: 5%)"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate over the last 5 minutes (threshold: 5%, min: 100 total req OR 15 absolute 5xx errors)"
 
             # 4xx error rate 10–25% — warning.
+            # Excludes 429s (intentional rate limiting). Upper bound < 25 ensures this
+            # auto-silences when KongCritical4xxRate fires.
+            # Two-tier guard: >= 100 total req fires on percentage alone; < 100 total req
+            # also requires >= 50 absolute 4xx errors to filter bot-noise on low traffic.
             - alert: KongHigh4xxRate
               expr: |
                 (
                   (
-                    sum by(exported_service) (rate(kong_http_requests_total{code=~"4.."}[5m]))
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                    )
                     /
-                    sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total[5m])
+                    )
                   ) * 100 > 10
                 ) < 25
+                and
+                (
+                  sum by(exported_service) (
+                    increase(kong_http_requests_total[5m])
+                  ) >= 100
+                  or
+                  sum by(exported_service) (
+                    increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                  ) >= 50
+                )
               for: 5m
               labels:
                 severity: warning
                 group: kong
               annotations:
                 summary: "Elevated 4xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 10–25%)"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 10–25%, min: 100 total req OR 50 absolute 4xx errors)"
 
             # 4xx error rate > 25% — critical.
+            # Two-tier guard: >= 100 total req fires on percentage alone; < 100 total req
+            # also requires >= 50 absolute 4xx errors to filter bot-noise on low traffic.
             - alert: KongCritical4xxRate
               expr: |
                 (
-                  sum by(exported_service) (rate(kong_http_requests_total{code=~"4.."}[5m]))
+                  sum by(exported_service) (
+                    rate(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                  )
                   /
-                  sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                  sum by(exported_service) (
+                    rate(kong_http_requests_total[5m])
+                  )
                 ) * 100 > 25
-              for: 2m
+                and
+                (
+                  sum by(exported_service) (
+                    increase(kong_http_requests_total[5m])
+                  ) >= 100
+                  or
+                  sum by(exported_service) (
+                    increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                  ) >= 50
+                )
+              for: 5m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "Critical 4xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 25%)"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 25%, min: 100 total req OR 50 absolute 4xx errors)"
 
         - name: info.alerts
           rules:
