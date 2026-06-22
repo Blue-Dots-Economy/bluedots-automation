@@ -298,6 +298,12 @@ match-score:
       }
 
 search:
+  # In-cluster Postgres by default. The opentofu RDS overlay
+  # (global-cloud-values.yaml) overrides search.postgres.host with the managed
+  # endpoint when RDS is provisioned (postgres_host non-empty).
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+    port: 5432
   secrets:
     create: true
     existingSecret: dpg-search-secrets
