@@ -19,13 +19,13 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-ccdc1fd"
+    tag: "sha-8f698f0"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-ccdc1fd"
+    tag: "sha-8f698f0"
     pullPolicy: Always
 
 notification-service:
