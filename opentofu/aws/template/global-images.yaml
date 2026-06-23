@@ -44,7 +44,7 @@ match-score:
 search:
   image:
     repository: ghcr.io/blue-dots-economy/signals-search
-    tag: "sha-1c7d576"
+    tag: "sha-48a3c65"
     pullPolicy: Always
 
 # search-embeddings: TEI model image with BAAI/bge-m3 baked in
