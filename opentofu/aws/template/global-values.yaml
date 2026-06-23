@@ -22,6 +22,7 @@ _signals_host_bindings: &signals_host_bindings ""
 _network: &network "blue_dot"
 _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
 _aggregator_host: &aggregator_host "aggregator.domain.com"
+_grafana_host:    &grafana_host    "monitoring.domain.com"
 
 # ── AWS ───────────────────────────────────────────────────────────────────────
 _cloud_storage_region: &cloud_storage_region "ap-south-1"
@@ -179,27 +180,18 @@ global:
     - controllerManager
     - scheduler
 
-# =============================================================================
-# Monitoring chart config (passed directly via -f global-values.yaml)
-# Keys match the monitoring Helm chart's schema at root level so no transformation
-# is needed. Helm ignores the global: section above.
-# =============================================================================
-
-# ── Grafana ingress hostname ────────────────────────────────────────────────
-# By default (hosts: []) Kong matches /grafana on ANY hostname — including the
-# raw NLB address — so devs can open http://<nlb>/grafana/ with zero DNS setup.
-#
-# Set hosts to restrict routing to a specific domain and enable TLS:
-#   prometheus:
-#     grafana:
-#       ingress:
-#         hosts:
-#           - "grafana.your-domain.com"
-#         tls:
-#           - secretName: grafana-tls
-#             hosts:
-#               - "grafana.your-domain.com"
-
+prometheus:
+  grafana:
+    grafana.ini:
+      server:
+        domain: *grafana_host
+    ingress:
+      hosts:
+        - *grafana_host
+      tls:
+        - secretName: grafana-tls
+          hosts:
+            - *grafana_host
 
 # ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
 # smtp_password must be a Gmail App Password:

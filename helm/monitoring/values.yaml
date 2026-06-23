@@ -33,35 +33,22 @@ prometheus:
     adminUser: admin
     adminPassword: "admin@bluedots"
 
-    # ── Subpath config ─────────────────────────────────────────────────────────
-    # Grafana must know it is served at /grafana/ so it prefixes every internal
-    # link and asset URL with that path. Without this, the browser loads the login
-    # page from /grafana but then requests JS/CSS from /public/... which has no
-    # Kong route → blank page with 404s in the browser console.
     grafana.ini:
       server:
         root_url: "%(protocol)s://%(domain)s/grafana/"
         serve_from_sub_path: true
 
-    # ── Kong ingress at /grafana ────────────────────────────────────────────────
-    # strip-path: false → /grafana/login is forwarded to Grafana unchanged.
-    # Grafana handles the /grafana/ prefix itself (serve_from_sub_path above).
-    # strip-path: true would drop the prefix → Grafana generates links without
-    # /grafana/ → browser fetches /api/... which Kong routes to signals, not here.
-    #
-    # hosts: [] means no hostname constraint — Kong matches /grafana on ANY
-    # hostname, including the raw NLB address. Override hosts in global-values.yaml
-    # to restrict to a specific domain (e.g. for host-pinned routing + TLS).
     ingress:
       enabled: true
       ingressClassName: kong
       annotations:
         konghq.com/strip-path: "false"
         konghq.com/plugins: "rl-monitoring"
-      hosts: []        # [] = any host; NLB address works out of the box
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts: []
       path: /grafana
       pathType: Prefix
-      tls: []          # set in global-values.yaml when using a real domain + cert
+      tls: []
 
     persistence:
       enabled: true
