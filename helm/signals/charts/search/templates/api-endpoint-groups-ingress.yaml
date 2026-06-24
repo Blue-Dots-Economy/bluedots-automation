@@ -1,0 +1,74 @@
+{{- if and .Values.api.ingress.enabled .Values.apiRateLimit.enabled .Values.apiRateLimit.groups }}
+{{- /*
+  Per-API rate limiting for signals-search (external base /signals-search,
+  strip-path TRUE — the search API serves at root). Like aggregator-api, each
+  route uses a regex path that captures everything after /signals-search/ as $1
+  plus a uniform konghq.com/rewrite: "/$1" to strip ONLY that prefix. Multi-host
+  like the other signals ingresses (global.publicHosts).
+
+  Paths sharing the same effective limit are grouped into one KongPlugin + one
+  Ingress; each path is its own Kong route with its own per-IP counter.
+  policy: redis + limit_by: ip + {vault://env/redis-password} mirror the cluster
+  rate-limit tiers; Kong resolves the vault reference from its own pod env.
+*/ -}}
+{{- $fullName := include "search.fullname" . -}}
+{{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
+{{- $default := .Values.apiRateLimit.defaultMinute -}}
+{{- $redis := .Values.apiRateLimit.redis -}}
+{{- $byLimit := dict -}}
+{{- range .Values.apiRateLimit.groups }}
+  {{- $n := .limit | default $default -}}
+  {{- $k := printf "%v" $n -}}
+  {{- $cur := index $byLimit $k | default (list) -}}
+  {{- $_ := set $byLimit $k (append $cur .path) -}}
+{{- end }}
+{{- range $limit, $paths := $byLimit }}
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ $fullName }}-rl-{{ $limit }}
+  labels:
+    {{- include "search.labels" $ | nindent 4 }}
+plugin: rate-limiting
+config:
+  minute: {{ $limit | int }}
+  policy: redis
+  limit_by: ip
+  fault_tolerant: true
+  redis:
+    host: {{ $redis.host | quote }}
+    port: {{ $redis.port }}
+    password: "{vault://env/redis-password}"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-endpoints-{{ $limit }}
+  labels:
+    {{- include "search.labels" $ | nindent 4 }}
+  annotations:
+    konghq.com/rewrite: "/$1"
+    konghq.com/regex-priority: "100"
+    konghq.com/plugins: {{ printf "%s-rl-%v" $fullName $limit | quote }}
+spec:
+  {{- with $.Values.api.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          {{- range $paths }}
+          - path: "/~/signals-search/({{ . }}(?:/.*)?)"
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $.Values.api.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}

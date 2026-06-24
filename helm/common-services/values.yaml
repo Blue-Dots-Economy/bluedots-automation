@@ -60,6 +60,11 @@ ingress-nginx:
 kong:
   enabled: true
 
+  # Run 2 Kong proxy replicas for HA (no single point of failure; rolling
+  # restarts stay available). Rate-limit counters stay correct across replicas
+  # because they live in shared Redis (policy: redis), not pod-local memory.
+  replicaCount: 2
+
   # DB-less mode + parity with the proxy tuning ingress-nginx does today.
   # (deep-merged onto the subchart's env defaults — database:"off" etc.)
   env:
@@ -146,14 +151,14 @@ kong:
   # upgrade` and every route referencing the tier updates — no per-Ingress edit.
   # Tune per environment from global-values.yaml (Phase 6).
   rateLimitTiers:
-    rl-agg-web:      { minute: 120 }   # / (web BFF/UI)
-    rl-agg-api:      { minute: 600 }   # /backend (api)
-    rl-agg-auth:     { minute: 20 }    # /auth (keycloak) — tight
+    rl-agg-web:      { minute: 120 }     # / (web BFF/UI)
+    rl-agg-api:      { minute: 10000 }   # /backend (api) — loose catch-all; per-API limits do the real throttling
+    rl-agg-auth:     { minute: 20 }      # /auth (keycloak) — kept TIGHT for brute-force (see brute-force note)
     # signals
-    rl-signals-api:  { minute: 600 }   # /api
-    rl-signals-ui:   { minute: 120 }   # /
+    rl-signals-api:  { minute: 10000 }   # /api — loose catch-all; per-API limits do the real throttling
+    rl-signals-ui:   { minute: 120 }     # /
     # monitoring
-    rl-monitoring:   { minute: 120 }   # /grafana
+    rl-monitoring:   { minute: 120 }     # /grafana
 
   # Shared Redis backing the counters (policy: redis) so the limit stays correct
   # across Kong replicas. host/port point at the common-services Redis; the

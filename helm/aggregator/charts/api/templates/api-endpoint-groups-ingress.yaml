@@ -1,0 +1,81 @@
+{{- if and .Values.ingress.enabled .Values.apiRateLimit.enabled .Values.apiRateLimit.groups }}
+{{- /*
+  Per-API rate limiting for aggregator-api (path base /backend, strip-path TRUE —
+  Kong strips /backend and the api serves at root).
+
+  Each `apiRateLimit.groups` entry → its own Kong route with a per-IP rate-limit
+  plugin and its OWN counter. Paths sharing the same effective limit (entry.limit,
+  or apiRateLimit.defaultMinute) are grouped into ONE KongPlugin + ONE Ingress, so
+  the object count tracks the number of DISTINCT limits, not the number of APIs.
+
+  Because /backend is stripped, a naive longer Prefix path would strip the WHOLE
+  match and forward the wrong path. Instead each path is a regex that captures
+  everything after /backend/ as $1, and a single konghq.com/rewrite: "/$1" strips
+  ONLY /backend — reproducing the catch-all's forwarding uniformly for every path
+  in the Ingress. regex-priority keeps these specific routes ahead of the broad
+  /backend catch-all (templates/ingress.yaml).
+
+  policy: redis + limit_by: ip + {vault://env/redis-password} mirror the cluster
+  rate-limit tiers (common-services/templates/kong-ratelimit.yaml); Kong resolves
+  the vault reference from its own pod env, so the plaintext never lands here.
+*/ -}}
+{{- $svc := include "api.serviceName" . -}}
+{{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
+{{- $default := .Values.apiRateLimit.defaultMinute -}}
+{{- $redis := .Values.apiRateLimit.redis -}}
+{{- /* group the configured segments by their effective per-IP limit */ -}}
+{{- $byLimit := dict -}}
+{{- range .Values.apiRateLimit.groups }}
+  {{- $n := .limit | default $default -}}
+  {{- $k := printf "%v" $n -}}
+  {{- $cur := index $byLimit $k | default (list) -}}
+  {{- $_ := set $byLimit $k (append $cur .path) -}}
+{{- end }}
+{{- range $limit, $paths := $byLimit }}
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ $svc }}-rl-{{ $limit }}
+  labels:
+    {{- include "api.labels" $ | nindent 4 }}
+plugin: rate-limiting
+config:
+  minute: {{ $limit | int }}
+  policy: redis
+  limit_by: ip
+  fault_tolerant: true
+  redis:
+    host: {{ $redis.host | quote }}
+    port: {{ $redis.port }}
+    password: "{vault://env/redis-password}"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $svc }}-endpoints-{{ $limit }}
+  labels:
+    {{- include "api.labels" $ | nindent 4 }}
+  annotations:
+    konghq.com/rewrite: "/$1"
+    konghq.com/regex-priority: "100"
+    konghq.com/plugins: {{ printf "%s-rl-%v" $svc $limit | quote }}
+spec:
+  {{- with $.Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          {{- range $paths }}
+          - path: "/~/backend/({{ . }}(?:/.*)?)"
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ $svc }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+{{- end }}
+{{- end }}
