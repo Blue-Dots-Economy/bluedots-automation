@@ -261,7 +261,7 @@ ui:
     VITE_ACTION_POLL_INTERVAL_MS: "30000"
     VITE_NETWORK_NAME: *network
     VITE_ANALYTICS_GA_ID: ""
-    VITE_MAP_DEFAULT_CENTER: "[20.5937, 78.9629]"
+    VITE_MAP_DEFAULT_CENTER: "" # update the lat,long if any specific area has to be focused on maps.
     VITE_MAP_DEFAULT_ZOOM: "5"
   service:
     port: 80
