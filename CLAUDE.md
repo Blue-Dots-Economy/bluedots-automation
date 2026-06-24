@@ -82,6 +82,25 @@ make dry-run            # helm --dry-run against current cluster
 
 ---
 
+## Values-File Architecture (how Helm config is assembled)
+
+Config is **never injected into chart `values.yaml`**. Instead, each `helm upgrade` layers files via repeated `-f` (later wins). Five files, three sources:
+
+| File | Source | Committed? | Holds |
+|------|--------|-----------|-------|
+| chart `values.yaml` | in repo | yes | chart defaults / structure |
+| `helm/global-resources.yaml` | in repo, **shared across all envs** | yes | replica counts, HPA, PDB, container resources |
+| `<env>/global-images.yaml` | in repo, **per-env** | yes | image `repository` / `tag` / `pullPolicy` (pin tags per deployment) |
+| `<env>/global-values.yaml` | in repo, **per-env, user-edited** | yes | non-secret config: hosts, DB/Redis hostnames, RDS sizing, app config |
+| `<env>/global-credentials.yaml` | **generated** by `output-file` module | **no** (`.gitignore`) | all secrets (PG/Redis/auth passwords) |
+| `<env>/global-cloud-values.yaml` | **generated** by `output-file` module | **no** (`.gitignore`) | cloud outputs + computed config: S3 bucket/region, IRSA role ARN, computed hosts/origins, **RDS Postgres host** (when provisioned) |
+
+Each file's keys sit at **root level keyed by chart** (e.g. `api:`, `aggregator-api:`, `ui:`), so a single `-f` feeds Helm directly — no `yq` slicing/projection (which is why `preflight` no longer requires `yq`).
+
+`preflight` fails if `global-credentials.yaml` / `global-cloud-values.yaml` are missing → run `terragrunt run --all apply` (or `./install.sh create_tf_resources`) first to generate them.
+
+---
+
 ## Architecture Layers
 
 ### OpenTofu/Terragrunt Structure
@@ -95,9 +114,9 @@ Located at `opentofu/aws/dev/`:
   - All read from `global-values.yaml`.
   - Provision in order: network → EKS → IAM → storage.
 
-**Key files:**
-- `opentofu/aws/_common/{eks,network,storage,iam}.hcl` — included by every module, defines the shared configuration.
-- `opentofu/aws/template/` — reference environment; copy to create new environments.
+**Managed Postgres (`rds` module)** is opt-in infra. `global-values.yaml` carries `rds_*` sizing (`rds_instance_class`, `rds_multi_az`, `rds_backup_retention_days`, etc.). Its SG allows `5432` only from the EKS cluster SG, and it shares the master password with the `random_passwords`-generated `data-postgres` secret.
+
+The in-cluster FQDN (`common-services-postgresql.common-services.svc.cluster.local`) is the **committed default** in `global-values.yaml` (`api.postgres.host`, `search.postgres.host`, aggregator `dataPlatform.postgresService`+`namespace`). **Pointing the charts at RDS is automated, not manual:** the `rds` module's `db_address` flows (via `_common/output-file.hcl` → `postgres_host`) into the `output-file` module, which — *only when the endpoint is non-empty* — emits `global.dataPlatform.postgresHost`, `api.postgres.host`, and `search.postgres.host` into the generated `global-cloud-values.yaml`. Since that file is layered after `global-values.yaml` via `-f`, the RDS endpoint overrides the in-cluster default for signals + aggregator; when no RDS endpoint exists, the overrides are omitted and the default stands. (Note: app DB roles/databases must still exist on the RDS instance — the host wiring doesn't bootstrap them.)
 
 ### Helm Stack Structure
 

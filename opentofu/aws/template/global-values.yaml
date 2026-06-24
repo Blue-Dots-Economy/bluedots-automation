@@ -261,6 +261,8 @@ ui:
     VITE_ACTION_POLL_INTERVAL_MS: "30000"
     VITE_NETWORK_NAME: *network
     VITE_ANALYTICS_GA_ID: ""
+    VITE_MAP_DEFAULT_CENTER: "" # update the lat,long if any specific area has to be focused on maps.
+    VITE_MAP_DEFAULT_ZOOM: "5"
   service:
     port: 80
     targetPort: 80
@@ -298,6 +300,12 @@ match-score:
       }
 
 search:
+  # In-cluster Postgres by default. The opentofu RDS overlay
+  # (global-cloud-values.yaml) overrides search.postgres.host with the managed
+  # endpoint when RDS is provisioned (postgres_host non-empty).
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+    port: 5432
   secrets:
     create: true
     existingSecret: dpg-search-secrets
