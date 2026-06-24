@@ -6,7 +6,7 @@
   participants can call this instance. It is NOT an in-cluster address.
 */ -}}
 {{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
-{{- $publicApiUrl := printf "https://%s/api" (first $hosts) -}}
+{{- $publicApiUrl := printf "https://%s" (first $hosts) -}}
 {{- $schemasUrl := .Values.schemas.crossNetworkUrl | default "" -}}
 apiVersion: v1
 kind: ConfigMap

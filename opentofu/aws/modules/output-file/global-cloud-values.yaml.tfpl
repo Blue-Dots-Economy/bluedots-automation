@@ -17,6 +17,16 @@ global:
     postgresHost: ${postgres_host}
 %{ endif ~}
 
+%{ if postgres_host != "" ~}
+# ─── common-services chart — managed Postgres (RDS) bootstrap ────────────────
+# postgres.host activates the bootstrap Job; postgresBootstrap.enabled fires it.
+# Together they create the dpg/aggregator roles+databases on the RDS instance.
+postgres:
+  host: ${postgres_host}
+postgresBootstrap:
+  enabled: true
+%{ endif ~}
+
 # IRSA service account annotations — pods assume the S3/SES role via SA token.
 aggregator-api:
   serviceAccount:

@@ -172,6 +172,7 @@ function deploy_common_services() {
         -n "$CS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
         -f "$GLOBAL_IMAGES" \
+        -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_CREDS" \
         --wait --timeout 5m
 }
@@ -368,7 +369,7 @@ function dry_run() {
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" -f "$GLOBAL_CREDS" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
