@@ -48,5 +48,6 @@ resource "local_sensitive_file" "global_cloud_values" {
     signals_allowed_origins = var.signals_allowed_origins
     signals_network         = var.signals_network
     signals_host_bindings   = var.signals_host_bindings
+    postgres_host           = var.postgres_host
   })
 }
