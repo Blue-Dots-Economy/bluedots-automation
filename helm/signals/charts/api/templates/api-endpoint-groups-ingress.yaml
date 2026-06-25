@@ -1,4 +1,6 @@
-{{- if and .Values.ingress.enabled .Values.apiRateLimit.enabled .Values.apiRateLimit.groups }}
+{{- /* toggle: global.apiRateLimit.enabled (global-values.yaml) wins, else the chart's apiRateLimit.enabled */ -}}
+{{- $apiRlEnabled := dig "apiRateLimit" "enabled" .Values.apiRateLimit.enabled (.Values.global | default dict) -}}
+{{- if and .Values.ingress.enabled $apiRlEnabled .Values.apiRateLimit.groups }}
 {{- /*
   Per-API rate limiting for signals-api (path base /api, strip-path FALSE — the
   api serves natively under /api, so each group path forwards as-is).

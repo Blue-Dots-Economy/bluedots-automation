@@ -167,7 +167,7 @@ kong:
     rl-signals-api:  { minute: 10000 }   # /api — loose catch-all; per-API limits do the real throttling
     rl-signals-ui:   { minute: 3000 }    # / — SPA loads burst many requests, so high
     # monitoring
-    rl-monitoring:   { minute: 120 }     # /grafana
+    rl-monitoring:   { minute: 3000 }     # /monitoring (Grafana) — dashboards burst many panel queries
 
   # Shared Redis backing the counters (policy: redis) so the limit stays correct
   # across Kong replicas. host/port point at the common-services Redis; the

@@ -1,4 +1,6 @@
-{{- if and .Values.api.ingress.enabled .Values.apiRateLimit.enabled .Values.apiRateLimit.groups }}
+{{- /* toggle: global.apiRateLimit.enabled (global-values.yaml) wins, else the chart's apiRateLimit.enabled */ -}}
+{{- $apiRlEnabled := dig "apiRateLimit" "enabled" .Values.apiRateLimit.enabled (.Values.global | default dict) -}}
+{{- if and .Values.api.ingress.enabled $apiRlEnabled .Values.apiRateLimit.groups }}
 {{- /*
   Per-API rate limiting for signals-search (external base /signals-search,
   strip-path TRUE — the search API serves at root). Like aggregator-api, each

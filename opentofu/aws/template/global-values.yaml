@@ -53,6 +53,10 @@ _aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
 _signals_google_maps_api_key: &signals_google_maps_api_key ""
 
 # ── API rate limiting (Kong) ────────────────────────────────────────────────────
+# Master ON/OFF toggle for per-API rate limiting across signals + aggregator. When
+# false, no per-API KongPlugins/Ingresses are created and traffic falls back to the
+# per-service catch-all limit (nothing breaks).
+_api_rate_limit_enabled: &api_rate_limit_enabled false
 # Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
 # SINGLE SOURCE OF TRUTH: drives the signals/aggregator/search charts' rate-limit
 # config AND the monitoring per-API alert thresholds (warn >80%, info <20%).
@@ -90,10 +94,11 @@ global:
     postgresService: common-services-postgresql
     redisService:    common-services-redis-master
 
-  # ── API rate limiting (Kong) — one value, used by the signals/aggregator/search
-  # charts' per-API rate-limit config AND the monitoring per-API alert thresholds.
-  # Edit _api_rate_limit_per_minute above.
+  # ── API rate limiting (Kong) — shared by the signals/aggregator/search charts'
+  # per-API rate-limit config AND the monitoring per-API alert thresholds.
+  # Edit _api_rate_limit_enabled / _api_rate_limit_per_minute above.
   apiRateLimit:
+    enabled:       *api_rate_limit_enabled
     defaultMinute: *api_rate_limit_per_minute
 
   cloud_storage_region: *cloud_storage_region
