@@ -1,0 +1,64 @@
+{{- /*
+  Limit-derived per-API Kong alerts. Unlike the other alerts (in values.yaml
+  under prometheus.additionalPrometheusRulesMap, which are NOT Helm-templated),
+  these thresholds are COMPUTED from the configured rate limit so there are no
+  hardcoded request numbers:
+
+    limit   = global.apiRateLimit.defaultMinute   (single source — global-values.yaml)
+    warn    > 80% of limit   (approaching the limit)
+    info    < 20% of limit   (7-day avg — under-utilized)
+
+  Change the limit in global-values.yaml and both these thresholds AND the app
+  charts' rate-limit config move together. Discovered by Prometheus via the open
+  ruleSelector (ruleSelectorNilUsesHelmValues: false).
+
+  Note: {{ "{{ ... }}" }} emits a literal {{ ... }} for Prometheus/Alertmanager to
+  evaluate at alert time; {{ $limit }} etc. are resolved by Helm at render time.
+*/ -}}
+{{- $limit := (dig "apiRateLimit" "defaultMinute" 600 (.Values.global | default dict)) | int -}}
+{{- $approaching := div (mul $limit 80) 100 -}}
+{{- $underUtilized := div (mul $limit 20) 100 -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kong-api-ratelimit-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: monitoring
+    role: alert-rules
+spec:
+  groups:
+    - name: kong.api.ratelimit
+      rules:
+        # WARNING — total throughput sustained above 80% of the limit
+        # ({{ $limit }}/min → {{ $approaching }}/min) for 15 min; may start 429ing.
+        - alert: KongApiApproachingLimit
+          expr: sum by(route) (rate(kong_http_requests_total[5m])) * 60 > {{ $approaching }}
+          for: 15m
+          labels:
+            severity: warning
+            group: kong
+          annotations:
+            summary: "API route {{ "{{ $labels.route }}" }} is above 80% of its rate limit"
+            description: >-
+              Kong route {{ "{{ $labels.route }}" }} has sustained
+              {{ "{{ $value | printf \"%.0f\" }}" }} req/min for 15+ minutes — over 80%
+              of the {{ $limit }}/min limit ({{ $approaching }}/min). It may start
+              returning 429s; investigate the traffic source or consider raising the limit.
+
+        # INFO — 7-day average under 20% of the limit
+        # ({{ $limit }}/min → {{ $underUtilized }}/min). Steady-state status for quiet
+        # APIs — route to the info channel, not paging. Needs >=7d Prometheus retention.
+        - alert: KongApiUnderUtilized
+          expr: sum by(route) (increase(kong_http_requests_total[7d])) / (7*24*60) < {{ $underUtilized }}
+          for: 30m
+          labels:
+            severity: info
+            group: kong
+          annotations:
+            summary: "API route {{ "{{ $labels.route }}" }} is under-utilized (7-day avg)"
+            description: >-
+              Kong route {{ "{{ $labels.route }}" }} averaged
+              {{ "{{ $value | printf \"%.1f\" }}" }} req/min over the last 7 days — under
+              20% of its {{ $limit }}/min limit ({{ $underUtilized }}/min). Consider
+              lowering the limit or reviewing whether the endpoint is still needed.

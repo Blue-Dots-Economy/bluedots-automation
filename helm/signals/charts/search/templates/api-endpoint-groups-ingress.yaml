@@ -13,7 +13,8 @@
 */ -}}
 {{- $fullName := include "search.fullname" . -}}
 {{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
-{{- $default := .Values.apiRateLimit.defaultMinute -}}
+{{- /* single source: global.apiRateLimit.defaultMinute (global-values.yaml), fallback to the chart default */ -}}
+{{- $default := dig "apiRateLimit" "defaultMinute" .Values.apiRateLimit.defaultMinute (.Values.global | default dict) -}}
 {{- $redis := .Values.apiRateLimit.redis -}}
 {{- $byLimit := dict -}}
 {{- range .Values.apiRateLimit.groups }}
@@ -23,11 +24,15 @@
   {{- $_ := set $byLimit $k (append $cur .path) -}}
 {{- end }}
 {{- range $limit, $paths := $byLimit }}
+{{- /* Default-limit group gets a STABLE name (no value suffix) so it never churns
+       when the limit is retuned; override groups keep -<value> so distinct limits
+       don't collide. The real limit is config.minute, not the name. */ -}}
+{{- $suffix := ternary "" (printf "-%v" $limit) (eq (int $limit) (int $default)) -}}
 ---
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:
-  name: {{ $fullName }}-rl-{{ $limit }}
+  name: {{ $fullName }}-rl{{ $suffix }}
   labels:
     {{- include "search.labels" $ | nindent 4 }}
 plugin: rate-limiting
@@ -44,13 +49,13 @@ config:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ $fullName }}-endpoints-{{ $limit }}
+  name: {{ $fullName }}-endpoints{{ $suffix }}
   labels:
     {{- include "search.labels" $ | nindent 4 }}
   annotations:
     konghq.com/rewrite: "/$1"
     konghq.com/regex-priority: "100"
-    konghq.com/plugins: {{ printf "%s-rl-%v" $fullName $limit | quote }}
+    konghq.com/plugins: {{ printf "%s-rl%s" $fullName $suffix | quote }}
 spec:
   {{- with $.Values.api.ingress.className }}
   ingressClassName: {{ . }}

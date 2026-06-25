@@ -52,6 +52,12 @@ _alert_email:             &alert_email             "alerts@example.com"
 _aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
 _signals_google_maps_api_key: &signals_google_maps_api_key ""
 
+# ── API rate limiting (Kong) ────────────────────────────────────────────────────
+# Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
+# SINGLE SOURCE OF TRUTH: drives the signals/aggregator/search charts' rate-limit
+# config AND the monitoring per-API alert thresholds (warn >80%, info <20%).
+_api_rate_limit_per_minute: &api_rate_limit_per_minute 600
+
 
 # =============================================================================
 # Structure — do not edit below unless you know what you're changing.
@@ -83,6 +89,12 @@ global:
     namespace:       common-services
     postgresService: common-services-postgresql
     redisService:    common-services-redis-master
+
+  # ── API rate limiting (Kong) — one value, used by the signals/aggregator/search
+  # charts' per-API rate-limit config AND the monitoring per-API alert thresholds.
+  # Edit _api_rate_limit_per_minute above.
+  apiRateLimit:
+    defaultMinute: *api_rate_limit_per_minute
 
   cloud_storage_region: *cloud_storage_region
 

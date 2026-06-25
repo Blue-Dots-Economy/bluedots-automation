@@ -24,6 +24,15 @@ alerting:
     warningWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
     infoWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
 
+# Canonical per-IP API rate limit (req/min). This default is a fallback; the real
+# value is supplied by global-values.yaml (global.apiRateLimit.defaultMinute), the
+# SAME source the signals/aggregator charts use — so one number drives both the
+# rate-limit config and the per-API alert thresholds in
+# templates/kong-api-ratelimit-alerts.yaml (warn >80%, info <20% of this value).
+global:
+  apiRateLimit:
+    defaultMinute: 600
+
 prometheus:
   enabled: true
 
@@ -395,6 +404,21 @@ prometheus:
                 summary: "API route {{ $labels.route }} is being rate limited"
                 description: "Kong route {{ $labels.route }} has returned more than 60 HTTP 429/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }}/min) — a client is exceeding the per-API limit on this specific endpoint"
 
+            # KIC failed to translate an Ingress/plugin into Kong config — those
+            # routes/plugins are NOT applied. This is silent and dangerous: a bad
+            # annotation on one Ingress can drop its whole Service's routes (e.g.
+            # the konghq.com/rewrite gate issue that took /backend down for 12h).
+            # broken_resource_count is a per-pod gauge; max() across the KIC pods.
+            - alert: KongConfigTranslationBroken
+              expr: max(ingress_controller_translation_broken_resource_count) > 0
+              for: 2m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Kong Ingress Controller cannot translate {{ $value | printf \"%.0f\" }} resource(s)"
+                description: "KIC has {{ $value | printf \"%.0f\" }} resource(s) it cannot translate into Kong config for 2+ minutes — their routes/plugins are NOT live and traffic for the affected Service can silently drop. Find it: `kubectl get ingress -A` then `kubectl describe ingress <name>` and look for a KongConfigurationTranslationFailed event."
+
             # 5xx error rate > 5% — critical, act fast.
             # Two-tier guard:
             #   - If total requests >= 100 in 5m: percentage alone triggers (high enough traffic).
@@ -444,26 +468,22 @@ prometheus:
                   ) * 100 > 10
                 ) < 25
                 and
-                (
-                  sum by(exported_service) (
-                    increase(kong_http_requests_total[5m])
-                  ) >= 100
-                  or
-                  sum by(exported_service) (
-                    increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                  ) >= 50
-                )
+                sum by(exported_service) (
+                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                ) >= 50
               for: 5m
               labels:
                 severity: warning
                 group: kong
               annotations:
                 summary: "Elevated 4xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 10–25%, min: 100 total req OR 50 absolute 4xx errors)"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate (10–25%) AND ≥50 actual 4xx errors over the last 5 minutes — low-volume bot 4xx will NOT alert."
 
             # 4xx error rate > 25% — critical.
-            # Two-tier guard: >= 100 total req fires on percentage alone; < 100 total req
-            # also requires >= 50 absolute 4xx errors to filter bot-noise on low traffic.
+            # HARD guard (AND, not OR): requires BOTH >25% 4xx AND >=50 actual 4xx
+            # errors in 5m. The absolute floor of 50 means low-volume bot 4xx
+            # (e.g. 3 4xx out of 3 requests = 100%) NEVER pages — fixes the noisy
+            # KongCritical4xxRate firings on bot traffic.
             - alert: KongCritical4xxRate
               expr: |
                 (
@@ -476,22 +496,45 @@ prometheus:
                   )
                 ) * 100 > 25
                 and
-                (
-                  sum by(exported_service) (
-                    increase(kong_http_requests_total[5m])
-                  ) >= 100
-                  or
-                  sum by(exported_service) (
-                    increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                  ) >= 50
-                )
+                sum by(exported_service) (
+                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                ) >= 50
               for: 5m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "Critical 4xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate over the last 5 minutes (threshold: 25%, min: 100 total req OR 50 absolute 4xx errors)"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate AND ≥50 actual 4xx errors over the last 5 minutes (thresholds: >25% AND ≥50 errors — low-volume bot 4xx will NOT alert)."
+
+            # ─── Per-API (route-level) alerts ──────────────────────────────────
+            # NOTE: the two LIMIT-DERIVED per-API alerts (approaching-limit warning
+            # and under-utilized info) live in templates/kong-api-ratelimit-alerts.yaml,
+            # where their thresholds are COMPUTED from global.apiRateLimit.defaultMinute
+            # (no hardcoded numbers). The 4xx alert below is percentage/absolute based,
+            # so it stays here.
+            #
+            # CRITICAL — per-API 4xx: >25% 4xx (excluding 429) AND >=50 actual
+            # 4xx errors in 5m. Same hard absolute floor as the service alert, so
+            # low-volume bot 4xx never pages.
+            - alert: KongApiCritical4xx
+              expr: |
+                (
+                  sum by(route) (rate(kong_http_requests_total{code=~"4..",code!="429"}[5m]))
+                  /
+                  sum by(route) (rate(kong_http_requests_total[5m]))
+                ) * 100 > 25
+                and
+                sum by(route) (
+                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                ) >= 50
+              for: 5m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "Critical 4xx rate on API route {{ $labels.route }}"
+                description: "Kong route {{ $labels.route }} has a {{ $value | printf \"%.1f\" }}% 4xx rate AND ≥50 actual 4xx errors over the last 5 minutes (thresholds: >25% AND ≥50 errors — low-volume bot 4xx will NOT alert)."
 
         - name: info.alerts
           rules:
