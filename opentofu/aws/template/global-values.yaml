@@ -22,6 +22,7 @@ _signals_host_bindings: &signals_host_bindings ""
 _network: &network "blue_dot"
 _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
 _aggregator_host: &aggregator_host "aggregator.domain.com"
+_grafana_host:    &grafana_host    "monitoring.domain.com"
 
 # ── AWS ───────────────────────────────────────────────────────────────────────
 _cloud_storage_region: &cloud_storage_region "ap-south-1"
@@ -51,6 +52,16 @@ _alert_email:             &alert_email             "alerts@example.com"
 _aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
 _signals_google_maps_api_key: &signals_google_maps_api_key ""
 
+# ── API rate limiting (Kong) ────────────────────────────────────────────────────
+# Master ON/OFF toggle for per-API rate limiting across signals + aggregator. When
+# false, no per-API KongPlugins/Ingresses are created and traffic falls back to the
+# per-service catch-all limit (nothing breaks).
+_api_rate_limit_enabled: &api_rate_limit_enabled false
+# Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
+# SINGLE SOURCE OF TRUTH: drives the signals/aggregator/search charts' rate-limit
+# config AND the monitoring per-API alert thresholds (warn >80%, info <20%).
+_api_rate_limit_per_minute: &api_rate_limit_per_minute 600
+
 
 # =============================================================================
 # Structure — do not edit below unless you know what you're changing.
@@ -67,6 +78,7 @@ global:
 
   # ── Signals Helm config ────────────────────────────────────────────────────
   publicHosts: *signals_public_hosts
+  aggregator_host: *aggregator_host
 
   # ── Aggregator Helm config ─────────────────────────────────────────────────
   # These keys match the aggregator chart's schema at root level so global-values.yaml
@@ -82,6 +94,13 @@ global:
     namespace:       common-services
     postgresService: common-services-postgresql
     redisService:    common-services-redis-master
+
+  # ── API rate limiting (Kong) — shared by the signals/aggregator/search charts'
+  # per-API rate-limit config AND the monitoring per-API alert thresholds.
+  # Edit _api_rate_limit_enabled / _api_rate_limit_per_minute above.
+  apiRateLimit:
+    enabled:       *api_rate_limit_enabled
+    defaultMinute: *api_rate_limit_per_minute
 
   cloud_storage_region: *cloud_storage_region
 
@@ -179,11 +198,18 @@ global:
     - controllerManager
     - scheduler
 
-# =============================================================================
-# Alerting — monitoring chart config (passed directly via -f global-values.yaml)
-# Keys match the monitoring Helm chart's schema at root level so no transformation
-# is needed. Helm ignores the global: section above.
-# =============================================================================
+prometheus:
+  grafana:
+    grafana.ini:
+      server:
+        domain: *grafana_host
+    ingress:
+      hosts:
+        - *grafana_host
+      tls:
+        - secretName: grafana-tls
+          hosts:
+            - *grafana_host
 
 # ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
 # smtp_password must be a Gmail App Password:

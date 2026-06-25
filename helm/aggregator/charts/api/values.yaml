@@ -11,6 +11,39 @@ ingress:
   plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-api
   annotations: {}
 
+# Per-API (per-resource-group) rate limiting — see
+# templates/api-endpoint-groups-ingress.yaml. Each `groups` entry becomes its own
+# Kong route (more specific than the /backend catch-all) with its OWN per-IP
+# counter. Paths sharing the same effective limit are grouped into ONE generated
+# KongPlugin + Ingress, so N APIs with M distinct limits render only M plugins +
+# M Ingresses. Renders only when ingress.enabled + ingress.className (kong) are set.
+# NOTE: the /backend prefix is stripped by Kong, so each route uses a regex path
+# + konghq.com/rewrite to strip ONLY /backend (matching the catch-all's forwarding).
+# `path` entries are the segment UNDER /backend (no leading slash, no /backend).
+apiRateLimit:
+  enabled: true
+  defaultMinute: 600   # uniform per-IP requests/min for every API (the one knob; ~10 req/s)
+  redis:               # shared common-services Redis Kong uses for counters
+    host: common-services-redis-master.common-services.svc.cluster.local
+    port: 6379
+  # Full coverage — every aggregator-api resource group, all at the uniform
+  # default (→ 1 plugin + 1 Ingress). Each prefix is its own Kong route with its
+  # OWN per-IP counter and covers all operations beneath it. `public/v1/aggregators`
+  # covers the anonymous links/registrations/lookup endpoints. Add a `limit: <n>`
+  # on a line only for a rare exception.
+  # NOTE: renders only while this chart's ingress is enabled — if aggregator-api
+  # is made internal (web BFF proxies to it), the rate-limit Ingress drops too.
+  groups:
+    - { path: v1/aggregator-registrations }
+    - { path: admin/v1/aggregator-registrations }
+    - { path: v1/aggregators }
+    - { path: v1/bulk-uploads }
+    - { path: v1/links }
+    - { path: public/v1/aggregators }
+    - { path: v1/onboarding }
+    - { path: v1/dashboard }
+    - { path: v1/aggregator-config }
+
 replicaCount: 1
 image:
   repository: aggregator-dpg/api

@@ -60,6 +60,11 @@ ingress-nginx:
 kong:
   enabled: true
 
+  # Run 2 Kong proxy replicas for HA (no single point of failure; rolling
+  # restarts stay available). Rate-limit counters stay correct across replicas
+  # because they live in shared Redis (policy: redis), not pod-local memory.
+  replicaCount: 2
+
   # DB-less mode + parity with the proxy tuning ingress-nginx does today.
   # (deep-merged onto the subchart's env defaults — database:"off" etc.)
   env:
@@ -94,6 +99,15 @@ kong:
     # Ingress objects with no explicit class are picked up by Kong.
     ingressClassAnnotations:
       ingressclass.kubernetes.io/is-default-class: "true"
+    # Enable the RewriteURIs feature gate so the `konghq.com/rewrite` annotation
+    # is honored. REQUIRED by the per-API rate-limit ingresses on the strip-path
+    # services (aggregator-api /backend, signals-search /signals-search): they use
+    # a regex path + `konghq.com/rewrite: /$1` to strip ONLY the base prefix.
+    # Without this gate KIC rejects those ingresses (KongConfigurationTranslationFailed)
+    # AND drops the catch-all route for the same Service — taking /backend down.
+    # (env keys map to CONTROLLER_<KEY>, i.e. CONTROLLER_FEATURE_GATES.)
+    env:
+      feature_gates: "RewriteURIs=true"
 
   proxy:
     enabled: true
@@ -146,12 +160,14 @@ kong:
   # upgrade` and every route referencing the tier updates — no per-Ingress edit.
   # Tune per environment from global-values.yaml (Phase 6).
   rateLimitTiers:
-    rl-agg-web:      { minute: 120 }   # / (web BFF/UI)
-    rl-agg-api:      { minute: 600 }   # /backend (api)
-    rl-agg-auth:     { minute: 20 }    # /auth (keycloak) — tight
+    rl-agg-web:      { minute: 3000 }    # / (web BFF/UI) — SPA loads burst many requests, so high
+    rl-agg-api:      { minute: 10000 }   # /backend (api) — loose catch-all; per-API limits do the real throttling
+    rl-agg-auth:     { minute: 600 }     # /auth (keycloak) — covers ALL of /auth (JWKS/token/login); brute-force must target only the login/OTP submit endpoint (TODO), not all of /auth
     # signals
-    rl-signals-api:  { minute: 600 }   # /api
-    rl-signals-ui:   { minute: 120 }   # /
+    rl-signals-api:  { minute: 10000 }   # /api — loose catch-all; per-API limits do the real throttling
+    rl-signals-ui:   { minute: 3000 }    # / — SPA loads burst many requests, so high
+    # monitoring
+    rl-monitoring:   { minute: 3000 }     # /monitoring (Grafana) — dashboards burst many panel queries
 
   # Shared Redis backing the counters (policy: redis) so the limit stays correct
   # across Kong replicas. host/port point at the common-services Redis; the
