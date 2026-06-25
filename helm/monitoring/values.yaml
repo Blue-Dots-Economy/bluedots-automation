@@ -38,6 +38,11 @@ prometheus:
 
   grafana:
     enabled: true
+    # Hide kube-prometheus-stack's ~30 bundled dashboards (etcd, CoreDNS, k8s
+    # compute-resources, node-exporter, etc.). We only want the dashboards WE
+    # ship as ConfigMaps (Kong service, Kong API, infra, k8s-health). The sidecar
+    # that loads our ConfigMaps (grafana_dashboard label) stays enabled.
+    defaultDashboardsEnabled: false
     # Override via overlay for install.sh deployments. Change for standalone use.
     adminUser: admin
     adminPassword: "admin@bluedots"
@@ -420,10 +425,10 @@ prometheus:
                 description: "KIC has {{ $value | printf \"%.0f\" }} resource(s) it cannot translate into Kong config for 2+ minutes — their routes/plugins are NOT live and traffic for the affected Service can silently drop. Find it: `kubectl get ingress -A` then `kubectl describe ingress <name>` and look for a KongConfigurationTranslationFailed event."
 
             # 5xx error rate > 5% — critical, act fast.
-            # Two-tier guard:
-            #   - If total requests >= 100 in 5m: percentage alone triggers (high enough traffic).
-            #   - If total requests < 100: also require >= 15 actual 5xx errors so that
-            #     3 crashes out of 50 requests (6%) doesn't page anyone.
+            # HARD guard (AND, not OR): requires BOTH >5% 5xx AND >=15 actual 5xx in
+            # 5m. The absolute floor of 15 stops low-volume noise (e.g. 6 5xx out of
+            # 100 requests = 6%) from paging — same anti-noise fix as the 4xx alerts.
+            # (was: >= 100 total req OR >= 15 5xx — the OR-total branch was noisy.)
             - alert: KongHigh5xxRate
               expr: |
                 (
@@ -432,22 +437,16 @@ prometheus:
                   sum by(exported_service) (rate(kong_http_requests_total[5m]))
                 ) * 100 > 5
                 and
-                (
-                  sum by(exported_service) (
-                    increase(kong_http_requests_total[5m])
-                  ) >= 100
-                  or
-                  sum by(exported_service) (
-                    increase(kong_http_requests_total{code=~"5.."}[5m])
-                  ) >= 15
-                )
+                sum by(exported_service) (
+                  increase(kong_http_requests_total{code=~"5.."}[5m])
+                ) >= 15
               for: 5m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "High 5xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate over the last 5 minutes (threshold: 5%, min: 100 total req OR 15 absolute 5xx errors)"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate AND ≥15 actual 5xx errors over the last 5 minutes (thresholds: >5% AND ≥15 errors — low-volume noise will NOT alert)."
 
             # 4xx error rate 10–25% — warning.
             # Excludes 429s (intentional rate limiting). Upper bound < 25 ensures this
