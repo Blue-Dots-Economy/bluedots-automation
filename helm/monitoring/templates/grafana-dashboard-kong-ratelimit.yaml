@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-kong-ratelimit
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  kong-api-rate-limiting.json: |-
+    {
+      "__inputs": [],
+      "__requires": [
+        {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.2.1"},
+        {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+        {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+        {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+        {"type": "panel", "id": "table", "name": "Table", "version": ""}
+      ],
+      "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "iconColor": "rgba(0, 211, 255, 1)", "name": "Annotations & Alerts", "type": "dashboard"}]},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "time": {"from": "now-1h", "to": "now"},
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "blue", "mode": "fixed"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}, "decimals": 0, "unit": "none"}, "overrides": []},
+          "gridPos": {"h": 4, "w": 5, "x": 0, "y": 0},
+          "id": 1,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{route=~\"$route\"}[$__range]))", "instant": true, "range": false, "refId": "A"}],
+          "title": "Total Requests",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "mappings": [{"options": {"match": "null", "result": {"index": 0, "text": "0"}}, "type": "special"}], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "semi-dark-orange", "value": 1}, {"color": "red", "value": 100}]}, "decimals": 0, "unit": "none"}, "overrides": []},
+          "gridPos": {"h": 4, "w": 5, "x": 5, "y": 0},
+          "id": 2,
+          "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{route=~\"$route\", code=\"429\"}[$__range]))", "instant": true, "range": false, "refId": "A"}],
+          "title": "Rate-Limited (429) — total",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "mappings": [{"options": {"match": "null", "result": {"index": 0, "text": "0"}}, "type": "special"}], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}, "decimals": 0, "unit": "none"}, "overrides": []},
+          "gridPos": {"h": 4, "w": 5, "x": 10, "y": 0},
+          "id": 3,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "count(sum by (route) (increase(kong_http_requests_total{route=~\"$route\", code=\"429\"}[$__range])) > 0)", "instant": true, "range": false, "refId": "A"}],
+          "title": "APIs Currently Throttled",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "mappings": [{"options": {"match": "null+nan", "result": {"index": 0, "text": "0%"}}, "type": "special"}], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "semi-dark-orange", "value": 1}, {"color": "red", "value": 5}]}, "decimals": 2, "unit": "percent"}, "overrides": []},
+          "gridPos": {"h": 4, "w": 5, "x": 15, "y": 0},
+          "id": 4,
+          "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+          "pluginVersion": "11.2.1",
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum(increase(kong_http_requests_total{route=~\"$route\", code=\"429\"}[$__range])) / sum(increase(kong_http_requests_total{route=~\"$route\"}[$__range])) * 100", "instant": true, "range": false, "refId": "A"}],
+          "title": "429 Rate %",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"color": {"fixedColor": "dark-orange", "mode": "fixed"}, "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "showPoints": "never", "stacking": {"group": "A", "mode": "none"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "short"}, "overrides": []},
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 4},
+          "id": 5,
+          "options": {"legend": {"calcs": ["sum", "max"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum by (route) (increase(kong_http_requests_total{route=~\"$route\", code=\"429\"}[$__interval])) > 0", "instant": false, "interval": "1m", "legendFormat": "{{`{{route}}`}}", "range": true, "refId": "A"}],
+          "title": "429s per Minute by API (route)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 0, "lineWidth": 1, "showPoints": "auto", "stacking": {"group": "A", "mode": "none"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "reqps"}, "overrides": []},
+          "gridPos": {"h": 9, "w": 24, "x": 0, "y": 13},
+          "id": 6,
+          "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+          "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum by (route) (rate(kong_http_requests_total{route=~\"$route\"}[$__rate_interval]))", "instant": false, "legendFormat": "{{`{{route}}`}}", "range": true, "refId": "A"}],
+          "title": "Request Rate by API (route)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {"color": {"mode": "thresholds"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": false}, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "none"},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "API (route)"}, "properties": [{"id": "custom.width", "value": 380}]},
+              {"matcher": {"id": "byName", "options": "Total"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}}, {"id": "custom.align", "value": "center"}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}}]},
+              {"matcher": {"id": "byName", "options": "429"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}}, {"id": "custom.align", "value": "center"}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "semi-dark-orange", "value": 1}, {"color": "red", "value": 100}]}}]},
+              {"matcher": {"id": "byName", "options": "429 %"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "basic"}}, {"id": "custom.align", "value": "center"}, {"id": "unit", "value": "percentunit"}, {"id": "decimals", "value": 2}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.01}, {"color": "red", "value": 0.05}]}}]}
+            ]
+          },
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 22},
+          "id": 7,
+          "options": {"cellHeight": "sm", "footer": {"show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "429"}]},
+          "pluginVersion": "11.2.1",
+          "targets": [
+            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum by (route) (increase(kong_http_requests_total{route=~\"$route\"}[$__range]))", "format": "table", "instant": true, "range": false, "refId": "A"},
+            {"datasource": {"type": "prometheus", "uid": "prometheus"}, "editorMode": "code", "expr": "sum by (route) (increase(kong_http_requests_total{route=~\"$route\", code=\"429\"}[$__range]))", "format": "table", "instant": true, "range": false, "refId": "B"}
+          ],
+          "title": "Per-API Breakdown (requests vs 429)",
+          "transformations": [
+            {"id": "merge", "options": {}},
+            {"id": "calculateField", "options": {"alias": "429 %", "mode": "binaryOperation", "binary": {"left": "Value #B", "operator": "/", "right": "Value #A"}}},
+            {"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"route": "API (route)", "Value #A": "Total", "Value #B": "429"}}}
+          ],
+          "type": "table"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": ["kong", "rate-limiting"],
+      "templating": {
+        "list": [
+          {
+            "allValue": ".*",
+            "current": {"selected": true, "text": "All", "value": "$__all"},
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "definition": "label_values(kong_http_requests_total, route)",
+            "hide": 0,
+            "includeAll": true,
+            "label": "API route",
+            "multi": true,
+            "name": "route",
+            "options": [],
+            "query": {"query": "label_values(kong_http_requests_total, route)", "refId": "StandardVariableQuery"},
+            "refresh": 2,
+            "regex": "^(?!.*cm-acme-http-solver).*$",
+            "sort": 1,
+            "type": "query"
+          }
+        ]
+      },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Kong API Rate Limiting",
+      "uid": "kong-api-ratelimit",
+      "version": 1,
+      "weekStart": ""
+    }

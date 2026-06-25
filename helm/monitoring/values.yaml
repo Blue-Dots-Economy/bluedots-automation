@@ -35,7 +35,7 @@ prometheus:
 
     grafana.ini:
       server:
-        root_url: "%(protocol)s://%(domain)s/grafana/"
+        root_url: "%(protocol)s://%(domain)s/monitoring/"
         serve_from_sub_path: true
 
     ingress:
@@ -46,7 +46,7 @@ prometheus:
         konghq.com/plugins: "rl-monitoring"
         cert-manager.io/cluster-issuer: letsencrypt-prod
       hosts: []
-      path: /grafana
+      path: /monitoring
       pathType: Prefix
       tls: []
 
@@ -380,6 +380,20 @@ prometheus:
               annotations:
                 summary: "Sustained rate limiting on {{ $labels.exported_service }}"
                 description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 req/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min) — a client is not respecting the rate limit"
+
+            # Per-API (route-level) rate limiting — pinpoints WHICH API is being
+            # throttled (the per-service alert above can't, since many APIs share
+            # one backend service). Fires when a single Kong route sustains 429s,
+            # i.e. a client is hammering one specific endpoint past its per-IP limit.
+            - alert: KongApiRateLimited
+              expr: sum by(route) (rate(kong_http_requests_total{code="429"}[5m])) * 60 > 60
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "API route {{ $labels.route }} is being rate limited"
+                description: "Kong route {{ $labels.route }} has returned more than 60 HTTP 429/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }}/min) — a client is exceeding the per-API limit on this specific endpoint"
 
             # 5xx error rate > 5% — critical, act fast.
             # Two-tier guard:
