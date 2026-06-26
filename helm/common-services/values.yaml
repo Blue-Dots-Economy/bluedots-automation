@@ -271,6 +271,9 @@ postgres:
   host: ""        # RDS endpoint hostname (populated by the opentofu overlay)
   port: 5432
 
+rdsRelay:
+  enabled: false
+
 # Bootstrap Job — runs as a post-install/post-upgrade hook, connects to RDS as
 # the master (`postgres`) user and creates the per-tenant roles, databases and
 # extensions that the Bitnami initdb script used to create. Fully idempotent.

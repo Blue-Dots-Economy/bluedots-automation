@@ -18,9 +18,12 @@ data:
   # Per-network deployment: every path-dependent var keys off
   # `global.aggregatorNetwork` so flipping it in values-<net>.yaml
   # redirects api + worker at the matching config folder.
-  AGGREGATOR_CONFIG_PATH: "/app/config/{{ .Values.global.aggregatorNetwork }}/aggregator.config.yaml"
+  # AGGREGATOR_CONFIG_PATH: "/app/config/{{ .Values.global.aggregatorNetwork }}/aggregator.config.yaml"
   SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
   SIGNALSTACK_ITEM_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
+  AGGREGATOR_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
+  # Brand skin over the network (UI/config skin). Empty = standard dots.
+  AGGREGATOR_BRAND: "{{ .Values.global.aggregatorBrand }}"
   SIGNALSTACK_BASE_URL: "{{ .Values.global.signalstackBaseUrl }}"
   # network_service org id in signal-stack DB; sent as `x-acting-org-id` on
   # admin calls. Without it the login-time upsert fallback fails with

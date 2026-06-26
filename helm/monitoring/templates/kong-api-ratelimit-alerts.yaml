@@ -32,8 +32,11 @@ spec:
       rules:
         # WARNING — total throughput sustained above 80% of the limit
         # ({{ $limit }}/min → {{ $approaching }}/min) for 15 min; may start 429ing.
+        # Scoped to the real API services (route name contains signals-api /
+        # aggregator-api / signals-search) — excludes UI/web/Grafana/Keycloak and the
+        # transient cm-acme-http-solver routes (the latter flap and caused 5-min spam).
         - alert: KongApiApproachingLimit
-          expr: sum by(route) (rate(kong_http_requests_total[5m])) * 60 > {{ $approaching }}
+          expr: sum by(route) (rate(kong_http_requests_total{route=~".*(signals-api|aggregator-api|signals-search).*"}[5m])) * 60 > {{ $approaching }}
           for: 15m
           labels:
             severity: warning
@@ -49,8 +52,10 @@ spec:
         # INFO — 7-day average under 20% of the limit
         # ({{ $limit }}/min → {{ $underUtilized }}/min). Steady-state status for quiet
         # APIs — route to the info channel, not paging. Needs >=7d Prometheus retention.
+        # Scoped to the real API services (excludes UI/web/Grafana/Keycloak and the
+        # transient cm-acme-http-solver routes, which flapped and caused 5-min spam).
         - alert: KongApiUnderUtilized
-          expr: sum by(route) (increase(kong_http_requests_total[7d])) / (7*24*60) < {{ $underUtilized }}
+          expr: sum by(route) (increase(kong_http_requests_total{route=~".*(signals-api|aggregator-api|signals-search).*"}[7d])) / (7*24*60) < {{ $underUtilized }}
           for: 30m
           labels:
             severity: info
