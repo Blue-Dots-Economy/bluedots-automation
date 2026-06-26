@@ -19,6 +19,7 @@
 # pod on 5432. Keep it short-lived; delete when not actively used. Consider a
 # NetworkPolicy if it must live longer.
 # -----------------------------------------------------------------------------
+{{- if and .Values.rdsRelay.enabled .Values.postgres.host }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -77,7 +78,9 @@ spec:
           resources:
             requests: { cpu: 10m, memory: 16Mi }
             limits:   { cpu: 100m, memory: 64Mi }
+{{- end }}
 ---
+{{- if and .Values.rdsRelay.enabled .Values.postgres.host }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -93,3 +96,4 @@ spec:
     - name: pg
       port: 5432
       targetPort: pg
+{{- end }}

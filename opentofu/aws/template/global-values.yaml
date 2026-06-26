@@ -348,3 +348,6 @@ search:
       POSTGRES_USER: "dpg"
       POSTGRES_DB: "dpg"
       EMBEDDING_API_KEY: ""
+
+rdsRelay:
+  enabled: false
