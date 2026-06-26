@@ -20,6 +20,13 @@ _signals_host_bindings: &signals_host_bindings ""
 # served_domains lists the per-domain bindings the signals API serves (roles
 # differ per network, so set it explicitly).
 _network: &network "blue_dot"
+
+# Brand skin over the network — SHARED by signals (VITE_BRAND_NAME) AND
+# aggregator (aggregatorBrand). A brand is a UI/config skin over a network; it
+# does NOT change the upstream network identity (driven by _network above).
+# Leave empty for the standard dots. Examples: "upsdm" (over blue_dot),
+# "onetac" (over orange_dot). Switching brand = change this one value + redeploy.
+_brand: &brand ""
 _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
 _aggregator_host: &aggregator_host "aggregator.domain.com"
 _grafana_host:    &grafana_host    "monitoring.domain.com"
@@ -85,6 +92,7 @@ global:
   # can be passed directly via -f without any transformation.
   publicHost:         *aggregator_host
   aggregatorNetwork:  *network
+  aggregatorBrand:    *brand
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   signalstack:
     # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
@@ -286,6 +294,7 @@ ui:
     VITE_GOOGLE_MAPS_API_KEY: *signals_google_maps_api_key
     VITE_ACTION_POLL_INTERVAL_MS: "30000"
     VITE_NETWORK_NAME: *network
+    VITE_BRAND_NAME: *brand
     VITE_ANALYTICS_GA_ID: ""
     VITE_MAP_DEFAULT_CENTER: "" # update the lat,long if any specific area has to be focused on maps.
     VITE_MAP_DEFAULT_ZOOM: "5"

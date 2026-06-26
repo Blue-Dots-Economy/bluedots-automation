@@ -22,3 +22,5 @@ data:
   # (public registration link page loads participant schema by file
   # path). Must match the api's AGGREGATOR_CONFIG_PATH root.
   SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
+  # Brand skin over the network (UI/config skin). Empty = standard dots.
+  AGGREGATOR_BRAND: "{{ .Values.global.aggregatorBrand }}"
