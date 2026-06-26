@@ -40,3 +40,8 @@ dependencies:
     version: 19.6.4
     repository: file://charts/redis
     condition: redis.enabled
+
+  - name: metrics-server
+    version: 3.12.1
+    repository: file://charts/metrics-server
+    condition: metrics-server.enabled

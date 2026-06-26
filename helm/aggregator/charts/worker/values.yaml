@@ -15,3 +15,13 @@ cron:
 serviceAccount:
   create: true
   annotations: {}
+
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPU: 70
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

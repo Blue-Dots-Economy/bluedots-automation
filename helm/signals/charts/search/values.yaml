@@ -17,6 +17,19 @@ api:
     enabled: false
 serviceAccount:
   create: true
+
+# Per-API rate limiting (templates/api-endpoint-groups-ingress.yaml). signals-search
+# strips /signals-search (serves at root), so routes use a regex path + rewrite to
+# strip only that prefix. The single search endpoint gets its own per-IP counter.
+# Renders only while api.ingress.enabled + api.ingress.className (kong) are set.
+apiRateLimit:
+  enabled: true
+  defaultMinute: 600   # uniform per-IP requests/min (the one knob; ~10 req/s)
+  redis:               # shared common-services Redis Kong uses for counters
+    host: common-services-redis-master.common-services.svc.cluster.local
+    port: 6379
+  groups:
+    - { path: v1/search }
 postgres:
   host: up-blue-dots-prod-postgres.cbo8sc80w9ld.ap-south-1.rds.amazonaws.com
   port: 5432

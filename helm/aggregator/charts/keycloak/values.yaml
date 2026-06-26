@@ -42,3 +42,13 @@ themesInit:
   image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
   tag: blue_dot-develop
   pullPolicy: Always
+
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPU: 70
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

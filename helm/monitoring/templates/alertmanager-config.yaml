@@ -37,6 +37,13 @@ stringData:
         - receiver: 'null'
           matchers:
             - alertname =~ "InfoInhibitor|Watchdog"
+        # KongApiUnderUtilized is a steady-state capacity signal (fires continuously
+        # for quiet APIs), not an incident — notify at most ONCE A WEEK instead of
+        # the default 4h repeat_interval. Routed to the info receiver.
+        - receiver: {{ if $discordOn }}discord-info{{ else if $emailOn }}email-notifications{{ else }}'null'{{ end }}
+          matchers:
+            - alertname = "KongApiUnderUtilized"
+          repeat_interval: 7d
         {{- if $discordOn }}
         - receiver: discord-critical
           matchers:

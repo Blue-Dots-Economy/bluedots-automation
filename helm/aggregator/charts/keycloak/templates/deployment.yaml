@@ -5,7 +5,9 @@ metadata:
   labels:
     {{- include "keycloak.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.hpa.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "keycloak.selectorLabels" . | nindent 6 }}
@@ -245,5 +247,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 30
+          {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

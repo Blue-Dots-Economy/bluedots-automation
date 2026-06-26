@@ -57,6 +57,25 @@ each component. Keep this table handy:
             └── <module>/terragrunt.hcl  # one dir per module: network, eks, iam, storage, …
 ```
 
+### The values-file model
+
+Config is **never hand-edited into chart `values.yaml`**. Each `helm upgrade`
+layers files via repeated `-f` (last wins):
+
+| File | Source | Committed? | Holds |
+|------|--------|-----------|-------|
+| `<env>/global-values.yaml`        | in repo, **you edit** | yes | all user config (hosts, SMTP/MSG91, network, RDS sizing, app config) — edit the **anchors at the top** |
+| `<env>/global-images.yaml`        | in repo, per-env      | yes | image `repository` / `tag` / `pullPolicy` |
+| `helm/global-resources.yaml`      | in repo, shared       | yes | replicas, HPA, PDB, container resources |
+| `<env>/global-credentials.yaml`   | **generated** by tofu (`output-file`) | **no** (gitignored) | all secrets (PG/Redis/auth passwords) |
+| `<env>/global-cloud-values.yaml`  | **generated** by tofu (`output-file`) | **no** (gitignored) | cloud outputs + computed config (S3 bucket/region, IRSA ARN, computed hosts/origins, RDS Postgres host when provisioned) |
+
+Every file keys its values at root level by chart (e.g. `api:`, `ui:`,
+`aggregator-api:`, `alerting:`), so each `-f` feeds Helm directly — **no `yq`
+slicing** (which is why `install.sh preflight` no longer needs `yq`).
+
+---
+
 ## Which branch?
 
 There are two kinds of branches: **trunk** branches that integrate work, and

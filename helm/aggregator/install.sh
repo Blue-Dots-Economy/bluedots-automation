@@ -68,7 +68,7 @@ SET_ARGS=()
 [[ -n "$IMAGE_REGISTRY" ]] && SET_ARGS+=("--set" "global.imageRegistry=${IMAGE_REGISTRY}")
 if [[ -n "$IMAGE_TAG" ]]; then
   SET_ARGS+=("--set" "web.image.tag=${IMAGE_TAG}")
-  SET_ARGS+=("--set" "api.image.tag=${IMAGE_TAG}")
+  SET_ARGS+=("--set" "aggregator-api.image.tag=${IMAGE_TAG}")
   SET_ARGS+=("--set" "worker.image.tag=${IMAGE_TAG}")
 fi
 SET_ARGS+=("${EXTRA_SET[@]+"${EXTRA_SET[@]}"}")

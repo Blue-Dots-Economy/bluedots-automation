@@ -1,7 +1,7 @@
 {{- if .Values.api.ingress.enabled -}}
 {{- /*
   Template-driven ingress for the signals search API. Path /signals-search +
-  strip-path "false" (search API serves natively under /signals-search).
+  strip-path "true" (search API serves natively under /signals-search).
   Hosts come from global.publicHosts (defaulting to the single global.publicHost
   — the SAME list the ui and api ingresses use), so every host that serves the
   UI also serves /signals-search.

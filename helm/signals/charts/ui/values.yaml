@@ -119,3 +119,7 @@ runtimeConfig:
   VITE_API_URLS: ""
   VITE_DEFAULT_API_URL: ""
   VITE_SHOW_INSTANCE_SELECTOR: "false"
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

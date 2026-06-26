@@ -25,6 +25,7 @@ dependencies:
   - name: api
     version: 0.1.0
     repository: file://charts/api
+    alias: aggregator-api
 
   - name: worker
     version: 0.1.0
