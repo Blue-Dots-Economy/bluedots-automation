@@ -1,0 +1,95 @@
+# -----------------------------------------------------------------------------
+# rds-relay — in-cluster TCP relay to the (private) RDS Postgres, for laptop
+# access via `kubectl port-forward` + DBeaver/psql.
+#
+# Why: the RDS instance is PubliclyAccessible=false in isolated subnets, so it is
+# only reachable from inside the VPC. This pod (on an EKS node whose SG is allowed
+# on the DB SG) relays localhost:5432 -> RDS:5432. It is DB-agnostic — pick the
+# database/user at connect time (dpg, aggregator, keycloak all live on this RDS).
+#
+# Usage:
+#   kubectl apply -f rds-relay.deployment.yaml
+#   kubectl -n default port-forward svc/rds-relay 5432:5432   # keep open
+#   # DBeaver/psql -> localhost:5432, database+user of your choice
+#   kubectl delete -f rds-relay.deployment.yaml               # tear down when done
+#
+# Retarget a different RDS: edit DB_HOST below (and DB_PORT if needed).
+#
+# SECURITY: this exposes a PROD database to anything in-cluster that can reach the
+# pod on 5432. Keep it short-lived; delete when not actively used. Consider a
+# NetworkPolicy if it must live longer.
+# -----------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rds-relay
+  namespace: default
+  labels:
+    app.kubernetes.io/name: rds-relay
+    app.kubernetes.io/component: db-tunnel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rds-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rds-relay
+        app.kubernetes.io/component: db-tunnel
+    spec:
+      # socat listens on 5432 (>1024), so it needs no privileges.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: socat
+          image: alpine/socat:latest   # pin to a digest/tag for reproducibility
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_HOST
+              value: {{ .Values.postgres.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: LISTEN_PORT
+              value: {{ .Values.postgres.port | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - exec socat -d -d "TCP-LISTEN:${LISTEN_PORT},fork,reuseaddr" "TCP:${DB_HOST}:${DB_PORT}"
+          ports:
+            - name: pg
+              containerPort: 5432
+          readinessProbe:
+            tcpSocket: { port: pg }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: pg }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { cpu: 100m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rds-relay
+  namespace: default
+  labels:
+    app.kubernetes.io/name: rds-relay
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: rds-relay
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: pg
