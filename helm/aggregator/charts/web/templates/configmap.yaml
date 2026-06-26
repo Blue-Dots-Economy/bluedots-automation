@@ -21,6 +21,7 @@ data:
   # Server-side schema reads from the active network's config folder
   # (public registration link page loads participant schema by file
   # path). Must match the api's AGGREGATOR_CONFIG_PATH root.
-  SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
+  # SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
+  AGGREGATOR_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   # Brand skin over the network (UI/config skin). Empty = standard dots.
   AGGREGATOR_BRAND: "{{ .Values.global.aggregatorBrand }}"
