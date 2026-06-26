@@ -36,6 +36,13 @@ global:
   # release via -f values-purple.yaml (or values-blue.yaml).
   aggregatorNetwork: purple_dot
 
+  # Brand skin over the network (UI/config skin; does NOT change the upstream
+  # network identity). Exposed to api/worker/web as AGGREGATOR_BRAND. Empty =
+  # standard dots. Set per release (e.g. upsdm over blue_dot, onetac over
+  # orange_dot); switching brand = change this value + redeploy the matching
+  # keycloak theme image tag.
+  aggregatorBrand: ''
+
   # Signal-stack integration. Used by api/worker to call the signal-stack
   # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
   #   - actingOrgId: signal-stack `organization` row of type `network_service`

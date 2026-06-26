@@ -264,6 +264,9 @@ ui:
     # Comma-separated network names to show in UI. Empty = show all networks
     # the API serves.
     VITE_NETWORK_NAME: "purple_dot"
+    # Brand skin over the network (UI selects it at runtime). Empty = standard
+    # dots; one UI build serves all brands. Examples: "upsdm", "onetac".
+    VITE_BRAND_NAME: ""
 
 notification-service:
   enabled: true

@@ -54,6 +54,7 @@
               "maximum": 65
             },
             "workExperience": {
+              "vectorize": true,
               "type": "string",
               "title": "Work Experience",
               "enum": [
@@ -89,6 +90,7 @@
               ]
             },
             "natureOfJobsInterestedIn": {
+              "vectorize": true,
               "type": "string",
               "title": "Nature of Jobs Interested In",
               "enum": [
@@ -104,6 +106,7 @@
               "minLength": 1
             },
             "otherHelpNeeded": {
+              "vectorize": true,
               "type": "string",
               "title": "Other Help Needed",
               "enum": [
@@ -114,6 +117,7 @@
               ]
             },
             "educationCategory": {
+              "vectorize": true,
               "type": "string",
               "title": "Education Category",
               "description": "Select your education category",
@@ -137,6 +141,7 @@
               ]
             },
             "schoolQualification": {
+              "vectorize": true,
               "type": "string",
               "title": "School Qualification",
               "description": "Select your school qualification",
@@ -157,6 +162,7 @@
               }
             },
             "schoolQualificationOther": {
+              "vectorize": true,
               "type": "string",
               "title": "Other School Qualification",
               "description": "Please specify your school qualification",
@@ -167,6 +173,7 @@
               }
             },
             "collegeQualification": {
+              "vectorize": true,
               "type": "string",
               "title": "College Qualification",
               "description": "Select your college qualification",
@@ -191,6 +198,7 @@
               }
             },
             "collegeQualificationOther": {
+              "vectorize": true,
               "type": "string",
               "title": "Other College Qualification",
               "description": "Please specify your college qualification",
@@ -201,6 +209,8 @@
               }
             },
             "itiTrade": {
+              "vectorize": true,
+              "vector_weight": 2,
               "type": "string",
               "title": "ITI Trade",
               "description": "Select your ITI trade",
@@ -555,6 +565,7 @@
               }
             },
             "itiTradeOther": {
+              "vectorize": true,
               "type": "string",
               "title": "Other ITI Trade",
               "description": "Please specify your ITI trade",
@@ -565,6 +576,7 @@
               }
             },
             "vocationalTrainingOther": {
+              "vectorize": true,
               "type": "string",
               "title": "Other Vocational Training",
               "description": "Please specify your vocational training",
@@ -575,6 +587,7 @@
               }
             },
             "polytechnicDiploma": {
+              "vectorize": true,
               "type": "string",
               "title": "Polytechnic / Diploma",
               "description": "Select your polytechnic/diploma",
@@ -603,6 +616,7 @@
               }
             },
             "polytechnicDiplomaOther": {
+              "vectorize": true,
               "type": "string",
               "title": "Other Diploma",
               "description": "Please specify your diploma",
@@ -803,6 +817,7 @@
               "minimum": 1
             },
             "natureOfJob": {
+              "vectorize": true,
               "type": "string",
               "title": "Nature of Job",
               "enum": [
@@ -843,6 +858,7 @@
               "minimum": 0
             },
             "candidateExperienceType": {
+              "vectorize": true,
               "type": "string",
               "enum": [
                 "Fresher",
@@ -888,6 +904,7 @@
               "minLength": 1
             },
             "minQualificationSchool": {
+              "vectorize": true,
               "type": "string",
               "title": "Min. Highest Qualification (School)",
               "description": "Select the highest school level completed",
@@ -903,6 +920,7 @@
               }
             },
             "minQualificationSchoolOther": {
+              "vectorize": true,
               "type": "string",
               "title": "Specify Other School Qualification",
               "description": "Please specify your other school qualification",
@@ -913,6 +931,7 @@
               }
             },
             "minQualificationCollege": {
+              "vectorize": true,
               "type": "string",
               "title": "Min. Highest Qualification (College)",
               "description": "Select the highest degree completed",
@@ -930,6 +949,7 @@
               }
             },
             "minQualificationCollegeOther": {
+              "vectorize": true,
               "type": "string",
               "title": "Specify Other College Qualification",
               "description": "Please specify your other college qualification",
@@ -940,6 +960,8 @@
               }
             },
             "minQualificationVocational": {
+              "vectorize": true,
+              "vector_weight": 2,
               "type": "array",
               "title": "Min. Highest Qualification (Trade)",
               "description": "Enter the specific trade or vocational skill (e.g., Electrician, Fitter)",
@@ -1127,6 +1149,7 @@
               }
             },
             "minQualificationPolytechnic": {
+              "vectorize": true,
               "type": "string",
               "title": "Min. Highest Qualification (Polytechnic/Diploma)",
               "description": "Select the diploma stream completed",
@@ -1146,6 +1169,7 @@
               }
             },
             "minQualificationPolytechnicOther": {
+              "vectorize": true,
               "type": "string",
               "title": "Specify Other Polytechnic/Diploma Stream",
               "description": "Please specify your other diploma stream",
@@ -1156,6 +1180,7 @@
               }
             },
             "minQualificationCert": {
+              "vectorize": true,
               "type": "string",
               "title": "Certification / Skill Details",
               "description": "Enter the name of the certification or skill learned on the job",
@@ -1166,6 +1191,7 @@
               }
             },
             "minQualificationInformal": {
+              "vectorize": true,
               "type": "string",
               "title": "Skills Learned Informally",
               "description": "Describe the skills learned informally (e.g., bicycle repair, tailoring at home)",

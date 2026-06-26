@@ -106,3 +106,10 @@ runtimeConfig:
   VITE_API_URLS: ""
   VITE_DEFAULT_API_URL: ""
   VITE_SHOW_INSTANCE_SELECTOR: "false"
+  # Brand skin over the network (UI selects it at runtime). Empty = standard
+  # dots; one UI build serves all brands. Examples: "upsdm", "onetac".
+  VITE_BRAND_NAME: ""
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

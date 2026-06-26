@@ -109,6 +109,7 @@
               }
             },
             "languages": {
+              "vectorize": true,
               "type": "array",
               "title": "Languages",
               "description": "Languages you can support.",
@@ -125,6 +126,7 @@
               }
             },
             "pricing": {
+              "vectorize": true,
               "type": "string",
               "title": "Pricing",
               "description": "Your typical price range.",

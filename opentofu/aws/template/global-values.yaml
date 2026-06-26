@@ -7,9 +7,29 @@
 _building_block: &building_block "purple-dots"
 _environment:    &environment    "dev"
 
-# ── Hostnames ─────────────────────────────────────────────────────────────────
-_signals_ui_host: &signals_ui_host "purpledots.servehalflife.com"
-_aggregator_host: &aggregator_host "aggregator.servehalflife.com"
+
+_signals_public_hosts: &signals_public_hosts
+  - "example.domain.com"
+  - "example.domain.com"
+# For multi-domain host-routing set: "host1.com=network/domain;host2.com=network/domain"
+# Leave empty for single-host mode (hostBindings will be omitted entirely).
+_signals_host_bindings: &signals_host_bindings ""
+
+# Network this deployment serves — SHARED by signals (NETWORK_CONFIG_LOCAL_FILE,
+# schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
+# served_domains lists the per-domain bindings the signals API serves (roles
+# differ per network, so set it explicitly).
+_network: &network "blue_dot"
+
+# Brand skin over the network — SHARED by signals (VITE_BRAND_NAME) AND
+# aggregator (aggregatorBrand). A brand is a UI/config skin over a network; it
+# does NOT change the upstream network identity (driven by _network above).
+# Leave empty for the standard dots. Examples: "upsdm" (over blue_dot),
+# "onetac" (over orange_dot). Switching brand = change this one value + redeploy.
+_brand: &brand ""
+_signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
+_aggregator_host: &aggregator_host "aggregator.domain.com"
+_grafana_host:    &grafana_host    "monitoring.domain.com"
 
 # ── AWS ───────────────────────────────────────────────────────────────────────
 _cloud_storage_region: &cloud_storage_region "ap-south-1"
@@ -47,6 +67,29 @@ global:
 
   signals_ui_host: *signals_ui_host
   aggregator_host: *aggregator_host
+
+  # ── Aggregator Helm config ─────────────────────────────────────────────────
+  # These keys match the aggregator chart's schema at root level so global-values.yaml
+  # can be passed directly via -f without any transformation.
+  publicHost:         *aggregator_host
+  aggregatorNetwork:  *network
+  aggregatorBrand:    *brand
+  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
+  signalstack:
+    # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
+    # Required before first aggregator login — SIGNALSTACK_ORG_NOT_REGISTERED otherwise.
+    actingOrgId: ""
+  dataPlatform:
+    namespace:       common-services
+    postgresService: common-services-postgresql
+    redisService:    common-services-redis-master
+
+  # ── API rate limiting (Kong) — shared by the signals/aggregator/search charts'
+  # per-API rate-limit config AND the monitoring per-API alert thresholds.
+  # Edit _api_rate_limit_enabled / _api_rate_limit_per_minute above.
+  apiRateLimit:
+    enabled:       *api_rate_limit_enabled
+    defaultMinute: *api_rate_limit_per_minute
 
   cloud_storage_region: *cloud_storage_region
 
@@ -134,3 +177,149 @@ global:
     - authenticator
     - controllerManager
     - scheduler
+
+prometheus:
+  grafana:
+    grafana.ini:
+      server:
+        domain: *grafana_host
+    ingress:
+      hosts:
+        - *grafana_host
+      tls:
+        - secretName: grafana-tls
+          hosts:
+            - *grafana_host
+
+# ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
+# smtp_password must be a Gmail App Password:
+#   Google Account → Security → 2-Step Verification → App passwords
+alerting:
+  email:
+    enabled: false
+    smtpHost: "smtp.gmail.com:587"  # host:port combined — keep in sync with _smtp_host/_smtp_port
+    smtpFrom: *smtp_user
+    smtpAuthUsername: *smtp_user
+    smtpAuthPassword: *smtp_password
+    to: *alert_email
+  discord:
+    # Set enabled: true and replace webhooks to activate Discord notifications.
+    # Create one webhook per channel: Channel Settings → Integrations → Webhooks.
+    enabled: false
+    criticalWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+    warningWebhook:  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+    infoWebhook:     "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+
+# =============================================================================
+# Aggregator chart config (non-sensitive, passed directly via -f global-values.yaml)
+# Keys match the aggregator chart's schema so no transformation is needed.
+# =============================================================================
+
+aggregator-api:
+  adminEmails: *aggregator_admin_emails
+
+mail:
+  provider: smtp  # smtp | ses
+  smtp:
+    host: *smtp_host
+    port: *smtp_port
+    from: *smtp_user
+    fromDisplay: *smtp_from_display
+    secure: false
+    starttls: true
+    auth: true
+
+keycloak:
+  msg91TemplateId: *msg91_template_id
+
+# =============================================================================
+# Signals chart config (non-sensitive, passed directly via -f global-values.yaml)
+# Keys match the signals chart's schema so no transformation is needed.
+# Computed values (API_DOMAIN, ALLOWED_ORIGINS, NETWORK_CONFIG_LOCAL_FILE) are
+# in global-cloud-values.yaml (require HCL list indexing / join).
+# =============================================================================
+
+api:
+  secrets:
+    create: true
+    existingSecret: dpg-api-secrets
+    notificationKeyId: "dpg-api-client"
+  config:
+    NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
+    SERVED_DOMAINS: *signals_served_domains
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  schemas:
+    networks:
+      - *network
+
+ui:
+  apiUpstream: "http://signals-api:2742"
+  uiVariant: "signals"
+  # hostBindings is conditionally set in global-cloud-values.yaml — only emitted
+  # when signals_host_bindings is non-empty, to avoid nginx conflicting parameter error.
+  runtimeConfig:
+    VITE_DEFAULT_VIEW_MODE: "map"
+    VITE_MAP_PROVIDER: "google-maps"
+    VITE_GOOGLE_MAPS_API_KEY: *signals_google_maps_api_key
+    VITE_ACTION_POLL_INTERVAL_MS: "30000"
+    VITE_NETWORK_NAME: *network
+    VITE_BRAND_NAME: *brand
+    VITE_ANALYTICS_GA_ID: ""
+    VITE_MAP_DEFAULT_CENTER: "" # update the lat,long if any specific area has to be focused on maps.
+    VITE_MAP_DEFAULT_ZOOM: "5"
+  service:
+    port: 80
+    targetPort: 80
+
+notification-service:
+  secrets:
+    create: true
+    existingSecret: ""
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  internalSecrets:
+    create: true
+    existingSecret: ""
+    fileName: internal-secrets.json
+    mountPath: /app/config
+
+match-score:
+  secrets:
+    create: true
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  configFiles:
+    create: true
+    aiProvidersFileName: ai.providers.local.json
+    aiProvidersJson: |
+      {
+        "providers": {
+          "openai": {
+            "apiKey": "REPLACE_WITH_OPENAI_API_KEY"
+          },
+          "gemini": {
+            "apiKey": "REPLACE_WITH_GEMINI_API_KEY"
+          }
+        }
+      }
+
+search:
+  # In-cluster Postgres by default. The opentofu RDS overlay
+  # (global-cloud-values.yaml) overrides search.postgres.host with the managed
+  # endpoint when RDS is provisioned (postgres_host non-empty).
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+    port: 5432
+  secrets:
+    create: true
+    existingSecret: dpg-search-secrets
+    data:
+      POSTGRES_USER: "dpg"
+      POSTGRES_DB: "dpg"
+      EMBEDDING_API_KEY: ""
+
+rdsRelay:
+  enabled: false
