@@ -332,16 +332,6 @@ dbExtensions:
     - postgis
 
 postgresql:
-  enabled: true
-  database: dpg
-  list:
-    - pgcrypto
-    - cube
-    - earthdistance
-    - vector
-    - postgis
-
-postgresql:
   # DISABLED — Postgres migrated to AWS RDS (managed). Block kept for reference /
   # rollback; the bootstrap Job (above) now owns role/database/extension creation.
   enabled: false
