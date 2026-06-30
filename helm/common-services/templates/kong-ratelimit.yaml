@@ -4,8 +4,10 @@ any Ingress in any namespace via  konghq.com/plugins: <tier>).
 
 policy: redis  → counters live in the shared common-services Redis, so the
 configured limit stays correct regardless of how many Kong proxy replicas run.
-limit_by: ip   → key on the client IP (Kong sees the real client because the
-proxy sets real_ip_header / trusted_ips — see the kong.env block in values).
+limit_by: ip   → key on the client IP. Kong takes it from the PROXY-protocol
+header the L4 ELB prepends (kong.env real_ip_header: proxy_protocol + trusted_ips
+scoped to the VPC), NOT from a client-settable X-Forwarded-For header — which is
+what makes limit_by: ip unspoofable behind the load balancer.
 fault_tolerant → if Redis is briefly unreachable, fail OPEN (serve traffic)
 rather than reject every request.
 

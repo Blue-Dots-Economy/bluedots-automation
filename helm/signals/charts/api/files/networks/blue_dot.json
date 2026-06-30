@@ -16,12 +16,10 @@
         "profile_1.0": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "title": "Job Seeker Profile 1.0",
-          "display_name_field": "name",
           "type": "object",
           "additionalProperties": false,
           "required": [
             "name",
-            "gender",
             "location",
             "age",
             "phone"
@@ -30,7 +28,8 @@
             "name": {
               "type": "string",
               "title": "Full Name",
-              "minLength": 1
+              "minLength": 1,
+              "private": true
             },
             "gender": {
               "type": "string",
@@ -40,12 +39,14 @@
             "location": {
               "type": "string",
               "title": "Location",
-              "location": "single"
+              "location": "primary",
+              "private": true
             },
             "phone": {
               "type": "string",
               "title": "Mobile Number",
-              "minimum": 10
+              "minimum": 10,
+              "private": true
             },
             "age": {
               "type": "integer",
@@ -77,17 +78,12 @@
                 "10-15 Years",
                 "15+ Years",
                 "Other"
-              ]
-            },
-            "highestQualificationOrSkill": {
-              "type": "string",
-              "title": "Highest Qualification / Skill",
-              "enum": [
-                "School",
-                "College",
-                "ITI / Other Vocational Trainings",
-                "Certification / Learned on the job"
-              ]
+              ],
+               "x-show-if": {
+                "workExperience": [
+                  "Worked before", "Returning after a break"
+                ]
+              }
             },
             "natureOfJobsInterestedIn": {
               "vectorize": true,
@@ -103,7 +99,9 @@
             "nameOfJobRolesInterestedIn": {
               "type": "string",
               "title": "Job Roles Interested In",
-              "minLength": 1
+              "minLength": 1,
+              "vectorize": true,
+              "vector_weight": 2
             },
             "otherHelpNeeded": {
               "vectorize": true,
@@ -630,6 +628,7 @@
               "type": "string",
               "title": "Certification Details",
               "description": "Please describe your certification or skills learned informally",
+              "vectorize": true,
               "x-show-if": {
                 "educationCategory": [
                   "Certification",
@@ -640,39 +639,13 @@
             "itiInstitute": {
               "type": "string",
               "title": "College / Institute Name",
-              "description": "Select your college or institute from the dropdown list"
-            },
-            "workExperienceYears": {
-              "type": "string",
-              "title": "Work Experience (Years)",
-              "description": "Select your years of work experience",
-              "enum": [
-                "0",
-                "< 1 Year",
-                "1 Year",
-                "2 Years",
-                "3 Years",
-                "3-5 Years",
-                "5-10 Years",
-                "10-15 Years",
-                "15+ Years"
-              ],
-              "enumNames": [
-                "0",
-                "< 1 Year",
-                "1 Year",
-                "2 Years",
-                "3 Years",
-                "3-5 Years",
-                "5-10 Years",
-                "10-15 Years",
-                "15+ Years"
-              ]
+              "description": "Please specify your college or institute name"
             },
             "nameOfLastRoleHeld": {
               "type": "string",
               "title": "Name of last role held",
-              "description": "Enter the name of your last role"
+              "description": "Enter the name of your last role",
+              "vectorize": true
             },
             "languageSpoken": {
               "type": "array",
@@ -742,7 +715,7 @@
       "card": {
         "title_field": "name",
         "avatar_from": "name",
-        "default_fields": ["location", "natureOfJobsInterestedIn", "highestQualificationOrSkill", "workExperience"]
+        "default_fields": ["location", "natureOfJobsInterestedIn", "educationCategory", "workExperience"]
       },
       "dashboard_tiles": {
         "profile": [
@@ -779,7 +752,6 @@
             "jobProviderLocation",
             "hiringManagerName",
             "hiringManagerPhoneNumber",
-            "hiringManagerEmail",
             "positions",
             "natureOfJob"
           ],
@@ -787,11 +759,13 @@
             "jobProviderName": {
               "type": "string",
               "title": "Company Name",
-              "minLength": 1
+              "minLength": 1,
+              "vectorize": true
             },
             "jobProviderLocation": {
               "type": "string",
-              "title": "Job Location"
+              "title": "Job Location",
+              "location": "primary"
             },
             "hiringManagerName": {
               "type": "string",
@@ -809,7 +783,9 @@
             "role": {
               "type": "string",
               "title": "Role",
-              "minLength": 1
+              "minLength": 1,
+              "vectorize": true,
+              "vector_weight": 2
             },
             "positions": {
               "type": "integer",
@@ -872,10 +848,11 @@
                 "School",
                 "College",
                 "ITI",
+                "Polytechnic/Diploma",
                 "Other Vocational Training",
                 "Certifications",
-                "None"
-              ]
+                "Learned Informally"
+            ]
             },
             "workExperienceYears": {
               "type": "string",
@@ -894,14 +871,16 @@
             },
             "lastRoleHeld": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "vectorize": true
             },
             "title": {
               "type": "string",
               "title": "Job Title",
               "description": "Job title (editable)",
               "pattern": "^\\s*\\S+\\s*$",
-              "minLength": 1
+              "minLength": 1,
+              "vectorize": true
             },
             "minQualificationSchool": {
               "vectorize": true,
@@ -1226,19 +1205,18 @@
   ],
   "instances": [
     {
-      "domain_id": "seeker",
-      "instance_name": "Blue Dot Seeker Localhost",
+      "instance_name": "Blue Dot Seeker Local",
       "instance_url": "__PUBLIC_API_URL__",
-      "custom_item_schema_urls": {}
+      "custom_item_schema_urls": {},
+      "domain_id": "seeker"
     },
     {
-      "domain_id": "provider",
-      "instance_name": "Blue Dot Provider Localhost",
+      "instance_name": "Blue Dot Provider Local",
       "instance_url": "__PUBLIC_API_URL__",
-      "custom_item_schema_urls": {}
+      "custom_item_schema_urls": {},
+      "domain_id": "provider"
     }
   ],
-  "cross_network_origins": [],
   "actions": {
     "apply": {
       "description": "Lets a seeker and provider to invite each other.",
@@ -1253,30 +1231,8 @@
             "title": "Job Application Requirement",
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "role",
-              "workExperience",
-              "age"
-            ],
-            "properties": {
-              "role": {
-                "type": "string",
-                "minLength": 1
-              },
-              "age": {
-                "type": "integer",
-                "minimum": 14,
-                "maximum": 65
-              },
-              "workExperience": {
-                "type": "string",
-                "enum": [
-                  "Fresher",
-                  "Worked before",
-                  "Returning after a break"
-                ]
-              }
-            }
+            "required": [],
+            "properties": {}
           },
           "event_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",

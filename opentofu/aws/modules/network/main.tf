@@ -15,13 +15,52 @@ locals {
   public_subnets  = { for k, v in var.subnet_config : k => v if v.type == "public" }
   private_subnets = { for k, v in var.subnet_config : k => v if v.type == "private" }
 
-  # Every subnet is sized to a /24. The bits added to the VPC prefix are derived
-  # from the VPC size rather than hard-coded, so the result is always /24:
-  #   /16 → +8 (netnum is the 3rd octet: 101 → 10.0.101.0/24)
-  #   /22 → +2 (netnum is the /24 index 0..3: 0 → 10.0.0.0/24, 1 → 10.0.1.0/24)
-  #   /23 → +1 (netnum 0..1)
-  # cidr_netnum must therefore be in range 0 .. (2^subnet_newbits - 1).
-  subnet_newbits = 24 - tonumber(split("/", var.vpc_cidr)[1])
+  # VPC prefix length (e.g. 22 for 10.0.0.0/22).
+  vpc_prefix = tonumber(split("/", var.vpc_cidr)[1])
+
+  # Per-subnet CIDR. Each subnet declares its own prefix_length (default /24); the
+  # bits added to the VPC prefix are derived from it, so subnets of different sizes
+  # can coexist in one VPC:
+  #   /24 in a /22 → +2 newbits, cidr_netnum is the /24 index (0..3)
+  #   /28 in a /22 → +6 newbits, cidr_netnum is the /28 index (0..63)
+  # NOTE: cidr_netnum indexes blocks OF THE SUBNET'S OWN SIZE, so a /28 at index 0
+  # overlaps a /24 at index 0. The overlap precondition below guards against this.
+  subnet_cidrs = {
+    for k, v in var.subnet_config :
+    k => cidrsubnet(var.vpc_cidr, v.prefix_length - local.vpc_prefix, v.cidr_netnum)
+  }
+
+  # Numeric [start, start+size) range of each subnet block, for overlap detection.
+  # IPv4 dotted-quad → 32-bit integer; size = address count for the subnet's prefix.
+  subnet_ranges = {
+    for k, c in local.subnet_cidrs :
+    k => {
+      start = (
+        tonumber(split(".", cidrhost(c, 0))[0]) * 16777216 +
+        tonumber(split(".", cidrhost(c, 0))[1]) * 65536 +
+        tonumber(split(".", cidrhost(c, 0))[2]) * 256 +
+        tonumber(split(".", cidrhost(c, 0))[3])
+      )
+      size = pow(2, 32 - tonumber(split("/", c)[1]))
+    }
+  }
+
+  # Unordered subnet pairs whose ranges intersect. Must be empty (see precondition
+  # on aws_subnet.this). Replaces the old cidr_netnum-uniqueness check, which could
+  # not detect overlaps between subnets of different prefix lengths.
+  # Enumerate with numeric indices (i < j) — OpenTofu's "<" is numeric-only, so we
+  # can't compare key strings directly. i < j gives unique unordered pairs and skips
+  # self-pairs in one shot.
+  subnet_keys = keys(var.subnet_config)
+  subnet_overlaps = flatten([
+    for i, ka in local.subnet_keys : [
+      for j, kb in local.subnet_keys :
+      "${ka} <-> ${kb}"
+      if i < j &&
+      local.subnet_ranges[ka].start < local.subnet_ranges[kb].start + local.subnet_ranges[kb].size &&
+      local.subnet_ranges[kb].start < local.subnet_ranges[ka].start + local.subnet_ranges[ka].size
+    ]
+  ])
 
   # NAT Gateway is created only when private subnets exist, nat_gateway_enabled is true,
   # and at least one public subnet exists to host it.
@@ -70,7 +109,7 @@ resource "aws_subnet" "this" {
   for_each = var.create_network ? var.subnet_config : {}
 
   vpc_id                  = aws_vpc.vpc[0].id
-  cidr_block              = cidrsubnet(aws_vpc.vpc[0].cidr_block, local.subnet_newbits, each.value.cidr_netnum)
+  cidr_block              = local.subnet_cidrs[each.key]
   availability_zone       = "${var.aws_region}${each.value.availability_zone}"
   map_public_ip_on_launch = each.value.type == "public"
 
@@ -85,6 +124,13 @@ resource "aws_subnet" "this" {
       "kubernetes.io/cluster/${local.environment_name}-cluster" = "shared"
     }
   )
+
+  lifecycle {
+    precondition {
+      condition     = length(local.subnet_overlaps) == 0
+      error_message = "subnet_config has overlapping CIDR blocks: ${join(", ", local.subnet_overlaps)}. Adjust cidr_netnum / prefix_length so the blocks do not intersect."
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------

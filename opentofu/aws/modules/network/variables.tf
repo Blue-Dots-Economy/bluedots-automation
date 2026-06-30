@@ -27,19 +27,23 @@ variable "vpc_cidr" {
 
 variable "subnet_config" {
   description = <<-EOT
-    Map of logical subnet name to configuration. Every subnet is sized to a /24;
-    the CIDR is derived as:
-      cidrsubnet(vpc_cidr, 24 - vpc_prefix, cidr_netnum)
+    Map of logical subnet name to configuration. Each subnet may declare its own
+    prefix_length (default /24); the CIDR is derived as:
+      cidrsubnet(vpc_cidr, prefix_length - vpc_prefix, cidr_netnum)
 
-    cidr_netnum is the /24 index within the VPC and must be in 0 .. (2^(24-vpc_prefix) - 1):
-      /16 VPC -> netnum is the 3rd octet, e.g. 101 -> 10.0.101.0/24 (range 0..255)
-      /22 VPC -> netnum 0..3, e.g. 0 -> 10.0.0.0/24, 1 -> 10.0.1.0/24
-      /23 VPC -> netnum 0..1
+    IMPORTANT: cidr_netnum indexes blocks OF THE SUBNET'S OWN SIZE, so the index
+    space changes with prefix_length:
+      /24 in a /22 VPC -> netnum 0..3,   e.g. 0 -> 10.0.0.0/24
+      /28 in a /22 VPC -> netnum 0..63,  e.g. 32 -> 10.0.2.0/28, 33 -> 10.0.2.16/28
+    A /28 at index 0 therefore overlaps a /24 at index 0. The module computes each
+    subnet's real CIDR and fails (precondition in main.tf) if any two intersect, so
+    you don't have to track this by hand — but pick non-overlapping blocks.
 
     Fields:
       type              - "public" or "private" (required)
       availability_zone - AZ suffix, e.g. "a", "b", "c" (required)
-      cidr_netnum       - unique /24 index, see range above (required)
+      cidr_netnum       - block index for this subnet's prefix_length (required)
+      prefix_length     - subnet size, 16..28 (optional, default 24)
 
     Public subnets  -> Internet Gateway route, map_public_ip_on_launch = true.
     Private subnets -> NAT Gateway route (when nat_gateway_enabled = true), no public IPs.
@@ -48,10 +52,11 @@ variable "subnet_config" {
     type              = string
     availability_zone = string
     cidr_netnum       = number
+    prefix_length     = optional(number, 24)
   }))
   default = {
-    public-a = { type = "public", availability_zone = "a", cidr_netnum = 101 }
-    public-b = { type = "public", availability_zone = "b", cidr_netnum = 102 }
+    public-a = { type = "public", availability_zone = "a", cidr_netnum = 0 }
+    public-b = { type = "public", availability_zone = "b", cidr_netnum = 1 }
   }
 
   validation {
@@ -61,11 +66,13 @@ variable "subnet_config" {
     error_message = "Each subnet 'type' must be either \"public\" or \"private\"."
   }
 
+  # Overlap is validated in main.tf (needs vpc_cidr, which validation blocks can't
+  # reference). Here we only bound prefix_length to AWS's allowed subnet sizes.
   validation {
-    condition = length(var.subnet_config) == length(distinct([
-      for k, v in var.subnet_config : v.cidr_netnum
-    ]))
-    error_message = "Each subnet must have a unique cidr_netnum to avoid CIDR conflicts."
+    condition = alltrue([
+      for k, v in var.subnet_config : v.prefix_length >= 16 && v.prefix_length <= 28
+    ])
+    error_message = "Each subnet 'prefix_length' must be between 16 and 28 (AWS subnet size limits)."
   }
 }
 

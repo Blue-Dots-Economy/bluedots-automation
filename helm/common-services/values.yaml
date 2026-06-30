@@ -60,6 +60,11 @@ ingress-nginx:
 kong:
   enabled: true
 
+  # Run 2 Kong proxy replicas for HA (no single point of failure; rolling
+  # restarts stay available). Rate-limit counters stay correct across replicas
+  # because they live in shared Redis (policy: redis), not pod-local memory.
+  replicaCount: 2
+
   # DB-less mode + parity with the proxy tuning ingress-nginx does today.
   # (deep-merged onto the subchart's env defaults — database:"off" etc.)
   env:
@@ -72,10 +77,19 @@ kong:
     nginx_proxy_proxy_buffer_size: "32k"
     nginx_proxy_proxy_buffers: "4 32k"          # 4 x 32k = 128k total
     nginx_proxy_proxy_busy_buffers_size: "64k"  # <= 128k - 32k = 96k  ✓
-    # Honor X-Forwarded-For from the AWS LB so rate limiting (Phase 2) keys on
-    # the real client IP, not the load balancer's address.
-    trusted_ips: "0.0.0.0/0,::/0"
-    real_ip_header: "X-Forwarded-For"
+    # ── Real client IP (SECURITY — do NOT widen trusted_ips back to 0.0.0.0/0) ─
+    # The LB is an AWS Classic ELB at L4 (TCP passthrough — Kong terminates TLS).
+    # An L4 LB does NOT sanitise X-Forwarded-For, so trusting XFF from any source
+    # (the old `trusted_ips: 0.0.0.0/0` + `real_ip_header: XFF`) let a client forge
+    # its IP by rotating the X-Forwarded-For header per request — every request
+    # looked like a new IP and `limit_by: ip` never counted past 1 (rate limiter
+    # fully bypassable). Take the client IP from the PROXY-protocol header the ELB
+    # prepends at the connection layer (not a client-settable HTTP header), and
+    # trust it ONLY from the in-VPC LB. The ELB sends PROXY protocol via the
+    # aws-load-balancer-proxy-protocol annotation on the proxy Service below, and
+    # the proxy listeners enable `proxy_protocol` (proxy.http/tls.parameters).
+    real_ip_header: "proxy_protocol"
+    trusted_ips: "10.0.0.0/16"   # VPC CIDR — the ELB's source range; NOT 0.0.0.0/0
 
   ingressController:
     enabled: true
@@ -85,28 +99,38 @@ kong:
     # Ingress objects with no explicit class are picked up by Kong.
     ingressClassAnnotations:
       ingressclass.kubernetes.io/is-default-class: "true"
+    # Enable the RewriteURIs feature gate so the `konghq.com/rewrite` annotation
+    # is honored. REQUIRED by the per-API rate-limit ingresses on the strip-path
+    # services (aggregator-api /backend, signals-search /signals-search): they use
+    # a regex path + `konghq.com/rewrite: /$1` to strip ONLY the base prefix.
+    # Without this gate KIC rejects those ingresses (KongConfigurationTranslationFailed)
+    # AND drops the catch-all route for the same Service — taking /backend down.
+    # (env keys map to CONTROLLER_<KEY>, i.e. CONTROLLER_FEATURE_GATES.)
+    env:
+      feature_gates: "RewriteURIs=true"
 
   proxy:
     enabled: true
     type: LoadBalancer
-    # Preserve the real client IP through the AWS LB. With the default "Cluster"
-    # policy, kube-proxy SNATs cross-node traffic to the node IP, so Kong sees
-    # node IPs and rate-limiting (limit_by: ip) keys on the node — splitting the
-    # limit across nodes (effective limit = configured x node count). "Local"
-    # removes that cross-node SNAT so the counter is a single coherent bucket.
-    externalTrafficPolicy: Local
-    # NLB / static-IP / cross-zone annotations go here if needed.
-    annotations: {}
-    # ── FOLLOW-UP: true per-client rate limiting ──────────────────────────────
-    # This is an in-tree Classic ELB (TCP mode): it opens its own connection to
-    # the node, so Kong still sees the ELB's IP, not the real client IP. With
-    # externalTrafficPolicy: Local the limit is now a single coherent bucket, but
-    # keyed on the ELB IP — i.e. effectively GLOBAL, not per-client. For genuine
-    # per-client limiting, hand Kong the client IP via Proxy Protocol v2:
-    #   annotations:
-    #     service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"
-    #   + Kong proxy listener `proxy_protocol` and env real_ip_header: proxy_protocol
-    # (or migrate this Service to an NLB with client-IP preservation).
+    annotations:
+      # Classic ELB at L4: prepend PROXY protocol (v1) on all listeners so Kong
+      # receives the real client IP at the connection layer — the secure source
+      # for limit_by: ip (a client cannot forge it, unlike X-Forwarded-For).
+      # Pairs with env.real_ip_header: proxy_protocol + the listener parameters
+      # below — the annotation and the listeners MUST change together, or Kong
+      # expects a PROXY header the LB isn't sending (or vice versa) and all
+      # proxied requests fail.
+      service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"
+    # Enable proxy_protocol on the proxy listeners so Kong parses the PROXY
+    # header the ELB sends (gives the true client IP through any SNAT, so no
+    # externalTrafficPolicy: Local needed).
+    http:
+      parameters:
+        - "proxy_protocol"
+    tls:
+      parameters:
+        - "http2"
+        - "proxy_protocol"
 
   # Inject the shared Redis password into the proxy container as REDIS_PASSWORD,
   # sourced from the data-redis Secret. Kong's built-in `env` vault resolves it
@@ -136,12 +160,14 @@ kong:
   # upgrade` and every route referencing the tier updates — no per-Ingress edit.
   # Tune per environment from global-values.yaml (Phase 6).
   rateLimitTiers:
-    rl-agg-web:      { minute: 120 }   # / (web BFF/UI)
-    rl-agg-api:      { minute: 600 }   # /backend (api)
-    rl-agg-auth:     { minute: 20 }    # /auth (keycloak) — tight
+    rl-agg-web:      { minute: 3000 }    # / (web BFF/UI) — SPA loads burst many requests, so high
+    rl-agg-api:      { minute: 10000 }   # /backend (api) — loose catch-all; per-API limits do the real throttling
+    rl-agg-auth:     { minute: 600 }     # /auth (keycloak) — covers ALL of /auth (JWKS/token/login); brute-force must target only the login/OTP submit endpoint (TODO), not all of /auth
     # signals
-    rl-signals-api:  { minute: 600 }   # /api
-    rl-signals-ui:   { minute: 120 }   # /
+    rl-signals-api:  { minute: 10000 }   # /api — loose catch-all; per-API limits do the real throttling
+    rl-signals-ui:   { minute: 3000 }    # / — SPA loads burst many requests, so high
+    # monitoring
+    rl-monitoring:   { minute: 3000 }     # /monitoring (Grafana) — dashboards burst many panel queries
 
   # Shared Redis backing the counters (policy: redis) so the limit stays correct
   # across Kong replicas. host/port point at the common-services Redis; the
@@ -283,10 +309,42 @@ postgresBootstrap:
 #   - `postgres` superuser created by Bitnami initdb using postgresPassword
 #   - `auth.username/database` adds the `aggregator` user + DB out of the box
 #   - 00-bootstrap.sh creates the `dpg` user, the `dpg` + `keycloak`
-#     databases, and pgcrypto/cube/earthdistance extensions for `dpg`
+#     databases, and the pgcrypto/cube/earthdistance/vector/postgis extensions
+#     for `dpg` (fresh installs only; see dbExtensions for the catch-up hook)
 # -----------------------------------------------------------------------------
+# Ensure required extensions exist in the dpg DB on every deploy (post-install/
+# post-upgrade hook). initdb.scripts below only run on a fresh PGDATA, so a
+# cluster initialized before vector/postgis were added never gains them and a
+# helm upgrade won't re-run initdb. This hook is the idempotent catch-up that
+# repairs already-provisioned clusters; keep its list in sync with the initdb
+# CREATE EXTENSION block.
+# SUPERSEDED by postgresBootstrap (above), which creates extensions per-database on
+# RDS as the master. This legacy catch-up job is hardcoded to the in-cluster host
+# ({release}-postgresql) and cannot reach RDS — keep disabled. Left for reference.
+dbExtensions:
+  enabled: false
+  database: dpg
+  list:
+    - pgcrypto
+    - cube
+    - earthdistance
+    - vector
+    - postgis
+
 postgresql:
   enabled: true
+  database: dpg
+  list:
+    - pgcrypto
+    - cube
+    - earthdistance
+    - vector
+    - postgis
+
+postgresql:
+  # DISABLED — Postgres migrated to AWS RDS (managed). Block kept for reference /
+  # rollback; the bootstrap Job (above) now owns role/database/extension creation.
+  enabled: false
   image:
     registry: docker.io
     repository: bitnamilegacy/postgresql
@@ -331,6 +389,8 @@ postgresql:
             CREATE EXTENSION IF NOT EXISTS pgcrypto;
             CREATE EXTENSION IF NOT EXISTS cube;
             CREATE EXTENSION IF NOT EXISTS earthdistance;
+            CREATE EXTENSION IF NOT EXISTS vector;
+            CREATE EXTENSION IF NOT EXISTS postgis;
           SQL
           echo "[common-services] bootstrap complete"
     resources:
@@ -381,3 +441,13 @@ networkPolicy:
   allowedFromNamespaces:
     - aggregator-dpg
     - dpg
+
+# ── metrics-server ────────────────────────────────────────────────────────────
+# Required for HPA (kubectl top also uses this).
+# On EKS the kubelet certificate is self-signed — kubelet-insecure-tls is
+# needed or the metrics-server pods will fail with x509 errors.
+metrics-server:
+  enabled: true
+  args:
+    - --kubelet-insecure-tls          # required on EKS (self-signed kubelet cert)
+    - --kubelet-preferred-address-types=InternalIP

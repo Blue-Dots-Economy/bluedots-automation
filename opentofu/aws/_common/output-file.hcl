@@ -4,25 +4,28 @@ locals {
   building_block         = local.global_vars.global.building_block
   cloud_storage_region   = local.global_vars.global.cloud_storage_region
   cloud_storage_provider = try(local.global_vars.global.cloud_storage_provider, "aws")
-  signals_host           = try(local.global_vars.global.signals_host, "api.purpledots.servehalflife.com")
-  signals_ui_host        = try(local.global_vars.global.signals_ui_host, "purpledots.servehalflife.com")
-  aggregator_host        = try(local.global_vars.global.aggregator_host, "aggregator.servehalflife.com")
+
+  # ── Signals hosts (host-routed served binding) ─────────────────────────────
+  # signals_public_hosts is the SOLE source of the served hostnames (UI + /api).
+  # List one host for a single domain, several for multi-domain — no legacy
+  # single-host fallback. host_bindings maps each host to "<network>/<domain>".
+  signals_public_hosts    = local.global_vars.global.signals_public_hosts
+  signals_host_bindings   = try(local.global_vars.global.signals_host_bindings, "")
+  # Network served by this deployment — shared by signals (NETWORK_CONFIG_LOCAL_FILE,
+  # schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
+  network                 = try(local.global_vars.global.network, "orange_dot")
+  # CORS origins: localhost dev + https://<each served host>.
+  signals_allowed_origins = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
   signals_google_maps_api_key  = try(local.global_vars.global.signals_google_maps_api_key, "")
   notification_gmail_user      = try(local.global_vars.global.notification_gmail_user, "")
   notification_gmail_pass      = try(local.global_vars.global.notification_gmail_pass, "")
   notification_msg91_auth_key  = try(local.global_vars.global.notification_msg91_auth_key, "")
   notification_msg91_template_id = try(local.global_vars.global.notification_msg91_template_id, "")
 
-  aggregator_smtp_user          = try(local.global_vars.global.aggregator_smtp_user, "")
-  aggregator_smtp_password      = try(local.global_vars.global.aggregator_smtp_password, "")
-  aggregator_smtp_from          = try(local.global_vars.global.aggregator_smtp_from, "")
-  aggregator_admin_emails       = try(local.global_vars.global.aggregator_admin_emails, "")
-  aggregator_msg91_auth_key     = try(local.global_vars.global.aggregator_msg91_auth_key, "")
-  aggregator_msg91_template_id  = try(local.global_vars.global.aggregator_msg91_template_id, "")
+  aggregator_smtp_user      = try(local.global_vars.global.aggregator_smtp_user, "")
+  aggregator_smtp_password  = try(local.global_vars.global.aggregator_smtp_password, "")
+  aggregator_msg91_auth_key = try(local.global_vars.global.aggregator_msg91_auth_key, "")
 
-  monitoring_alert_email   = try(local.global_vars.global.monitoring_alert_email, "")
-  monitoring_smtp_from     = try(local.global_vars.global.monitoring_smtp_from, "")
-  monitoring_smtp_password = try(local.global_vars.global.monitoring_smtp_password, "")
 }
 
 terraform {
@@ -74,6 +77,14 @@ dependency "storage" {
   }
 }
 
+dependency "rds" {
+  config_path                            = "../rds"
+  mock_outputs_merge_strategy_with_state = "shallow"
+  mock_outputs = {
+    db_address = "dummy-postgres.cluster.ap-south-1.rds.amazonaws.com"
+  }
+}
+
 dependency "random_passwords" {
   config_path                            = "../random_passwords"
   mock_outputs_merge_strategy_with_state = "shallow"
@@ -107,9 +118,12 @@ inputs = {
   environment            = local.environment
   cloud_storage_provider = local.cloud_storage_provider
   cloud_storage_region   = local.cloud_storage_region
-  signals_host           = local.signals_host
-  signals_ui_host        = local.signals_ui_host
-  aggregator_host        = local.aggregator_host
+
+  # Signals computed config inputs
+  signals_public_hosts    = local.signals_public_hosts
+  signals_host_bindings   = local.signals_host_bindings
+  signals_network         = local.network
+  signals_allowed_origins = local.signals_allowed_origins
 
   # Network
   vpc_id                = dependency.network.outputs.vpc_id
@@ -135,6 +149,9 @@ inputs = {
   # Storage
   storage_bucket_public  = dependency.storage.outputs.storage_bucket_public == null ? "" : dependency.storage.outputs.storage_bucket_public
   storage_bucket_private = dependency.storage.outputs.storage_bucket_private == null ? "" : dependency.storage.outputs.storage_bucket_private
+
+  # RDS (managed Postgres) — endpoint hostname injected into all three chart overlays
+  postgres_host = dependency.rds.outputs.db_address
 
   # Random secrets
   random_string         = dependency.random_passwords.outputs.random_string
@@ -163,15 +180,9 @@ inputs = {
   notification_msg91_auth_key    = local.notification_msg91_auth_key
   notification_msg91_template_id = local.notification_msg91_template_id
 
-  aggregator_smtp_user         = local.aggregator_smtp_user
-  aggregator_smtp_password     = local.aggregator_smtp_password
-  aggregator_smtp_from         = local.aggregator_smtp_from
-  aggregator_admin_emails      = local.aggregator_admin_emails
-  aggregator_msg91_auth_key    = local.aggregator_msg91_auth_key
-  aggregator_msg91_template_id = local.aggregator_msg91_template_id
+  aggregator_smtp_user      = local.aggregator_smtp_user
+  aggregator_smtp_password  = local.aggregator_smtp_password
+  aggregator_msg91_auth_key = local.aggregator_msg91_auth_key
 
-  monitoring_grafana_password  = dependency.random_passwords.outputs.monitoring_grafana_password
-  monitoring_smtp_from         = local.monitoring_smtp_from
-  monitoring_smtp_password     = local.monitoring_smtp_password
-  monitoring_alert_email       = local.monitoring_alert_email
+  monitoring_grafana_password = dependency.random_passwords.outputs.monitoring_grafana_password
 }
