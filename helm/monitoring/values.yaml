@@ -44,8 +44,10 @@ prometheus:
     # that loads our ConfigMaps (grafana_dashboard label) stays enabled.
     defaultDashboardsEnabled: false
     # Override via overlay for install.sh deployments. Change for standalone use.
+    # Left blank so no literal default ships — the AWS path injects a random
+    # password via overlay; set this for standalone (non-install.sh) use.
     adminUser: admin
-    adminPassword: "admin@bluedots"
+    adminPassword: ""
 
     grafana.ini:
       server:
