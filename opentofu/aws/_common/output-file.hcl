@@ -81,7 +81,8 @@ dependency "rds" {
   config_path                            = "../rds"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    db_address = "dummy-postgres.cluster.ap-south-1.rds.amazonaws.com"
+    # RDS endpoint resolves to a real, reachable host instead of a dummy.
+    db_address = "common-services-postgresql.common-services.svc.cluster.local"
   }
 }
 
