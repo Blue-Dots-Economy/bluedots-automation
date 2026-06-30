@@ -1,9 +1,0 @@
-# Blue Dot network overlay.
-
-global:
-  aggregatorNetwork: blue_dot
-
-keycloak:
-  themesInit:
-    image: aggregator-kc-theme
-    tag: blue_dot-v1

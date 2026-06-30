@@ -32,8 +32,8 @@ global:
   keycloakRealm: aggregator
 
   # Active signalstack network. Drives the api/worker/web config-folder
-  # selection and the keycloak themes-init image tag. Override per
-  # release via -f values-purple.yaml (or values-blue.yaml).
+  # selection and the keycloak themes-init image tag. Set per environment
+  # via the _network anchor in opentofu/aws/<env>/global-values.yaml.
   aggregatorNetwork: purple_dot
 
   # Brand skin over the network (UI/config skin; does NOT change the upstream

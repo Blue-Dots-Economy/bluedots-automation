@@ -93,10 +93,9 @@ kubectl -n aggregator get pods,svc,ingress
 kubectl get certificate -n aggregator      # READY=True once ACME completes
 ```
 
-> **Brand overlays.** `values-blue.yaml` / `values-purple.yaml` are brand skins
-> over the network. Brand/network is normally driven from the `_brand` / `_network`
-> anchors in `global-values.yaml`; add a brand overlay with an extra `-f` only if
-> you need chart-level brand overrides beyond what the anchors cover.
+> **Brand / network.** The active network and brand skin are driven by the
+> `_network` / `_brand` anchors in `opentofu/aws/<env>/global-values.yaml` (which
+> also select the matching Keycloak theme image), not by per-brand overlay files.
 
 ## Quirks
 
@@ -139,7 +138,6 @@ bash install.sh destroy_aggregator      # helm uninstall + delete the aggregator
 |------|------|
 | `Chart.yaml` | Umbrella metadata + dependencies (`web`, `api`/`aggregator-api`, `worker`, `keycloak`) |
 | `values.yaml` | Chart defaults |
-| `values-blue.yaml` / `values-purple.yaml` | Brand-skin overlays |
 | `templates/secrets.yaml` | Aggregator Secret (skipped when an existing Secret is wired) |
 | `templates/configmap-global.yaml` | Shared env (PUBLIC_HOST, S3_*, MAIL_*, OIDC URLs) |
 | `templates/job-keycloak-init.yaml` | post-install/upgrade hook Job (idempotent admin REST) |
