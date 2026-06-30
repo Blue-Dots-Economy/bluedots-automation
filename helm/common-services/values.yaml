@@ -53,9 +53,9 @@ ingress-nginx:
 
 # ─── Kong Ingress Controller (DB-less) ───────────────────────────────────────
 # Vendored chart 3.2.0 (Kong Gateway 3.9 → rate-limiting uses nested config.redis).
-# PHASE 1: deploy ALONGSIDE ingress-nginx — Kong is NOT the default IngressClass
-# yet, so no existing Ingress routes through it until its className is flipped
-# (Phases 3-4). cert-manager issuer + nginx default stay as-is until Phase 5.
+# Kong is now the SOLE ingress controller: ingress-nginx is disabled (above), all
+# Ingress objects (signals, aggregator) and the cert-manager issuer use class
+# "kong", and Kong owns the cluster LoadBalancer.
 # Values under `kong:` are passed verbatim to the kong subchart.
 kong:
   enabled: true
@@ -323,16 +323,6 @@ postgresBootstrap:
 # ({release}-postgresql) and cannot reach RDS — keep disabled. Left for reference.
 dbExtensions:
   enabled: false
-  database: dpg
-  list:
-    - pgcrypto
-    - cube
-    - earthdistance
-    - vector
-    - postgis
-
-postgresql:
-  enabled: true
   database: dpg
   list:
     - pgcrypto
