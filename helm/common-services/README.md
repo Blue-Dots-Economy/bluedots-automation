@@ -1,80 +1,115 @@
-# platform
+# common-services (chart `platform`)
 
-Shared platform stack: **ingress-nginx + cert-manager + Let's Encrypt ClusterIssuer**. Install once per cluster, before any consumer chart (aggregator-dpg, signal-stack/dpg).
+Shared, cluster-wide platform stack. **Install once per cluster, before any app
+chart** (signals, aggregator) — they attach to the ingress, issuer, Postgres and
+Redis this chart owns.
+
+> Directory `common-services` · chart `name: platform` · release
+> `common-services` · namespace `common-services`.
 
 ## What it deploys
 
-| Component | Purpose | Subchart version |
-|-----------|---------|------------------|
-| `ingress-nginx` | LoadBalancer + ingress controller (class `nginx`) | 4.15.1 |
-| `cert-manager` | TLS cert issuance, with CRDs | v1.20.2 |
-| `ClusterIssuer` | Let's Encrypt production ACME (HTTP-01) | template in this chart |
+| Component | Purpose | Subchart |
+|-----------|---------|----------|
+| **Kong** (DB-less) | ingress controller + cluster-default `IngressClass kong`; rate limiting via `KongClusterPlugin` | `kong` 3.2.0 |
+| `cert-manager` | TLS cert issuance (+ CRDs) | `cert-manager` v1.20.2 |
+| `letsencrypt-prod` ClusterIssuer | Let's Encrypt production ACME (HTTP-01) | template in this chart |
+| **Postgres** | shared DB (admin + `dpg` + `aggregator` databases) | `postgresql` 18.6.6 |
+| **Redis** | shared cache / rate-limit counters | `redis` 19.6.4 |
+| `metrics-server` | resource metrics for HPA / `kubectl top` | `metrics-server` 3.12.1 |
 
-`ingress-nginx` watches Ingress resources cluster-wide. `cert-manager` ClusterIssuer is cluster-scoped. Both serve all consumer namespaces.
+`ingress-nginx` 4.15.1 is also vendored but **disabled** (`ingress-nginx.enabled:
+false`) — Kong is the active controller. When RDS is provisioned the in-cluster
+`postgresql` subchart is disabled and the charts point at the RDS endpoint
+(wired automatically via `global-cloud-values.yaml`).
 
-## Install
+## Prerequisites
+
+- `kubectl` current-context pointed at the target cluster, `helm` v3.12+.
+- The generated values files exist in the env dir: `global-credentials.yaml` +
+  `global-cloud-values.yaml` (run `bash install.sh create_tf_resources` first).
+- `gp3` must be the default StorageClass (Postgres/Redis PVCs bind to it) — the
+  deploy step applies it for you.
+- Kong CRDs must be applied — the deploy step applies them for you (Helm does
+  **not** install subchart CRDs, nor update CRDs on upgrade).
+
+## Deploy this chart only
+
+**Recommended — via `install.sh`** (applies gp3 + Kong CRDs, then helm):
 
 ```bash
-NAMESPACE=platform   # recommended; keeps CRDs + controller out of app namespaces.
-
-helm upgrade --install platform ./helmcharts/platform \
-  -n "$NAMESPACE" --create-namespace \
-  -f ./helmcharts/platform/values.yaml
+cd opentofu/aws/<env>          # e.g. opentofu/aws/dev
+bash install.sh deploy_common_services
 ```
 
-Wait for the controller pod and cert-manager pods to be Ready before installing consumer charts (otherwise their Ingress resources sit pending and ACME challenges fail to register).
+That runs, from the repo root, exactly:
 
 ```bash
-kubectl -n "$NAMESPACE" rollout status deploy/platform-ingress-nginx-controller --timeout=180s
-kubectl -n "$NAMESPACE" rollout status deploy/platform-cert-manager --timeout=180s
-kubectl get clusterissuer letsencrypt-prod   # READY=True
+ENV=opentofu/aws/<env>
+
+# 1. gp3 as default StorageClass (demote gp2)
+kubectl apply -f "$ENV/gp3-sc.yaml"
+
+# 2. Kong CRDs — server-side, idempotent (helm skips subchart/upgrade CRDs)
+kubectl apply --server-side -f helm/common-services/crds/
+
+# 3. the chart, with the layered values files (-f order = precedence)
+helm upgrade --install common-services helm/common-services \
+  -n common-services --create-namespace \
+  -f helm/global-resources.yaml \
+  -f "$ENV/global-images.yaml" \
+  -f "$ENV/global-values.yaml" \
+  -f "$ENV/global-cloud-values.yaml" \
+  -f "$ENV/global-credentials.yaml" \
+  --wait --timeout 5m
 ```
 
-## Consumer chart wiring
+Wait for Postgres + Redis to be Ready and PVCs Bound **before** deploying
+signals/aggregator:
 
-Consumer charts (aggregator-dpg, dpg) reference platform-installed resources by name:
-
-- `ingressClassName: nginx` on Ingress objects
-- `cert-manager.io/cluster-issuer: letsencrypt-prod` annotation on Ingress objects
-
-For aggregator-dpg, disable the bundled subcharts before deploy:
-
-```yaml
-ingress-nginx:
-  enabled: false
-cert-manager:
-  enabled: false
+```bash
+kubectl -n common-services get pods,pvc
+kubectl get clusterissuer letsencrypt-prod          # READY=True
+kubectl -n common-services get svc common-services-kong-proxy   # external LB hostname for DNS
 ```
 
-(The ClusterIssuer in aggregator's templates is gated on `cert-manager.enabled` and won't render either.)
+> **cert-manager ACME (v1.20.2) gotcha.** If certificates stay `READY=False`,
+> run `bash install.sh fix_acme_issuer_uri` (also run automatically at the end of
+> `deploy_all_services`) — it patches `status.acme.uri` and clears poisoned cert
+> chains. See the [Kong implementation plan](../../docs/kong-implementation-plan.md).
 
-For dpg umbrella (signal-stack), there are no bundled subcharts to disable — just point the Ingress at `letsencrypt-prod`.
+## App-chart wiring
 
-## Migration from aggregator-bundled to standalone
+App charts reference common-services-owned resources by name:
 
-If you currently have ingress-nginx + cert-manager installed via the aggregator-dpg release:
+- `ingressClassName: kong` on Ingress objects
+- `cert-manager.io/cluster-issuer: letsencrypt-prod` annotation for TLS
+- `konghq.com/plugins: <rl-auth|rl-api|rl-public>` to attach a rate-limit tier
+- Postgres at `common-services-postgresql.common-services.svc` (or the RDS host),
+  Redis at `common-services-redis-master.common-services.svc`
 
-1. Get the existing LB hostname; you'll need DNS to keep pointing here after migration if the new install lands on the same LB.
-2. **The LB gets recreated** when ingress-nginx switches releases. Plan for ~3-5 min outage on all ingress-routed traffic + DNS update.
-3. Disable the subcharts in aggregator values:
-   ```yaml
-   ingress-nginx:
-     enabled: false
-   cert-manager:
-     enabled: false
-   ingress:
-     clusterIssuer: ""   # so aggregator stops rendering its own ClusterIssuer
-   ```
-4. `helm upgrade aggregator ./helmcharts/aggregator-dpg ...` to remove the resources.
-5. `helm upgrade --install platform ./helmcharts/platform -n platform --create-namespace`
-6. Update DNS to the new LB hostname.
-7. Re-enable `ingress.clusterIssuer: letsencrypt-prod` (without `cert-manager.enabled`) in aggregator values; `helm upgrade aggregator ...` so its Ingress objects pick up the platform-managed issuer.
+The aggregator chart vendors `ingress-nginx`/`cert-manager` subcharts but
+disables them (`enabled: false`) so this chart owns them cluster-wide.
 
 ## Configuration knobs
 
-See `values.yaml`. The most common edits:
+Defaults live in `values.yaml`; per-env overrides come from the layered files
+above. Common edits:
 
-- `issuer.name` — default `letsencrypt-prod`. Used by consumer Ingress annotations.
-- `issuer.acmeEmail` — Let's Encrypt registration email.
-- `issuer.server` — switch to `https://acme-staging-v02.api.letsencrypt.org/directory` while debugging to avoid prod rate limits.
-- `ingress-nginx.controller.service.annotations` — cloud-specific LB annotations (NLB, static IP, idle timeout, etc.).
+- `kong` — controller service annotations (cloud LB type), rate-limit
+  `KongClusterPlugin` tiers (`rl-auth` / `rl-api` / `rl-public`, backed by Redis).
+- `issuer.acmeEmail` / `issuer.server` — Let's Encrypt registration email;
+  switch `server` to the staging directory while debugging to avoid rate limits.
+- `postgresql` / `redis` — sizing, PVC size, `initdb` extensions.
+
+## Uninstall
+
+```bash
+cd opentofu/aws/<env>
+bash install.sh destroy_common_services
+```
+
+This uninstalls the release, deletes the namespace (**destroys the Postgres +
+Redis PVCs / EBS volumes — back up first**), and runs
+`cleanup_cert_manager_leftovers` (cert-manager CRDs + the ClusterIssuer carry a
+"keep" policy and survive `helm uninstall`, otherwise bricking the next install).
