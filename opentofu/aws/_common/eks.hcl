@@ -25,9 +25,10 @@ dependency "network" {
   config_path = "../network"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    vpc_id              = "vpc-dummy"
-    public_subnet_ids   = ["subnet-dummy-3", "subnet-dummy-4"]
-    security_group_id   = "sg-dummy"
+    vpc_id                 = "vpc-dummy"
+    public_subnet_ids      = ["subnet-dummy-3", "subnet-dummy-4"]
+    private_eks_subnet_ids = []
+    security_group_id      = "sg-dummy"
   }
 }
 
@@ -37,6 +38,7 @@ inputs = {
   aws_region              = local.aws_region
   vpc_id                  = dependency.network.outputs.vpc_id
   public_subnet_ids       = dependency.network.outputs.public_subnet_ids
+  node_subnet_ids         = length(dependency.network.outputs.private_eks_subnet_ids) > 0 ? dependency.network.outputs.private_eks_subnet_ids : null
   cluster_version         = local.eks_cluster_version
   node_instance_type      = local.node_instance_type
   node_disk_size_gb       = local.node_disk_size_gb

@@ -100,3 +100,9 @@ variable "endpoint_private_access" {
   type        = bool
   default     = false
 }
+
+variable "node_subnet_ids" {
+  description = "Subnet IDs for the managed node group. When set, nodes are placed here instead of public_subnet_ids. Leave null to keep nodes in public subnets (backward-compatible default)."
+  type        = list(string)
+  default     = null
+}

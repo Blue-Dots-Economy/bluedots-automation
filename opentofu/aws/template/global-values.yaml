@@ -143,19 +143,57 @@ global:
       type: private
       availability_zone: "b"
       cidr_netnum: 3
+    # ── Private EKS node subnets ─────────────────────────────────────────────
+    # Named 'private-eks-*' so the EKS module selects them automatically and
+    # ignores the smaller RDS /28 subnets above.
+    # For a /16 VPC: cidr_netnum 4/5 gives 10.0.4.0/24 + 10.0.5.0/24 (251 IPs each).
+    # For a tight /22 VPC: use prefix_length: 25 with cidr_netnum 6/7 instead.
+    private-eks-a:
+      type: private
+      availability_zone: "a"
+      cidr_netnum: 4
+    private-eks-b:
+      type: private
+      availability_zone: "b"
+      cidr_netnum: 5
 
-  # NAT Gateway — costs ~$32/month per AZ. Only needed when private subnets exist.
-  # nat_gateway_enabled: false
+  # NAT Gateway — ~$32/month per AZ. Required for private nodes to pull images.
+  nat_gateway_enabled: true
 
   eks_cluster_version:    *eks_cluster_version
   eks_node_instance_type: *eks_node_instance_type
   eks_node_disk_size_gb:  *eks_node_disk_size_gb
-  eks_node_count_min:     *eks_node_count_min
+  eks_node_count_min:     *eks_node_count_min   # set to 2 when using private-eks subnets (one per AZ)
   eks_node_count_max:     *eks_node_count_max
-  # eks_endpoint_public_access: true
-  # eks_endpoint_private_access: false
   # eks_node_count_desired: 3
   # eks_ebs_csi_addon_version: "v1.28.0-eksbuild.1"
+
+  # ── EKS API endpoint access ──────────────────────────────────────────────────
+  # Controls whether kubectl reaches the API server from the internet or VPC only.
+  #
+  # State 1 — Public only (default when lines are commented out)
+  # eks_endpoint_public_access:  true
+  # eks_endpoint_private_access: false
+  #
+  # State 2 — Both on  ← safe transition; enable this FIRST before disabling public
+  # eks_endpoint_public_access:  true
+  # eks_endpoint_private_access: true
+  #
+  # State 3 — Private only  ← set ONLY after Pritunl VPN is confirmed working
+  # eks_endpoint_public_access:  false
+  # eks_endpoint_private_access: true
+
+  # ── Pritunl VPN ──────────────────────────────────────────────────────────────
+  # Uncomment to override the default instance type (t3.small is the minimum —
+  # MongoDB needs ~1 GB RAM; t3.nano will be unstable).
+  # pritunl_instance_type: "t3.small"
+
+  # ── Bastion host ─────────────────────────────────────────────────────────────
+  # Lives in a private subnet — only reachable after connecting Pritunl VPN.
+  # Requires an EC2 key pair — create one first:
+  #   AWS console → EC2 → Key Pairs → Create key pair → download .pem → chmod 400
+  # bastion_key_name: "my-key-pair"
+  # bastion_instance_type: "t3.nano"    # default — just runs sshd + kubectl
 
   # ── RDS (managed Postgres) ──────────────────────────────────────────────────
   # Single multi-tenant instance; databases/roles created by the common-services

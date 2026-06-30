@@ -1,0 +1,160 @@
+locals {
+  name = "${var.building_block}-${var.environment}-pritunl"
+  common_tags = {
+    Environment   = var.environment
+    BuildingBlock = var.building_block
+    ManagedBy     = "Terraform"
+    CloudProvider = "AWS"
+  }
+}
+
+data "aws_caller_identity" "current" {}
+
+# Ubuntu 22.04 LTS — Pritunl has official apt packages for Ubuntu Jammy
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# ── Security Group ──────────────────────────────────────────────────────────────
+
+resource "aws_security_group" "pritunl" {
+  name        = "${local.name}-sg"
+  description = "Pritunl VPN: OpenVPN UDP 1194 + web admin TCP 443. No SSH — use SSM."
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "OpenVPN (developer VPN connections)"
+    from_port   = 1194
+    to_port     = 1194
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Pritunl web admin UI"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, { Name = "${local.name}-sg" })
+}
+
+# ── IAM ─────────────────────────────────────────────────────────────────────────
+
+data "aws_iam_policy_document" "ec2_assume_role" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+resource "aws_iam_role" "pritunl" {
+  name               = "${local.name}-role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+  tags               = local.common_tags
+}
+
+# SSM agent — emergency shell access without port 22
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.pritunl.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Allow the VPN server to describe EKS clusters (for kubeconfig generation on the host)
+resource "aws_iam_role_policy" "eks_describe" {
+  name = "${local.name}-eks-describe"
+  role = aws_iam_role.pritunl.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["eks:DescribeCluster", "eks:ListClusters"]
+      Resource = "arn:aws:eks:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/*"
+    }]
+  })
+}
+
+resource "aws_iam_instance_profile" "pritunl" {
+  name = "${local.name}-profile"
+  role = aws_iam_role.pritunl.name
+  tags = local.common_tags
+}
+
+# ── EC2 Instance ────────────────────────────────────────────────────────────────
+
+resource "aws_instance" "pritunl" {
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = var.instance_type
+  subnet_id                   = var.public_subnet_id
+  vpc_security_group_ids      = [aws_security_group.pritunl.id]
+  iam_instance_profile        = aws_iam_instance_profile.pritunl.name
+  associate_public_ip_address = false # EIP is used; prevent a redundant random public IP
+
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 20
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  # <<-EOF strips whitespace up to the minimum-indented non-empty line.
+  # Keep ALL lines at the same indent so the shebang is at column 0 after stripping.
+  user_data = <<-EOF
+    #!/bin/bash
+    set -euxo pipefail
+
+    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
+    echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-7.0.list
+
+    curl -fsSL https://raw.githubusercontent.com/pritunl/pgp/master/pritunl_repo_pub.asc | gpg --dearmor -o /usr/share/keyrings/pritunl.gpg
+    echo "deb [ signed-by=/usr/share/keyrings/pritunl.gpg ] https://repo.pritunl.com/stable/apt jammy main" > /etc/apt/sources.list.d/pritunl.list
+
+    apt-get update -y
+    apt-get install -y mongodb-org pritunl
+
+    systemctl enable mongod pritunl
+    systemctl start mongod pritunl
+  EOF
+
+  tags = merge(local.common_tags, { Name = local.name })
+
+  depends_on = [
+    aws_iam_role_policy_attachment.ssm,
+    aws_iam_role_policy.eks_describe,
+  ]
+}
+
+# ── Elastic IP ──────────────────────────────────────────────────────────────────
+
+resource "aws_eip" "pritunl" {
+  domain = "vpc"
+  tags   = merge(local.common_tags, { Name = "${local.name}-eip" })
+}
+
+resource "aws_eip_association" "pritunl" {
+  instance_id   = aws_instance.pritunl.id
+  allocation_id = aws_eip.pritunl.id
+}
