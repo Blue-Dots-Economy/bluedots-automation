@@ -17,12 +17,29 @@ public-read snapshots for quick viewing / decks.
 
 | # | View | What it answers | Source file | Share link |
 |---|------|-----------------|-------------|------------|
+| 0 | **Tiered deployment (single consolidated view)** | One diagram with the count of web / application / middleware / database layers — answers "how many servers per tier" | [`diagram-0-tiered-overview.excalidraw`](./diagram-0-tiered-overview.excalidraw) | https://excalidraw.com/#json=tAMyJtfMHiAEsnkLzHTQT,KISgfYbBh3bKnh24E3HCrA |
 | 1 | **AWS / EKS infrastructure** | VPC, subnets, EKS node group, IAM/IRSA → S3, LoadBalancer, DNS/ACME, image registry | [`diagram-1-aws-eks-infra.excalidraw`](./diagram-1-aws-eks-infra.excalidraw) | https://excalidraw.com/#json=5G0kV_Wuhqo_vlo9-ifAM,jib4Ciua13QiR5yR1ok9Ow |
 | 2 | **Kubernetes namespaces & shared data** | The 3-namespace boundary, shared Postgres (3 DBs) + Redis, which workload uses which DB/secret | [`diagram-2-namespaces-data.excalidraw`](./diagram-2-namespaces-data.excalidraw) | https://excalidraw.com/#json=0dO2mvlkSzOk-18OGCZ1b,OX_5AIWaPaocL38NhCCs8g |
 | 3 | **Application & traffic flow** | User → ELB → Kong → host+path routes → services, inter-service calls, external deps, deployment variants | [`diagram-3-app-traffic-flow.excalidraw`](./diagram-3-app-traffic-flow.excalidraw) | https://excalidraw.com/#json=0RA717g_zhMpynbl8RlRx,7cPJomzXdjj9Tm-3MjqFxg |
 
 > The `.excalidraw` files are the editable source of truth. After editing, re-export
 > a fresh share link and update the table.
+
+### Server / layer counts (Diagram 0)
+
+For the "number of application / web / middleware / database layers" question:
+
+| Layer | Count | Components |
+|-------|-------|-----------|
+| **Web servers** | 2 | `signals-ui` (nginx), `aggregator-web` (Next.js BFF) |
+| **Application servers** | 7 | `signals-api`, `notification-service`, `match-score`, `signals-search-api`, `signals-search-worker`, `aggregator-api`, `aggregator-worker` |
+| **Middleware** | 5 | Kong (API gateway), cert-manager (TLS), Keycloak (IAM/OIDC), Redis (cache/queue/rate-limit), TEI (embeddings inference) |
+| **Database** | 1 instance / 3 logical DBs | PostgreSQL → `dpg`, `aggregator`, `keycloak` |
+| External SaaS (where applicable) | 3 | OpenAI/Gemini (scoring), Gmail SMTP (email), MSG91 (SMS/OTP) |
+
+Counts are **pod types (Deployments)**, not replica totals — each defaults to 1 replica
+(HPA configs exist for the web/api tiers). All run as pods on one EKS cluster (1–2 nodes),
+fronted by a single AWS ELB.
 
 ---
 
