@@ -122,7 +122,7 @@ What the four functions do (run by both options):
    and writes `tf.sh` with the region + bucket name.
 2. `backup_configs` — backs up any existing `~/.kube/config`, sets `KUBECONFIG`.
 3. `create_tf_resources` — `source tf.sh` then `terragrunt run --all apply`
-   (VPC → EKS → IAM → storage → random_passwords → output-file), and writes the
+   (VPC → EKS → IAM → storage → random_passwords → rds → output-file), and writes the
    EKS kubeconfig. This also generates the three per-chart values files into the
    env directory.
 4. `apply_gp3_default_sc` — makes `gp3` the default StorageClass (demotes `gp2`).
