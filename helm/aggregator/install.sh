@@ -68,14 +68,14 @@ SET_ARGS=()
 [[ -n "$IMAGE_REGISTRY" ]] && SET_ARGS+=("--set" "global.imageRegistry=${IMAGE_REGISTRY}")
 if [[ -n "$IMAGE_TAG" ]]; then
   SET_ARGS+=("--set" "web.image.tag=${IMAGE_TAG}")
-  SET_ARGS+=("--set" "api.image.tag=${IMAGE_TAG}")
+  SET_ARGS+=("--set" "aggregator-api.image.tag=${IMAGE_TAG}")
   SET_ARGS+=("--set" "worker.image.tag=${IMAGE_TAG}")
 fi
 SET_ARGS+=("${EXTRA_SET[@]+"${EXTRA_SET[@]}"}")
 
 # ── Dependencies ───────────────────────────────────────────────────────────
 echo "▶ verifying vendored subcharts ..."
-for dep in ingress-nginx cert-manager web api worker keycloak; do
+for dep in web api worker keycloak; do
   [[ -d "${CHART_DIR}/charts/${dep}" ]] || { echo "ERROR: missing vendored subchart: charts/${dep}" >&2; exit 4; }
 done
 

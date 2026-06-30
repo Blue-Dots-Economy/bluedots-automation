@@ -36,6 +36,13 @@ global:
   # release via -f values-purple.yaml (or values-blue.yaml).
   aggregatorNetwork: purple_dot
 
+  # Brand skin over the network (UI/config skin; does NOT change the upstream
+  # network identity). Exposed to api/worker/web as AGGREGATOR_BRAND. Empty =
+  # standard dots. Set per release (e.g. upsdm over blue_dot, onetac over
+  # orange_dot); switching brand = change this value + redeploy the matching
+  # keycloak theme image tag.
+  aggregatorBrand: ''
+
   # Signal-stack integration. Used by api/worker to call the signal-stack
   # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
   #   - actingOrgId: signal-stack `organization` row of type `network_service`
@@ -67,6 +74,10 @@ global:
   # common-services release name `platform` in namespace `common-services`.
   dataPlatform:
     namespace: common-services
+    # Full Postgres endpoint (e.g. an RDS hostname). When set, it takes precedence
+    # over postgresService in the aggregator.postgresHost helper + keycloak KC_DB_URL.
+    # Populated by the opentofu overlay; empty falls back to the in-cluster FQDN.
+    postgresHost: ""
     postgresService: platform-postgresql
     redisService: platform-redis-master
     redisPort: 6379
@@ -97,20 +108,23 @@ imagePullSecret:
   password: '' # GHCR PAT with read:packages scope
   email: ''
 
-# ─── Ingress (single host, multi-path) ─────────────────────────────────────
+# ─── Ingress (Kong) ────────────────────────────────────────────────────────
+# The Ingress OBJECTS are now template-driven and owned per subchart
+# (api/keycloak/web → templates/ingress.yaml in each). Per-route config lives
+# under each subchart's `ingress:` block below (api.ingress / keycloak.ingress /
+# web.ingress). The shared host comes from global.publicHost.
+#
+# This top-level block now only feeds the OPTIONAL in-chart ClusterIssuer
+# (templates/clusterissuer.yaml), which renders only when this chart also owns
+# cert-manager (cert-manager.enabled). On this platform common-services owns the
+# issuer, so it is inert here.
 ingress:
-  enabled: true
-  className: nginx
-  # UPDATE: cert-manager ClusterIssuer. Empty disables TLS issuance.
+  className: kong
+  # cert-manager ClusterIssuer name (for the in-chart issuer + the web ingress
+  # cert annotation). Empty disables TLS issuance.
   clusterIssuer: letsencrypt-prod
-  # UPDATE: ACME registration email for Let's Encrypt account.
+  # ACME registration email for Let's Encrypt account.
   acmeEmail: ops@sanketika.in
-  # Prod-grade nginx annotations — shared by both Ingress objects (api + main).
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: '1024m'
-    nginx.ingress.kubernetes.io/proxy-buffer-size: '32k'
-    nginx.ingress.kubernetes.io/proxy-read-timeout: '300'
-    nginx.ingress.kubernetes.io/proxy-send-timeout: '300'
 
 # ─── Secrets ───────────────────────────────────────────────────────────────
 # All values land in Secret `<release>-secrets`. For prod, set
@@ -137,6 +151,7 @@ secrets:
   twilioAccountSid: ''
   twilioAuthToken: ''
   twilioFromNumber: ''
+  msg91AuthKey: ''
   awsAccessKeyId: ''
   awsSecretAccessKey: ''
   # Raw apikey for signals-DPG admin onboard. Must match the value in the
@@ -166,10 +181,21 @@ web:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: 'sha-d2b9d6c'
-    pullPolicy: IfNotPresent
+    tag: 'sha-a374c46'
+    pullPolicy: Always
   service:
     port: 3000
+  # Template-driven ingress (charts/web/templates/ingress.yaml): path / is fixed
+  # in the template. This object owns the cert-manager issuance for the shared
+  # host cert; api + keycloak reuse it. Host = global.publicHost.
+  ingress:
+    enabled: true
+    className: kong
+    clusterIssuer: letsencrypt-prod
+    plugin: rl-agg-web
+    annotations:
+      konghq.com/read-timeout: "300000"
+      konghq.com/write-timeout: "300000"
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { cpu: 1, memory: 1Gi }
@@ -180,14 +206,23 @@ web:
     maxReplicas: 6
     targetCPU: 70
 
-api:
+aggregator-api:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: 'sha-d2b9d6c'
-    pullPolicy: IfNotPresent
+    tag: 'sha-a374c46'
+    pullPolicy: Always
   service:
     port: 4000
+  # Template-driven ingress (charts/api/templates/ingress.yaml): path /backend +
+  # strip-path are fixed in the template. No issuer (web owns the shared cert).
+  ingress:
+    enabled: true
+    className: kong
+    plugin: rl-agg-api
+    annotations:
+      konghq.com/read-timeout: "300000"
+      konghq.com/write-timeout: "300000"
   resources:
     requests: { cpu: 200m, memory: 512Mi }
     limits: { cpu: 2, memory: 1Gi }
@@ -196,13 +231,13 @@ api:
     uploadUrlTtlSeconds: 900
     uploadMaxBytes: 10485760
     qrDownloadUrlTtlSeconds: 900
-  adminEmails: 'aniket@sanketika.in'
+  adminEmails: ''
   publicLinkBaseUrl: '' # empty => derived from global.publicProtocol+publicHost
   serviceAccount:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
   hpa:
     enabled: false
     minReplicas: 2
@@ -213,8 +248,8 @@ worker:
   replicaCount: 1
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: 'sha-d2b9d6c'
-    pullPolicy: IfNotPresent
+    tag: 'sha-a374c46'
+    pullPolicy: Always
   resources:
     requests: { cpu: 100m, memory: 384Mi }
     limits: { cpu: 1, memory: 1Gi }
@@ -228,24 +263,36 @@ worker:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::276005773320:role/purple-dots-aggregator-s3
+      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
 
 keycloak:
   replicaCount: 1
   image:
-    repository: vinodbbhorge/aggregator-dpg-keycloak
-    tag: 'test'
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-server
+    tag: 'develop'
     pullPolicy: IfNotPresent
   # Set true when the image was built with `kc.sh build` matching all
   # build-time SPI options (faster cold start). Current v1.0.0 image lacks
   # KC_SPI_SMS_PROVIDER baked in → keep false until image is rebuilt.
   optimized: false
   bootstrapAdminUsername: admin
-  smsProvider: log # log | twilio | sns
+  smsProvider: msg91 # log | twilio | sns | msg91
+  msg91TemplateId: '' # REQUIRED if smsProvider=msg91
+  msg91OtpVarName: 'var'
   awsRegion: ap-south-1
   service:
     port: 8080
     mgmtPort: 9000
+  # Template-driven ingress (charts/keycloak/templates/ingress.yaml): path /auth
+  # is fixed in the template (Keycloak serves natively under /auth). No issuer
+  # (web owns the shared cert). Object name: <release>-keycloak (was -auth).
+  ingress:
+    enabled: true
+    className: kong
+    plugin: rl-agg-auth
+    annotations:
+      konghq.com/read-timeout: "300000"
+      konghq.com/write-timeout: "300000"
   resources:
     requests: { cpu: 250m, memory: 768Mi }
     limits: { cpu: 1, memory: 1500Mi }
@@ -260,25 +307,11 @@ postgresql:
     username: aggregator
     database: aggregator
 
-# ─── ingress-nginx subchart toggle ─────────────────────────────────────────
-# Disabled on this cluster: a separate `platform` Helm release owns the shared
-# ingress-nginx controller. Enabling here would deploy a duplicate controller.
-# Set true only for a standalone cluster that has no pre-existing ingress-nginx.
-ingress-nginx:
-  enabled: false
-
-# ─── cert-manager subchart values (consumed verbatim) ──────────────────────
-# See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
+# ─── cert-manager toggle ───────────────────────────────────────────────────
+# The ingress-nginx + cert-manager subcharts were REMOVED from this chart: the
+# shared `common-services` release owns both controllers cluster-wide. This is
+# now only a feature flag read by templates/clusterissuer.yaml — keep it false
+# so the chart never tries to render its own ClusterIssuer (common-services
+# already provides `letsencrypt-prod`).
 cert-manager:
-  # Disabled on this cluster: the shared `platform` release owns cert-manager
-  # and its cluster-scoped CRDs. Enabling here causes CRD ownership conflicts
-  # ("exists and cannot be imported into the current release"). Set true only
-  # for a standalone cluster with no pre-existing cert-manager install.
   enabled: false
-  # Install all cert-manager CRDs (Certificate, Issuer, Order, Challenge, ...)
-  # as part of this Helm release. Subchart default is `false`, which leaves
-  # `challenges.acme.cert-manager.io` missing and breaks ACME HTTP-01 flow.
-  crds:
-    enabled: true
-    # Survive `helm uninstall` so reinstalls don't blow away in-flight orders.
-    keep: true

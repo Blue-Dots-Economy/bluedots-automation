@@ -1,8 +1,23 @@
+# Shared host for the ingress; overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: aggregator.example.com
+
+# Template-driven ingress (templates/ingress.yaml): path / (catch-all) is fixed
+# in the template. This object owns the cert-manager issuance for the shared
+# host cert. Host = global.publicHost.
+ingress:
+  enabled: false
+  className: ""               # e.g. kong
+  clusterIssuer: ""           # e.g. letsencrypt-prod
+  plugin: ""                  # KongClusterPlugin tier, e.g. rl-agg-web
+  annotations: {}
+
 replicaCount: 1
 image:
   repository: aggregator-dpg/web
   tag: ""
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 service:
   port: 3000
 resources:
@@ -17,3 +32,7 @@ hpa:
   minReplicas: 2
   maxReplicas: 6
   targetCPU: 70
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

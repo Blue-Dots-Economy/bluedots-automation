@@ -76,20 +76,29 @@ spec:
                 echo "creating extensions as ${POSTGRES_ADMIN_USER}"
                 PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 \
                   -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_ADMIN_USER" -d "$POSTGRES_DB" \
-                  -c "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS cube; CREATE EXTENSION IF NOT EXISTS earthdistance;"
+                  -c "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS cube; CREATE EXTENSION IF NOT EXISTS earthdistance; CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS postgis;"
               else
                 echo "no admin creds; skipping CREATE EXTENSION (rely on initdb scripts)"
               fi
               export PGPASSWORD="$POSTGRES_PASSWORD"
-              EXISTS=$(psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='items'")
-              if [ "$EXISTS" = "1" ]; then
-                echo "schema already present, skipping DDL"
+              psql -v ON_ERROR_STOP=1 \
+                -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                -c "CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
+              SCHEMA_VERSION=$(sha256sum /sql/schema.sql | awk '{print $1}')
+              echo "schema version: $SCHEMA_VERSION"
+              APPLIED=$(psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                -tAc "SELECT 1 FROM schema_migrations WHERE version = '$SCHEMA_VERSION'")
+              if [ "$APPLIED" = "1" ]; then
+                echo "schema version $SCHEMA_VERSION already applied, skipping DDL"
               else
-                echo "applying schema"
+                echo "applying schema (version $SCHEMA_VERSION)"
                 psql -v ON_ERROR_STOP=1 --single-transaction \
                   -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
                   -f /sql/schema.sql
-                echo "schema applied"
+                psql -v ON_ERROR_STOP=1 \
+                  -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                  -c "INSERT INTO schema_migrations (version) VALUES ('$SCHEMA_VERSION') ON CONFLICT DO NOTHING"
+                echo "schema applied and recorded (version $SCHEMA_VERSION)"
               fi
 
               # Always provision integrating-DPG service apikeys — this must run

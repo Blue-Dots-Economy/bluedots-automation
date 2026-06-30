@@ -1,0 +1,32 @@
+replicaCount: 1
+# TEI image with BAAI/bge-m3 baked in (docker/tei-bge-m3/Dockerfile) — no
+# runtime model download. Stock TEI (ghcr.io/huggingface/text-embeddings-inference)
+# would re-pull ~2.3Gi on every restart.
+image:
+  repository: ghcr.io/blue-dots-economy/tei-bge-m3
+  tag: "sha-1c7d576d1af74f3e0cdf659cea033ecee26733c8"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+embeddings:
+  modelId: BAAI/bge-m3
+  # MUST match the revision baked into the image; TEI loads snapshots/<revision>
+  # offline (HF_HUB_OFFLINE=1 in the image). Bump alongside the Dockerfile ARG.
+  revision: "5617a9f61b028005a4858fdac845db406aefb181"
+  port: 80
+  # Bound the batch so TEI's warmup + inference fit in the memory limit. On CPU
+  # (fp32) bge-m3's warmup at the default 16384 OOMKills even at 8Gi; 4096 is
+  # ample for short search texts and keeps the resident set well under 8Gi.
+  maxBatchTokens: 4096
+reranker:
+  # Disabled for V1: the query API has rerank off by default (RERANK_DEFAULT=false),
+  # so this container would run unused — and bge-reranker-v2-m3 needs its own ~4-6Gi.
+  # Re-enable (and size the pod up) when rerank is actually turned on.
+  enabled: false
+  modelId: BAAI/bge-reranker-v2-m3
+  port: 8081
+# bge-m3 loads its ONNX model (~2.3Gi) on CPU; 4Gi OOMKills it. Give headroom.
+resources:
+  requests: { cpu: "1", memory: 3Gi }
+  limits:   { cpu: "2", memory: 8Gi }
+serviceAccount:
+  create: true

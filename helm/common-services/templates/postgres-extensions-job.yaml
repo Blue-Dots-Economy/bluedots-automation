@@ -1,0 +1,58 @@
+{{- if .Values.dbExtensions.enabled }}
+{{- /*
+  Ensure required Postgres extensions exist in the target database on EVERY deploy.
+
+  The initdb bootstrap (postgresql.primary.initdb.scripts) only runs on a fresh
+  PGDATA, so a cluster that was first initialized before an extension was added
+  to the bootstrap never gains it — and a `helm upgrade` does not re-run initdb.
+  This post-install/post-upgrade hook runs `CREATE EXTENSION IF NOT EXISTS` as the
+  superuser: idempotent, and it repairs already-initialized clusters too. The
+  initdb path stays the source of truth for fresh installs; this is the catch-up.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-pg-ensure-extensions
+  labels: {{- include "platform.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels: {{- include "platform.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ensure-extensions
+          image: "{{ .Values.postgresql.image.registry }}/{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          env:
+            - name: PGHOST
+              value: {{ printf "%s-postgresql" .Release.Name | quote }}
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: postgres
+            - name: PGDATABASE
+              value: {{ .Values.dbExtensions.database | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresql.auth.existingSecret | quote }}
+                  key: {{ .Values.postgresql.auth.secretKeys.adminPasswordKey | quote }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              echo "[ensure-extensions] waiting for ${PGHOST}:${PGPORT}"
+              until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; do sleep 2; done
+              echo "[ensure-extensions] ensuring extensions in ${PGDATABASE}"
+              {{- range .Values.dbExtensions.list }}
+              psql -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS {{ . }};"
+              {{- end }}
+              echo "[ensure-extensions] done"
+{{- end }}

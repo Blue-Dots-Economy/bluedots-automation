@@ -5,5 +5,12 @@ metadata:
   labels:
     {{- include "dpg-ui.labels" . | nindent 4 }}
 data:
+  # When ui.hostBindings is set, VITE_SERVED_BINDINGS is forced to the
+  # "__SERVED_BINDINGS__" placeholder, which the image's nginx rewrites per
+  # request (by Host) via sub_filter. Otherwise config.js is static as before.
   config.js: |
-    window.__DPG_UI_CONFIG__ = {{ .Values.runtimeConfig | toJson }};
+    {{- $rc := deepCopy (.Values.runtimeConfig | default dict) }}
+    {{- if .Values.hostBindings }}
+    {{- $_ := set $rc "VITE_SERVED_BINDINGS" "__SERVED_BINDINGS__" }}
+    {{- end }}
+    window.__DPG_UI_CONFIG__ = {{ $rc | toJson }};

@@ -4,10 +4,10 @@
 -- Regenerate with: pnpm schema:bundle
 -- CI guards drift via: pnpm schema:bundle:check
 --
--- Applied by the helm migrate-job at install/upgrade time. Every statement
--- must be idempotent (CREATE … IF NOT EXISTS / ALTER … ADD COLUMN IF NOT
--- EXISTS / DO-block-guarded ADD CONSTRAINT). See docs/operations/migrations.md
--- for the full contract.
+-- Applied by the deployment migrate-job at install/upgrade time (charts live
+-- in a separate repo). Every statement must be idempotent (CREATE … IF NOT
+-- EXISTS / ALTER … ADD COLUMN IF NOT EXISTS / DO-block-guarded ADD
+-- CONSTRAINT). See docs/operations/migrations.md for the full contract.
 
 
 -- ─── auth.sql ───
@@ -429,15 +429,14 @@ CREATE TABLE IF NOT EXISTS item_metrics (
   profile_last_updated_at   timestamp,
   age_days                  integer,
 
-  count_create              integer NOT NULL DEFAULT 0,
-  count_accept              integer NOT NULL DEFAULT 0,
-  count_reject              integer NOT NULL DEFAULT 0,
-  count_cancel              integer NOT NULL DEFAULT 0,
+  -- Directional action counts — full jsonb maps over the 4 canonical buckets.
+  initiated                 jsonb NOT NULL DEFAULT '{}'::jsonb,
+  received                  jsonb NOT NULL DEFAULT '{}'::jsonb,
 
-  last_create_at            timestamp,
-  last_accept_at            timestamp,
-  last_reject_at            timestamp,
-  last_cancel_at            timestamp,
+  -- Most-recent action timestamp per bucket, per direction. SPARSE jsonb:
+  -- only buckets that occurred carry an ISO-string value.
+  last_initiated_at         jsonb NOT NULL DEFAULT '{}'::jsonb,
+  last_received_at          jsonb NOT NULL DEFAULT '{}'::jsonb,
 
   actionable_tags           text[],
 
@@ -500,6 +499,8 @@ CREATE INDEX IF NOT EXISTS pii_reveal_audit_item_idx
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS cube;
 CREATE EXTENSION IF NOT EXISTS earthdistance;
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE TABLE IF NOT EXISTS items (
   item_network TEXT NOT NULL,
@@ -513,27 +514,17 @@ CREATE TABLE IF NOT EXISTS items (
   item_state JSONB NOT NULL DEFAULT '{}'::jsonb,
   item_private_state TEXT NOT NULL DEFAULT '',
 
-  item_latitude DOUBLE PRECISION,
-  item_longitude DOUBLE PRECISION,
+  item_locations JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_by TEXT NOT NULL,
+
+  lifecycle_status TEXT NOT NULL DEFAULT 'draft',
 
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
   CONSTRAINT items_pk PRIMARY KEY (item_network, item_domain, item_type, item_id),
   CONSTRAINT items_created_by_fk FOREIGN KEY (created_by)
-    REFERENCES "user" (id) ON DELETE RESTRICT,
-  CONSTRAINT items_geo_lat_chk CHECK (
-    item_latitude IS NULL OR (item_latitude >= -90 AND item_latitude <= 90)
-  ),
-  CONSTRAINT items_geo_lng_chk CHECK (
-    item_longitude IS NULL OR (item_longitude >= -180 AND item_longitude <= 180)
-  ),
-  CONSTRAINT items_geo_pair_chk CHECK (
-    (item_latitude IS NULL AND item_longitude IS NULL)
-    OR
-    (item_latitude IS NOT NULL AND item_longitude IS NOT NULL)
-  )
+    REFERENCES "user" (id) ON DELETE RESTRICT
 )
 PARTITION BY LIST (item_network);
 
@@ -552,8 +543,57 @@ ON items (created_by, created_at DESC);
 CREATE INDEX IF NOT EXISTS items_state_gin_idx
 ON items USING GIN (item_state);
 
-CREATE INDEX IF NOT EXISTS items_geo_earth_idx
-ON items USING GIST (ll_to_earth(item_latitude, item_longitude));
+-- Upgrade guards for databases created before these columns existed in the
+-- CREATE TABLE above. Each new items column must appear BOTH in the create
+-- statement (fresh installs) and as an ADD COLUMN IF NOT EXISTS here
+-- (existing deployments re-applying the bundle).
+
+-- Multi-location items (2026-06 #112).
+ALTER TABLE items ADD COLUMN IF NOT EXISTS item_locations JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- Lifecycle status (2026-06-03 spec).
+ALTER TABLE items
+  ADD COLUMN IF NOT EXISTS lifecycle_status TEXT NOT NULL DEFAULT 'draft';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'items_lifecycle_status_chk'
+  ) THEN
+    ALTER TABLE items
+      ADD CONSTRAINT items_lifecycle_status_chk
+      CHECK (lifecycle_status IN ('draft','live','paused'));
+  END IF;
+END$$;
+
+CREATE INDEX IF NOT EXISTS items_lifecycle_idx
+  ON items (item_network, item_domain, lifecycle_status);
+
+-- ── item_search (Signals search engine V1) ──────────────────────────────────
+-- Search/discovery index maintained by the signals-search service.
+-- DDL authority lives here (shared dpg DB); the signals-search repo carries an
+-- identical dev/test mirror. No FK to items: deletes are handled by the
+-- 'delete' item-event + the reconciliation sweep.
+CREATE TABLE IF NOT EXISTS item_search (
+  item_network     text NOT NULL,
+  item_domain      text NOT NULL,
+  item_type        text NOT NULL,
+  item_id          uuid NOT NULL,
+  embedding        vector(1024),
+  geo              geography(MultiPoint, 4326),
+  lifecycle_status text NOT NULL DEFAULT 'draft',
+  model_version    text,
+  content_hash     text,
+  indexed_at       timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (item_network, item_domain, item_type, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS item_search_embedding_hnsw
+  ON item_search USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS item_search_geo_gist
+  ON item_search USING gist (geo);
+CREATE INDEX IF NOT EXISTS item_search_live
+  ON item_search (item_network, item_domain, item_type) WHERE lifecycle_status = 'live';
 
 -- ─── create_actions_events.sql ───
 
@@ -656,8 +696,7 @@ CREATE TABLE IF NOT EXISTS action_events (
   source_item_id UUID NOT NULL,
   source_item_instance_url TEXT NOT NULL,
   source_item_owner TEXT,
-  source_item_latitude DOUBLE PRECISION,
-  source_item_longitude DOUBLE PRECISION,
+  source_item_locations JSONB NOT NULL DEFAULT '[]'::jsonb,
 
   target_item_network TEXT NOT NULL,
   target_item_domain TEXT NOT NULL,
@@ -665,8 +704,7 @@ CREATE TABLE IF NOT EXISTS action_events (
   target_item_id UUID NOT NULL,
   target_item_instance_url TEXT NOT NULL,
   target_item_owner TEXT,
-  target_item_latitude DOUBLE PRECISION,
-  target_item_longitude DOUBLE PRECISION,
+  target_item_locations JSONB NOT NULL DEFAULT '[]'::jsonb,
 
   event_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   remarks TEXT,
@@ -702,6 +740,15 @@ ON action_events (
 
 CREATE INDEX IF NOT EXISTS action_events_source_owner_idx
 ON action_events (source_item_owner, created_at DESC);
+
+-- Upgrade guards for databases created before multi-location (#112) replaced
+-- the scalar lat/lng columns with the *_item_locations jsonb arrays in the
+-- CREATE TABLE above. New columns must appear BOTH in the create statement
+-- (fresh installs) and here (existing deployments re-applying the bundle).
+ALTER TABLE action_events
+  ADD COLUMN IF NOT EXISTS source_item_locations JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE action_events
+  ADD COLUMN IF NOT EXISTS target_item_locations JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS action_events_target_owner_idx
 ON action_events (target_item_owner, created_at DESC);

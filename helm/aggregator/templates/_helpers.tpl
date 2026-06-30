@@ -96,11 +96,16 @@ http://{{ include "aggregator.fullname" . }}-keycloak:{{ .Values.keycloak.servic
 {{- end -}}
 
 {{/*
-  Postgres host — shared instance in the common-services release.
-  Cross-namespace FQDN built from .Values.dataPlatform.
+  Postgres host. Prefers global.dataPlatform.postgresHost (full endpoint, e.g. an
+  RDS hostname) when set; otherwise falls back to the in-cluster cross-namespace
+  FQDN built from postgresService + namespace.
 */}}
 {{- define "aggregator.postgresHost" -}}
+{{- if .Values.global.dataPlatform.postgresHost -}}
+{{- .Values.global.dataPlatform.postgresHost -}}
+{{- else -}}
 {{- printf "%s.%s.svc.cluster.local" .Values.global.dataPlatform.postgresService .Values.global.dataPlatform.namespace -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -120,7 +125,7 @@ postgres://{{ .Values.postgresql.auth.username }}:$(POSTGRES_PASSWORD)@{{ includ
 {{/*
   Image reference helper.
   Usage:
-    {{- include "aggregator.image" (dict "top" $ "image" .Values.api.image) }}
+    {{- include "aggregator.image" (dict "top" $ "image" .Values.aggregator-api.image) }}
 */}}
 {{- define "aggregator.image" -}}
 {{- $top := .top -}}

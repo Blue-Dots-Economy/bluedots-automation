@@ -1,0 +1,23 @@
+============================================================
+  Monitoring stack deployed to: {{ .Release.Namespace }}
+============================================================
+
+Components deployed:
+{{- if .Values.prometheus.enabled }}
+  ✓  Prometheus + Alertmanager + node-exporter + kube-state-metrics
+{{- end }}
+{{- if .Values.prometheus.grafana.enabled }}
+  ✓  Grafana — admin / {{ .Values.prometheus.grafana.adminPassword | default "prom-operator" }}
+{{- end }}
+{{- if .Values.loki.enabled }}
+  ✓  Loki (log aggregation)
+{{- end }}
+{{- if .Values.alloy.enabled }}
+  ✓  Grafana Alloy DaemonSet (log shipper → Loki)
+{{- end }}
+{{- if .Values.jaeger.enabled }}
+  ✓  Jaeger (distributed tracing)
+{{- end }}
+{{- if .Values.otelcollector.enabled }}
+  ✓  OpenTelemetry Collector
+{{- end }}

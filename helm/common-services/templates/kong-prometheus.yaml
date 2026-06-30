@@ -1,0 +1,30 @@
+{{- /*
+Prometheus plugin → one cluster-scoped, GLOBAL KongClusterPlugin.
+
+The `global: "true"` label makes Kong apply this plugin to every service/route
+automatically, so each request is counted with no per-Ingress opt-in (unlike the
+rate-limit tiers, which are referenced by name via konghq.com/plugins).
+
+Kong Gateway 3.x exposes only a minimal metric set by default; the extra series
+(status codes, latency, bandwidth, upstream health) are turned on via the plugin
+config below — tune them under kong.prometheus.config in values.yaml.
+
+Metrics are served on Kong's status listener at /metrics. Point a Prometheus
+scrape / ServiceMonitor at the Kong status port to collect them.
+*/ -}}
+{{- if and .Values.kong.enabled .Values.kong.prometheus .Values.kong.prometheus.enabled }}
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: prometheus
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    global: "true"
+    {{- include "platform.labels" . | nindent 4 }}
+plugin: prometheus
+{{- with .Values.kong.prometheus.config }}
+config:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}

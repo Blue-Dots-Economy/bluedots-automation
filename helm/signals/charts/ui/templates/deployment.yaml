@@ -44,6 +44,16 @@ spec:
           env:
             - name: API_UPSTREAM
               value: {{ .Values.apiUpstream | quote }}
+            {{- if .Values.hostBindings }}
+            # Host-routed served binding: the image builds a per-request
+            # host -> VITE_SERVED_BINDINGS map from this list so one instance
+            # serves several per-domain portals. Format:
+            # "<host>=<network>/<domain>;<host>=<network>/<domain>".
+            - name: UI_HOST_BINDINGS
+              value: {{ .Values.hostBindings | quote }}
+            {{- end }}
+            - name: UI_VARIANT
+              value: {{ .Values.uiVariant | default "signals" | quote }}
           volumeMounts:
             - name: runtime-config
               mountPath: /usr/share/nginx/html/config.js
@@ -57,8 +67,10 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
       volumes:
         - name: runtime-config
           configMap:

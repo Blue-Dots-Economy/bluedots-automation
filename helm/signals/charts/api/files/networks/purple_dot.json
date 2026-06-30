@@ -7,51 +7,15 @@
       "description": "Persons with disabilities seeking services, devices, training, or other support.",
       "minimum_cache_ttl_seconds": 300,
       "status_rules": [
-        {
-          "status": "new",
-          "when": {
-            "item_age_days": {
-              "lte": 7
-            }
-          }
-        },
-        {
-          "status": "active",
-          "when": {
-            "days_since_last": {
-              "buckets": [
-                "create",
-                "accept"
-              ],
-              "lte": 30
-            }
-          }
-        },
-        {
-          "status": "at_risk",
-          "when": {
-            "days_since_last": {
-              "buckets": [
-                "create",
-                "accept",
-                "reject"
-              ],
-              "between": [
-                31,
-                90
-              ]
-            }
-          }
-        },
-        {
-          "status": "inactive",
-          "when": "default"
-        }
+        { "status": "new",      "label": "New",      "description": "Joined within the last 7 days",                  "when": { "item_age_days": { "lte": 7 } } },
+        { "status": "active",   "label": "Active",   "description": "Connected with a provider in the last 30 days",  "when": { "days_since_last": { "buckets": ["create", "accept"], "lte": 30 } } },
+        { "status": "at_risk",  "label": "At Risk",  "description": "No activity for 30–90 days",                    "when": { "days_since_last": { "buckets": ["create", "accept", "reject"], "between": [31, 90] } } },
+        { "status": "inactive", "label": "Inactive", "description": "No activity 90+ days",                            "when": "default" }
       ],
       "item_schemas": {
         "profile_1.0": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
-          "title": "PWD Beneficiary Profile 1.0",
+          "title": "PWD Seeker Profile 1.0",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -63,8 +27,8 @@
             "disability_percentage",
             "looking_for",
             "looking_for_details",
-            "service_city",
-            "documents_available"
+            "documents_available",
+            "address"
           ],
           "properties": {
             "beneficiary_name": {
@@ -102,6 +66,8 @@
               ]
             },
             "disability_type": {
+              "vectorize": true,
+              "vector_weight": 2,
               "type": "array",
               "title": "Disability",
               "minItems": 1,
@@ -161,42 +127,24 @@
                   "Financial Products (Loans/Insurance)",
                   "Other"
                 ]
-              }
+              },
+              "vectorize": true
             },
             "looking_for_details": {
               "type": "string",
               "title": "Details",
               "description": "Explain your choice in more detail",
-              "minLength": 1
-            },
-            "service_city": {
-              "type": "string",
-              "title": "Service City",
-              "description": "City or village where you can receive the service or support",
-              "minLength": 1
+              "minLength": 1,
+              "vectorize": true,
+              "vector_weight": 2
             },
             "address": {
               "type": "string",
               "title": "Address",
-              "description": "Area, street, city to help reach you easily",
-              "private": true
-            },
-            "state": {
-              "type": "string",
-              "title": "State"
-            },
-            "district": {
-              "type": "string",
-              "title": "District"
-            },
-            "block": {
-              "type": "string",
-              "title": "Block"
-            },
-            "pincode": {
-              "type": "string",
-              "title": "Pincode",
-              "pattern": "^[0-9]{6}$"
+              "description": "Full address — house/flat, street, area, city, state, and pincode",
+              "minLength": 1,
+              "private": true,
+              "location": "primary"
             },
             "documents_available": {
               "type": "array",
@@ -216,6 +164,7 @@
               }
             },
             "highest_qualification": {
+              "vectorize": true,
               "type": "string",
               "title": "Qualification",
               "description": "Highest qualification",
@@ -233,56 +182,32 @@
         }
       },
       "id": "seeker",
+      "card": {
+        "title_field": "beneficiary_name",
+        "avatar_from": "beneficiary_name",
+        "default_fields": ["disability_type", "looking_for", "highest_qualification"]
+      },
       "dashboard_tiles": {
-        "total_items": "Total Beneficiaries",
-        "complete_profiles": "Profiles Complete",
-        "has_applications": "Made Connections"
+        "profile": [
+          { "field": "total_items", "label": "Profiles Registered" },
+          { "field": "complete_profiles", "label": "Profiles Complete" },
+          { "field": "has_applications", "label": "Made Connections" }
+        ],
+        "user": [
+          { "field": "total_users", "label": "Total Seekers" },
+          { "field": "avg_items_per_user", "label": "Avg Profiles per User" },
+          { "field": "avg_actions_per_user", "label": "Avg Actions per User" }
+        ]
       }
     },
     {
       "description": "Organisations and individuals providing services, devices, training, or other support for persons with disabilities.",
       "minimum_cache_ttl_seconds": 300,
       "status_rules": [
-        {
-          "status": "new",
-          "when": {
-            "item_age_days": {
-              "lte": 7
-            }
-          }
-        },
-        {
-          "status": "active",
-          "when": {
-            "days_since_last": {
-              "buckets": [
-                "create",
-                "accept"
-              ],
-              "lte": 30
-            }
-          }
-        },
-        {
-          "status": "at_risk",
-          "when": {
-            "days_since_last": {
-              "buckets": [
-                "create",
-                "accept",
-                "reject"
-              ],
-              "between": [
-                31,
-                90
-              ]
-            }
-          }
-        },
-        {
-          "status": "inactive",
-          "when": "default"
-        }
+        { "status": "new",      "label": "New",      "description": "Service posted within the last 7 days",             "when": { "item_age_days": { "lte": 7 } } },
+        { "status": "active",   "label": "Active",   "description": "Accepted or rejected a request in the last 30 days", "when": { "all": [ { "count": { "buckets": ["create"], "gt": 0 } }, { "days_since_last": { "buckets": ["accept", "reject"], "lte": 30 } } ] } },
+        { "status": "at_risk",  "label": "At Risk",  "description": "No responses for 30–90 days",                    "when": { "all": [ { "count": { "buckets": ["create"], "gt": 0 } }, { "days_since_last": { "buckets": ["accept", "reject"], "between": [31, 90] } } ] } },
+        { "status": "inactive", "label": "Inactive", "description": "No activity for 90+ days",                       "when": "default" }
       ],
       "item_schemas": {
         "profile_1.0": {
@@ -322,6 +247,7 @@
               "private": true
             },
             "provider_category": {
+              "vectorize": true,
               "type": "string",
               "title": "Category",
               "description": "Select the category that applies to you",
@@ -341,9 +267,12 @@
               "type": "string",
               "title": "Organisation",
               "description": "Name of your organisation (or your name if individual)",
-              "minLength": 1
+              "minLength": 1,
+              "vectorize": true
             },
             "disabilities_served": {
+              "vectorize": true,
+              "vector_weight": 2,
               "type": "array",
               "title": "Disabilities Served",
               "description": "What type of seekers are you looking for?",
@@ -383,6 +312,7 @@
               "type": "array",
               "title": "Services Offered",
               "description": "What services or support do you provide?",
+              "vectorize": true,
               "minItems": 1,
               "items": {
                 "type": "string",
@@ -401,38 +331,30 @@
               }
             },
             "service_cities": {
-              "type": "string",
+              "type": "array",
               "title": "Service Cities",
-              "description": "Cities where the service is provided",
-              "minLength": 1
+              "description": "Cities where seekers can access your services",
+              "location": "primary",
+              "minItems": 1,
+              "maxItems": 5,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
             },
             "official_address": {
               "type": "string",
-              "title": "Address",
-              "description": "Official address",
-              "minLength": 1
-            },
-            "state": {
-              "type": "string",
-              "title": "State"
-            },
-            "district": {
-              "type": "string",
-              "title": "District"
-            },
-            "block": {
-              "type": "string",
-              "title": "Block"
-            },
-            "pincode": {
-              "type": "string",
-              "title": "Pincode",
-              "pattern": "^[0-9]{6}$"
+              "title": "Organisation Address",
+              "description": "Your organisation's office or headquarters address",
+              "minLength": 1,
+              "location": "secondary"
             },
             "service_details": {
               "type": "string",
               "title": "Service Details",
               "description": "Share more about the service, opportunity, or support provided",
+              "vectorize": true,
+              "vector_weight": 2,
               "minLength": 1
             },
             "catalog_url": {
@@ -445,10 +367,22 @@
         }
       },
       "id": "provider",
+      "card": {
+        "title_field": "organisation_name",
+        "avatar_from": "organisation_name",
+        "default_fields": ["provider_category", "services_offered", "service_cities", "disabilities_served"]
+      },
       "dashboard_tiles": {
-        "total_items": "Total Service Providers",
-        "complete_profiles": "Profiles Complete",
-        "has_applications": "Received Connections"
+        "profile": [
+          { "field": "total_items", "label": "Profiles Registered" },
+          { "field": "complete_profiles", "label": "Profiles Complete" },
+          { "field": "has_applications", "label": "Received Connections" }
+        ],
+        "user": [
+          { "field": "total_users", "label": "Total Service Providers" },
+          { "field": "avg_items_per_user", "label": "Avg Profiles per User" },
+          { "field": "avg_actions_per_user", "label": "Avg Actions per User" }
+        ]
       }
     }
   ],
@@ -475,81 +409,7 @@
           "from_domain": "seeker",
           "to_network": "purple_dot",
           "to_domain": "provider",
-          "requirement_schema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "title": "Seeker To Provider Connect Requirement",
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "disability_type",
-              "looking_for",
-              "message"
-            ],
-            "properties": {
-              "disability_type": {
-                "type": "array",
-                "title": "Disability",
-                "minItems": 1,
-                "items": {
-                  "type": "string",
-                  "enum": [
-                    "Acid Attack Victim",
-                    "Autism Spectrum Disorder",
-                    "Blindness",
-                    "Cerebral Palsy",
-                    "Dwarfism",
-                    "Hearing Impairment",
-                    "Hemophilia",
-                    "Intellectual Disability",
-                    "Leprosy Cured",
-                    "Locomotor Disability",
-                    "Low Vision",
-                    "Mental Illness",
-                    "Multiple Sclerosis",
-                    "Muscular Dystrophy",
-                    "Parkinson's Disease",
-                    "Sickle Cell Disease",
-                    "Specific Learning Disabilities",
-                    "Speech and Language Disability",
-                    "Thalassemia",
-                    "Chronic Neurological Conditions",
-                    "Deaf",
-                    "Hard of Hearing",
-                    "Multiple Disabilities including deaf-blindness",
-                    "Multiple Disabilities",
-                    "Mental Retardation"
-                  ]
-                }
-              },
-              "looking_for": {
-                "type": "array",
-                "title": "Looking For",
-                "description": "What are you looking for?",
-                "minItems": 1,
-                "items": {
-                  "type": "string",
-                  "enum": [
-                    "Assistive Devices",
-                    "Health & Rehabilitation",
-                    "Training & Skill Building",
-                    "Application Support",
-                    "Counselling & Mentorship",
-                    "Accessibility Support",
-                    "Employment Opportunities",
-                    "Scholarships",
-                    "Financial Products (Loans/Insurance)",
-                    "Other"
-                  ]
-                }
-              },
-              "message": {
-                "type": "string",
-                "title": "Message",
-                "description": "Message to the provider",
-                "minLength": 1
-              }
-            }
-          },
+          "requirement_schema": { "type": "object", "properties": {} },
           "event_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": "Seeker To Provider Connect Event",
@@ -575,22 +435,12 @@
             }
           },
           "metric_categories": {
-            "create": [
-              "created"
-            ],
-            "accept": [
-              "accepted"
-            ],
-            "reject": [
-              "rejected"
-            ],
-            "cancel": [
-              "cancelled"
-            ]
+            "create": ["created"],
+            "accept": ["accepted"],
+            "reject": ["rejected"],
+            "cancel": ["cancelled"]
           },
-          "reveals_pii_on_status": [
-            "accepted"
-          ],
+          "reveals_pii_on_status": ["accepted"],
           "consent_text_initiator": "I agree to share my contact details (name, email, phone) with this provider if they accept my request.",
           "consent_text_receiver": "I agree to share my contact details (name, email, phone) with the requester."
         },
@@ -599,45 +449,7 @@
           "from_domain": "provider",
           "to_network": "purple_dot",
           "to_domain": "seeker",
-          "requirement_schema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "title": "Provider To Seeker Connect Requirement",
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "services_offered",
-              "message"
-            ],
-            "properties": {
-              "services_offered": {
-                "type": "array",
-                "title": "Services Offered",
-                "description": "Services or support being offered",
-                "minItems": 1,
-                "items": {
-                  "type": "string",
-                  "enum": [
-                    "Assistive Devices",
-                    "Health & Rehabilitation",
-                    "Training & Skill Building",
-                    "Application Support",
-                    "Counselling & Mentorship",
-                    "Accessibility Support",
-                    "Employment Opportunities",
-                    "Scholarships",
-                    "Financial Products (Loans/Insurance)",
-                    "Other"
-                  ]
-                }
-              },
-              "message": {
-                "type": "string",
-                "title": "Message",
-                "description": "Message to the seeker",
-                "minLength": 1
-              }
-            }
-          },
+          "requirement_schema": { "type": "object", "properties": {} },
           "event_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "title": "Provider To Seeker Connect Event",
@@ -662,12 +474,40 @@
               }
             }
           },
-          "metric_categories": null,
-          "reveals_pii_on_status": [
-            "accepted"
-          ],
+          "metric_categories": {
+            "create": ["created"],
+            "accept": ["accepted"],
+            "reject": ["rejected"],
+            "cancel": ["cancelled"]
+          },
+          "reveals_pii_on_status": ["accepted"],
           "consent_text_initiator": "I agree to share my contact details (name, email, phone) with this provider if they accept my request.",
           "consent_text_receiver": "I agree to share my contact details (name, email, phone) with the requester."
+        },
+        {
+          "from_network": "purple_dot",
+          "from_domain": "provider",
+          "to_network": "purple_dot",
+          "to_domain": "provider",
+          "requirement_schema": { "type": "object", "properties": {} },
+          "event_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Provider To Provider Connect Event",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "remark"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["created", "accepted", "rejected", "cancelled"]
+              },
+              "remark": { "type": "string" }
+            }
+          },
+          "metric_categories": null,
+          "reveals_pii_on_status": ["accepted"],
+          "consent_text_initiator": "I agree to share my contact details with this provider if they accept my request.",
+          "consent_text_receiver": "I agree to share my contact details with the requester."
         }
       ]
     }
@@ -680,8 +520,14 @@
       "at_risk": "At Risk",
       "inactive": "Inactive"
     },
-    "by_action_status": {
+    "by_initiated_action_status": {
       "create": "Requested",
+      "accept": "Accepted",
+      "reject": "Declined",
+      "cancel": "Cancelled"
+    },
+    "by_received_action_status": {
+      "create": "Requests",
       "accept": "Connected",
       "reject": "Declined",
       "cancel": "Cancelled"

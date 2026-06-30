@@ -6,7 +6,7 @@ metadata:
     {{- include "keycloak.labels" . | nindent 4 }}
 data:
   KC_DB: "postgres"
-  KC_DB_URL: "jdbc:postgresql://{{ .Values.global.dataPlatform.postgresService }}.{{ .Values.global.dataPlatform.namespace }}.svc.cluster.local:5432/keycloak"
+  KC_DB_URL: "jdbc:postgresql://{{ if .Values.global.dataPlatform.postgresHost }}{{ .Values.global.dataPlatform.postgresHost }}{{ else }}{{ .Values.global.dataPlatform.postgresService }}.{{ .Values.global.dataPlatform.namespace }}.svc.cluster.local{{ end }}:5432/keycloak"
   KC_HOSTNAME: "{{ .Values.global.publicHost }}"
   KC_HOSTNAME_STRICT: "false"
   KC_HTTP_ENABLED: "true"
@@ -16,4 +16,6 @@ data:
   KC_BOOTSTRAP_ADMIN_USERNAME: "{{ .Values.bootstrapAdminUsername }}"
   PUBLIC_BASE_URL: "{{ include "keycloak.publicBaseUrl" . }}"
   KC_SPI_SMS_PROVIDER: "{{ .Values.smsProvider }}"
+  MSG91_TEMPLATE_ID: "{{ .Values.msg91TemplateId }}"
+  MSG91_OTP_VAR_NAME: "{{ .Values.msg91OtpVarName }}"
   AWS_REGION: "{{ .Values.awsRegion }}"
