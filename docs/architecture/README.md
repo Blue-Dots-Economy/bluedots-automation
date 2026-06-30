@@ -10,17 +10,19 @@ update the diagrams and the facts below.
 
 ## The three views
 
-The architecture is sliced into three layered diagrams (Excalidraw — open to
-edit/export PNG):
+The architecture is sliced into three layered diagrams. The editable source is
+committed as `.excalidraw` files next to this doc (open directly in the VS Code
+Excalidraw extension, or drag onto excalidraw.com); the share links are
+public-read snapshots for quick viewing / decks.
 
-| # | View | What it answers | Link |
-|---|------|-----------------|------|
-| 1 | **AWS / EKS infrastructure** | VPC, subnets, EKS node group, IAM/IRSA → S3, LoadBalancer, DNS/ACME, image registry | https://excalidraw.com/#json=J2RAnfhW9rTBZPhUEHqgE,1xZgn5XSmMecbgE4NkKZ-A |
-| 2 | **Kubernetes namespaces & shared data** | The 3-namespace boundary, shared Postgres (3 DBs) + Redis, which workload uses which DB/secret | https://excalidraw.com/#json=S7GpWORkMzO-vOdfLwC9M,nCyUCj_lZI65vjt44v8MFQ |
-| 3 | **Application & traffic flow** | User → ELB → Kong → host+path routes → services, inter-service calls, external deps, deployment variants | https://excalidraw.com/#json=yJM12LnuFm-WXVEVzS6jK,9_3b4JReayH_rKtqiWydIw |
+| # | View | What it answers | Source file | Share link |
+|---|------|-----------------|-------------|------------|
+| 1 | **AWS / EKS infrastructure** | VPC, subnets, EKS node group, IAM/IRSA → S3, LoadBalancer, DNS/ACME, image registry | [`diagram-1-aws-eks-infra.excalidraw`](./diagram-1-aws-eks-infra.excalidraw) | https://excalidraw.com/#json=5G0kV_Wuhqo_vlo9-ifAM,jib4Ciua13QiR5yR1ok9Ow |
+| 2 | **Kubernetes namespaces & shared data** | The 3-namespace boundary, shared Postgres (3 DBs) + Redis, which workload uses which DB/secret | [`diagram-2-namespaces-data.excalidraw`](./diagram-2-namespaces-data.excalidraw) | https://excalidraw.com/#json=0dO2mvlkSzOk-18OGCZ1b,OX_5AIWaPaocL38NhCCs8g |
+| 3 | **Application & traffic flow** | User → ELB → Kong → host+path routes → services, inter-service calls, external deps, deployment variants | [`diagram-3-app-traffic-flow.excalidraw`](./diagram-3-app-traffic-flow.excalidraw) | https://excalidraw.com/#json=0RA717g_zhMpynbl8RlRx,7cPJomzXdjj9Tm-3MjqFxg |
 
-> Excalidraw share links are public-read snapshots. Re-export after edits and
-> update the links here, or save the `.excalidraw` files alongside this doc.
+> The `.excalidraw` files are the editable source of truth. After editing, re-export
+> a fresh share link and update the table.
 
 ---
 
