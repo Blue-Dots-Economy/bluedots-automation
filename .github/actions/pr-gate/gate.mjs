@@ -31,3 +31,10 @@ export function hasReleaseNotes(body) {
     .trim();
   return stripped.length > 0;
 }
+
+export function hasDocUpdate(files) {
+  return files.some((f) => {
+    const base = f.split('/').pop();
+    return base.toLowerCase() === 'readme.md' || base === 'CLAUDE.md';
+  });
+}
