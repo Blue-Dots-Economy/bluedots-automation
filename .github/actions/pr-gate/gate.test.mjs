@@ -60,3 +60,36 @@ test('no docs touched', () => {
 test('lowercase claude.md does NOT count (must be exact)', () => {
   assert.equal(hasDocUpdate(['claude.md']), false);
 });
+
+import { evaluate } from './gate.mjs';
+
+const withNotes = '## Release Notes\n- did a thing';
+
+test('passes when both conditions met', () => {
+  const r = evaluate({ body: withNotes, labels: [], files: ['README.md'] });
+  assert.equal(r.pass, true);
+  assert.equal(r.failures.length, 0);
+});
+
+test('fails when both missing', () => {
+  const r = evaluate({ body: 'no notes', labels: [], files: ['src/a.ts'] });
+  assert.equal(r.pass, false);
+  assert.equal(r.failures.length, 2);
+});
+
+test('no-release-notes label waives notes only', () => {
+  const r = evaluate({ body: 'nope', labels: ['no-release-notes'], files: ['README.md'] });
+  assert.equal(r.pass, true);
+});
+
+test('no-doc-update label waives docs only', () => {
+  const r = evaluate({ body: withNotes, labels: ['no-doc-update'], files: ['src/a.ts'] });
+  assert.equal(r.pass, true);
+});
+
+test('one waiver does not cover the other failing condition', () => {
+  const r = evaluate({ body: 'nope', labels: ['no-doc-update'], files: ['src/a.ts'] });
+  assert.equal(r.pass, false);
+  assert.equal(r.failures.length, 1);
+  assert.match(r.failures[0], /Release Notes/);
+});

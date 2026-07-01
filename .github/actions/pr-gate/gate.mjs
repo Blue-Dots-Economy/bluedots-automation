@@ -38,3 +38,21 @@ export function hasDocUpdate(files) {
     return base.toLowerCase() === 'readme.md' || base === 'CLAUDE.md';
   });
 }
+
+export function evaluate({ body, labels, files }) {
+  const labelSet = new Set(labels);
+  const releaseNotesOk = hasReleaseNotes(body) || labelSet.has('no-release-notes');
+  const docsOk = hasDocUpdate(files) || labelSet.has('no-doc-update');
+  const failures = [];
+  if (!releaseNotesOk) {
+    failures.push(
+      'Missing a non-empty "## Release Notes" section in the PR description (or add the `no-release-notes` label).',
+    );
+  }
+  if (!docsOk) {
+    failures.push(
+      'This PR does not modify README.md or CLAUDE.md (or add the `no-doc-update` label).',
+    );
+  }
+  return { pass: releaseNotesOk && docsOk, releaseNotesOk, docsOk, failures };
+}
