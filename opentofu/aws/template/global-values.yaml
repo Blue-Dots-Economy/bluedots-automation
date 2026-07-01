@@ -25,7 +25,7 @@ _cloud_storage_region: &cloud_storage_region "ap-south-1"
 
 # ── EKS ───────────────────────────────────────────────────────────────────────
 _eks_cluster_version:    &eks_cluster_version    "1.35"
-_eks_node_instance_type: &eks_node_instance_type "m6a.large"
+_eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
 _eks_node_disk_size_gb:  &eks_node_disk_size_gb  30
 _eks_node_count_min:     &eks_node_count_min     1
 _eks_node_count_max:     &eks_node_count_max     2
