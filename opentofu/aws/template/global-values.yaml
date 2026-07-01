@@ -163,10 +163,18 @@ global:
   eks_cluster_version:    *eks_cluster_version
   eks_node_instance_type: *eks_node_instance_type
   eks_node_disk_size_gb:  *eks_node_disk_size_gb
-  eks_node_count_min:     *eks_node_count_min   # set to 2 when using private-eks subnets (one per AZ)
+  eks_node_count_min:     *eks_node_count_min   # set to 2 for multi-AZ (one node per AZ)
   eks_node_count_max:     *eks_node_count_max
   # eks_node_count_desired: 3
   # eks_ebs_csi_addon_version: "v1.28.0-eksbuild.1"
+
+  # Pin the node group to specific subnet(s)/AZ. EBS volumes are AZ-locked, so a
+  # single-node cluster must keep its node in the AZ where its volumes live.
+  #   single-AZ (cheapest): ["private-eks-a"] + eks_node_count_min: 1
+  #   multi-AZ HA:          ["private-eks-a","private-eks-b"] + eks_node_count_min: 2
+  # Leave unset to spread nodes across all private-eks-* subnets.
+  # eks_node_subnet_keys:
+  #   - "private-eks-a"
 
   # ── EKS API endpoint access ──────────────────────────────────────────────────
   # Controls whether kubectl reaches the API server from the internet or VPC only.
@@ -183,17 +191,46 @@ global:
   # eks_endpoint_public_access:  false
   # eks_endpoint_private_access: true
 
+  # Include the Pritunl + Bastion VMs in a full `terragrunt run --all` apply (i.e.
+  # `./install.sh` / create_tf_resources). true = included (default); false = skipped.
+  # Either way they remain individually runnable via apply_tf_pritunl / apply_tf_bastion.
+  pritunl_enabled: true
+  bastion_enabled: true
+
   # ── Pritunl VPN ──────────────────────────────────────────────────────────────
   # Uncomment to override the default instance type (t3.small is the minimum —
   # MongoDB needs ~1 GB RAM; t3.nano will be unstable).
   # pritunl_instance_type: "t3.small"
+  #
+  # Restrict WHO can reach the VPN (and therefore all cluster access, since the bastion +
+  # EKS are VPN-only). Set to the allowed office/home public IPs as /32 CIDRs. Find each
+  # location's IP from that network: `curl ifconfig.me`. Comment the whole block out to
+  # leave the VPN open to the internet (0.0.0.0/0).
+  # ⚠️ Home ISP IPs change — a changed IP locks the VPN out until you update this list
+  # (recover by editing the SG in the AWS console; that is not VPN-gated). Apply changes
+  # with `bash install.sh apply_tf_pritunl` (updates the SG in place, no VM recreation).
+  # NOTE: the office IP below is the shared baseline (always allowed). A deployment for a
+  # DIFFERENT org/office should replace it with their own IP.
+  pritunl_ingress_cidrs:
+    - "49.207.54.70/32"       # office (baseline — always allowed)
+    # - "198.51.100.20/32"    # per-env: add home/other IPs, then apply_tf_pritunl
+    # - "192.0.2.30/32"
 
-  # ── Bastion host ─────────────────────────────────────────────────────────────
-  # Lives in a private subnet — only reachable after connecting Pritunl VPN.
-  # Requires an EC2 key pair — create one first:
-  #   AWS console → EC2 → Key Pairs → Create key pair → download .pem → chmod 400
-  # bastion_key_name: "my-key-pair"
-  # bastion_instance_type: "t3.nano"    # default — just runs sshd + kubectl
+  # ── Bastion host (deployment workstation) ────────────────────────────────────
+  # Lives in a private subnet — only reachable after connecting Pritunl VPN, then SSH.
+  # Developers `git pull` and run helm/kubectl FROM here; laptops never touch the EKS
+  # API directly. Its IAM role is mapped into the cluster via an EKS access entry
+  # (ClusterAdmin), so kubectl/helm work after `aws eks update-kubeconfig`.
+  #
+  # Access = SSH public keys. Each dev runs `ssh-keygen -t ed25519` and pastes their
+  # PUBLIC key line below. Private keys stay with the owner — never in the repo or state.
+  # This same list also authorizes SSH into the Pritunl host for its one-time setup.
+  # Add/remove a line + re-apply (bastion/pritunl) to grant/revoke a developer.
+  # bastion_authorized_keys:
+  #   - "ssh-ed25519 AAAA... alice@laptop"
+  #   - "ssh-ed25519 AAAA... bob@laptop"
+  # bastion_instance_type: "t3.medium"  # default — runs helm/kubectl/git (t3.medium floor; nano OOMs on helm template)
+  # bastion_key_name: "my-key-pair"     # optional AWS key pair; not needed when using bastion_authorized_keys
 
   # ── RDS (managed Postgres) ──────────────────────────────────────────────────
   # Single multi-tenant instance; databases/roles created by the common-services

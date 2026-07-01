@@ -91,6 +91,14 @@ function _apply_tf_module() {
     ( cd "$module" && terragrunt init -input=false && terragrunt apply -input=false ${AUTO_APPROVE:+-auto-approve} )
 }
 
+function _destroy_tf_module() {
+    local module="$1"
+    source tf.sh
+    echo -e "\nDestroying module: $module"
+    # Destroys ONLY this module's resources. Set AUTO_APPROVE=1 to skip the prompt.
+    ( cd "$module" && terragrunt init -input=false && terragrunt destroy -input=false ${AUTO_APPROVE:+-auto-approve} )
+}
+
 function plan_tf_network()          { _plan_tf_module "network"; }
 function plan_tf_eks()              { _plan_tf_module "eks"; }
 function plan_tf_iam()              { _plan_tf_module "iam"; }
@@ -110,6 +118,9 @@ function apply_tf_output_file()      { _apply_tf_module "output-file"; }
 function apply_tf_rds()              { _apply_tf_module "rds"; }
 function apply_tf_pritunl()          { _apply_tf_module "pritunl"; }
 function apply_tf_bastion()          { _apply_tf_module "bastion"; }
+
+function destroy_tf_pritunl()        { _destroy_tf_module "pritunl"; }
+function destroy_tf_bastion()        { _destroy_tf_module "bastion"; }
 
 function apply_gp3_default_sc() {
     echo -e "\nApplying gp3 StorageClass as cluster default"

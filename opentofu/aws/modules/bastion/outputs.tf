@@ -1,5 +1,5 @@
 output "instance_id" {
-  description = "Bastion EC2 instance ID — use for SSM emergency access: aws ssm start-session --target <id>"
+  description = "Bastion EC2 instance ID"
   value       = aws_instance.bastion.id
 }
 

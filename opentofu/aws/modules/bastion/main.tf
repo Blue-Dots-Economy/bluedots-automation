@@ -7,6 +7,11 @@ locals {
     ManagedBy     = "Terraform"
     CloudProvider = "AWS"
   }
+
+  # Developers' public keys, one per line, written verbatim into ec2-user's
+  # authorized_keys. Each dev keeps their own private key locally — only public
+  # keys ever reach here, so nothing secret lands in Terraform state.
+  authorized_keys_block = join("\n", var.authorized_keys)
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -37,11 +42,11 @@ data "aws_ami" "al2023" {
 
 resource "aws_security_group" "bastion" {
   name        = "${local.environment_name}-bastion"
-  description = "Bastion — SSH from VPC CIDR only (requires Pritunl VPN to reach)"
+  description = "Bastion - SSH from VPC CIDR only (requires Pritunl VPN to reach)"
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "SSH — VPC-internal only; reachable only after VPN connect"
+    description = "SSH - VPC-internal only; reachable only after VPN connect"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -60,9 +65,8 @@ resource "aws_security_group" "bastion" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# IAM role — SSM emergency access + eks:DescribeCluster so aws eks update-kubeconfig works
-# SSM communicates outbound (443) via NAT GW — works even when Pritunl VPN is down.
-# This is the emergency backdoor if the VPN is broken.
+# IAM role — eks:DescribeCluster so `aws eks update-kubeconfig` works on the bastion.
+# Access to the box is SSH-only (via the EC2 key pair, reachable only through the VPN).
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_iam_role" "bastion" {
@@ -78,11 +82,6 @@ resource "aws_iam_role" "bastion" {
   })
 
   tags = local.common_tags
-}
-
-resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.bastion.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_role_policy" "eks_describe" {
@@ -120,26 +119,44 @@ resource "aws_instance" "bastion" {
   iam_instance_profile        = aws_iam_instance_profile.bastion.name
   associate_public_ip_address = false
 
-  # <<-EOF strips leading whitespace down to the minimum-indented non-empty line.
-  # All lines are at 4-space indent → shebang lands at column 0 in cloud-init.
-  # The bastion is a DEPLOYMENT workstation: developers SSH in, `git pull`, and run
-  # helm/kubectl from here. No repository code is baked into the image — it is pulled
-  # manually. Toolchain: kubectl, helm, aws-cli v2, git, yq, make, openssl.
-  user_data = <<-EOF
-    #!/bin/bash
-    set -euxo pipefail
-    dnf install -y git make openssl tar gzip unzip
-    curl -fsSL "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
-    chmod +x /usr/local/bin/kubectl
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -o /usr/local/bin/yq
-    chmod +x /usr/local/bin/yq
-    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-    unzip -q /tmp/awscliv2.zip -d /tmp
-    /tmp/aws/install --update
-  EOF
+  # Deployment workstation: sized for repo clones, helm chart caches, and the toolchain.
+  # The AMI default root is too small — installs hit "no space left on device".
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 30
+    encrypted             = true
+    delete_on_termination = true
+  }
 
-  depends_on = [aws_iam_role_policy_attachment.ssm, aws_iam_role_policy.eks_describe]
+  # Non-indented heredoc: every line is written verbatim (no whitespace stripping), so
+  # the shebang stays at column 0 AND the injected authorized_keys land at column 0
+  # (sshd ignores authorized_keys lines that begin with whitespace).
+  # The bastion is a DEPLOYMENT workstation: developers SSH in, `git pull`, and run
+  # helm/kubectl from here. No repo code is baked in — it is pulled manually.
+  # Toolchain: kubectl, helm, aws-cli v2, k9s, git, yq, make, openssl.
+  user_data = <<EOF
+#!/bin/bash
+set -euxo pipefail
+dnf install -y git make openssl tar gzip unzip
+curl -fsSL "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
+chmod +x /usr/local/bin/kubectl
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -o /usr/local/bin/yq
+chmod +x /usr/local/bin/yq
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install --update
+curl -fsSL "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_amd64.tar.gz" -o /tmp/k9s.tar.gz
+tar -xzf /tmp/k9s.tar.gz -C /usr/local/bin k9s
+install -d -m 700 -o ec2-user -g ec2-user /home/ec2-user/.ssh
+cat >> /home/ec2-user/.ssh/authorized_keys <<'KEYS'
+${local.authorized_keys_block}
+KEYS
+chmod 600 /home/ec2-user/.ssh/authorized_keys
+chown ec2-user:ec2-user /home/ec2-user/.ssh/authorized_keys
+EOF
+
+  depends_on = [aws_iam_role_policy.eks_describe]
 
   tags = merge(local.common_tags, { Name = "${local.environment_name}-bastion" })
 }

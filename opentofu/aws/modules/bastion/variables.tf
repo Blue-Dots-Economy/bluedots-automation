@@ -25,8 +25,15 @@ variable "subnet_id" {
 }
 
 variable "key_name" {
-  description = "EC2 key pair name for SSH access. Create one first: AWS console → EC2 → Key Pairs → Create key pair. Download and chmod 400 the .pem file."
+  description = "Optional AWS EC2 key pair name. Leave null when using authorized_keys (the recommended path) — access is then granted purely by the public keys injected via user_data."
   type        = string
+  default     = null
+}
+
+variable "authorized_keys" {
+  description = "Public SSH keys (one full line each, e.g. 'ssh-ed25519 AAAA... alice') appended to ec2-user's authorized_keys. Each developer generates their own key pair with ssh-keygen and shares only the public half; private keys never enter Terraform or state. Add/remove entries to grant/revoke access."
+  type        = list(string)
+  default     = []
 }
 
 variable "cluster_name" {
