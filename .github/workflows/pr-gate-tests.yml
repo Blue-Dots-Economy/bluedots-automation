@@ -1,0 +1,18 @@
+name: pr-gate-tests
+on:
+  pull_request:
+    paths: ['.github/actions/pr-gate/**']
+  push:
+    branches: [feature, develop, main]
+    paths: ['.github/actions/pr-gate/**']
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Unit tests
+        working-directory: .github/actions/pr-gate
+        run: node --test
