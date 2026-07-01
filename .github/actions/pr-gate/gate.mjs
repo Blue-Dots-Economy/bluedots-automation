@@ -1,0 +1,33 @@
+// Pure logic for the develop-PR gate. No IO, no dependencies.
+
+const RELEASE_NOTES_HEADING = /^\s{0,3}#{1,6}\s*release[ _-]?notes\s*$/i;
+const ANY_HEADING = /^\s{0,3}#{1,6}\s+/;
+
+export function extractReleaseNotesSection(body) {
+  if (!body) return null;
+  const lines = body.split(/\r?\n/);
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (RELEASE_NOTES_HEADING.test(lines[i])) {
+      start = i + 1;
+      break;
+    }
+  }
+  if (start === -1) return null;
+  const collected = [];
+  for (let i = start; i < lines.length; i++) {
+    if (ANY_HEADING.test(lines[i])) break;
+    collected.push(lines[i]);
+  }
+  return collected.join('\n');
+}
+
+export function hasReleaseNotes(body) {
+  const section = extractReleaseNotesSection(body);
+  if (section === null) return false;
+  const stripped = section
+    .replace(/<!--[\s\S]*?-->/g, '') // drop HTML comments (template placeholders)
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped.length > 0;
+}
