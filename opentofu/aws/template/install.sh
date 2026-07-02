@@ -172,6 +172,7 @@ function deploy_common_services() {
         -n "$CS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
         -f "$GLOBAL_IMAGES" \
+        -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_CREDS" \
         --wait --timeout 5m
