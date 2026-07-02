@@ -189,6 +189,10 @@ api:
     # at /app/schemas/<name>.json. To add a network: drop the JSON, append
     # the name to api.schemas.networks AND the path here.
     NETWORK_CONFIG_SOURCE: local
+    # Consent config is read from the same dir as NETWORK_CONFIG_LOCAL_FILE
+    # (/app/schemas/consent.json + optional <brand>/consent.json). `local` is the
+    # app default; set explicitly so intent survives a future default change.
+    CONSENT_CONFIG_SOURCE: local
     # Update the local file path according to the network schema you want to serve. (purple dot, yellow_dot, blue dots)
     NETWORK_CONFIG_LOCAL_FILE: "/app/schemas/purple_dot.json"
     NETWORK_CONFIG_URLS: ""
@@ -227,6 +231,19 @@ api:
       # purple_dot is the served network (SERVED_DOMAINS / NETWORK_CONFIG_LOCAL_FILE
       # below) and must be mounted; it also carries the search vectorize markers.
       - purple_dot
+    # Consent config for the served network, exposed as /app/schemas/consent.json
+    # (the api reads consent.json from dirname(NETWORK_CONFIG_LOCAL_FILE)). Source
+    # files live in charts/api/files/consent/<network>.json. Must match the network
+    # in NETWORK_CONFIG_LOCAL_FILE. Consent is cached in-process → after changing it,
+    # `kubectl -n dpg rollout restart deploy/<api>` (and the search pods that reuse
+    # this ConfigMap). Set to "" to fall back to the image-baked consent.
+    consentNetwork: purple_dot
+    # Optional brand skin whose consent differs from the network. When set, the
+    # brand's PARTIAL override (charts/api/files/consent/<network>.<brand>.json) is
+    # placed at /app/schemas/<brand>/consent.json and the api deep-merges it over
+    # the network default — so keep both files in sync. Must match ui.VITE_BRAND_NAME.
+    # Empty = standard (network consent only). Examples: upsdm, onetac.
+    consentBrand: ""
 
 ui:
   image: *ui_image
