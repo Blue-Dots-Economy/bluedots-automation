@@ -1,0 +1,14 @@
+name: develop-pr-gate
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, edited, labeled, unlabeled, reopened]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docs & release-notes gate
+        uses: Blue-Dots-Economy/bluedots-automation/.github/actions/pr-gate@main

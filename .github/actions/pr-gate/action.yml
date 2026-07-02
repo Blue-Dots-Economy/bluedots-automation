@@ -1,0 +1,10 @@
+name: 'PR docs & release-notes gate'
+description: 'Blocks a develop PR unless it has release notes and a README/CLAUDE.md update (each label-waivable).'
+runs:
+  using: composite
+  steps:
+    - name: Evaluate PR gate
+      shell: bash
+      run: node "${GITHUB_ACTION_PATH}/check.mjs"
+      env:
+        GH_TOKEN: ${{ github.token }}
