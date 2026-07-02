@@ -227,6 +227,13 @@ api:
       # purple_dot is the served network (SERVED_DOMAINS / NETWORK_CONFIG_LOCAL_FILE
       # below) and must be mounted; it also carries the search vectorize markers.
       - purple_dot
+    # Consent config for the served network, exposed as /app/schemas/consent.json
+    # (the api reads consent.json from dirname(NETWORK_CONFIG_LOCAL_FILE)). Source
+    # files live in charts/api/files/consent/<network>.json. Must match the network
+    # in NETWORK_CONFIG_LOCAL_FILE. Consent is cached in-process → after changing it,
+    # `kubectl -n dpg rollout restart deploy/<api>` (and the search pods that reuse
+    # this ConfigMap). Set to "" to fall back to the image-baked consent.
+    consentNetwork: purple_dot
 
 ui:
   image: *ui_image

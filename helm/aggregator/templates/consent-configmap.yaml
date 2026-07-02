@@ -1,0 +1,17 @@
+{{/*
+  Consent config for the aggregator web + api. Mounted single-file (subPath)
+  into both pods at the loader path
+  /app/config/<network>[/<brand>]/schemas/aggregator/consent.json, so consent
+  text/versions can change via a ConfigMap edit + rollout — no image rebuild.
+  Named by release so the web/api subcharts can reference it (see their
+  deployment.yaml volumes). Source: files/consent/consent.json.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-consent
+  labels:
+    {{- include "aggregator.labels" . | nindent 4 }}
+data:
+  consent.json: |
+{{ .Files.Get "files/consent/consent.json" | indent 4 }}

@@ -22,4 +22,17 @@ data:
   {{ . }}.json: |
 {{ $raw | replace "__PUBLIC_API_URL__" $publicApiUrl | replace "__SCHEMAS_URL__" $schemasUrl | indent 4 }}
 {{- end }}
+{{- /*
+  Consent config for the served network. The api reads consent.json from the
+  same directory as NETWORK_CONFIG_LOCAL_FILE (i.e. /app/schemas), so exposing
+  it here as `consent.json` lets consent text/versions change via a ConfigMap
+  edit + rollout — no image rebuild. Source files live in files/consent/<net>.json.
+*/ -}}
+{{- if .Values.schemas.consentNetwork }}
+{{- $cfile := printf "files/consent/%s.json" .Values.schemas.consentNetwork -}}
+{{- $craw := $.Files.Get $cfile -}}
+{{- if not $craw }}{{ fail (printf "missing consent file %s (schemas.consentNetwork=%s)" $cfile $.Values.schemas.consentNetwork) }}{{- end }}
+  consent.json: |
+{{ $craw | indent 4 }}
+{{- end }}
 {{- end }}

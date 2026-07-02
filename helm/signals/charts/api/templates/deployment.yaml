@@ -15,6 +15,9 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # Rolls the api when network schemas or consent.json change (consent is
+        # cached in-process, so a restart is required to pick up ConfigMap edits).
+        checksum/schemas: {{ include (print $.Template.BasePath "/schemas-configmap.yaml") . | sha256sum }}
         {{- if .Values.secrets.create }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
