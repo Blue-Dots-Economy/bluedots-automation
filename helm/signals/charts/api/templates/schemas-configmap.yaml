@@ -27,6 +27,11 @@ data:
   same directory as NETWORK_CONFIG_LOCAL_FILE (i.e. /app/schemas), so exposing
   it here as `consent.json` lets consent text/versions change via a ConfigMap
   edit + rollout — no image rebuild. Source files live in files/consent/<net>.json.
+
+  NOTE: the search subchart reuses this ConfigMap and dir-scans /app/schemas for
+  *.json network configs. consent.json parses fine but has no `id`, so search
+  keys it under `undefined` and never looks it up (harmless). The brand override
+  lives in a <brand>/ subdir, which search's readdir(...).endsWith('.json') skips.
 */ -}}
 {{- if .Values.schemas.consentNetwork }}
 {{- $cfile := printf "files/consent/%s.json" .Values.schemas.consentNetwork -}}

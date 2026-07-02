@@ -189,6 +189,10 @@ api:
     # at /app/schemas/<name>.json. To add a network: drop the JSON, append
     # the name to api.schemas.networks AND the path here.
     NETWORK_CONFIG_SOURCE: local
+    # Consent config is read from the same dir as NETWORK_CONFIG_LOCAL_FILE
+    # (/app/schemas/consent.json + optional <brand>/consent.json). `local` is the
+    # app default; set explicitly so intent survives a future default change.
+    CONSENT_CONFIG_SOURCE: local
     # Update the local file path according to the network schema you want to serve. (purple dot, yellow_dot, blue dots)
     NETWORK_CONFIG_LOCAL_FILE: "/app/schemas/purple_dot.json"
     NETWORK_CONFIG_URLS: ""
