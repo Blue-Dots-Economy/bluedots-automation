@@ -261,8 +261,7 @@ cluster-wide.
 > the committed default is Kong (`kong.enabled: true`); `kong` is the
 > cluster-default IngressClass and rate limiting is enforced via
 > `KongClusterPlugin` tiers backed by the shared Redis. `deploy_common_services`
-> applies the Kong CRDs first (Helm skips subchart/upgrade CRDs). See
-> `docs/kong-implementation-plan.md`.
+> applies the Kong CRDs first (Helm skips subchart/upgrade CRDs).
 
 ### Per-step targets
 

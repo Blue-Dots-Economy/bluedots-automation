@@ -134,11 +134,10 @@ secrets:
   # takes precedence (kept for ergonomic top-level reference).
   existingSecret: ''
   # Postgres password for the shared `aggregator` user in the common-services
-  # Postgres. Injected by the Makefile `aggregator-install` target from the
-  # common-services `data-postgres` Secret (aggregator-password key).
+  # Postgres. Layered in from the generated global-credentials.yaml at deploy time.
   postgresPassword: change-me-postgres-password
-  # Redis password for the shared common-services Redis. Injected by the Makefile
-  # `aggregator-install` target from the common-services `data-redis` Secret.
+  # Redis password for the shared common-services Redis. Layered in from the
+  # generated global-credentials.yaml at deploy time.
   redisPassword: change-me-redis-password
   kcBootstrapAdminPassword: change-me-keycloak-admin
   keycloakAdminClientSecret: change-me-kc-admin-client-secret

@@ -254,7 +254,6 @@ Deploy in **strict dependency order**: `common-services` first (it owns the
 > shared Redis (`policy: redis`) so limits stay correct across Kong replicas.
 > `deploy_common_services` applies the Kong CRDs (`apply_kong_crds`) before the
 > helm upgrade — Helm does not install subchart CRDs or update CRDs on upgrade.
-> See `docs/kong-implementation-plan.md`.
 
 ```bash
 # from opentofu/aws/<env>

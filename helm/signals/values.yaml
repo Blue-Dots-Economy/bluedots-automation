@@ -185,7 +185,7 @@ api:
     SERVED_DOMAINS: "purple_dot/seeker,purple_dot/provider"
     # Network schemas are mounted into the api pod from a ConfigMap (see
     # api.schemas.networks below). Files live in
-    # helmcharts/dpg/charts/api/files/networks/<name>.json and are exposed
+    # helm/signals/charts/api/files/networks/<name>.json and are exposed
     # at /app/schemas/<name>.json. To add a network: drop the JSON, append
     # the name to api.schemas.networks AND the path here.
     NETWORK_CONFIG_SOURCE: local
@@ -410,7 +410,7 @@ match-score:
 # pgcrypto/cube/earthdistance extensions are created by the common-services
 # Postgres bootstrap. credentials.postgresql.password / credentials.redis.password
 # above MUST match the common-services `dpg-password` / `redis-password`
-# (injected by the Makefile `dpg-install` target from the common-services Secrets).
+# (layered in from the generated global-credentials.yaml at deploy time).
 
 # ─── Signals search engine (TEI embeddings + ingestion worker + query API) ──
 # `search` indexes items into item_search (pgvector+PostGIS) and serves

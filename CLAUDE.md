@@ -152,7 +152,7 @@ IngressClass; all app Ingress objects set `ingressClassName: kong`. Rate limitin
 is enforced by `KongClusterPlugin` tiers (`rl-auth`/`rl-api`/`rl-public`) defined
 in `helm/common-services/values.yaml`, attached per route via the
 `konghq.com/plugins` annotation, with counters in the shared Redis
-(`policy: redis`). See `docs/kong-implementation-plan.md`.
+(`policy: redis`).
 
 **Kong CRD gotcha:** Helm installs CRDs only from the top-level chart's `crds/`
 dir and only on first install — never from a subchart, never on upgrade. So
@@ -337,7 +337,6 @@ See [DEPLOYMENT.md → Troubleshooting](DEPLOYMENT.md) for symptom→fix table.
 - `helm/global-resources.yaml` — shared replica/HPA/PDB/resource overrides across all envs.
 - `opentofu/aws/_common/*.hcl` — shared Terragrunt/OpenTofu logic.
 - `opentofu/aws/modules/output-file/` — generates `global-credentials.yaml` + `global-cloud-values.yaml`.
-- `docs/kong-implementation-plan.md` — Kong ingress design.
 - `.gitignore` — ignores state, secrets, generated values, `.terraform/`, `*.tfstate`, `*.tfvars`.
-- `README.md` / `helm/README.md` — overview, but **partially stale** (Makefile, nginx, `dpg` namespace); prefer install.sh + DEPLOYMENT.md.
+- `README.md` / `helm/README.md` / per-chart `helm/*/README.md` — overview + per-chart standalone deploy instructions.
 ```

@@ -76,7 +76,7 @@ kubectl -n common-services get svc common-services-kong-proxy   # external LB ho
 > **cert-manager ACME (v1.20.2) gotcha.** If certificates stay `READY=False`,
 > run `bash install.sh fix_acme_issuer_uri` (also run automatically at the end of
 > `deploy_all_services`) — it patches `status.acme.uri` and clears poisoned cert
-> chains. See the [Kong implementation plan](../../docs/kong-implementation-plan.md).
+> chains.
 
 ## App-chart wiring
 
