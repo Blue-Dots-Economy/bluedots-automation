@@ -35,6 +35,22 @@ test('content stops at next heading', () => {
   assert.equal(hasReleaseNotes(body), true);
 });
 
+test('sub-headings within release notes count as content', () => {
+  const body = '## Release Notes\n### Bug fixes\n- Fixed OTP expiry\n### Features\n- Added export';
+  assert.equal(hasReleaseNotes(body), true);
+});
+
+test('same-level heading ends the release notes section', () => {
+  // RN section is empty; a following ## heading must NOT be swallowed as content
+  const body = '## Release Notes\n\n## Checklist\n- [x] did things';
+  assert.equal(hasReleaseNotes(body), false);
+});
+
+test('higher-level heading ends the section', () => {
+  const body = '### Release Notes\n- real note\n# Top\nignored';
+  assert.equal(hasReleaseNotes(body), true); // content collected before the # heading
+});
+
 import { hasDocUpdate } from './gate.mjs';
 
 test('README.md at repo root counts', () => {

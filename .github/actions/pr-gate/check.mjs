@@ -43,4 +43,10 @@ function main() {
   process.exit(1);
 }
 
-main();
+try {
+  main();
+} catch (err) {
+  // Fail closed: any unexpected error blocks the PR rather than passing silently.
+  console.error(`❌ PR gate errored — failing closed: ${err.message}`);
+  process.exit(1);
+}

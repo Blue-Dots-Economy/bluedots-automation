@@ -1,14 +1,18 @@
 // Pure logic for the develop-PR gate. No IO, no dependencies.
 
 const RELEASE_NOTES_HEADING = /^\s{0,3}#{1,6}\s*release[ _-]?notes\s*$/i;
-const ANY_HEADING = /^\s{0,3}#{1,6}\s+/;
+const HEADING = /^\s{0,3}(#{1,6})\s+/;
 
 export function extractReleaseNotesSection(body) {
   if (!body) return null;
   const lines = body.split(/\r?\n/);
   let start = -1;
+  let level = 0;
   for (let i = 0; i < lines.length; i++) {
-    if (RELEASE_NOTES_HEADING.test(lines[i])) {
+    const match = lines[i].match(RELEASE_NOTES_HEADING);
+    if (match) {
+      // Count leading '#' characters to get the heading level.
+      level = lines[i].match(/^\s{0,3}(#{1,6})/)[1].length;
       start = i + 1;
       break;
     }
@@ -16,7 +20,8 @@ export function extractReleaseNotesSection(body) {
   if (start === -1) return null;
   const collected = [];
   for (let i = start; i < lines.length; i++) {
-    if (ANY_HEADING.test(lines[i])) break;
+    const headingMatch = lines[i].match(HEADING);
+    if (headingMatch && headingMatch[1].length <= level) break;
     collected.push(lines[i]);
   }
   return collected.join('\n');
