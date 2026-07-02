@@ -234,6 +234,12 @@ api:
     # `kubectl -n dpg rollout restart deploy/<api>` (and the search pods that reuse
     # this ConfigMap). Set to "" to fall back to the image-baked consent.
     consentNetwork: purple_dot
+    # Optional brand skin whose consent differs from the network. When set, the
+    # brand's PARTIAL override (charts/api/files/consent/<network>.<brand>.json) is
+    # placed at /app/schemas/<brand>/consent.json and the api deep-merges it over
+    # the network default — so keep both files in sync. Must match ui.VITE_BRAND_NAME.
+    # Empty = standard (network consent only). Examples: upsdm, onetac.
+    consentBrand: ""
 
 ui:
   image: *ui_image

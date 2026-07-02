@@ -4,7 +4,12 @@
   /app/config/<network>[/<brand>]/schemas/aggregator/consent.json, so consent
   text/versions can change via a ConfigMap edit + rollout — no image rebuild.
   Named by release so the web/api subcharts can reference it (see their
-  deployment.yaml volumes). Source: files/consent/consent.json.
+  deployment.yaml volumes). Source: files/consent/consent.json — which must
+  contain the served network's (or brand's) consent. Aggregator brand consent is
+  a FULL document (not a partial override), and each deployment serves ONE
+  network+brand, so a single file mounted at the brand/network path is complete:
+  for a branded deploy (global.aggregatorBrand set) seed this file from the app
+  repo's config/<network>/<brand>/schemas/aggregator/consent.json.
 */}}
 apiVersion: v1
 kind: ConfigMap
