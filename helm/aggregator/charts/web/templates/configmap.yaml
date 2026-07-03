@@ -25,3 +25,4 @@ data:
   AGGREGATOR_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   # Brand skin over the network (UI/config skin). Empty = standard dots.
   AGGREGATOR_BRAND: "{{ .Values.global.aggregatorBrand }}"
+  ORG_HIERARCHY_ENABLED: "{{ .Values.global.orgHierarchyEnabled }}"

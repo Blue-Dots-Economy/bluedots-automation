@@ -19,19 +19,19 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-c042541"
+    tag: "sha-98167ad"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-c042541"
+    tag: "sha-98167ad"
     pullPolicy: Always
 
 notification-service:
   image:
-    repository: vinodbbhorge/notification-service
-    tag: "latest"
+    repository: ghcr.io/blue-dots-economy/notification-service
+    tag: "sha-ae5b45c"
     pullPolicy: IfNotPresent
 
 match-score:
@@ -59,19 +59,19 @@ search-embeddings:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "sha-55ceff1"
+    tag: "sha-374dd99"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "sha-55ceff1"
+    tag: "sha-374dd99"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "sha-55ceff1"
+    tag: "sha-374dd99"
     pullPolicy: Always
 
 keycloak:
