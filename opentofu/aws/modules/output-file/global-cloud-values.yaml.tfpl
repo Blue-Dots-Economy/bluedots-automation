@@ -45,6 +45,7 @@ worker:
 api:
   config:
     API_DOMAIN: https://${signals_public_hosts[0]}
+    FRONTEND_BASE_URL: https://${signals_public_hosts[0]}
     ALLOWED_ORIGINS: "${signals_allowed_origins}"
     NETWORK_CONFIG_LOCAL_FILE: "/app/schemas/${signals_network}.json"
   schemas:

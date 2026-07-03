@@ -1,25 +1,22 @@
 locals {
-  global_vars            = yamldecode(file(find_in_parent_folders("global-values.yaml")))
-  environment            = local.global_vars.global.environment
-  building_block         = local.global_vars.global.building_block
-  cloud_storage_region   = local.global_vars.global.cloud_storage_region
-  cloud_storage_provider = try(local.global_vars.global.cloud_storage_provider, "aws")
+  global_vars          = yamldecode(file(find_in_parent_folders("global-values.yaml")))
+  cloud_storage_region = local.global_vars.global.cloud_storage_region
 
   # ── Signals hosts (host-routed served binding) ─────────────────────────────
   # signals_public_hosts is the SOLE source of the served hostnames (UI + /api).
   # List one host for a single domain, several for multi-domain — no legacy
   # single-host fallback. host_bindings maps each host to "<network>/<domain>".
-  signals_public_hosts    = local.global_vars.global.signals_public_hosts
-  signals_host_bindings   = try(local.global_vars.global.signals_host_bindings, "")
+  signals_public_hosts  = local.global_vars.global.signals_public_hosts
+  signals_host_bindings = try(local.global_vars.global.signals_host_bindings, "")
   # Network served by this deployment — shared by signals (NETWORK_CONFIG_LOCAL_FILE,
   # schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
-  network                 = try(local.global_vars.global.network, "orange_dot")
+  network = try(local.global_vars.global.network, "orange_dot")
   # CORS origins: localhost dev + https://<each served host>.
-  signals_allowed_origins = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
-  signals_google_maps_api_key  = try(local.global_vars.global.signals_google_maps_api_key, "")
-  notification_gmail_user      = try(local.global_vars.global.notification_gmail_user, "")
-  notification_gmail_pass      = try(local.global_vars.global.notification_gmail_pass, "")
-  notification_msg91_auth_key  = try(local.global_vars.global.notification_msg91_auth_key, "")
+  signals_allowed_origins        = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
+  signals_google_maps_api_key    = try(local.global_vars.global.signals_google_maps_api_key, "")
+  notification_gmail_user        = try(local.global_vars.global.notification_gmail_user, "")
+  notification_gmail_pass        = try(local.global_vars.global.notification_gmail_pass, "")
+  notification_msg91_auth_key    = try(local.global_vars.global.notification_msg91_auth_key, "")
   notification_msg91_template_id = try(local.global_vars.global.notification_msg91_template_id, "")
 
   aggregator_smtp_user      = try(local.global_vars.global.aggregator_smtp_user, "")
@@ -32,39 +29,11 @@ terraform {
   source = "../../modules//output-file/"
 }
 
-dependency "network" {
-  config_path                            = "../network"
-  mock_outputs_merge_strategy_with_state = "shallow"
-  mock_outputs = {
-    vpc_id                = "vpc-dummy"
-    vpc_cidr_block        = "10.0.0.0/16"
-    public_subnet_ids     = ["subnet-dummy-1", "subnet-dummy-2"]
-    private_subnet_ids    = []
-    nat_gateway_public_ip = ""
-  }
-}
-
-dependency "eks" {
-  config_path                            = "../eks"
-  mock_outputs_merge_strategy_with_state = "shallow"
-  mock_outputs = {
-    cluster_name                      = "dummy-cluster"
-    cluster_endpoint                  = "https://dummy.eks.amazonaws.com"
-    cluster_arn                       = "arn:aws:eks:us-east-1:123456789012:cluster/dummy"
-    oidc_provider                     = "oidc.eks.us-east-1.amazonaws.com/id/DUMMY"
-    oidc_provider_arn                 = "arn:aws:iam::123456789012:oidc-provider/dummy"
-    node_role_arn                     = "arn:aws:iam::123456789012:role/dummy-node"
-    private_lb_ip                     = ""
-    cloudwatch_observability_role_arn = ""
-  }
-}
-
 dependency "iam" {
   config_path                            = "../iam"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    app_sa_role_arn  = "arn:aws:iam::123456789012:role/dummy-app-sa"
-    app_sa_role_name = "dummy-app-sa"
+    app_sa_role_arn = "arn:aws:iam::123456789012:role/dummy-app-sa"
   }
 }
 
@@ -72,8 +41,7 @@ dependency "storage" {
   config_path                            = "../storage"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    storage_bucket_public  = ""
-    storage_bucket_private = ""
+    storage_bucket_public = ""
   }
 }
 
@@ -90,8 +58,6 @@ dependency "random_passwords" {
   config_path                            = "../random_passwords"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    encryption_string     = "00000000000000000000000000000000"
-    random_string         = "dummy-random-string-1234"
     signalstack_admin_key = "dummy-signalstack-admin-key-0000000000000000"
 
     postgres_admin_password = "0000000000000000000000000000000c"
@@ -114,11 +80,8 @@ dependency "random_passwords" {
 }
 
 inputs = {
-  base_location          = get_terragrunt_dir()
-  building_block         = local.building_block
-  environment            = local.environment
-  cloud_storage_provider = local.cloud_storage_provider
-  cloud_storage_region   = local.cloud_storage_region
+  base_location        = get_terragrunt_dir()
+  cloud_storage_region = local.cloud_storage_region
 
   # Signals computed config inputs
   signals_public_hosts    = local.signals_public_hosts
@@ -126,37 +89,16 @@ inputs = {
   signals_network         = local.network
   signals_allowed_origins = local.signals_allowed_origins
 
-  # Network
-  vpc_id                = dependency.network.outputs.vpc_id
-  vpc_cidr_block        = dependency.network.outputs.vpc_cidr_block
-  public_subnet_ids     = dependency.network.outputs.public_subnet_ids
-  private_subnet_ids    = dependency.network.outputs.private_subnet_ids
-  nat_gateway_public_ip = dependency.network.outputs.nat_gateway_public_ip == null ? "" : dependency.network.outputs.nat_gateway_public_ip
-
-  # EKS
-  cluster_name                      = dependency.eks.outputs.cluster_name
-  cluster_endpoint                  = dependency.eks.outputs.cluster_endpoint
-  cluster_arn                       = dependency.eks.outputs.cluster_arn
-  oidc_provider                     = dependency.eks.outputs.oidc_provider
-  oidc_provider_arn                 = dependency.eks.outputs.oidc_provider_arn
-  node_role_arn                     = dependency.eks.outputs.node_role_arn
-  private_ingressgateway_ip         = dependency.eks.outputs.private_lb_ip == null ? "" : dependency.eks.outputs.private_lb_ip
-  cloudwatch_observability_role_arn = dependency.eks.outputs.cloudwatch_observability_role_arn == null ? "" : dependency.eks.outputs.cloudwatch_observability_role_arn
-
   # IAM
-  app_sa_role_arn  = dependency.iam.outputs.app_sa_role_arn
-  app_sa_role_name = dependency.iam.outputs.app_sa_role_name
+  app_sa_role_arn = dependency.iam.outputs.app_sa_role_arn
 
   # Storage
-  storage_bucket_public  = dependency.storage.outputs.storage_bucket_public == null ? "" : dependency.storage.outputs.storage_bucket_public
-  storage_bucket_private = dependency.storage.outputs.storage_bucket_private == null ? "" : dependency.storage.outputs.storage_bucket_private
+  storage_bucket_public = dependency.storage.outputs.storage_bucket_public == null ? "" : dependency.storage.outputs.storage_bucket_public
 
   # RDS (managed Postgres) — endpoint hostname injected into all three chart overlays
   postgres_host = dependency.rds.outputs.db_address
 
   # Random secrets
-  random_string         = dependency.random_passwords.outputs.random_string
-  encryption_string     = dependency.random_passwords.outputs.encryption_string
   signalstack_admin_key = dependency.random_passwords.outputs.signalstack_admin_key
 
   postgres_admin_password = dependency.random_passwords.outputs.postgres_admin_password

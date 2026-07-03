@@ -209,7 +209,7 @@ redis:
 # Network schemas — JSON files mounted into the api pod as a ConfigMap at
 # /app/schemas/<name>.json. The api reads them via NETWORK_CONFIG_SOURCE=local
 # and NETWORK_CONFIG_LOCAL_FILE (comma-separated paths).
-# To add a network: drop helmcharts/dpg/charts/api/files/networks/<name>.json
+# To add a network: drop helm/signals/charts/api/files/networks/<name>.json
 # and append <name> to .schemas.networks here.
 schemas:
   # In-cluster URL substituted into instance_url fields at render time.

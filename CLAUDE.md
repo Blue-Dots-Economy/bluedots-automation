@@ -9,95 +9,176 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **Provisions AWS EKS infrastructure** using OpenTofu + Terragrunt (`opentofu/aws/`).
 2. **Deploys the application stack** to Kubernetes using Helm (`helm/`).
 
+Both are driven by a **single `install.sh`** that lives in the per-environment
+directory (`opentofu/aws/<env>/install.sh`). See [DEPLOYMENT.md](DEPLOYMENT.md)
+for the end-to-end runbook.
+
+> ⚠️ **There is no Makefile.** Older docs (and this file's previous version)
+> referenced `make install` / `make platform-install`. Those targets are gone —
+> `install.sh` is the only entrypoint. If you see `make ...` anywhere, treat it
+> as stale. README.md is also partially stale (Makefile, nginx, `dpg` namespace);
+> **install.sh and DEPLOYMENT.md are the source of truth.**
+
 ---
 
-## ⚠️ CRITICAL: Directory ≠ Chart ≠ Release ≠ Namespace
+## ⚠️ CRITICAL: Directory vs Chart vs Release vs Namespace
 
-This is the most confusing aspect of the repo. **All four names differ** for each component:
+Release name and namespace now **match the directory name**. Only the Helm
+**chart name** (the `name:` in `Chart.yaml`) differs — and it differs for every
+app chart. So when `helm list`, logs, or templates say **`dpg`**, that's the
+**Signals** chart in `helm/signals/`.
 
-| Directory | Chart Name | Release Name | Namespace | Purpose |
-|-----------|-----------|-------------|-----------|---------|
-| `helm/common-services/` | `platform` | `platform` | `common-services` | Cluster-wide: ingress-nginx, cert-manager, Postgres, Redis |
-| `helm/signals/` | `dpg` | `dpg` | `dpg` | Signals stack (api, ui, notification, match-score) |
-| `helm/aggregator/` | `aggregator-dpg` | `aggregator` | `aggregator` | Aggregator portal (web, api, worker, keycloak) |
+| Directory              | Chart `name`     | Release           | Namespace         | Purpose |
+|------------------------|------------------|-------------------|-------------------|---------|
+| `helm/monitoring/`     | `monitoring`     | `monitoring`      | `monitoring`      | Prometheus + Alertmanager + Loki + Alloy + Jaeger + Grafana |
+| `helm/common-services/`| `platform`       | `common-services` | `common-services` | Cluster-wide: **Kong** ingress, cert-manager, shared Postgres, Redis, metrics-server |
+| `helm/signals/`        | `dpg`            | `signals`         | `signals`         | Signals stack (api, ui, notification-service, match-score) |
+| `helm/aggregator/`     | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal (web/BFF, api, worker, keycloak) |
 
-When you see `helm list`, Makefile output, or kubectl logs say **`dpg`**, that's the **Signals component**, not a directory. The directory is `helm/signals/`.
+Namespaces / releases / values-file paths are all overridable via env vars
+(`CS_NS`, `SIGNALS_NS`, `CS_REL`, `GLOBAL_VALUES`, …) — see the function
+reference in DEPLOYMENT.md.
 
 ---
 
 ## Deploy Order (STRICT)
 
-The three charts **must** deploy in this exact order:
+`deploy_all_services` runs charts in this order; the **common-services → signals
+→ aggregator** dependency order is mandatory:
 
-1. **`platform`** — owns cluster-wide ingress-nginx, cert-manager, and shared Postgres/Redis. Without it, other Ingresses sit Pending and ACME challenges fail.
-2. **`dpg` (Signals)** — connects to shared DBs at `platform-postgresql.common-services.svc` / `platform-redis-master.common-services.svc`.
-3. **`aggregator`** — same shared DBs; has the longest rollout (Keycloak init runs after Postgres is Ready).
+1. **`monitoring`** — installed first so metrics/alerts are live from the start (its `kube-prometheus-stack` also ships the ServiceMonitor/PodMonitor/PrometheusRule CRDs others rely on). Functionally optional but deployed first by default.
+2. **`common-services`** — owns the **Kong** ingress controller, cert-manager + `letsencrypt-prod` ClusterIssuer, and shared Postgres/Redis. Without it, other Ingresses sit Pending and ACME challenges fail.
+3. **`signals`** — connects to the shared DBs in `common-services`.
+4. **`aggregator`** — same shared DBs; longest rollout (Keycloak init Job runs after Postgres is Ready).
+
+Each `deploy_*` runs `helm upgrade --install … --wait`, so it blocks on its own
+pods but does **not** verify cross-namespace deps — confirm common-services
+Postgres/Redis are Ready before deploying signals/aggregator.
 
 ---
 
 ## Common Commands
 
-### Infrastructure Provisioning (OpenTofu)
+All commands run from the **environment directory** (`opentofu/aws/<env>/`).
+On trunk branches only `template/` exists — copy it to create an env:
+`cp -R opentofu/aws/template opentofu/aws/dev && cd opentofu/aws/dev`.
+(Per-deployment branches carry their own `opentofu/aws/<env>/` directory.)
+
+### Infrastructure (OpenTofu/Terragrunt)
 
 ```bash
-# Provision the entire EKS cluster
-cd opentofu/aws/dev
-./install.sh
+# Full infra bootstrap (no args): create_tf_backend → create_tf_resources → apply_gp3_default_sc
+bash install.sh
 
-# Tear down everything
-cd opentofu/aws/dev
-./install.sh destroy_tf_resources
+# Individual steps
+bash install.sh create_tf_backend       # create S3 tfstate bucket, write tf.sh
+bash install.sh create_tf_resources     # source tf.sh + terragrunt run --all apply + write kubeconfig
+bash install.sh apply_gp3_default_sc     # make gp3 the default StorageClass (demote gp2)
+bash install.sh destroy_tf_resources     # terragrunt run --all destroy
 
-# Targeted re-runs
-./install.sh create_tf_backend       # Create/recreate the S3 tfstate bucket
-./install.sh create_tf_resources     # Provision (init + apply)
-./install.sh apply_gp3_default_sc    # Set gp3 StorageClass default
+# Plan / apply a single tofu module (network|eks|iam|storage|random_passwords|rds|output-file)
+bash install.sh plan_tf_eks
+bash install.sh apply_tf_output_file     # regenerate just the values files
 ```
-
-`install.sh` runs in order: create S3 backend → backup kubeconfig → terragrunt apply → apply gp3 StorageClass.
 
 ### Application Deployment (Helm)
 
 ```bash
-# Full stack in order (from repo root)
-make install
+export GHCR_PAT=ghp_xxx                   # read:packages token; needed for image pulls
 
-# Individual components
-make platform-install
-make dpg-install
-make aggregator-install
+# Full stack in order
+bash install.sh deploy_all_services       # preflight → ns+secrets → monitoring → common-services → signals → aggregator → fix_acme_issuer_uri
 
-# Cleanup (reverse order)
-make uninstall
-# or individually:
-make aggregator-uninstall
-make dpg-cleanup        # DESTRUCTIVE: deletes PVCs + scrubs credentials
-make platform-uninstall
+# Individual steps
+bash install.sh create_namespaces_and_secrets   # create namespaces + ghcr-pull secret in each
+bash install.sh deploy_monitoring
+bash install.sh deploy_common_services    # applies gp3 + Kong CRDs first, then helm --wait
+bash install.sh deploy_signals
+bash install.sh deploy_aggregator
 
-# Static checks (no cluster needed)
-make lint               # helm lint all three charts
-make template           # helm template all three (smoke test)
-make dry-run            # helm --dry-run against current cluster
+# Teardown (reverse order)
+bash install.sh cleanup_all_services      # DESTRUCTIVE: deletes namespaces incl. Postgres/Redis PVCs
+bash install.sh destroy_aggregator        # individual
+
+# Static checks
+bash install.sh lint        # helm lint all 4 charts (no cluster needed)
+bash install.sh dry_run     # helm --dry-run all 4 against current cluster (runs preflight first)
+bash install.sh preflight   # verify helm + kubectl + cluster + generated values files exist
 ```
+
+Chain functions in one call: `bash install.sh lint dry_run`.
 
 ---
 
 ## Values-File Architecture (how Helm config is assembled)
 
-Config is **never injected into chart `values.yaml`**. Instead, each `helm upgrade` layers files via repeated `-f` (later wins). Five files, three sources:
+Config is **never injected into chart `values.yaml`**. Each `helm upgrade` layers
+files via repeated `-f` (later wins). Keys sit at **root level keyed by chart**
+(e.g. `api:`, `ui:`, `aggregator-api:`, `alerting:`), so a single `-f` feeds Helm
+directly — no `yq` slicing (which is why `preflight` no longer needs `yq`).
 
 | File | Source | Committed? | Holds |
 |------|--------|-----------|-------|
 | chart `values.yaml` | in repo | yes | chart defaults / structure |
 | `helm/global-resources.yaml` | in repo, **shared across all envs** | yes | replica counts, HPA, PDB, container resources |
-| `<env>/global-images.yaml` | in repo, **per-env** | yes | image `repository` / `tag` / `pullPolicy` (pin tags per deployment) |
-| `<env>/global-values.yaml` | in repo, **per-env, user-edited** | yes | non-secret config: hosts, DB/Redis hostnames, RDS sizing, app config |
+| `<env>/global-images.yaml` | in repo, **per-env** | yes | image `repository` / `tag` / `pullPolicy` |
+| `<env>/global-values.yaml` | in repo, **per-env, user-edited** | yes | non-secret config: hosts, network/brand, SMTP, MSG91, DB sizing, app config |
 | `<env>/global-credentials.yaml` | **generated** by `output-file` module | **no** (`.gitignore`) | all secrets (PG/Redis/auth passwords) |
 | `<env>/global-cloud-values.yaml` | **generated** by `output-file` module | **no** (`.gitignore`) | cloud outputs + computed config: S3 bucket/region, IRSA role ARN, computed hosts/origins, **RDS Postgres host** (when provisioned) |
 
-Each file's keys sit at **root level keyed by chart** (e.g. `api:`, `aggregator-api:`, `ui:`), so a single `-f` feeds Helm directly — no `yq` slicing/projection (which is why `preflight` no longer requires `yq`).
+`preflight` fails if `global-credentials.yaml` / `global-cloud-values.yaml` are
+missing → run `terragrunt run --all apply` (or `bash install.sh
+create_tf_resources`) first to generate them. After editing config that feeds the
+generated files, regenerate only them with `bash install.sh apply_tf_output_file`.
 
-`preflight` fails if `global-credentials.yaml` / `global-cloud-values.yaml` are missing → run `terragrunt run --all apply` (or `./install.sh create_tf_resources`) first to generate them.
+### Editing `global-values.yaml`: anchors only
+
+`global-values.yaml` is structured as a top **"Environment inputs"** block of YAML
+anchors (`_building_block`, `_environment`, `_signals_public_hosts`,
+`_aggregator_host`, `_grafana_host`, `_network`, `_brand`, SMTP, MSG91, alert
+emails, EKS sizing, RDS sizing, …). Everything under `global:` *references* those
+anchors. **Edit the anchor definitions at the top only** — don't hunt through the
+body. `_network` is the upstream network identity; `_brand` is a UI/config skin
+over it (e.g. `upsdm` over `blue_dot`) and does not change the network.
+
+---
+
+## Ingress: Kong (not nginx)
+
+`common-services` vendors both `ingress-nginx` and `kong` subcharts, but the
+committed default is **Kong** (`kong.enabled: true`, `ingress-nginx.enabled:
+false`). Kong (DB-less) is the sole controller and `kong` is the cluster-default
+IngressClass; all app Ingress objects set `ingressClassName: kong`. Rate limiting
+is enforced by `KongClusterPlugin` tiers (`rl-auth`/`rl-api`/`rl-public`) defined
+in `helm/common-services/values.yaml`, attached per route via the
+`konghq.com/plugins` annotation, with counters in the shared Redis
+(`policy: redis`).
+
+**Kong CRD gotcha:** Helm installs CRDs only from the top-level chart's `crds/`
+dir and only on first install — never from a subchart, never on upgrade. So
+`deploy_common_services` runs `apply_kong_crds` (`kubectl apply --server-side -f
+helm/common-services/crds/`) before every helm upgrade, or the controller
+crash-watches missing `KongClusterPlugin`/`KongPlugin` kinds.
+
+## cert-manager ACME workaround
+
+`deploy_all_services` ends with `fix_acme_issuer_uri`, which works around
+cert-manager v1.20.2 bug [#7846](https://github.com/cert-manager/cert-manager/issues/7846):
+the controller never persists `status.acme.uri`, causing a re-registration loop
+that fails challenges with "No Key ID in JWS header". The function recovers the
+account id from a live challenge URL, patches the issuer status, and clears
+poisoned cert chains so they reissue. Teardown (`destroy_common_services`) runs
+`cleanup_cert_manager_leftovers` because cert-manager CRDs and the ClusterIssuer
+carry a "keep" policy and survive `helm uninstall`, bricking the next install.
+
+## actingOrgId (post-signals manual step)
+
+`aggregator-values.yaml` / `global.signalstack.actingOrgId` only exists after the
+signals migrate-job seeds the `organization` table. After deploying signals, run
+`./get-signalstack-org-id.sh` (queries the shared Postgres for the
+`network_service` org id), set it in the aggregator config, then deploy
+aggregator. Without it, aggregator login fails with
+`SIGNALSTACK_ORG_NOT_REGISTERED`.
 
 ---
 
@@ -105,87 +186,52 @@ Each file's keys sit at **root level keyed by chart** (e.g. `api:`, `aggregator-
 
 ### OpenTofu/Terragrunt Structure
 
-Located at `opentofu/aws/dev/`:
+Located at `opentofu/aws/<env>/` (e.g. `template/` reference, or a per-deployment
+`dev/`):
 
-- **`global-values.yaml`** — the *only* file you edit. Controls cluster size, AWS region, instance types, node counts, IRSA subjects.
-- **`root.hcl`** — Terragrunt backend/provider generation (generated from `global-values.yaml`).
-- **Modules** (one dir per module: `network/`, `eks/`, `iam/`, `storage/`, `random_passwords/`, `output-file/`):
-  - Each has its own `terragrunt.hcl` that includes shared logic from `_common/`.
+- **`global-values.yaml`** — the *only* file you edit (anchors at the top). Controls cluster size, region, instance types, node counts, IRSA subjects, hosts, RDS sizing.
+- **`root.hcl`** — Terragrunt backend/provider generation (from `global-values.yaml`).
+- **`tf.sh`** — written by `create_tf_backend`; exports AWS region + tfstate bucket. `create_tf_resources` sources it first.
+- **Modules** (one dir per module: `network/`, `eks/`, `iam/`, `storage/`, `random_passwords/`, `rds/`, `output-file/`):
+  - Each has a `terragrunt.hcl` including shared logic from `_common/`.
   - All read from `global-values.yaml`.
-  - Provision in order: network → EKS → IAM → storage.
+  - Provision order: network → EKS → IAM → storage → random_passwords → rds → output-file.
 
-**Managed Postgres (`rds` module)** is opt-in infra. `global-values.yaml` carries `rds_*` sizing (`rds_instance_class`, `rds_multi_az`, `rds_backup_retention_days`, etc.). Its SG allows `5432` only from the EKS cluster SG, and it shares the master password with the `random_passwords`-generated `data-postgres` secret.
-
-The in-cluster FQDN (`common-services-postgresql.common-services.svc.cluster.local`) is the **committed default** in `global-values.yaml` (`api.postgres.host`, `search.postgres.host`, aggregator `dataPlatform.postgresService`+`namespace`). **Pointing the charts at RDS is automated, not manual:** the `rds` module's `db_address` flows (via `_common/output-file.hcl` → `postgres_host`) into the `output-file` module, which — *only when the endpoint is non-empty* — emits `global.dataPlatform.postgresHost`, `api.postgres.host`, and `search.postgres.host` into the generated `global-cloud-values.yaml`. Since that file is layered after `global-values.yaml` via `-f`, the RDS endpoint overrides the in-cluster default for signals + aggregator; when no RDS endpoint exists, the overrides are omitted and the default stands. (Note: app DB roles/databases must still exist on the RDS instance — the host wiring doesn't bootstrap them.)
+**Managed Postgres (`rds` module)** is opt-in infra; `global-values.yaml` carries
+`rds_*` sizing. Its SG allows `5432` only from the EKS cluster SG, and it shares
+the master password with the `random_passwords`-generated secret. **Pointing the
+charts at RDS is automated:** the `rds` module's `db_address` flows (via
+`_common/output-file.hcl` → `postgres_host`) into the `output-file` module, which
+— *only when the endpoint is non-empty* — emits `global.dataPlatform.postgresHost`,
+`api.postgres.host`, and `search.postgres.host` into `global-cloud-values.yaml`.
+Layered after `global-values.yaml` via `-f`, the RDS endpoint overrides the
+in-cluster default for signals + aggregator; with no RDS endpoint the overrides
+are omitted. (App DB roles/databases must still exist on the RDS instance.)
 
 ### Helm Stack Structure
 
-Three umbrella charts in `helm/`:
+Four umbrella charts in `helm/`:
 
-- **`helm/common-services/`** (chart: `platform`):
-  - `values.yaml` — cluster-wide settings (ingress-nginx, cert-manager, LetsEncrypt issuer).
-  - Deploys shared Postgres (3 databases: admin, dpg, aggregator) and Redis.
-  - Passwords generated on first install, stored in `data-postgres` / `data-redis` Secrets in `common-services` namespace.
-
-- **`helm/signals/`** (chart: `dpg`):
-  - `install.sh` — generates app credentials (`PG_PW`, `REDIS_PW`, `AUTH_SECRET`) into `values.yaml` on first run.
-  - `values.yaml` — image tags, app config, connection strings.
-  - **Do not commit populated `values.yaml`** — run `make dpg-cleanup` to scrub secrets back to placeholders.
-
-- **`helm/aggregator/`** (chart: `aggregator-dpg`):
-  - `values.yaml` — has `change-me-*` placeholders for SMTP, Keycloak, secrets (must be replaced before production).
-  - Subcharts `ingress-nginx` and `cert-manager` are disabled (`enabled: false`) since `platform` owns them cluster-wide.
-  - Keycloak init Job depends on Postgres readiness.
+- **`helm/monitoring/`** (chart `monitoring`): subcharts `kube-prometheus-stack` (Prometheus Operator, Prometheus, Alertmanager, node-exporter, kube-state-metrics — *and* the monitoring CRDs), `loki`, `alloy` (DaemonSet log shipper, replaces Promtail), `jaeger`, Grafana. Grafana host is `_grafana_host`.
+- **`helm/common-services/`** (chart `platform`): Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (in-cluster Postgres is disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres` / `data-redis` Secrets in `common-services`.
+- **`helm/signals/`** (chart `dpg`): api, ui, notification-service, match-score. Connects to shared DBs.
+- **`helm/aggregator/`** (chart `aggregator-dpg`): web (BFF), api, worker, keycloak. Vendored `ingress-nginx`/`cert-manager` subcharts are disabled (`platform` owns them). Keycloak init Job depends on Postgres readiness.
 
 ---
 
-## Key Configuration
+## Image Pull Secrets
 
-### Infrastructure
-
-**Edit only `opentofu/aws/dev/global-values.yaml`**. Notable settings:
-
-```yaml
-global:
-  building_block: "purple-dots"           # AWS resource naming prefix
-  environment: "dev"                      # 1–9 alphanumeric
-  cloud_storage_region: "ap-south-1"
-  eks_cluster_version: "1.35"
-  eks_node_instance_type: "t3.large"      # 2 vCPU / 8 GB
-  eks_node_count_min: 1
-  eks_node_count_max: 2
-  service_account_subjects:               # IRSA principals
-    - "system:serviceaccount:aggregator:aggregator-api"
-    - "system:serviceaccount:aggregator:aggregator-worker"
-```
-
-### Hostnames & DNS
-
-Set in each chart's `values.yaml` (e.g., `helm/aggregator/values.yaml`):
-- `global.publicHost` (e.g., `purpledots.servehalflife.com`) → create A/CNAME DNS records pointing at `ingress-nginx` LoadBalancer hostname after `make platform-install`.
-
-### Image Pull Secrets
-
-Private images at `ghcr.io/blue-dots-economy/*` require a pull secret named `ghcr-pull`:
-
-```bash
-# Create the secret (once per namespace)
-kubectl create secret docker-registry ghcr-pull \
-  -n dpg --docker-server=ghcr.io \
-  --docker-username=<gh-user> --docker-password=<GHCR_PAT_read:packages>
-# repeat for aggregator namespace
-```
-
-Helper scripts `helm/signals/rotate-ghcr-pull.sh` and `helm/aggregator/rotate-ghcr-pull.sh` rotate these.
+Private images at `ghcr.io/blue-dots-economy/*` require a `ghcr-pull` secret per
+namespace. `create_namespaces_and_secrets` creates it in each namespace via
+`rotate-ghcr-pull.sh` using `$GHCR_PAT` (a `read:packages` token). Some images
+also live under `vinodbbhorge/*` (Docker Hub). **Never commit a PAT.**
 
 ---
 
 ## State & Secrets
 
-- **Infrastructure state**: Stored in S3 bucket (encrypted, versioned, private). Never committed; `.terraform/`, `*.tfstate`, `*.tfvars`, and generated `tf.sh` / `global-cloud-values.yaml` are in `.gitignore`.
-- **Secrets in Helm charts**: Generated at install time and stored in Kubernetes Secrets. **Never commit populated `values.yaml` files** with real credentials.
-  - `make dpg-cleanup` scrubs `helm/signals/values.yaml` passwords back to placeholders.
-  - `helm/aggregator/values.yaml` has `change-me-*` stubs that must be replaced before production.
+- **Infrastructure state**: S3 bucket (encrypted, versioned, private). Never committed; `.terraform/`, `*.tfstate`, `*.tfvars`, generated `tf.sh` / `global-cloud-values.yaml` / `global-credentials.yaml` are gitignored.
+- **App secrets**: generated by the `random_passwords` + `output-file` tofu modules into the gitignored `global-credentials.yaml`, and stored at runtime in Kubernetes Secrets. SMTP/MSG91/maps keys are set as anchors in `global-values.yaml`.
 
 ---
 
@@ -220,9 +266,6 @@ customer environment from `main`; use its branch.**
 | `orange-dot-prod` | prod | carries Kong ingress (`kong-nginx-impl`) |
 | `purple-dots-prod` | prod | **legacy** — still on the old `helmcharts/` layout |
 
-In-progress feature branches: `kong-nginx-impl`, `deploy-release-changes`
-(`gcp-support` and `otel-monitoring` are already folded into `feature`).
-
 ---
 
 ## Prerequisites & Tools
@@ -230,79 +273,70 @@ In-progress feature branches: `kong-nginx-impl`, `deploy-release-changes`
 | Tool | Purpose | Min Version |
 |------|---------|-------------|
 | `aws` CLI | credentials, S3 tfstate | v2 |
-| `opentofu` | provisioning via terragrunt | 1.6+ |
-| `terragrunt` | OpenTofu orchestration | 0.55+ |
-| `yq` | parse `global-values.yaml` | mikefarah 4 |
-| `kubectl` | cluster communication | matches EKS |
+| `tofu` (OpenTofu) | provisioning via terragrunt | 1.6+ |
+| `terragrunt` | OpenTofu orchestration | 0.90+ |
+| `kubectl` | cluster communication | ≥ 1.24 (matches EKS) |
 | `helm` | Kubernetes deployments | v3.12+ |
-| `openssl`, `sed` | password generation | — |
+| `bash` | runs `install.sh` | 4.x+ |
 
-Also required:
-- AWS credentials with VPC, EKS, IAM, S3 create permissions.
-- GHCR pull token (`read:packages` scope).
-- DNS records pointing public hostnames to the LoadBalancer once it exists.
+> `yq` is **no longer required** — per-chart value slicing was removed; the tofu
+> `output-file` module emits root-level files directly. (README's prereq table is
+> stale on this point.)
+
+Also required: AWS creds with VPC/EKS/IAM/S3 rights; a GHCR `read:packages` token
+(`GHCR_PAT`); DNS control to point public hosts at the **Kong proxy**
+LoadBalancer (`kubectl -n common-services get svc common-services-kong-proxy`)
+once it exists.
 
 ---
 
 ## Inspect & Debug
 
 ```bash
-# View cluster state
+# Cluster state
 kubectl cluster-info
-kubectl -n common-services get pods,svc
-kubectl -n dpg get pods,svc,ingress
+kubectl get sc                                  # gp3 (default); gp2 not default
+kubectl -n common-services get pods,svc,pvc
+kubectl -n signals get pods,svc,ingress
 kubectl -n aggregator get pods,svc,ingress
+kubectl -n monitoring get pods
 
-# View Helm releases
-helm list -A
+# Helm releases
+helm list -A                                    # monitoring, common-services, signals, aggregator
 
-# View generated secrets (e.g., Postgres password)
+# TLS issuance
+kubectl get clusterissuer letsencrypt-prod
+kubectl get certificate -A                      # READY=True once ACME completes
+kubectl get challenge -A                        # if certs stuck, see fix_acme_issuer_uri
+
+# Generated Postgres password
 kubectl -n common-services get secret data-postgres -o yaml
 
-# Follow logs
-kubectl -n dpg logs -f deploy/dpg-api
+# Logs / port-forward
+kubectl -n signals logs -f deploy/signals-api
 kubectl -n aggregator logs -f deploy/aggregator-web
-
-# Port forward
-kubectl -n common-services port-forward svc/platform-postgresql 5432:5432
 ```
+
+See [DEPLOYMENT.md → Troubleshooting](DEPLOYMENT.md) for symptom→fix table.
 
 ---
 
 ## New Environment
 
-To add a new deployment environment (e.g., `staging`):
-
-1. Copy `opentofu/aws/template/` to `opentofu/aws/staging/`.
-2. Edit `opentofu/aws/staging/global-values.yaml` with the new environment settings.
-3. Run `cd opentofu/aws/staging && ./install.sh`.
-
----
-
-## Makefile Targets
-
-All targets from repo root:
-
-```bash
-make help               # Show all targets
-make preflight          # Verify kubectl + helm + cluster reachable
-make platform-install   # Install platform (step 1)
-make dpg-install        # Install signals/dpg (step 2)
-make aggregator-install # Install aggregator (step 3)
-make install            # All three in order (step 1→2→3)
-make lint               # helm lint all charts
-make template           # helm template all (render smoke test)
-make dry-run            # helm --dry-run against current cluster
-make uninstall          # Reverse: aggregator → dpg → platform
-```
+1. Copy `opentofu/aws/template/` to `opentofu/aws/<env>/` (the env name is the directory basename, read by `install.sh`).
+2. Edit `opentofu/aws/<env>/global-values.yaml` (anchors at the top).
+3. `cd opentofu/aws/<env> && bash install.sh` (infra), then `bash install.sh deploy_all_services` (apps).
 
 ---
 
 ## Files to Know
 
-- `.gitignore` — ignores state, secrets, credentials, `.terraform/`, `*.tfstate`, `*.tfvars`.
-- `Makefile` — Helm orchestrator; defines install order and credential passing.
-- `README.md` — detailed project documentation.
-- `helm/README.md` — per-chart details and secrets handling.
-- `opentofu/aws/dev/global-values.yaml` — single source of truth for cluster configuration.
-- `opentofu/aws/_common/*.hcl` — shared Terragrunt/OpenTofu configuration.
+- `DEPLOYMENT.md` — authoritative end-to-end runbook + `install.sh` function reference + troubleshooting.
+- `opentofu/aws/<env>/install.sh` — single entrypoint for infra **and** Helm deploy (function dispatcher).
+- `opentofu/aws/<env>/global-values.yaml` — single source of truth for cluster + app config (edit anchors only).
+- `helm/global-resources.yaml` — shared replica/HPA/PDB/resource overrides across all envs.
+- `opentofu/aws/_common/*.hcl` — shared Terragrunt/OpenTofu logic.
+- `opentofu/aws/modules/output-file/` — generates `global-credentials.yaml` + `global-cloud-values.yaml`.
+- `.gitignore` — ignores state, secrets, generated values, `.terraform/`, `*.tfstate`, `*.tfvars`.
+- `README.md` / `helm/README.md` / per-chart `helm/*/README.md` — overview + per-chart standalone deploy instructions.
+```

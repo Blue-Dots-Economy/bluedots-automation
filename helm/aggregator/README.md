@@ -1,167 +1,146 @@
-# aggregator-dpg Helm chart
+# aggregator (chart `aggregator-dpg`)
 
-Umbrella chart that bundles the Blue Dots Aggregator stack into a single
-Kubernetes release. Packages web BFF + Fastify API + BullMQ worker +
-Keycloak + Postgres + Redis. SMTP is wired to an external relay (SES /
-SendGrid / Workspace SMTP) — no in-cluster mailcatcher.
+Umbrella chart for the Blue Dots Aggregator portal: web BFF + Fastify API +
+BullMQ worker + Keycloak. It connects to the **shared Postgres + Redis owned by
+common-services** and routes through the **Kong** ingress; it does not bundle its
+own databases or ingress controller. SMTP is wired to an external relay.
+
+> Directory `aggregator` · chart `name: aggregator-dpg` · release `aggregator` ·
+> namespace `aggregator`.
 
 ```
-                       ┌─── ingress (host: PUBLIC_HOST) ───┐
+                       ┌─── ingress (host: global.publicHost, class kong) ───┐
                        │  /backend/  → api  (prefix stripped)
                        │  /auth/     → keycloak
                        │  /          → web
-                       └────────────────────────────────────┘
+                       └──────────────────────────────────────────────────────┘
                                 │
             ┌──────────┬────────┼─────────┬──────────┐
           web         api    worker    keycloak
-            │          │       │          │
             └──────────┴───────┴──────────┘
                                 │
-                       ┌────────┴─────────┐
-                   postgresql           redis
-                  (Bitnami subchart)  (Bitnami subchart)
+              shared common-services Postgres + Redis
+                    (keycloak DB lives here)
 ```
+
+## What it deploys
+
+| Subchart (alias) | What it is |
+|------------------|------------|
+| `web` | Next.js BFF (server-side OIDC) |
+| `api` (alias `aggregator-api`) | Fastify API |
+| `worker` | BullMQ background worker |
+| `keycloak` | Keycloak with the OTP SPI baked in + realm renderer initContainer |
 
 ## Prerequisites
 
-Cluster-side:
+- **`common-services` deployed** (Kong ingress, `letsencrypt-prod` issuer,
+  shared Postgres + Redis — the `keycloak` database lives in that Postgres).
+- **`signals` deployed and migrated** — the aggregator's
+  `global.signalstack.actingOrgId` is the `network_service` org id seeded by the
+  signals migrate Job. **Required before login** or aggregator returns
+  `SIGNALSTACK_ORG_NOT_REGISTERED`.
+- The generated values files exist (`global-credentials.yaml`,
+  `global-cloud-values.yaml`) — `bash install.sh create_tf_resources` first.
+- A `ghcr-pull` secret in the `aggregator` namespace —
+  `bash install.sh create_namespaces_and_secrets`.
 
-- Kubernetes ≥ 1.24
-- `helm` ≥ 3.13
-- An ingress controller — chart defaults to `ingressClassName: nginx`. Install with:
-
-  ```bash
-  helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-  helm install ingress-nginx ingress-nginx/ingress-nginx \
-    --namespace ingress-nginx --create-namespace
-  ```
-
-- `cert-manager` + a `ClusterIssuer` (for TLS via Let's Encrypt). Install with:
-
-  ```bash
-  helm repo add jetstack https://charts.jetstack.io
-  helm install cert-manager jetstack/cert-manager \
-    --namespace cert-manager --create-namespace \
-    --set installCRDs=true
-  ```
-
-Build-side:
-
-- The custom Keycloak image with the OTP SPI baked in. Build & push:
-
-  ```bash
-  make keycloak-image
-  docker tag aggregator-dpg/keycloak:26.5.5-aggregator <registry>/aggregator-dpg/keycloak:26.5.5-aggregator
-  docker push <registry>/aggregator-dpg/keycloak:26.5.5-aggregator
-  ```
-
-- App images (`web`, `api`, `worker`) built from the same Dockerfiles used by
-  `docker-compose`, pushed under `<global.imageRegistry>/aggregator-dpg/{web,api,worker}`.
-
-## Install (dev)
+## Set `actingOrgId` first
 
 ```bash
-make helm-deps               # syncs files + runs helm dependency update
-make helm-install-dev        # helm upgrade --install ... with values-dev.yaml
-kubectl get pods -n aggregator -w
+cd opentofu/aws/<env>
+ORG_ID=$(./get-signalstack-org-id.sh)     # reads the shared Postgres
+# set it in your env config (global.signalstack.actingOrgId):
+#   global:
+#     signalstack:
+#       actingOrgId: "<ORG_ID>"
 ```
 
-Dev secrets are plaintext in `values-dev.yaml` — never reuse outside a
-throwaway cluster.
+## Deploy this chart only
 
-## Install (prod)
+**Recommended — via `install.sh`:**
 
-1. Create the `aggregator-secrets` Secret via your secret-management tool
-   (SealedSecrets / ExternalSecrets / SOPS). Required keys are listed in the
-   header of `values-prod.yaml`.
+```bash
+cd opentofu/aws/<env>          # e.g. opentofu/aws/dev
+bash install.sh deploy_aggregator
+```
 
-2. Layer values:
+That runs, from the repo root, exactly:
 
-   ```bash
-   helm upgrade --install aggregator helm/aggregator-dpg \
-     --namespace aggregator --create-namespace \
-     -f helm/aggregator-dpg/values-prod.yaml \
-     --set global.publicHost=portal.example.com \
-     --set global.imageRegistry=ghcr.io/your-org
-   ```
+```bash
+ENV=opentofu/aws/<env>
+helm upgrade --install aggregator helm/aggregator \
+  -n aggregator --create-namespace \
+  -f helm/global-resources.yaml \
+  -f "$ENV/global-images.yaml" \
+  -f "$ENV/global-values.yaml" \
+  -f "$ENV/global-cloud-values.yaml" \
+  -f "$ENV/global-credentials.yaml" \
+  --wait --timeout 10m
+```
 
-3. Watch pod readiness order:
+This is the **slowest** chart — pods come up in order:
 
-   ```
-   postgresql-0 → keycloak-* (initContainer renders realm) →
-   aggregator-keycloak-init Job Completed → api → web + worker → Ingress
-   gets TLS cert from cert-manager.
-   ```
+```
+keycloak-* (initContainer renders realm) → aggregator-keycloak-init Job Completed
+  → api → web + worker → Ingress gets a TLS cert from cert-manager
+```
+
+Verify:
+
+```bash
+kubectl -n aggregator get pods,svc,ingress
+kubectl get certificate -n aggregator      # READY=True once ACME completes
+```
+
+> **Brand / network.** The active network and brand skin are driven by the
+> `_network` / `_brand` anchors in `opentofu/aws/<env>/global-values.yaml` (which
+> also select the matching Keycloak theme image), not by per-brand overlay files.
 
 ## Quirks
 
-- **Postgres init**. The chart creates the `keycloak` database via
-  `postgresql.primary.initdb.scripts` in `values.yaml`. This is identical to
-  `infra/postgres/init/01-create-keycloak-db.sql` — keep both in sync.
+- **Ingress class is `kong`** (cert-manager `letsencrypt-prod` for TLS). The
+  vendored `ingress-nginx` / `cert-manager` subchart config blocks are disabled
+  (`enabled: false`) — common-services owns them cluster-wide; the chart's
+  `clusterissuer.yaml` is gated on `cert-manager.enabled` and renders nothing here.
+- **Keycloak SPI**. The OTP SPI jar is baked into the custom Keycloak image
+  (`kc.sh build`). Rebuild the image and bump `keycloak.image.tag` after editing
+  the SPI.
+- **Realm rendering**. `charts/keycloak/files/aggregator-realm.json` carries
+  `__PUBLIC_BASE_URL__` / `__SMTP_*__` placeholders; a `realm-renderer`
+  initContainer substitutes them at pod startup into a shared `emptyDir`.
+- **OIDC back-channel**. Browsers and the BFF must see the **same** issuer URL.
+  If server-side OIDC discovery can't reach Keycloak via the public host, set
+  `global.hostAliases` to map `publicHost` → the ingress controller's cluster IP.
+- **External SMTP only**. No in-cluster mail. Wire `mail.provider=smtp` with a
+  real relay, or `mail.provider=ses` with IRSA-granted SES on the api/worker
+  ServiceAccount.
+- **Bitnami `postgres-password` key**. When wiring an existing Secret for
+  Postgres, it MUST contain a key named exactly `postgres-password`.
 
-- **Keycloak SPI**. The OTP SPI jar lives in `infra/keycloak/providers/`. The
-  custom Dockerfile bakes it into the image and runs `kc.sh build`. To
-  rebuild after editing the SPI: `make keycloak-image` then bump
-  `keycloak.image.tag`.
+## Key config
 
-- **Realm rendering**. `infra/keycloak/realms/aggregator-realm.json` contains
-  `__PUBLIC_BASE_URL__` and `__SMTP_*__` placeholders. A `realm-renderer`
-  initContainer (alpine + sed) substitutes them at pod startup into a
-  shared `emptyDir` that the main Keycloak container imports from.
+Per-env config layers from `opentofu/aws/<env>/global-values.yaml` (anchors at
+the top); chart defaults in `values.yaml`. Notable: `global.publicHost`
+(aggregator FQDN, from `_aggregator_host`), `global.signalstack.actingOrgId`,
+`secrets.*` (from `global-credentials.yaml`), `mail.smtp.*` / `secrets.smtp*`.
 
-- **OIDC back-channel quirk**. In `docker-compose.yml` the web + api pods use
-  `extra_hosts: ${PUBLIC_HOST}:host-gateway` so server-side OIDC discovery
-  reaches Keycloak via the ingress (browsers and the BFF must see the SAME
-  issuer URL). In K8s, set `global.hostAliases` to map `publicHost` → ingress
-  controller cluster IP:
+## Uninstall
 
-  ```yaml
-  global:
-    hostAliases:
-      - ip: 10.0.0.42         # ingress-nginx Service ClusterIP
-        hostnames: [portal.example.com]
-  ```
-
-  Long-term fix is to teach `apps/api` + `apps/web` about a separate
-  `KEYCLOAK_INTERNAL_URL` env var for server-side calls.
-
-- **External SMTP only**. The chart does not ship Mailpit. Wire
-  `mail.provider=smtp` with a real relay (`mail.smtp.host/port/...`) or
-  switch to `mail.provider=ses` with IRSA-granted SES permissions on the
-  api / worker ServiceAccount.
-
-- **Bitnami postgresql secret key**. When wiring `secrets.existingSecret`,
-  the Secret MUST include a key named exactly `postgres-password` — Bitnami's
-  postgresql subchart looks it up by that literal name.
+```bash
+cd opentofu/aws/<env>
+bash install.sh destroy_aggregator      # helm uninstall + delete the aggregator namespace
+```
 
 ## Files
 
-| Path                                          | Role                                                            |
-| --------------------------------------------- | --------------------------------------------------------------- |
-| `Chart.yaml`                                  | Umbrella metadata + dependencies                                |
-| `values.yaml`                                 | Defaults (dev-safe)                                             |
-| `values-dev.yaml`                             | Plaintext secrets overlay, single replicas                      |
-| `values-prod.yaml`                            | existingSecret + HA + IRSA overlay                              |
-| `templates/_helpers.tpl`                      | Umbrella name / label / ref helpers                             |
-| `templates/secrets.yaml`                      | Aggregator Secret (skipped when `global.existingSecret` set)    |
-| `templates/configmap-global.yaml`             | Shared env vars (PUBLIC_HOST, S3_*, MAIL_*, OIDC URLs)          |
-| `templates/configmap-keycloak-init.yaml`      | Hosts `apply-user-profile.sh` for the init Job                  |
-| `templates/job-keycloak-init.yaml`            | post-install / post-upgrade hook Job (idempotent admin REST)    |
-| `templates/ingress.yaml`                      | Two Ingress objects (api strip-prefix + main catch-all)         |
-| `charts/{web,api,worker,keycloak}/`           | First-party subcharts                                           |
-| `charts/keycloak/files/aggregator-realm.json` | Realm JSON with `__PLACEHOLDER__` markers (renderer substitutes) |
-| `charts/keycloak/files/render-realm.sh`       | Synced copy of the docker-compose render script (reference)     |
-| `templates/files/apply-user-profile.sh`       | Synced copy of the docker-compose init script (run by Job)      |
-
-## Make targets
-
-```
-make helm-sync-files     # copy infra/ → chart files/
-make helm-deps           # sync files + helm dependency update
-make helm-lint           # helm lint with values-dev.yaml
-make helm-template       # render chart to stdout
-make helm-package        # build the chart tgz
-make helm-install-dev    # helm upgrade --install + values-dev.yaml
-make helm-uninstall      # remove release (keeps PVCs)
-make keycloak-image      # build custom Keycloak image
-```
+| Path | Role |
+|------|------|
+| `Chart.yaml` | Umbrella metadata + dependencies (`web`, `api`/`aggregator-api`, `worker`, `keycloak`) |
+| `values.yaml` | Chart defaults |
+| `templates/secrets.yaml` | Aggregator Secret (skipped when an existing Secret is wired) |
+| `templates/configmap-global.yaml` | Shared env (PUBLIC_HOST, S3_*, MAIL_*, OIDC URLs) |
+| `templates/job-keycloak-init.yaml` | post-install/upgrade hook Job (idempotent admin REST) |
+| `templates/ingress.yaml` | Ingress objects (api strip-prefix + main catch-all), `ingressClassName: kong` |
+| `charts/{web,api,worker,keycloak}/` | First-party subcharts |
+| `charts/keycloak/files/aggregator-realm.json` | Realm JSON with `__PLACEHOLDER__` markers |

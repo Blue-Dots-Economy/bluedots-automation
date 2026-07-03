@@ -161,9 +161,9 @@ function deploy_monitoring() {
         --wait --timeout 10m
 }
 
-# 2a) common-services (ingress-nginx + cert-manager + ClusterIssuer + Postgres + Redis)
+# 2a) common-services (Kong + cert-manager + ClusterIssuer + Postgres + Redis)
 # Ensure gp3 is the cluster-default StorageClass first — common-services Postgres
-# and Redis provision PVCs that must bind to gp3 (Makefile enforced this as a dep).
+# and Redis provision PVCs that must bind to gp3.
 function deploy_common_services() {
     apply_gp3_default_sc
     apply_kong_crds
