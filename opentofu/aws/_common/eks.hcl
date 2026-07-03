@@ -14,6 +14,7 @@ locals {
   endpoint_public_access          = try(local.global_vars.global.eks_endpoint_public_access, true)
   endpoint_private_access         = try(local.global_vars.global.eks_endpoint_private_access, false)
   node_count_desired              = try(local.global_vars.global.eks_node_count_desired, null)
+  node_capacity_type              = try(local.global_vars.global.eks_node_capacity_type, "ON_DEMAND")
   ebs_csi_addon_version           = try(local.global_vars.global.eks_ebs_csi_addon_version, null)
 }
 
@@ -49,5 +50,6 @@ inputs = {
   endpoint_public_access          = local.endpoint_public_access
   endpoint_private_access         = local.endpoint_private_access
   node_count_desired              = local.node_count_desired
+  node_capacity_type              = local.node_capacity_type
   ebs_csi_addon_version           = local.ebs_csi_addon_version
 }
