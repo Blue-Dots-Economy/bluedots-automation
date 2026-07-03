@@ -15,9 +15,9 @@ for the end-to-end runbook.
 
 > ⚠️ **There is no Makefile.** Older docs (and this file's previous version)
 > referenced `make install` / `make platform-install`. Those targets are gone —
-> `install.sh` is the only entrypoint. If you see `make ...` anywhere, treat it
-> as stale. README.md is also partially stale (Makefile, nginx, `dpg` namespace);
-> **install.sh and DEPLOYMENT.md are the source of truth.**
+> `install.sh` is the only entrypoint. If you see `make ...` in stray chart
+> READMEs or comments, treat it as stale. **install.sh and DEPLOYMENT.md are the
+> source of truth**; README.md is kept current alongside this file.
 
 ---
 
@@ -180,6 +180,62 @@ signals migrate-job seeds the `organization` table. After deploying signals, run
 aggregator. Without it, aggregator login fails with
 `SIGNALSTACK_ORG_NOT_REGISTERED`.
 
+## Consent config (ConfigMap-delivered)
+
+Consent text/versions are shipped via **ConfigMap**, not baked into images, so
+they change with a file edit + rollout (no rebuild). This repo is the downstream
+sync; canonical consent content lives in the app repos.
+
+- **Signals** — source files `helm/signals/charts/api/files/consent/<network>.json`
+  and optional brand override `<network>.<brand>.json`. Selected by
+  `api.schemas.consentNetwork` / `api.schemas.consentBrand` (set in
+  `global-values.yaml`). `schemas-configmap.yaml` renders `consent.json` (and, for a
+  brand, a `<brand>-consent.json` key remapped via the deployment volume `items` to
+  the nested path `/app/schemas/<brand>/consent.json`) next to the network schemas.
+  The api reads it because `CONSENT_CONFIG_SOURCE: local` is set **explicitly** in
+  values (the app default today, pinned so intent survives a default change). It
+  reads `consent.json` from `dirname(NETWORK_CONFIG_LOCAL_FILE)` and deep-merges a
+  brand file (partial) over the network default — so **both files must be
+  delivered**. Consent is cached in-process; the api deployment carries a
+  `checksum/schemas` annotation that rolls pods when consent/network files change.
+  Missing consent files `fail` the template render.
+  > Search subchart reuses this ConfigMap and dir-scans `/app/schemas` for network
+  > `*.json`; `consent.json` has no `id` so it's keyed under `undefined` and never
+  > looked up (harmless), and the `<brand>/` subdir is skipped by its `.json` filter.
+- **Aggregator** — source file `helm/aggregator/files/consent/consent.json`, rendered
+  into a `{release}-consent` ConfigMap (`helm/aggregator/templates/consent-configmap.yaml`)
+  and mounted single-file (subPath) into **both web and api** pods at
+  `/app/config/<network>[/<brand>]/schemas/aggregator/consent.json`. Aggregator brand
+  consent is a **FULL** document (not a partial), and each deploy serves one
+  network+brand, so the single mounted file is complete. subPath does **not**
+  hot-update → a consent change needs a rollout restart of web + api.
+
+The Signals migrate Job builds `consent_record` (consent ledger) from the bundled
+`helm/signals/charts/api/files/schema.sql`; refresh that bundle when the upstream
+Signals-DPG schema changes. `consent_text` is intentionally NOT in the deployed
+`network.json` — consent is served separately, so its absence is expected.
+
+## Org hierarchy
+
+`global.orgHierarchyEnabled` (in `global-values.yaml`, default `true`) is emitted
+as `ORG_HIERARCHY_ENABLED` to the **aggregator web + api** pods via their ConfigMaps
+(`helm/aggregator/charts/{web,api}/templates/configmap.yaml`). No default in the
+aggregator chart's own `values.yaml`, so the global value must be present (it is, in
+`global-values.yaml`).
+
+## develop-PR docs & release-notes gate
+
+PRs into **`develop`** run `.github/workflows/develop-pr-gate.yml`, which calls the
+composite action `.github/actions/pr-gate/` (`action.yml` → `check.mjs`). It
+**fails closed** unless the PR has both a non-empty `## Release Notes` section in
+the body AND a change to `README.md`/`CLAUDE.md` — each waivable via the
+`no-release-notes` / `no-doc-update` label. Pure logic lives in `gate.mjs`
+(no deps, no IO); `check.mjs` pulls the PR body/labels/files (via `gh api`, with a
+`PR_FILES` escape hatch) and calls `evaluate()`. Unit tests `gate.test.mjs` run via
+`node --test` in the `pr-gate-tests` workflow (triggered on changes under
+`.github/actions/pr-gate/**`). PR body scaffolding: `.github/PULL_REQUEST_TEMPLATE.md`.
+The gate only blocks merges once a repo/org ruleset requires the check on `develop`.
+
 ---
 
 ## Architecture Layers
@@ -337,6 +393,8 @@ See [DEPLOYMENT.md → Troubleshooting](DEPLOYMENT.md) for symptom→fix table.
 - `helm/global-resources.yaml` — shared replica/HPA/PDB/resource overrides across all envs.
 - `opentofu/aws/_common/*.hcl` — shared Terragrunt/OpenTofu logic.
 - `opentofu/aws/modules/output-file/` — generates `global-credentials.yaml` + `global-cloud-values.yaml`.
-- `.gitignore` — ignores state, secrets, generated values, `.terraform/`, `*.tfstate`, `*.tfvars`.
+- `helm/signals/charts/api/files/consent/` + `helm/aggregator/files/consent/` — consent JSON delivered via ConfigMap.
+- `.github/actions/pr-gate/` + `.github/workflows/develop-pr-gate.yml` — docs/release-notes gate for develop PRs; `.github/PULL_REQUEST_TEMPLATE.md` is the PR body scaffold.
+- `.gitignore` — ignores state, secrets, generated values, `.terraform/`, `*.tfstate`, `*.tfvars`, and local-only `docs/`.
 - `README.md` / `helm/README.md` / per-chart `helm/*/README.md` — overview + per-chart standalone deploy instructions.
 ```

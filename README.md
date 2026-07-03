@@ -46,13 +46,17 @@ that means **Signals** (`helm/signals/`).
 
 ```
 .
+├── .github/
+│   ├── actions/pr-gate/      # composite action: docs + release-notes gate for develop PRs
+│   ├── workflows/            # develop-pr-gate.yml (gate), pr-gate-tests.yml (action unit tests)
+│   └── PULL_REQUEST_TEMPLATE.md  # Summary / Release Notes / Checklist
 ├── DEPLOYMENT.md             # authoritative end-to-end runbook + troubleshooting
 ├── helm/                     # Application stack — four umbrella charts
 │   ├── global-resources.yaml # shared replica/HPA/PDB/resource overrides (all envs)
 │   ├── monitoring/           # chart "monitoring": kube-prometheus-stack, Loki, Alloy, Jaeger, Grafana
 │   ├── common-services/      # chart "platform": Kong, cert-manager, Postgres, Redis, metrics-server
-│   ├── signals/              # chart "dpg": the Signals stack (api/ui/notification/match-score)
-│   └── aggregator/           # chart "aggregator-dpg": web BFF, api, worker, keycloak
+│   ├── signals/              # chart "dpg": Signals (api/ui/notification/match-score); charts/api/files/{networks,consent}/*.json
+│   └── aggregator/           # chart "aggregator-dpg": web BFF, api, worker, keycloak; files/consent/consent.json
 └── opentofu/
     └── aws/
         ├── _common/          # Terragrunt include files shared by every env (eks.hcl, iam.hcl, …)
@@ -94,6 +98,42 @@ defines YAML anchors (`_building_block`, `_environment`, `_signals_public_hosts`
 `_aggregator_host`, `_grafana_host`, `_network`, `_brand`, SMTP, MSG91, alert
 emails, EKS/RDS sizing) and everything under `global:` references them. Edit the
 anchors at the top only.
+
+### Consent config (delivered via ConfigMap)
+
+Consent text/versions are **served from a ConfigMap**, not baked into images, so
+they can change with an edit + rollout (no image rebuild). This repo is the
+downstream sync — the canonical consent content lives in the app repos; here you
+just deliver it:
+
+- **Signals** — source files in `helm/signals/charts/api/files/consent/<network>.json`
+  (plus an optional brand override `<network>.<brand>.json`). Select them with
+  `api.schemas.consentNetwork` / `api.schemas.consentBrand` in `global-values.yaml`.
+  The `schemas-configmap` mounts `consent.json` (and, for a brand, a nested
+  `<brand>/consent.json`) alongside the network schemas at `/app/schemas`; the api
+  reads it because `CONSENT_CONFIG_SOURCE: local` is set explicitly. Consent is
+  cached in-process, so a `checksum/schemas` pod annotation rolls the api pods
+  whenever the consent (or network) files change.
+- **Aggregator** — source file in `helm/aggregator/files/consent/consent.json`,
+  rendered into a `{release}-consent` ConfigMap and mounted single-file (subPath)
+  into both the web and api pods at
+  `/app/config/<network>[/<brand>]/schemas/aggregator/consent.json`. subPath does
+  not hot-update, so a consent change needs a rollout restart of web + api.
+
+> `consent_text` no longer appears in the deployed `network.json` — consent is
+> served through the consent ConfigMap above, so its absence from network config
+> is **expected, not a gap**. Network schemas (`network.json`) remain sourced
+> upstream from Signals-DPG; this repo only syncs the deployed copy.
+
+The Signals migrate Job creates the `consent_record` ledger table from the bundled
+`helm/signals/charts/api/files/schema.sql` — refresh that bundle when the upstream
+schema changes.
+
+### Org hierarchy
+
+`global.orgHierarchyEnabled` (in `global-values.yaml`, default `true`) is surfaced
+to the aggregator web + api pods as the `ORG_HIERARCHY_ENABLED` env var (via their
+ConfigMaps), enabling the org-hierarchy features in the aggregator app.
 
 ---
 
@@ -138,6 +178,25 @@ image tags, public hostnames, and its own `opentofu/aws/<env>/` directory).
 
 ---
 
+## Contributing: the develop-PR gate
+
+PRs targeting **`develop`** run the `develop-pr-gate` workflow
+(`.github/workflows/develop-pr-gate.yml`), a composite action in
+`.github/actions/pr-gate/`. It **fails closed** unless the PR has both:
+
+1. A non-empty `## Release Notes` section in the PR description (use the
+   [PR template](.github/PULL_REQUEST_TEMPLATE.md)), and
+2. A change to `README.md` or `CLAUDE.md`.
+
+Each condition is waivable with a label: `no-release-notes` and `no-doc-update`.
+The gate logic is pure JS (`gate.mjs`) with unit tests (`gate.test.mjs`) run by a
+separate `pr-gate-tests` workflow on changes under `.github/actions/pr-gate/`.
+
+> The gate is only enforced once a branch-protection / ruleset requires the
+> `develop-pr-gate` check on `develop` — configure that at the org/repo level.
+
+---
+
 ## Prerequisites
 
 | Tool        | Used for                                  | Min version |
@@ -176,12 +235,14 @@ _building_block:         &building_block         "purple-dots"   # naming prefix
 _environment:            &environment            "dev"           # 1–9 lowercase alphanumeric
 _cloud_storage_region:   &cloud_storage_region   "ap-south-1"
 _eks_cluster_version:    &eks_cluster_version    "1.35"
-_eks_node_instance_type: &eks_node_instance_type "m6a.large"
+_eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
+_eks_node_disk_size_gb:  &eks_node_disk_size_gb  40
 _eks_node_count_min:     &eks_node_count_min     1
 _eks_node_count_max:     &eks_node_count_max     2
 _aggregator_host:        &aggregator_host        "aggregator.domain.com"
 _grafana_host:           &grafana_host           "monitoring.domain.com"
 # plus _signals_public_hosts, _network, _brand, SMTP, MSG91, alert emails, RDS sizing, IRSA subjects
+# global.orgHierarchyEnabled (default true) and api.schemas.consentNetwork/consentBrand also live here
 ```
 
 The file is heavily commented — read it before applying.
@@ -312,7 +373,8 @@ environment there):
 |-----------------------|--------------------------------------------------------|
 | Signals — api         | `ghcr.io/blue-dots-economy/signals-dpg/api`            |
 | Signals — ui          | `vinodbbhorge/signalstack-ui`                          |
-| Signals — notification / match-score | `vinodbbhorge/notification-service` / `vinodbbhorge/match-scoring` |
+| Signals — notification | `ghcr.io/blue-dots-economy/notification-service` |
+| Signals — match-score  | `vinodbbhorge/match-scoring`                            |
 | Aggregator — web / api / worker | `ghcr.io/blue-dots-economy/aggregator-dpg/{web,api,worker}` |
 | Aggregator — keycloak | `vinodbbhorge/aggregator-dpg-keycloak`                 |
 
