@@ -246,13 +246,13 @@ cert-manager:
         memory: 256Mi
 
 # =============================================================================
-# Shared data layer — Postgres + Redis for the aggregator-dpg and dpg stacks.
+# Shared data layer — Postgres + Redis for the aggregator and signals stacks.
 # Consumer charts disable their own DB subcharts and connect via cross-namespace
-# FQDN (e.g. platform-postgresql.common-services.svc / platform-redis-master...).
+# FQDN (e.g. common-services-postgresql.common-services.svc / common-services-redis-master...).
 #
-# Credentials below are populated at deploy time by the Makefile `platform-install`
-# target (reuse-or-generate, then `--set credentials.*`). Left blank in-repo so
-# nothing sensitive is committed; templates/secrets.yaml skips rendering when blank.
+# Credentials below are layered in at deploy time from the generated
+# global-credentials.yaml. Left blank in-repo so nothing sensitive is
+# committed; templates/secrets.yaml skips rendering when blank.
 # =============================================================================
 credentials:
   # admin (`postgres` superuser) password

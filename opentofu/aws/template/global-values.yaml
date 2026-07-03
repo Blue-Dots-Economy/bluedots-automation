@@ -36,8 +36,8 @@ _cloud_storage_region: &cloud_storage_region "ap-south-1"
 
 # ── EKS ───────────────────────────────────────────────────────────────────────
 _eks_cluster_version:    &eks_cluster_version    "1.35"
-_eks_node_instance_type: &eks_node_instance_type "m6a.large"
-_eks_node_disk_size_gb:  &eks_node_disk_size_gb  30
+_eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
+_eks_node_disk_size_gb:  &eks_node_disk_size_gb  40
 _eks_node_count_min:     &eks_node_count_min     1
 _eks_node_count_max:     &eks_node_count_max     2
 
@@ -64,9 +64,7 @@ _signals_google_maps_api_key: &signals_google_maps_api_key ""
 # false, no per-API KongPlugins/Ingresses are created and traffic falls back to the
 # per-service catch-all limit (nothing breaks).
 _api_rate_limit_enabled: &api_rate_limit_enabled false
-# Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
-# SINGLE SOURCE OF TRUTH: drives the signals/aggregator/search charts' rate-limit
-# config AND the monitoring per-API alert thresholds (warn >80%, info <20%).
+# Per-IP requests/min applied to EVERY API when enabled.
 _api_rate_limit_per_minute: &api_rate_limit_per_minute 600
 
 
@@ -86,6 +84,7 @@ global:
   # ── Signals Helm config ────────────────────────────────────────────────────
   publicHosts: *signals_public_hosts
   aggregator_host: *aggregator_host
+  orgHierarchyEnabled: true
 
   # ── Aggregator Helm config ─────────────────────────────────────────────────
   # These keys match the aggregator chart's schema at root level so global-values.yaml
@@ -117,11 +116,11 @@ global:
   # vpc_id: ""                         # If create_network: false, provide existing VPC ID
   # private_subnet_ids: []             # If create_network: false
   # public_subnet_ids: []              # If create_network: false
-  # vpc_cidr: "10.0.0.0/16"            # CIDR block for the new VPC
+  vpc_cidr: "10.0.0.0/22"              # CIDR for the VPC (must be /16 to /22)
   # ingress_cidr_blocks: ["0.0.0.0/0"] # Allowed CIDRs for HTTP/HTTPS inbound security group
 
   # Each subnet defaults to /24; cidr_netnum is the block index for that size.
-  #   /16 VPC: 101 → 10.0.101.0/24 | 102 → 10.0.102.0/24 | 201 → 10.0.201.0/24
+  #   /22 VPC: 0 → 10.0.0.0/24 | 1 → 10.0.1.0/24 | 2 → 10.0.2.0/24 | 3 → 10.0.3.0/24
   # Set prefix_length per subnet for a different size — then cidr_netnum indexes
   # blocks OF THAT size (e.g. a /28 in a /22 → cidr_netnum is the /28 index 0..63).
   subnet_config:
@@ -138,11 +137,13 @@ global:
     private-a:
       type: private
       availability_zone: "a"
-      cidr_netnum: 2
+      cidr_netnum: 32
+      prefix_length: 28
     private-b:
       type: private
       availability_zone: "b"
-      cidr_netnum: 3
+      cidr_netnum: 33
+      prefix_length: 28
 
   # NAT Gateway — costs ~$32/month per AZ. Only needed when private subnets exist.
   # nat_gateway_enabled: false
@@ -274,6 +275,7 @@ api:
     notificationKeyId: "dpg-api-client"
   config:
     NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
+    NOTIFICATION_FROM_EMAIL: *smtp_user
     SERVED_DOMAINS: *signals_served_domains
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local
@@ -282,6 +284,8 @@ api:
   schemas:
     networks:
       - *network
+    consentNetwork: *network
+    consentBrand: ""
 
 ui:
   apiUpstream: "http://signals-api:2742"
@@ -298,6 +302,8 @@ ui:
     VITE_ANALYTICS_GA_ID: ""
     VITE_MAP_DEFAULT_CENTER: "" # update the lat,long if any specific area has to be focused on maps.
     VITE_MAP_DEFAULT_ZOOM: "5"
+    VITE_PROFILE_FETCH_LIMIT: "1000"
+    VITE_ENABLED_LANGUAGES: "en,hi" # default: "en,hi" (English, Hindi). Add more codes for additional languages.
   service:
     port: 80
     targetPort: 80

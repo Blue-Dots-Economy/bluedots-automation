@@ -22,4 +22,35 @@ data:
   {{ . }}.json: |
 {{ $raw | replace "__PUBLIC_API_URL__" $publicApiUrl | replace "__SCHEMAS_URL__" $schemasUrl | indent 4 }}
 {{- end }}
+{{- /*
+  Consent config for the served network. The api reads consent.json from the
+  same directory as NETWORK_CONFIG_LOCAL_FILE (i.e. /app/schemas), so exposing
+  it here as `consent.json` lets consent text/versions change via a ConfigMap
+  edit + rollout — no image rebuild. Source files live in files/consent/<net>.json.
+
+  NOTE: the search subchart reuses this ConfigMap and dir-scans /app/schemas for
+  *.json network configs. consent.json parses fine but has no `id`, so search
+  keys it under `undefined` and never looks it up (harmless). The brand override
+  lives in a <brand>/ subdir, which search's readdir(...).endsWith('.json') skips.
+*/ -}}
+{{- if .Values.schemas.consentNetwork }}
+{{- $cfile := printf "files/consent/%s.json" .Values.schemas.consentNetwork -}}
+{{- $craw := $.Files.Get $cfile -}}
+{{- if not $craw }}{{ fail (printf "missing consent file %s (schemas.consentNetwork=%s)" $cfile $.Values.schemas.consentNetwork) }}{{- end }}
+  consent.json: |
+{{ $craw | indent 4 }}
+{{- /*
+  Optional brand override. Signals' consent loader deep-merges the brand file
+  (partial) OVER the network default, so BOTH files must be delivered — the
+  brand one is placed at /app/schemas/<brand>/consent.json via the api
+  deployment's volume `items` mapping. Source: files/consent/<net>.<brand>.json.
+*/ -}}
+{{- if .Values.schemas.consentBrand }}
+{{- $bfile := printf "files/consent/%s.%s.json" .Values.schemas.consentNetwork .Values.schemas.consentBrand -}}
+{{- $braw := $.Files.Get $bfile -}}
+{{- if not $braw }}{{ fail (printf "missing brand consent file %s (schemas.consentBrand=%s)" $bfile $.Values.schemas.consentBrand) }}{{- end }}
+  {{ .Values.schemas.consentBrand }}-consent.json: |
+{{ $braw | indent 4 }}
+{{- end }}
+{{- end }}
 {{- end }}
