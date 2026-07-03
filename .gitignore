@@ -29,7 +29,7 @@ opentofu/aws/**/monitoring-values.yaml
 opentofu/aws/**/global-cloud-values.yaml
 # Generated secrets file (written by output-file/main.tf) — never commit.
 opentofu/aws/**/global-credentials.yaml
-tf.sh
+opentofu/aws/**/tf.sh
 
 # Editor / OS junk
 .DS_Store

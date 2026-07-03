@@ -11,26 +11,15 @@ _environment:    &environment    "dev"
 _signals_public_hosts: &signals_public_hosts
   - "example.domain.com"
   - "example.domain.com"
-# For multi-domain host-routing set: "host1.com=network/domain;host2.com=network/domain"
-# Leave empty for single-host mode (hostBindings will be omitted entirely).
 _signals_host_bindings: &signals_host_bindings ""
 
-# Network this deployment serves — SHARED by signals (NETWORK_CONFIG_LOCAL_FILE,
-# schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
-# served_domains lists the per-domain bindings the signals API serves (roles
-# differ per network, so set it explicitly).
-_network: &network "blue_dot"
-
-# Brand skin over the network — SHARED by signals (VITE_BRAND_NAME) AND
-# aggregator (aggregatorBrand). A brand is a UI/config skin over a network; it
-# does NOT change the upstream network identity (driven by _network above).
-# Leave empty for the standard dots. Examples: "upsdm" (over blue_dot),
-# "onetac" (over orange_dot). Switching brand = change this one value + redeploy.
-_brand: &brand ""
-_signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
 _aggregator_host: &aggregator_host "aggregator.domain.com"
 _grafana_host:    &grafana_host    "monitoring.domain.com"
 
+_signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
+
+_network: &network "blue_dot"
+_brand: &brand ""
 # ── AWS ───────────────────────────────────────────────────────────────────────
 _cloud_storage_region: &cloud_storage_region "ap-south-1"
 
@@ -47,12 +36,10 @@ _eks_node_count_min:     &eks_node_count_min     1
 _eks_node_count_max:     &eks_node_count_max     2
 
 # ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
-# smtp_password must be a Gmail App Password:
-#   Google Account → Security → 2-Step Verification → App passwords
 _smtp_host:         &smtp_host         "smtp.gmail.com"
 _smtp_port:         &smtp_port         587
 _smtp_user:         &smtp_user         "sender@example.com"
-_smtp_password:     &smtp_password     "changeme"
+_smtp_password:     &smtp_password     "changeme" # smtp_password must be a Gmail App Password: eg. "abcd efgh ijkl mnop"
 _smtp_from_display: &smtp_from_display "Blue Dots"
 
 # ── MSG91 (shared by notification service and aggregator) ────────────────────
@@ -65,11 +52,9 @@ _aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
 _signals_google_maps_api_key: &signals_google_maps_api_key ""
 
 # ── API rate limiting (Kong) ────────────────────────────────────────────────────
-# Master ON/OFF toggle for per-API rate limiting across signals + aggregator. When
-# false, no per-API KongPlugins/Ingresses are created and traffic falls back to the
-# per-service catch-all limit (nothing breaks).
+# Master ON/OFF toggle for per-API rate limiting across signals + aggregator.
 _api_rate_limit_enabled: &api_rate_limit_enabled false
-# Per-IP requests/min applied to EVERY API when enabled.
+# Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
 _api_rate_limit_per_minute: &api_rate_limit_per_minute 600
 
 
@@ -92,15 +77,12 @@ global:
   orgHierarchyEnabled: true
 
   # ── Aggregator Helm config ─────────────────────────────────────────────────
-  # These keys match the aggregator chart's schema at root level so global-values.yaml
-  # can be passed directly via -f without any transformation.
   publicHost:         *aggregator_host
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   signalstack:
     # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
-    # Required before first aggregator login — SIGNALSTACK_ORG_NOT_REGISTERED otherwise.
     actingOrgId: ""
   dataPlatform:
     namespace:       common-services
@@ -108,8 +90,6 @@ global:
     redisService:    common-services-redis-master
 
   # ── API rate limiting (Kong) — shared by the signals/aggregator/search charts'
-  # per-API rate-limit config AND the monitoring per-API alert thresholds.
-  # Edit _api_rate_limit_enabled / _api_rate_limit_per_minute above.
   apiRateLimit:
     enabled:       *api_rate_limit_enabled
     defaultMinute: *api_rate_limit_per_minute
@@ -137,8 +117,8 @@ global:
       type: public
       availability_zone: "b"
       cidr_netnum: 1
-    # Private subnets for the RDS DB subnet group (RDS needs ≥2 AZs). Kept /24 here
-    # for a roomy /16 VPC; for a tight VPC add `prefix_length: 28` to shrink them.
+    # Private subnets for the RDS DB subnet group (RDS needs ≥2 AZs). Sized /28 here
+    # (11 usable IPs — plenty for RDS). Remove `prefix_length: 28` to make them /24.
     private-a:
       type: private
       availability_zone: "a"
@@ -149,24 +129,70 @@ global:
       availability_zone: "b"
       cidr_netnum: 33
       prefix_length: 28
+    # ── Private EKS node subnets ─────────────────────────────────────────────
+    # Named 'private-eks-*' so the EKS module selects them automatically and
+    # ignores the smaller RDS /28 subnets above.
+    # /16 VPC (this default): cidr_netnum 6/7 → 10.0.6.0/24 + 10.0.7.0/24 (251 IPs each).
+    # Tight /22 VPC: add prefix_length: 25 (keeps netnum 6/7 → 10.0.3.0/25 + 10.0.3.128/25).
+    private-eks-a:
+      type: private
+      availability_zone: "a"
+      cidr_netnum: 6
+    private-eks-b:
+      type: private
+      availability_zone: "b"
+      cidr_netnum: 7
 
-  # NAT Gateway — costs ~$32/month per AZ. Only needed when private subnets exist.
-  # nat_gateway_enabled: false
+  nat_gateway_enabled: true
 
   eks_cluster_version:    *eks_cluster_version
   eks_node_instance_type: *eks_node_instance_type
   eks_node_disk_size_gb:  *eks_node_disk_size_gb
   eks_node_capacity_type: *eks_node_capacity_type
-  eks_node_count_min:     *eks_node_count_min
+  eks_node_count_min:     *eks_node_count_min   # set to 2 for multi-AZ (one node per AZ)
   eks_node_count_max:     *eks_node_count_max
-  # eks_endpoint_public_access: true
-  # eks_endpoint_private_access: false
   # eks_node_count_desired: 3
   # eks_ebs_csi_addon_version: "v1.28.0-eksbuild.1"
 
+  # Pin the node group to specific subnet(s)/AZ. EBS volumes are AZ-locked, so a
+  # single-node cluster must keep its node in the AZ where its volumes live.
+  #   single-AZ (cheapest): ["private-eks-a"] + eks_node_count_min: 1
+  #   multi-AZ HA:          ["private-eks-a","private-eks-b"] + eks_node_count_min: 2
+  # Leave unset to spread nodes across all private-eks-* subnets.
+  # eks_node_subnet_keys:
+  #   - "private-eks-a"
+
+  # ── EKS API endpoint access ──────────────────────────────────────────────────
+  # Controls whether kubectl reaches the API server from the internet or VPC only.
+  # Default (below) = public. To go private: first set BOTH true (public+private),
+  # verify from the bastion, then set public:false (private-only). See the KT guide.
+  # eks_endpoint_public_access:  true
+  # eks_endpoint_private_access: false
+
+# ── Pritunl VPN  & bastion host ────────────────────────────────────────────────────────
+  pritunl_enabled: true
+  bastion_enabled: true
+
+  # ── Pritunl VPN ──────────────────────────────────────────────────────────────
+  # override the default instance type (t3.small is the minimum —
+  # MongoDB needs ~1 GB RAM; t3.nano will be unstable).
+  pritunl_instance_type: "t3.small"
+  #
+  # Restrict WHO can reach the VPN (office, home, etc.) — the bastion host is in a private subnet and only reachable after connecting to the VPN. Add/remove lines + re-apply (pritunl) to grant
+  pritunl_ingress_cidrs:
+    - "49.207.54.70/32"       # office (baseline — always allowed)
+    # - "198.51.100.20/32"    # per-env: add home/other IPs, then apply_tf_pritunl
+    # - "192.0.2.30/32"
+
+  # Access = SSH public keys. Each dev runs `ssh-keygen -t ed25519` and pastes their
+  # Add/remove a line + re-apply (bastion/pritunl) to grant/revoke a developer.
+  bastion_authorized_keys:
+    - "ssh-ed25519 AAAA... alice@laptop"
+    - "ssh-ed25519 AAAA... bob@laptop"
+  bastion_instance_type: "t3.medium"  # default — runs helm/kubectl/git (t3.medium floor; nano OOMs on helm template)
+  # bastion_key_name: "my-key-pair"     # optional AWS key pair; not needed when using bastion_authorized_keys
+
   # ── RDS (managed Postgres) ──────────────────────────────────────────────────
-  # Single multi-tenant instance; databases/roles created by the common-services
-  # bootstrap Job, not here. Lives in the private subnets above.
   rds_instance_class:        "db.t4g.micro"   # bump to db.t4g.small (+ multi_az) for prod
   rds_allocated_storage:     20               # gp3 minimum
   rds_max_allocated_storage: 50               # storage autoscaling cap (0 disables)
