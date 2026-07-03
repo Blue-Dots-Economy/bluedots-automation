@@ -86,6 +86,7 @@ global:
   # ── Signals Helm config ────────────────────────────────────────────────────
   publicHosts: *signals_public_hosts
   aggregator_host: *aggregator_host
+  orgHierarchyEnabled: true
 
   # ── Aggregator Helm config ─────────────────────────────────────────────────
   # These keys match the aggregator chart's schema at root level so global-values.yaml
@@ -282,6 +283,8 @@ api:
   schemas:
     networks:
       - *network
+    consentNetwork: *network
+    consentBrand: ""
 
 ui:
   apiUpstream: "http://signals-api:2742"
