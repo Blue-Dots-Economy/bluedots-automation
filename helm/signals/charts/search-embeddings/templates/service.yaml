@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "search-embeddings.fullname" . }}
+  labels: {{- include "search-embeddings.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: {{- include "search-embeddings.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: embed
+      port: {{ .Values.embeddings.port }}
+      targetPort: embed
+    {{- if .Values.reranker.enabled }}
+    - name: rerank
+      port: {{ .Values.reranker.port }}
+      targetPort: rerank
+    {{- end }}

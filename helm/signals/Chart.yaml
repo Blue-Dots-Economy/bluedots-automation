@@ -30,3 +30,13 @@ dependencies:
     repository: "file://../match-score"
     alias: match-score
     condition: match-score.enabled
+  - name: dpg-search
+    version: 0.1.0
+    repository: "file://../search"
+    alias: search
+    condition: search.enabled
+  - name: dpg-search-embeddings
+    version: 0.1.0
+    repository: "file://../search-embeddings"
+    alias: search-embeddings
+    condition: search-embeddings.enabled

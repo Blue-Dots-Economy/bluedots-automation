@@ -1,11 +1,16 @@
 # Default values for dpg-api.
 
+# Shared host for the ingress. Overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: dpg.example.com
+
 replicaCount: 1
 
 image:
   repository: ghcr.io/blue-dots-economy/signals-dpg/api
   tag: ""            # defaults to .Chart.AppVersion
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 imagePullSecrets: []
 nameOverride: ""
@@ -38,28 +43,44 @@ service:
   targetPort: 2742
   annotations: {}
 
+# Template-driven ingress (templates/ingress.yaml). Path /api + strip-path are
+# fixed in the template; only these scalars vary per environment. Host comes
+# from global.publicHost.
 ingress:
   enabled: false
-  className: ""
-  annotations: {}
-    # nginx.ingress.kubernetes.io/rewrite-target: /
-  hosts:
-    - host: api.dpg.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
-    # - secretName: dpg-api-tls
-    #   hosts:
-    #     - api.dpg.local
+  className: ""        # e.g. kong
+  tlsSecret: ""        # cert-manager secret owned by the ui ingress; reused here
+  plugin: ""           # KongClusterPlugin tier, e.g. rl-signals-api
+
+# Per-API (per-resource-group) rate limiting — see
+# templates/api-endpoint-groups-ingress.yaml. Each `groups` entry becomes its own
+# Kong route (more specific than the /api catch-all) with its OWN per-IP counter,
+# so one API flooding can't drain another's budget. Paths that share the same
+# effective limit are grouped into ONE generated KongPlugin + Ingress, so N APIs
+# with M distinct limits render only M plugins + M Ingresses.
+# Renders only when ingress.enabled + ingress.className (kong) are set.
+apiRateLimit:
+  enabled: true
+  defaultMinute: 600   # uniform per-IP requests/min for every API (the one knob; ~10 req/s)
+  redis:               # shared common-services Redis Kong uses for counters
+    host: common-services-redis-master.common-services.svc.cluster.local
+    port: 6379
+  # Full coverage — every signals-api resource group, all at the uniform default
+  # (→ 1 plugin + 1 Ingress, since the limit is shared). Each prefix is its own
+  # Kong route with its OWN per-IP counter and covers all operations beneath it
+  # (e.g. /api/v1/item covers create/fetch/update/delete/lifecycle). Add a
+  # `limit: <n>` on a line only for a rare exception.
+  groups:
+    - { path: /api/v1/item }
+    - { path: /api/v1/action }
+    - { path: /api/v1/event }
+    - { path: /api/v1/match-score }
+    - { path: /api/v1/network }
+    - { path: /api/v1/admin }
+    - { path: /api/v1/aggregator }
+    - { path: /api/auth }
 
 resources: {}
-  # limits:
-  #   cpu: 500m
-  #   memory: 512Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 256Mi
 
 livenessProbe:
   httpGet:
@@ -85,6 +106,10 @@ autoscaling:
   maxReplicas: 5
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: ""
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
 
 nodeSelector: {}
 tolerations: []
@@ -184,7 +209,7 @@ redis:
 # Network schemas — JSON files mounted into the api pod as a ConfigMap at
 # /app/schemas/<name>.json. The api reads them via NETWORK_CONFIG_SOURCE=local
 # and NETWORK_CONFIG_LOCAL_FILE (comma-separated paths).
-# To add a network: drop helmcharts/dpg/charts/api/files/networks/<name>.json
+# To add a network: drop helm/signals/charts/api/files/networks/<name>.json
 # and append <name> to .schemas.networks here.
 schemas:
   # In-cluster URL substituted into instance_url fields at render time.

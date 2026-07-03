@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dpg-search
+description: Signals search engine — ingestion worker + query API (pgvector + PostGIS)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

@@ -1,3 +1,12 @@
+{{- /*
+  Consent loader path: /app/config/<network>[/<brand>]/schemas/aggregator/consent.json
+  (brand path when a brand is set — the loader checks brand → network → default).
+  Mounted single-file (subPath) from the umbrella `{release}-consent` ConfigMap.
+*/ -}}
+{{- $net := .Values.global.aggregatorNetwork -}}
+{{- $brand := .Values.global.aggregatorBrand | default "" -}}
+{{- $consentPath := printf "/app/config/%s/schemas/aggregator/consent.json" $net -}}
+{{- if $brand }}{{- $consentPath = printf "/app/config/%s/%s/schemas/aggregator/consent.json" $net $brand -}}{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -117,5 +126,19 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 30
+          {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Consent config overlaid on the loader path. subPath does not
+          # hot-update, so a consent change needs a rollout restart (see
+          # docs/CONSENT_CONFIGMAP_DEPLOYMENT.md).
+          volumeMounts:
+            - name: consent
+              mountPath: {{ $consentPath }}
+              subPath: consent.json
+              readOnly: true
+      volumes:
+        - name: consent
+          configMap:
+            name: {{ .Release.Name }}-consent

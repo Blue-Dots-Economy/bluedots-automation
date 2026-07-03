@@ -26,8 +26,8 @@ inputs = {
 
   # Subnet definitions — override in global-values.yaml under global.subnet_config
   subnet_config = lookup(local.global_vars.global, "subnet_config", {
-    public-a = { type = "public", availability_zone = "a", cidr_netnum = 101 }
-    public-b = { type = "public", availability_zone = "b", cidr_netnum = 102 }
+    public-a = { type = "public", availability_zone = "a", cidr_netnum = 0 }
+    public-b = { type = "public", availability_zone = "b", cidr_netnum = 1 }
   })
 
   # NAT Gateway (optional override — default false; set true only if private subnets need internet egress)

@@ -15,6 +15,9 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # Rolls the api when network schemas or consent.json change (consent is
+        # cached in-process, so a restart is required to pick up ConfigMap edits).
+        checksum/schemas: {{ include (print $.Template.BasePath "/schemas-configmap.yaml") . | sha256sum }}
         {{- if .Values.secrets.create }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
@@ -61,8 +64,10 @@ spec:
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- with .Values.resources }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if .Values.schemas.networks }}
           volumeMounts:
             - name: schemas
@@ -74,6 +79,22 @@ spec:
         - name: schemas
           configMap:
             name: {{ include "dpg-api.fullname" . }}-schemas
+            # Explicit items so the optional brand consent lands in a subdir
+            # (/app/schemas/<brand>/consent.json); ConfigMap keys can't contain
+            # "/", so the key is mapped to a nested path here.
+            items:
+            {{- range .Values.schemas.networks }}
+              - key: {{ . }}.json
+                path: {{ . }}.json
+            {{- end }}
+            {{- if .Values.schemas.consentNetwork }}
+              - key: consent.json
+                path: consent.json
+              {{- if .Values.schemas.consentBrand }}
+              - key: {{ .Values.schemas.consentBrand }}-consent.json
+                path: {{ .Values.schemas.consentBrand }}/consent.json
+              {{- end }}
+            {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

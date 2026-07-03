@@ -1,15 +1,29 @@
 # Default values for dpg-ui.
 
+# Shared host(s) for the ingress. Overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: dpg.example.com
+  # publicHosts: list of all hostnames this release serves. Empty ->
+  # [publicHost] (single host, as before). Read by BOTH the ui and api ingress
+  # templates, so every host that serves the UI also serves /api (same-origin).
+  # Set this (one place) + ui.hostBindings to run single-instance multi-domain.
+  publicHosts: []
+
 replicaCount: 1
 
 # nginx in the UI image reverse-proxies /api/* to this upstream.
 # Default matches the umbrella release name `dpg` in the same namespace.
 apiUpstream: "http://dpg-api:2742"
 
+# UI variant exposed to the container as the UI_VARIANT env var.
+# Defaults to "signals"; override per environment via signals-values.yaml.
+uiVariant: "signals"
+
 image:
   repository: ghcr.io/blue-dots-economy/signals-dpg/ui
   tag: ""            # defaults to .Chart.AppVersion
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 imagePullSecrets: []
 nameOverride: ""
@@ -42,19 +56,23 @@ service:
   targetPort: 8080
   annotations: {}
 
+# Template-driven ingress (templates/ingress.yaml). Path / (catch-all) is fixed
+# in the template; only these scalars vary per environment. This object owns the
+# cert-manager issuance for the shared host cert. Host comes from global.publicHost.
 ingress:
   enabled: false
-  className: ""
-  annotations: {}
-  hosts:
-    - host: dpg.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
-    # - secretName: dpg-ui-tls
-    #   hosts:
-    #     - dpg.local
+  className: ""               # e.g. kong
+  tlsSecret: ""               # cert-manager secret, e.g. signals-ui-tls
+  clusterIssuer: ""           # e.g. letsencrypt-prod
+  plugin: ""                  # KongClusterPlugin tier, e.g. rl-signals-ui
+
+# Host-routed served binding. Maps request Host -> VITE_SERVED_BINDINGS so a
+# single instance behaves as the matching per-domain portal. Empty -> static
+# config.js (today's behaviour). Format (";"-separated):
+#   "provider.example.com=net/provider;seeker.example.com=net/seeker"
+# Hosts listed here MUST also appear in global.publicHosts (so the ui + api
+# ingresses route them).
+hostBindings: ""
 
 resources: {}
   # limits:
@@ -101,3 +119,10 @@ runtimeConfig:
   VITE_API_URLS: ""
   VITE_DEFAULT_API_URL: ""
   VITE_SHOW_INSTANCE_SELECTOR: "false"
+  # Brand skin over the network (UI selects it at runtime). Empty = standard
+  # dots; one UI build serves all brands. Examples: "upsdm", "onetac".
+  VITE_BRAND_NAME: ""
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

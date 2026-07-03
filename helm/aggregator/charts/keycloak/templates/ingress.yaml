@@ -1,0 +1,47 @@
+{{- if .Values.ingress.enabled -}}
+{{- /*
+  Template-driven ingress for Keycloak (auth). Routing STRUCTURE fixed here:
+  path /auth, strip-path "false" — Keycloak serves natively under /auth
+  (KC_HTTP_RELATIVE_PATH=/auth). Host comes from global.publicHost. No
+  cert-manager annotation: the web ingress owns the shared host cert; this
+  object references the derived TLS secret.
+
+  NOTE: this Ingress is named after the keycloak subchart (<release>-keycloak),
+  replacing the former parent-template name <release>-auth.
+*/ -}}
+{{- $svc := include "keycloak.fullname" . -}}
+{{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $svc }}
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "false"
+    {{- if .Values.ingress.plugin }}
+    konghq.com/plugins: {{ .Values.ingress.plugin | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  tls:
+    - hosts:
+        - {{ $host }}
+      secretName: {{ printf "%s-tls" ($host | replace "." "-") }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $svc }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

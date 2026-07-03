@@ -123,3 +123,7 @@ internalSecrets:
   # Raw JSON contents. Override via --set-file internalSecrets.json=./internal-secrets.json
   json: |
     {}
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

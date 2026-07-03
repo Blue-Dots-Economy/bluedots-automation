@@ -21,6 +21,11 @@ dependencies:
     repository: file://charts/ingress-nginx
     condition: ingress-nginx.enabled
 
+  - name: kong
+    version: 3.2.0
+    repository: file://charts/kong
+    condition: kong.enabled
+
   - name: cert-manager
     version: v1.20.2
     repository: file://charts/cert-manager
@@ -35,3 +40,8 @@ dependencies:
     version: 19.6.4
     repository: file://charts/redis
     condition: redis.enabled
+
+  - name: metrics-server
+    version: 3.12.1
+    repository: file://charts/metrics-server
+    condition: metrics-server.enabled

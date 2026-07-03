@@ -1,0 +1,755 @@
+# =============================================================================
+# Monitoring umbrella chart — kube-prometheus-stack + Loki + Alloy
+# Secrets and alert-channel config are injected via the OpenTofu-generated overlay.
+# For standalone use, update the placeholder values marked below.
+# =============================================================================
+
+# =============================================================================
+# Alert channel toggles
+# Set enabled: true/false per channel. When both are true, each severity-routed
+# receiver fires both Discord and email simultaneously.
+# Override per-org via the OpenTofu-generated monitoring-values.yaml overlay.
+# =============================================================================
+alerting:
+  email:
+    enabled: false
+    smtpHost: "smtp.gmail.com:587"
+    smtpFrom: "alerts@example.com"
+    smtpAuthUsername: "alerts@example.com"
+    smtpAuthPassword: "changeme"
+    to: "alerts@example.com"
+  discord:
+    enabled: false
+    criticalWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+    warningWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+    infoWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
+
+# Canonical per-IP API rate limit (req/min). This default is a fallback; the real
+# value is supplied by global-values.yaml (global.apiRateLimit.defaultMinute), the
+# SAME source the signals/aggregator charts use — so one number drives both the
+# rate-limit config and the per-API alert thresholds in
+# templates/kong-api-ratelimit-alerts.yaml (warn >80%, info <20% of this value).
+global:
+  apiRateLimit:
+    defaultMinute: 600
+
+prometheus:
+  enabled: true
+
+  grafana:
+    enabled: true
+    # Hide kube-prometheus-stack's ~30 bundled dashboards (etcd, CoreDNS, k8s
+    # compute-resources, node-exporter, etc.). We only want the dashboards WE
+    # ship as ConfigMaps (Kong service, Kong API, infra, k8s-health). The sidecar
+    # that loads our ConfigMaps (grafana_dashboard label) stays enabled.
+    defaultDashboardsEnabled: false
+    # Override via overlay for install.sh deployments. Change for standalone use.
+    # Left blank so no literal default ships — the AWS path injects a random
+    # password via overlay; set this for standalone (non-install.sh) use.
+    adminUser: admin
+    adminPassword: ""
+
+    grafana.ini:
+      server:
+        root_url: "%(protocol)s://%(domain)s/monitoring/"
+        serve_from_sub_path: true
+
+    ingress:
+      enabled: true
+      ingressClassName: kong
+      annotations:
+        konghq.com/strip-path: "false"
+        konghq.com/plugins: "rl-monitoring"
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts: []
+      path: /monitoring
+      pathType: Prefix
+      tls: []
+
+    persistence:
+      enabled: true
+      storageClassName: gp3
+      size: 5Gi
+
+    # Loki datasource — kube-prometheus-stack doesn't know about Loki, so we add it here.
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        url: http://monitoring-loki.monitoring.svc.cluster.local:3100
+        access: proxy
+        isDefault: false
+
+  windowsMonitoring:
+    enabled: false
+
+  # Disable built-in rules that are false positives on EKS managed control plane.
+  # KubeSchedulerDown / KubeControllerManagerDown / etcdHighNumberOfLeaderChanges:
+  #   absent()-based rules that always fire because AWS hides these components.
+  # KubeletTooManyPods: replaced below with ClusterPodCapacityHigh (cluster-level).
+  defaultRules:
+    disabled:
+      KubeSchedulerDown: true
+      KubeControllerManagerDown: true
+      etcdHighNumberOfLeaderChanges: true
+      KubeletTooManyPods: true
+      # Replaced by PodHighRestartCount (critical) in additionalPrometheusRulesMap.
+      KubePodCrashLooping: true
+
+  nodeExporter:
+    enabled: true
+
+  kubeStateMetrics:
+    enabled: true
+
+  prometheus:
+    prometheusSpec:
+      scrapeInterval: 30s
+      evaluationInterval: 30s
+
+      # Discover ServiceMonitors/PodMonitors/Rules from all namespaces, not just
+      # the ones created by this chart. Required for signals/aggregator exporters.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+
+      retention: 7d
+
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: gp3
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 20Gi
+
+  additionalPrometheusRulesMap:
+    bluedots-cluster-alerts:
+      groups:
+
+        - name: infra.alerts
+          rules:
+            - alert: NodeHighCPUUsage
+              expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "High CPU on {{ $labels.instance }}"
+                description: "CPU usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 80%)"
+
+            - alert: NodeHighMemoryUsage
+              expr: 100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "High memory on {{ $labels.instance }}"
+                description: "Memory usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 80%)"
+
+            - alert: NodeHighDiskUsage
+              expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) > 80
+              for: 10m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "High disk on {{ $labels.instance }}"
+                description: "Disk usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} at / (threshold: 80%)"
+
+            - alert: NodeNotReady
+              expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+              for: 5m
+              labels:
+                severity: critical
+                group: infra
+              annotations:
+                summary: "Node {{ $labels.node }} is not Ready"
+                description: "Node {{ $labels.node }} has been NotReady for more than 5 minutes"
+
+            # Cluster-level replacement for KubeletTooManyPods.
+            # Fires only when total cluster pod usage exceeds 85% across ALL nodes.
+            - alert: ClusterPodCapacityHigh
+              expr: |
+                sum(kube_pod_info{job="kube-state-metrics"})
+                /
+                sum(kube_node_status_capacity{job="kube-state-metrics",resource="pods"})
+                * 100 > 85
+              for: 5m
+              labels:
+                severity: warning
+                group: infra
+              annotations:
+                summary: "Cluster pod capacity above 85%"
+                description: "Cluster is using {{ $value | printf \"%.1f\" }}% of total pod capacity. Consider scaling the nodegroup."
+
+        - name: signals.alerts
+          rules:
+            - alert: PodHighRestartCount
+              expr: increase(kube_pod_container_status_restarts_total{namespace="signals"}[15m]) > 3
+              for: 0m
+              labels:
+                severity: critical
+                group: signals
+              annotations:
+                summary: "Pod {{ $labels.pod }} restarting in signals"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last 15 minutes — possible CrashLoopBackOff"
+
+            - alert: PodOOMKilled
+              expr: |
+                kube_pod_container_status_last_terminated_reason{namespace="signals",reason="OOMKilled"} == 1
+                and
+                increase(kube_pod_container_status_restarts_total{namespace="signals"}[15m]) > 0
+              for: 0m
+              labels:
+                severity: critical
+                group: signals
+              annotations:
+                summary: "OOMKilled: signals/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
+
+            - alert: PodHighCPUUsage
+              expr: (rate(container_cpu_usage_seconds_total{namespace="signals",container!="",container!="POD"}[5m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="signals",resource="cpu"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: signals
+              annotations:
+                summary: "High CPU: signals/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its CPU limit"
+
+            - alert: PodHighMemoryUsage
+              expr: (container_memory_working_set_bytes{namespace="signals",container!="",container!="POD"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="signals",resource="memory"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: signals
+              annotations:
+                summary: "High memory: signals/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
+
+            - alert: DeploymentUnavailable
+              expr: |
+                kube_deployment_status_replicas_available{namespace="signals"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="signals"} == 0
+              for: 5m
+              labels:
+                severity: critical
+                group: signals
+              annotations:
+                summary: "Deployment signals/{{ $labels.deployment }} has 0 replicas"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+
+        - name: aggregator.alerts
+          rules:
+            - alert: PodHighRestartCount
+              expr: increase(kube_pod_container_status_restarts_total{namespace="aggregator"}[15m]) > 3
+              for: 0m
+              labels:
+                severity: critical
+                group: aggregator
+              annotations:
+                summary: "Pod {{ $labels.pod }} restarting in aggregator"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last 15 minutes — possible CrashLoopBackOff"
+
+            - alert: PodOOMKilled
+              expr: |
+                kube_pod_container_status_last_terminated_reason{namespace="aggregator",reason="OOMKilled"} == 1
+                and
+                increase(kube_pod_container_status_restarts_total{namespace="aggregator"}[15m]) > 0
+              for: 0m
+              labels:
+                severity: critical
+                group: aggregator
+              annotations:
+                summary: "OOMKilled: aggregator/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
+
+            - alert: PodHighCPUUsage
+              expr: (rate(container_cpu_usage_seconds_total{namespace="aggregator",container!="",container!="POD"}[5m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="aggregator",resource="cpu"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: aggregator
+              annotations:
+                summary: "High CPU: aggregator/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its CPU limit"
+
+            - alert: PodHighMemoryUsage
+              expr: (container_memory_working_set_bytes{namespace="aggregator",container!="",container!="POD"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="aggregator",resource="memory"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: aggregator
+              annotations:
+                summary: "High memory: aggregator/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
+
+            - alert: DeploymentUnavailable
+              expr: |
+                kube_deployment_status_replicas_available{namespace="aggregator"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="aggregator"} == 0
+              for: 5m
+              labels:
+                severity: critical
+                group: aggregator
+              annotations:
+                summary: "Deployment aggregator/{{ $labels.deployment }} has 0 replicas"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+
+        - name: common-services.alerts
+          rules:
+            - alert: PodHighRestartCount
+              expr: increase(kube_pod_container_status_restarts_total{namespace="common-services"}[15m]) > 3
+              for: 0m
+              labels:
+                severity: critical
+                group: common-services
+              annotations:
+                summary: "Pod {{ $labels.pod }} restarting in common-services"
+                description: "Container {{ $labels.container }} restarted {{ $value | printf \"%.0f\" }} times in the last 15 minutes — possible CrashLoopBackOff"
+
+            - alert: PodOOMKilled
+              expr: |
+                kube_pod_container_status_last_terminated_reason{namespace="common-services",reason="OOMKilled"} == 1
+                and
+                increase(kube_pod_container_status_restarts_total{namespace="common-services"}[15m]) > 0
+              for: 0m
+              labels:
+                severity: critical
+                group: common-services
+              annotations:
+                summary: "OOMKilled: common-services/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} was killed because it exceeded its memory limit"
+
+            - alert: PodHighCPUUsage
+              expr: (rate(container_cpu_usage_seconds_total{namespace="common-services",container!="",container!="POD"}[5m]) / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="common-services",resource="cpu"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: common-services
+              annotations:
+                summary: "High CPU: common-services/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its CPU limit"
+
+            - alert: PodHighMemoryUsage
+              expr: (container_memory_working_set_bytes{namespace="common-services",container!="",container!="POD"} / on(namespace,pod,container) kube_pod_container_resource_limits{namespace="common-services",resource="memory"}) * 100 > 80
+              for: 5m
+              labels:
+                severity: warning
+                group: common-services
+              annotations:
+                summary: "High memory: common-services/{{ $labels.pod }}"
+                description: "Container {{ $labels.container }} is using {{ $value | printf \"%.1f\" }}% of its memory limit"
+
+            - alert: DeploymentUnavailable
+              expr: |
+                kube_deployment_status_replicas_available{namespace="common-services"} == 0
+                  unless
+                kube_deployment_spec_replicas{namespace="common-services"} == 0
+              for: 5m
+              labels:
+                severity: critical
+                group: common-services
+              annotations:
+                summary: "Deployment common-services/{{ $labels.deployment }} has 0 replicas"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+
+        - name: kong.alerts
+          rules:
+            # Traffic volume warning — early heads-up before the critical threshold.
+            - alert: KongServiceElevatedTraffic
+              expr: |
+                (sum by(exported_service) (rate(kong_http_requests_total[5m])) * 60 > 3000)
+                < 5000
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Elevated traffic on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} is receiving {{ $value | printf \"%.0f\" }} requests/min — approaching critical threshold (3000–5000 req/min)"
+
+            # Traffic volume critical — sustained extreme load, act now.
+            - alert: KongServiceHighTraffic
+              expr: sum by(exported_service) (rate(kong_http_requests_total[5m])) * 60 > 5000
+              for: 5m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "Critical traffic volume on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} is receiving {{ $value | printf \"%.0f\" }} requests/min (threshold: 5000 req/min)"
+
+            # 429 rate sustained — a client is ignoring rate limit responses.
+            # Uses [5m] window (matches for: 5m) for a stable measurement over 2-point [1m].
+            - alert: KongRateLimitSustained
+              expr: sum by(exported_service) (rate(kong_http_requests_total{code="429"}[5m])) * 60 > 100
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Sustained rate limiting on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 req/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min) — a client is not respecting the rate limit"
+
+            # Per-API (route-level) rate limiting — pinpoints WHICH API is being
+            # throttled (the per-service alert above can't, since many APIs share
+            # one backend service). Fires when a single Kong route sustains 429s,
+            # i.e. a client is hammering one specific endpoint past its per-IP limit.
+            - alert: KongApiRateLimited
+              expr: sum by(route) (rate(kong_http_requests_total{code="429"}[5m])) * 60 > 60
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "API route {{ $labels.route }} is being rate limited"
+                description: "Kong route {{ $labels.route }} has returned more than 60 HTTP 429/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }}/min) — a client is exceeding the per-API limit on this specific endpoint"
+
+            # KIC failed to translate an Ingress/plugin into Kong config — those
+            # routes/plugins are NOT applied. This is silent and dangerous: a bad
+            # annotation on one Ingress can drop its whole Service's routes (e.g.
+            # the konghq.com/rewrite gate issue that took /backend down for 12h).
+            # broken_resource_count is a per-pod gauge; max() across the KIC pods.
+            - alert: KongConfigTranslationBroken
+              expr: max(ingress_controller_translation_broken_resource_count) > 0
+              for: 2m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Kong Ingress Controller cannot translate {{ $value | printf \"%.0f\" }} resource(s)"
+                description: "KIC has {{ $value | printf \"%.0f\" }} resource(s) it cannot translate into Kong config for 2+ minutes — their routes/plugins are NOT live and traffic for the affected Service can silently drop. Find it: `kubectl get ingress -A` then `kubectl describe ingress <name>` and look for a KongConfigurationTranslationFailed event."
+
+            # 5xx error rate > 5% — critical, act fast.
+            # HARD guard (AND, not OR): requires BOTH >5% 5xx AND >=15 actual 5xx in
+            # 5m. The absolute floor of 15 stops low-volume noise (e.g. 6 5xx out of
+            # 100 requests = 6%) from paging — same anti-noise fix as the 4xx alerts.
+            # (was: >= 100 total req OR >= 15 5xx — the OR-total branch was noisy.)
+            - alert: KongHigh5xxRate
+              expr: |
+                (
+                  sum by(exported_service) (rate(kong_http_requests_total{code=~"5.."}[5m]))
+                  /
+                  sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                ) * 100 > 5
+                and
+                sum by(exported_service) (
+                  increase(kong_http_requests_total{code=~"5.."}[5m])
+                ) >= 15
+              for: 5m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "High 5xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate AND ≥15 actual 5xx errors over the last 5 minutes (thresholds: >5% AND ≥15 errors — low-volume noise will NOT alert)."
+
+            # 4xx error rate 10–25% — warning.
+            # Excludes 429s (intentional rate limiting). Upper bound < 25 ensures this
+            # auto-silences when KongCritical4xxRate fires.
+            # Two-tier guard: >= 100 total req fires on percentage alone; < 100 total req
+            # also requires >= 50 absolute 4xx errors to filter bot-noise on low traffic.
+            - alert: KongHigh4xxRate
+              expr: |
+                (
+                  (
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                    )
+                    /
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total[5m])
+                    )
+                  ) * 100 > 10
+                ) < 25
+                and
+                sum by(exported_service) (
+                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                ) >= 50
+              for: 5m
+              labels:
+                severity: warning
+                group: kong
+              annotations:
+                summary: "Elevated 4xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate (10–25%) AND ≥50 actual 4xx errors over the last 5 minutes — low-volume bot 4xx will NOT alert."
+
+            # 4xx error rate > 25% — critical.
+            # HARD guard (AND, not OR): requires BOTH >25% 4xx AND >=50 actual 4xx
+            # errors in 5m. The absolute floor of 50 means low-volume bot 4xx
+            # (e.g. 3 4xx out of 3 requests = 100%) NEVER pages — fixes the noisy
+            # KongCritical4xxRate firings on bot traffic.
+            - alert: KongCritical4xxRate
+              expr: |
+                (
+                  sum by(exported_service) (
+                    rate(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                  )
+                  /
+                  sum by(exported_service) (
+                    rate(kong_http_requests_total[5m])
+                  )
+                ) * 100 > 25
+                and
+                sum by(exported_service) (
+                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                ) >= 50
+              for: 5m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "Critical 4xx rate on {{ $labels.exported_service }}"
+                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate AND ≥50 actual 4xx errors over the last 5 minutes (thresholds: >25% AND ≥50 errors — low-volume bot 4xx will NOT alert)."
+
+            # ─── Per-API (route-level) alerts ──────────────────────────────────
+            # NOTE: the two LIMIT-DERIVED per-API alerts (approaching-limit warning
+            # and under-utilized info) live in templates/kong-api-ratelimit-alerts.yaml,
+            # where their thresholds are COMPUTED from global.apiRateLimit.defaultMinute
+            # (no hardcoded numbers). The 4xx alert below is percentage/absolute based,
+            # so it stays here.
+            #
+            # CRITICAL — per-API 4xx: >25% 4xx (excluding 429) AND >=50 actual
+            # 4xx errors in 5m. Same hard absolute floor as the service alert, so
+            # low-volume bot 4xx never pages.
+            - alert: KongApiCritical4xx
+              expr: |
+                (
+                  sum by(route) (rate(kong_http_requests_total{code=~"4..",code!="429"}[5m]))
+                  /
+                  sum by(route) (rate(kong_http_requests_total[5m]))
+                ) * 100 > 25
+                and
+                sum by(route) (
+                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
+                ) >= 50
+              for: 5m
+              labels:
+                severity: critical
+                group: kong
+              annotations:
+                summary: "Critical 4xx rate on API route {{ $labels.route }}"
+                description: "Kong route {{ $labels.route }} has a {{ $value | printf \"%.1f\" }}% 4xx rate AND ≥50 actual 4xx errors over the last 5 minutes (thresholds: >25% AND ≥50 errors — low-volume bot 4xx will NOT alert)."
+
+        - name: info.alerts
+          rules:
+            - alert: PodPending
+              expr: |
+                kube_pod_status_phase{phase="Pending",namespace=~"signals|aggregator|common-services|monitoring"} == 1
+              for: 5m
+              labels:
+                severity: info
+                group: workload
+              annotations:
+                summary: "Pod {{ $labels.pod }} pending in {{ $labels.namespace }}"
+                description: "Pod {{ $labels.pod }} has been stuck in Pending for more than 5 minutes — check node resources or image pull"
+
+            - alert: HPAAtMaxReplicas
+              expr: |
+                kube_horizontalpodautoscaler_status_current_replicas
+                == kube_horizontalpodautoscaler_spec_max_replicas
+              for: 15m
+              labels:
+                severity: info
+                group: workload
+              annotations:
+                summary: "HPA {{ $labels.horizontalpodautoscaler }} maxed out in {{ $labels.namespace }}"
+                description: "HPA {{ $labels.horizontalpodautoscaler }} has been at its maximum replica count ({{ $value | printf \"%.0f\" }}) for 15 minutes — consider raising the limit"
+
+            - alert: CertificateExpiringSoon
+              expr: |
+                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 30
+              for: 1h
+              labels:
+                severity: info
+                group: infra
+              annotations:
+                summary: "Certificate {{ $labels.name }} expires in {{ $value | printf \"%.0f\" }} days"
+                description: "Certificate {{ $labels.name }} in {{ $labels.namespace }} will expire in {{ $value | printf \"%.0f\" }} days — renew or check cert-manager issuer"
+
+            - alert: PVCUsageHigh
+              expr: |
+                (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) * 100 > 80
+              for: 5m
+              labels:
+                severity: info
+                group: storage
+              annotations:
+                summary: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | printf \"%.1f\" }}% full in {{ $labels.namespace }}"
+                description: "PVC {{ $labels.persistentvolumeclaim }} in {{ $labels.namespace }} has used {{ $value | printf \"%.1f\" }}% of its capacity — consider expanding or cleaning up data"
+
+  alertmanager:
+    # Templates are loaded via helm/monitoring/files/*.tmpl, included as keys
+    # in the monitoring-alertmanager-config Secret (see templates/alertmanager-config.yaml).
+    # templateFiles is intentionally empty — it fed the auto-generated kube-prometheus-stack
+    # secret which the operator ignores when configSecret is set.
+
+    # Minimal fallback config — actual routing is generated by
+    # helm/monitoring/templates/alertmanager-config.yaml (referenced via configSecret).
+    # This block exists so kube-prometheus-stack creates a valid (no-op) default
+    # secret; the operator ignores it in favour of the named configSecret.
+    config:
+      route:
+        receiver: 'null'
+      receivers:
+        - name: 'null'
+
+    alertmanagerSpec:
+      # Point the Prometheus operator to our template-generated Secret (see
+      # helm/monitoring/templates/alertmanager-config.yaml). This overrides the
+      # auto-generated secret from `config:` above.
+      configSecret: monitoring-alertmanager-config
+      # Set timezone so .Local.Format in alert templates renders IST (UTC+5:30).
+      # Must use containers override — env: is not a valid top-level field on
+      # the Alertmanager CR spec and is silently ignored by the operator.
+      containers:
+        - name: alertmanager
+          env:
+            - name: TZ
+              value: "Asia/Kolkata"
+      # Mount the templates ConfigMap so Alertmanager can load *.tmpl files.
+      # The operator only mounts the config key from configSecret, so templates
+      # must come from a separately-mounted volume.
+      volumes:
+        - name: alertmanager-templates
+          configMap:
+            name: monitoring-alertmanager-templates
+      volumeMounts:
+        - name: alertmanager-templates
+          mountPath: /etc/alertmanager/templates
+          readOnly: true
+      retention: 168h
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: gp3
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 2Gi
+
+
+loki:
+  enabled: true
+
+  deploymentMode: SingleBinary
+
+  loki:
+    auth_enabled: false
+
+    commonConfig:
+      replication_factor: 1
+
+    storage:
+      type: filesystem
+
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+
+    limits_config:
+      retention_period: 168h
+
+    compactor:
+      retention_enabled: true
+      # Required when retention is enabled — tells compactor where delete requests are stored.
+      delete_request_store: filesystem
+
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      storageClass: gp3
+      size: 10Gi
+
+  # Disable SimpleScalable components — not needed in SingleBinary mode.
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+  gateway:
+    enabled: false
+  lokiCanary:
+    enabled: false
+  test:
+    enabled: false
+
+
+alloy:
+  enabled: true
+
+  alloy:
+    configMap:
+      content: |
+
+        discovery.kubernetes "pods" {
+          role = "pod"
+        }
+
+        // Rename Kubernetes metadata to short labels: namespace, pod, container, node.
+        discovery.relabel "pod_logs" {
+          targets = discovery.kubernetes.pods.targets
+
+          rule {
+            source_labels = ["__meta_kubernetes_namespace"]
+            target_label  = "namespace"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_name"]
+            target_label  = "pod"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_container_name"]
+            target_label  = "container"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_pod_node_name"]
+            target_label  = "node"
+          }
+        }
+
+        loki.source.kubernetes "pod_logs" {
+          targets    = discovery.relabel.pod_logs.output
+          forward_to = [loki.write.loki_endpoint.receiver]
+        }
+
+        loki.write "loki_endpoint" {
+          endpoint {
+            url = "http://monitoring-loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+          }
+        }
+
+  rbac:
+    create: true
+
+  serviceAccount:
+    create: true
+
+  controller:
+    type: daemonset
+
+
+jaeger:
+  enabled: false
+
+otelcollector:
+  enabled: false

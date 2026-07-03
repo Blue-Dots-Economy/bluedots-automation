@@ -121,3 +121,7 @@ configFiles:
   aiProvidersFileName: ai.providers.local.json
   aiProvidersJson: |
     {}
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1

@@ -122,7 +122,7 @@ What the four functions do (run by both options):
    and writes `tf.sh` with the region + bucket name.
 2. `backup_configs` — backs up any existing `~/.kube/config`, sets `KUBECONFIG`.
 3. `create_tf_resources` — `source tf.sh` then `terragrunt run --all apply`
-   (VPC → EKS → IAM → storage → random_passwords → output-file), and writes the
+   (VPC → EKS → IAM → storage → random_passwords → rds → output-file), and writes the
    EKS kubeconfig. This also generates the three per-chart values files into the
    env directory.
 4. `apply_gp3_default_sc` — makes `gp3` the default StorageClass (demotes `gp2`).
@@ -241,9 +241,19 @@ Without it, aggregator login fails with `SIGNALSTACK_ORG_NOT_REGISTERED`.
 
 ## 5. Deploy the services — step by step
 
-Deploy in **strict dependency order**: `common-services` first (it owns
-ingress-nginx, cert-manager, the shared Postgres + Redis), then `signals`, then
-`aggregator`. Gate each step on the previous being healthy.
+Deploy in **strict dependency order**: `common-services` first (it owns the
+**Kong** ingress controller, cert-manager, the shared Postgres + Redis), then
+`signals`, then `aggregator`. Gate each step on the previous being healthy.
+
+> **Ingress: Kong (not nginx).** common-services runs the Kong ingress
+> controller (DB-less) as the sole controller; `kong` is the cluster-default
+> IngressClass. All app Ingress objects set `ingressClassName: kong`. Rate
+> limiting is enforced by `KongClusterPlugin` tiers (`rl-auth`/`rl-api`/
+> `rl-public`) defined in `helm/common-services/values.yaml` and attached per
+> route via the `konghq.com/plugins` annotation; counters are backed by the
+> shared Redis (`policy: redis`) so limits stay correct across Kong replicas.
+> `deploy_common_services` applies the Kong CRDs (`apply_kong_crds`) before the
+> helm upgrade — Helm does not install subchart CRDs or update CRDs on upgrade.
 
 ```bash
 # from opentofu/aws/<env>
@@ -345,10 +355,10 @@ kubectl -n signals run smoke --rm -i --restart=Never --image=curlimages/curl:8.1
 ```
 
 Then point DNS (A / CNAME) for `signals_host`, `signals_ui_host`, and
-`aggregator_host` at the ingress-nginx LoadBalancer:
+`aggregator_host` at the **Kong proxy** LoadBalancer:
 
 ```bash
-kubectl -n common-services get svc | grep LoadBalancer    # external hostname
+kubectl -n common-services get svc common-services-kong-proxy    # external hostname
 ```
 
 Once DNS resolves and certs are `READY=True`, the public URLs are live.

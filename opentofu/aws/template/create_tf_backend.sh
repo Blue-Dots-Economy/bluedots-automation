@@ -25,10 +25,16 @@ if ! aws sts get-caller-identity &> /dev/null; then
   exit 1
 fi
 
-# Read values from global-values.yaml
-building_block=$(yq -r '.global.building_block' global-values.yaml)
-environment_name=$(yq -r '.global.environment' global-values.yaml)
-aws_region=$(yq -r '.global.cloud_storage_region' global-values.yaml)
+# Read values from global-values.yaml.
+# global-values.yaml stores each value once as a YAML anchor (&environment) and
+# references it as an alias (environment: *environment). mikefarah yq does NOT
+# resolve aliases when selecting a node directly — it returns the literal text
+# "*environment". explode(.) expands all anchors/aliases first so we get the
+# real value ("prod"). (Terragrunt's yamldecode resolves aliases natively, so
+# only these yq reads need it.)
+building_block=$(yq -r 'explode(.) | .global.building_block' global-values.yaml)
+environment_name=$(yq -r 'explode(.) | .global.environment' global-values.yaml)
+aws_region=$(yq -r 'explode(.) | .global.cloud_storage_region' global-values.yaml)
 
 # Validate required values
 if [[ -z "$building_block" || -z "$environment_name" || -z "$aws_region" ]]; then
