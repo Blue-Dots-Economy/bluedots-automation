@@ -94,7 +94,7 @@ global:
   # push participants outward via POST /api/v1/admin/* with `x-api-key`.
   # baseUrl = in-cluster DNS to the signals api svc; adminKey = raw key
   # provisioned by signals-DPG's helm migrate-job (see secrets.signalstackAdminKey).
-  signalstackBaseUrl: 'http://dpg-api.signal-stack.svc.cluster.local:2742'
+  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
 
 # ─── Image pull Secret (optional, renders templates/ghcr-pull-secret.yaml) ──
 # Default: pre-create the Secret out-of-band; chart only references it.
@@ -236,7 +236,7 @@ aggregator-api:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
+      eks.amazonaws.com/role-arn: ""
   hpa:
     enabled: false
     minReplicas: 2
@@ -262,7 +262,7 @@ worker:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
+      eks.amazonaws.com/role-arn: ""
 
 keycloak:
   replicaCount: 1
