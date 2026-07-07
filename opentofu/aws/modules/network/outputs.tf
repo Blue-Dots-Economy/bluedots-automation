@@ -47,6 +47,14 @@ output "private_subnet_ids" {
   ] : data.aws_subnets.existing_private[0].ids
 }
 
+output "private_eks_subnet_ids" {
+  description = "IDs of private subnets whose logical name starts with 'private-eks' — sized for EKS nodes, distinct from RDS /28 subnets"
+  value = var.create_network ? [
+    for k, s in aws_subnet.this : s.id
+    if var.subnet_config[k].type == "private" && can(regex("^private-eks", k))
+  ] : []
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Routing / gateway outputs
 # ---------------------------------------------------------------------------------------------------------------------
@@ -57,13 +65,18 @@ output "internet_gateway_id" {
 }
 
 output "nat_gateway_id" {
-  description = "NAT Gateway ID (null if not created)"
-  value       = length(aws_nat_gateway.nat) > 0 ? aws_nat_gateway.nat[0].id : null
+  description = "Map of public subnet key → NAT Gateway ID (empty map if NAT GW not created)"
+  value       = { for k, ngw in aws_nat_gateway.nat : k => ngw.id }
 }
 
 output "nat_gateway_public_ip" {
-  description = "Elastic IP assigned to the NAT Gateway (null if not created)"
-  value       = length(aws_eip.nat) > 0 ? aws_eip.nat[0].public_ip : null
+  description = "Elastic IP of the first NAT Gateway — single string kept for backward compatibility with output-file (null if not created)"
+  value       = length(aws_eip.nat) > 0 ? values(aws_eip.nat)[0].public_ip : null
+}
+
+output "nat_gateway_public_ips" {
+  description = "Map of public subnet key → NAT Gateway Elastic IP"
+  value       = { for k, eip in aws_eip.nat : k => eip.public_ip }
 }
 
 output "public_route_table_id" {
@@ -72,8 +85,8 @@ output "public_route_table_id" {
 }
 
 output "private_route_table_id" {
-  description = "Private route table ID (null if no private subnets)"
-  value       = length(aws_route_table.private) > 0 ? aws_route_table.private[0].id : null
+  description = "Map of private subnet key → private route table ID (empty map if no private subnets)"
+  value       = { for k, rt in aws_route_table.private : k => rt.id }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------

@@ -91,6 +91,14 @@ function _apply_tf_module() {
     ( cd "$module" && terragrunt init -input=false && terragrunt apply -input=false ${AUTO_APPROVE:+-auto-approve} )
 }
 
+function _destroy_tf_module() {
+    local module="$1"
+    source tf.sh
+    echo -e "\nDestroying module: $module"
+    # Destroys ONLY this module's resources. Set AUTO_APPROVE=1 to skip the prompt.
+    ( cd "$module" && terragrunt init -input=false && terragrunt destroy -input=false ${AUTO_APPROVE:+-auto-approve} )
+}
+
 function plan_tf_network()          { _plan_tf_module "network"; }
 function plan_tf_eks()              { _plan_tf_module "eks"; }
 function plan_tf_iam()              { _plan_tf_module "iam"; }
@@ -98,6 +106,8 @@ function plan_tf_storage()          { _plan_tf_module "storage"; }
 function plan_tf_random_passwords() { _plan_tf_module "random_passwords"; }
 function plan_tf_output_file()      { _plan_tf_module "output-file"; }
 function plan_tf_rds()              { _plan_tf_module "rds"; }
+function plan_tf_pritunl()          { _plan_tf_module "pritunl"; }
+function plan_tf_bastion()          { _plan_tf_module "bastion"; }
 
 function apply_tf_network()          { _apply_tf_module "network"; }
 function apply_tf_eks()              { _apply_tf_module "eks"; }
@@ -106,6 +116,11 @@ function apply_tf_storage()          { _apply_tf_module "storage"; }
 function apply_tf_random_passwords() { _apply_tf_module "random_passwords"; }
 function apply_tf_output_file()      { _apply_tf_module "output-file"; }
 function apply_tf_rds()              { _apply_tf_module "rds"; }
+function apply_tf_pritunl()          { _apply_tf_module "pritunl"; }
+function apply_tf_bastion()          { _apply_tf_module "bastion"; }
+
+function destroy_tf_pritunl()        { _destroy_tf_module "pritunl"; }
+function destroy_tf_bastion()        { _destroy_tf_module "bastion"; }
 
 function apply_gp3_default_sc() {
     echo -e "\nApplying gp3 StorageClass as cluster default"
