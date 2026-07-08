@@ -43,8 +43,9 @@ support-scripts/
 
 opentofu/aws/dev/*
 
-# Signals network + consent config — fetched fresh from canonical Signals-DPG at
-# deploy time by helm/signals/scripts/fetch-configs.sh. Never hand-vendored, so
-# they can't silently drift from the source.
+# Network + consent config — fetched fresh from the canonical app repos at deploy
+# time by scripts/fetch-configs.sh. Never hand-vendored, so they can't silently
+# drift from the source.
 helm/signals/charts/api/files/networks/*.json
 helm/signals/charts/api/files/consent/*.json
+helm/aggregator/files/consent/consent.json
