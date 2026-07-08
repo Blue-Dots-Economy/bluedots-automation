@@ -43,6 +43,13 @@ global:
   # keycloak theme image tag.
   aggregatorBrand: ''
 
+  # Support/grievance email injected into the aggregator consent T&C / Privacy /
+  # Grievances copy at deploy time — it replaces the __SUPPORT_EMAIL__ placeholder
+  # in files/consent/consent.json. Change the email HERE (one place), never in the
+  # consent content. A consent change needs a rollout restart of web + api (subPath
+  # mount doesn't hot-update).
+  consentSupportEmail: hello@bluedotseconomy.org
+
   # Signal-stack integration. Used by api/worker to call the signal-stack
   # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
   #   - actingOrgId: signal-stack `organization` row of type `network_service`

@@ -244,6 +244,11 @@ api:
     # the network default — so keep both files in sync. Must match ui.VITE_BRAND_NAME.
     # Empty = standard (network consent only). Examples: upsdm, onetac.
     consentBrand: ""
+    # Support/grievance email injected into the consent T&C / Privacy / Grievances
+    # copy at deploy time — it replaces the __SUPPORT_EMAIL__ placeholder in
+    # charts/api/files/consent/*.json. Change the email HERE (one place), never in
+    # the consent content. Applies to the network + brand consent files alike.
+    consentSupportEmail: hello@bluedotseconomy.org
 
 ui:
   image: *ui_image

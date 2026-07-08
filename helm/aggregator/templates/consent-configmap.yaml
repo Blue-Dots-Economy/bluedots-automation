@@ -18,5 +18,11 @@ metadata:
   labels:
     {{- include "aggregator.labels" . | nindent 4 }}
 data:
+  {{- /*
+    Support/grievance email injected into the consent T&C/Privacy/Grievances copy
+    at deploy time (placeholder __SUPPORT_EMAIL__ in files/consent/consent.json).
+    Change global.consentSupportEmail in values — never the consent JSON content.
+  */ -}}
+  {{- $supportEmail := .Values.global.consentSupportEmail | default "hello@bluedotseconomy.org" }}
   consent.json: |
-{{ .Files.Get "files/consent/consent.json" | indent 4 }}
+{{ .Files.Get "files/consent/consent.json" | replace "__SUPPORT_EMAIL__" $supportEmail | indent 4 }}
