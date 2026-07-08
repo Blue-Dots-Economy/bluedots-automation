@@ -134,6 +134,8 @@ resource "aws_instance" "bastion" {
   # The bastion is a DEPLOYMENT workstation: developers SSH in, `git pull`, and run
   # helm/kubectl from here. No repo code is baked in — it is pulled manually.
   # Toolchain: kubectl, helm, aws-cli v2, k9s, git, yq, make, openssl.
+  # kubeconfig is pre-generated for ec2-user at boot (runs after eks, so the cluster
+  # exists), so `kubectl`/`helm` work the moment you SSH in — no manual update-kubeconfig.
   user_data = <<EOF
 #!/bin/bash
 set -euxo pipefail
@@ -154,6 +156,7 @@ ${local.authorized_keys_block}
 KEYS
 chmod 600 /home/ec2-user/.ssh/authorized_keys
 chown ec2-user:ec2-user /home/ec2-user/.ssh/authorized_keys
+sudo -u ec2-user -H /usr/local/bin/aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.aws_region} || true
 EOF
 
   depends_on = [aws_iam_role_policy.eks_describe]
