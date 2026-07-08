@@ -41,6 +41,4 @@ opentofu/aws/**/tf.sh
 # devops/
 support-scripts/
 
-# Local-only docs (kept out of version control)
-docs/
 opentofu/aws/dev/*

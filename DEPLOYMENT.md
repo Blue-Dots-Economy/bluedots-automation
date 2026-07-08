@@ -10,6 +10,11 @@ entrypoint for both infra and helm.
 - **Glue**: the `output-file` tofu module generates one root-level values file
   per chart; `install.sh` feeds each to helm via a single `-f`.
 
+> **Launching a brand-new instance/network?** Start with
+> [docs/instance-setup.md](docs/instance-setup.md) — the per-instance
+> checklist (network.json, brand, terms/policies, domains, auth channels). It
+> references this guide for the generic infra + deploy mechanics.
+
 ---
 
 ## 1. Required tools and versions

@@ -284,6 +284,10 @@ bash install.sh destroy_tf_resources
 Copy `opentofu/aws/template/` to `opentofu/aws/<env>/` (env name = directory
 basename), edit its `global-values.yaml`, and run its `install.sh`.
 
+For a full new-instance / new-network launch (network.json, brand, terms &
+policies, domains, auth channels, and all per-instance config as one checklist),
+follow **[docs/instance-setup.md](docs/instance-setup.md)**.
+
 ---
 
 ## 2. Application stack — Helm
