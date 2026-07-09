@@ -383,11 +383,17 @@ See [DEPLOYMENT.md → Troubleshooting](DEPLOYMENT.md) for symptom→fix table.
 2. Edit `opentofu/aws/<env>/global-values.yaml` (anchors at the top).
 3. `cd opentofu/aws/<env> && bash install.sh` (infra), then `bash install.sh deploy_all_services` (apps).
 
+For a full **new-instance / new-network** launch (network.json, brand assets,
+terms & policies, domains, auth channels, and all per-instance config as a
+single end-to-end checklist), follow
+[docs/instance-setup.md](docs/instance-setup.md).
+
 ---
 
 ## Files to Know
 
 - `DEPLOYMENT.md` — authoritative end-to-end runbook + `install.sh` function reference + troubleshooting.
+- `docs/instance-setup.md` — per-instance checklist for launching a new environment / network / brand (layers on DEPLOYMENT.md).
 - `opentofu/aws/<env>/install.sh` — single entrypoint for infra **and** Helm deploy (function dispatcher).
 - `opentofu/aws/<env>/global-values.yaml` — single source of truth for cluster + app config (edit anchors only).
 - `helm/global-resources.yaml` — shared replica/HPA/PDB/resource overrides across all envs.
