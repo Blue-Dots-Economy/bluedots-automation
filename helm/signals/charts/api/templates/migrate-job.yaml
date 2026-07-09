@@ -10,8 +10,9 @@ metadata:
     "helm.sh/hook-weight": "-1"
     "helm.sh/hook-delete-policy": before-hook-creation
 data:
-  schema.sql: |
-{{ .Files.Get "files/schema.sql" | indent 4 }}
+  # Only the service-user provisioning SQL is vendored here now. The schema DDL
+  # is no longer bundled — it ships inside the api image and is applied by the
+  # migrate-ddl initContainer below (Direction B).
   provision_service_users.sql: |
 {{ .Files.Get "files/provision_service_users.sql" | indent 4 }}
 ---
@@ -36,10 +37,36 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ include "dpg-api.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        # Schema DDL, applied from the APP IMAGE (Direction B). Runs, in order,
+        # extensions → drizzle migrate() → core (partitioned items/actions/events)
+        # → version migrations. The image carries its own schema
+        # (apps/api/drizzle + packages/database/.../sql_scripts), so the deployed
+        # schema always matches the running api build — nothing is vendored here.
+        # Uses the SAME image + tag as the api Deployment.
+        - name: migrate-ddl
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command: ["node", "apps/api/scripts/migrate.mjs"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "dpg-api.fullname" . }}
+            - secretRef:
+                name: {{ include "dpg-api.secretName" . }}
       containers:
-        - name: migrate
+        # Provision the integrating-DPG (aggregator-dpg) service org/user/apikey.
+        # Runs on every upgrade so AGGREGATOR_DPG_API_KEY rotations take effect;
+        # idempotent. Runs AFTER migrate-ddl, so the better-auth tables it upserts
+        # into already exist. psql client — reads the ConfigMap-mounted SQL.
+        - name: provision
           image: {{ .Values.migrate.image | default "postgres:16-alpine" }}
           imagePullPolicy: {{ .Values.migrate.imagePullPolicy | default "IfNotPresent" }}
           securityContext:
@@ -49,16 +76,6 @@ spec:
                 name: {{ include "dpg-api.fullname" . }}
             - secretRef:
                 name: {{ include "dpg-api.secretName" . }}
-          env:
-            {{- if .Values.postgres.adminSecret }}
-            - name: POSTGRES_ADMIN_USER
-              value: {{ .Values.postgres.adminUser | default "postgres" | quote }}
-            - name: POSTGRES_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.postgres.adminSecret }}
-                  key: {{ .Values.postgres.adminPasswordKey | default "postgres-password" }}
-            {{- end }}
           command:
             - sh
             - -ec
@@ -72,42 +89,9 @@ spec:
                 sleep 2
               done
               echo "postgres ready"
-              if [ -n "${POSTGRES_ADMIN_PASSWORD:-}" ]; then
-                echo "creating extensions as ${POSTGRES_ADMIN_USER}"
-                PGPASSWORD="$POSTGRES_ADMIN_PASSWORD" psql -v ON_ERROR_STOP=1 \
-                  -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_ADMIN_USER" -d "$POSTGRES_DB" \
-                  -c "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS cube; CREATE EXTENSION IF NOT EXISTS earthdistance; CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS postgis;"
-              else
-                echo "no admin creds; skipping CREATE EXTENSION (rely on initdb scripts)"
-              fi
-              export PGPASSWORD="$POSTGRES_PASSWORD"
-              psql -v ON_ERROR_STOP=1 \
-                -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-                -c "CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
-              SCHEMA_VERSION=$(sha256sum /sql/schema.sql | awk '{print $1}')
-              echo "schema version: $SCHEMA_VERSION"
-              APPLIED=$(psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-                -tAc "SELECT 1 FROM schema_migrations WHERE version = '$SCHEMA_VERSION'")
-              if [ "$APPLIED" = "1" ]; then
-                echo "schema version $SCHEMA_VERSION already applied, skipping DDL"
-              else
-                echo "applying schema (version $SCHEMA_VERSION)"
-                psql -v ON_ERROR_STOP=1 --single-transaction \
-                  -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-                  -f /sql/schema.sql
-                psql -v ON_ERROR_STOP=1 \
-                  -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-                  -c "INSERT INTO schema_migrations (version) VALUES ('$SCHEMA_VERSION') ON CONFLICT DO NOTHING"
-                echo "schema applied and recorded (version $SCHEMA_VERSION)"
-              fi
-
-              # Always provision integrating-DPG service apikeys — this must run
-              # on every upgrade so rotations of AGGREGATOR_DPG_API_KEY (the
-              # k8s Secret) take effect. SQL is idempotent: insert if missing,
-              # UPDATE hash in place if it differs, no-op if unchanged.
               : "${AGGREGATOR_DPG_API_KEY:?missing — set via the api Secret}"
               echo "provisioning service apikeys"
-              psql -v ON_ERROR_STOP=1 \
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 \
                 -v aggregator_dpg_api_key="$AGGREGATOR_DPG_API_KEY" \
                 -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
                 -f /sql/provision_service_users.sql
