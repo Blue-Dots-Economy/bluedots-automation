@@ -33,21 +33,43 @@ SIGNALS_REF_DEFAULT="develop"
 AGGREGATOR_REPO_DEFAULT="Blue-Dots-Economy/aggregator-dpg"
 AGGREGATOR_REF_DEFAULT="develop"
 
-# Canonical consent keeps a LITERAL support/grievance email; the charts expect a
-# `__SUPPORT_EMAIL__` placeholder they substitute at render (PR #59, configurable
-# via schemas.consentSupportEmail / global.consentSupportEmail). So after fetching
-# consent we rewrite the literal back to the placeholder — keeping the email a
-# deploy-time knob rather than whatever canonical hardcodes. Override if the
-# canonical literal changes.
-SUPPORT_EMAIL_LITERAL="${SUPPORT_EMAIL_LITERAL:-support@onest.network}"
+# TRANSITION SHIM (remove once the placeholder ships on the fetched ref).
+# The charts expect a `__SUPPORT_EMAIL__` placeholder in consent that they
+# substitute at render (PR #59, configurable via schemas.consentSupportEmail /
+# global.consentSupportEmail). Canonical is migrating its consent from a literal
+# support email to shipping that placeholder directly (signals-dpg#286 /
+# aggregator-dpg#486 — already on `feature`, not yet on `develop`). Until the
+# placeholder is on the ref we fetch, rewrite ANY known literal (the one being
+# retired AND the one being migrated to) back to the placeholder, so #59's
+# `replace` always has something to act on regardless of migration ordering.
+# When canonical ships the placeholder on the fetched ref, these matches no-op
+# and this whole shim can be deleted.
+SUPPORT_EMAIL_LITERALS="${SUPPORT_EMAIL_LITERALS:-support@onest.network hello@bluedotseconomy.org}"
 
 usage() { sed -n '2,30p' "$0"; }
 
-# Rewrite the canonical literal support email in a fetched consent file to the
-# __SUPPORT_EMAIL__ placeholder the chart templates substitute.
+# Rewrite any known literal support email in a fetched consent file to the
+# __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
+# file already carries the placeholder (canonical post-migration).
 normalize_support_email() { # <file>
-  local esc="${SUPPORT_EMAIL_LITERAL//./\\.}"
-  sed -i "s/${esc}/__SUPPORT_EMAIL__/g" "$1"
+  local lit esc
+  for lit in $SUPPORT_EMAIL_LITERALS; do
+    esc="${lit//./\\.}"
+    sed -i "s/${esc}/__SUPPORT_EMAIL__/g" "$1"
+  done
+}
+
+# Nudge toward reproducible deploys: a moving branch ref (develop/feature/main)
+# means the fetched config can change between deploys. Pin to a tag/SHA — ideally
+# the api image's build SHA — for prod. (Non-fatal; dev deploys legitimately use
+# a branch.)
+warn_if_moving_ref() { # <ref>
+  # A pinned ref is a full hex SHA (7–40 chars) or a version tag (vX…). Anything
+  # else (develop/feature/main/…) is a moving branch → warn.
+  if [[ "$1" =~ ^[0-9a-f]{7,40}$ ]] || [[ "$1" =~ ^[vV][0-9] ]]; then
+    return 0
+  fi
+  echo "  ⚠ fetching from moving ref '$1' — pin to a tag/SHA (e.g. the api image SHA) for prod/reproducible deploys" >&2
 }
 
 # Read a "_name: &anchor \"value\"" scalar anchor from global-values.yaml (no yq).
@@ -100,6 +122,7 @@ case "$TARGET" in
     CONSENT_DIR="$REPO_ROOT/helm/signals/charts/api/files/consent"
     mkdir -p "$NET_DIR" "$CONSENT_DIR"
     echo "fetch-configs[signals]: repo=${REPO} ref=${REF} network=${NETWORK} brand=${BRAND:-<none>}"
+    warn_if_moving_ref "$REF"
 
     tmp="$(mktemp)"
     try_fetch "$tmp" "${RAW}/${NETWORK}/network.json"
@@ -125,6 +148,7 @@ case "$TARGET" in
     OUT="$REPO_ROOT/helm/aggregator/files/consent/consent.json"
     mkdir -p "$(dirname "$OUT")"
     echo "fetch-configs[aggregator]: repo=${REPO} ref=${REF} network=${NETWORK} brand=${BRAND:-<none>}"
+    warn_if_moving_ref "$REF"
 
     # Aggregator consent is a FULL document, one file per deployed network+brand.
     # Prefer the branded doc, then the network doc, then the repo-wide default.
