@@ -175,10 +175,10 @@ secrets:
     DPG_SCORING_VERSION: ""
     DPG_SCORING_PROMPT_VERSION: ""
 
-# DB schema migration Job.
-# Mounts files/schema.sql as a ConfigMap; container uses psql to apply it.
-# Idempotent: checks `to_regclass('public."user"')`; skips if table exists.
-# Runs as a Helm post-install / post-upgrade hook.
+# DB schema migration Job. A migrate-ddl initContainer runs the api image's
+# db:migrate:deploy (drizzle migrations + raw item/action/event SQL, all shipped
+# in the image); a provision container then upserts the integrating-DPG apikey.
+# Idempotent. Runs as a Helm post-install / post-upgrade hook.
 migrate:
   enabled: true
   image: postgres:16-alpine
