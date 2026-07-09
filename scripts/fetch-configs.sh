@@ -33,7 +33,22 @@ SIGNALS_REF_DEFAULT="develop"
 AGGREGATOR_REPO_DEFAULT="Blue-Dots-Economy/aggregator-dpg"
 AGGREGATOR_REF_DEFAULT="develop"
 
+# Canonical consent keeps a LITERAL support/grievance email; the charts expect a
+# `__SUPPORT_EMAIL__` placeholder they substitute at render (PR #59, configurable
+# via schemas.consentSupportEmail / global.consentSupportEmail). So after fetching
+# consent we rewrite the literal back to the placeholder — keeping the email a
+# deploy-time knob rather than whatever canonical hardcodes. Override if the
+# canonical literal changes.
+SUPPORT_EMAIL_LITERAL="${SUPPORT_EMAIL_LITERAL:-support@onest.network}"
+
 usage() { sed -n '2,30p' "$0"; }
+
+# Rewrite the canonical literal support email in a fetched consent file to the
+# __SUPPORT_EMAIL__ placeholder the chart templates substitute.
+normalize_support_email() { # <file>
+  local esc="${SUPPORT_EMAIL_LITERAL//./\\.}"
+  sed -i "s/${esc}/__SUPPORT_EMAIL__/g" "$1"
+}
 
 # Read a "_name: &anchor \"value\"" scalar anchor from global-values.yaml (no yq).
 read_anchor() { # <file> <anchor-name>
@@ -93,10 +108,12 @@ case "$TARGET" in
     echo "  network -> ${NET_DIR}/${NETWORK}.json"
 
     try_fetch "${CONSENT_DIR}/${NETWORK}.json" "${RAW}/${NETWORK}/consent.json"
+    normalize_support_email "${CONSENT_DIR}/${NETWORK}.json"
     echo "  consent -> ${CONSENT_DIR}/${NETWORK}.json"
 
     if [ -n "$BRAND" ]; then
       try_fetch "${CONSENT_DIR}/${NETWORK}.${BRAND}.json" "${RAW}/${NETWORK}/${BRAND}/consent.json"
+      normalize_support_email "${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
       echo "  brand consent -> ${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
     fi
     ;;
@@ -116,6 +133,7 @@ case "$TARGET" in
     cands+=("${RAW}/${NETWORK}/schemas/aggregator/consent.json")
     cands+=("${RAW}/schemas/aggregator/consent.json")
     try_fetch "$OUT" "${cands[@]}"
+    normalize_support_email "$OUT"
     echo "  aggregator consent -> ${OUT}"
     ;;
 
