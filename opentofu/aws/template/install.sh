@@ -20,6 +20,14 @@ GLOBAL_CLOUD_VALUES="${GLOBAL_CLOUD_VALUES:-$SCRIPT_DIR/global-cloud-values.yaml
 # Non-sensitive config passed directly to Helm via -f (keys match chart schemas).
 GLOBAL_VALUES="${GLOBAL_VALUES:-$SCRIPT_DIR/global-values.yaml}"
 
+# Signals-DPG git ref the network/consent config is fetched from at deploy time
+# (scripts/fetch-configs.sh). Default develop; pin to the api image build SHA for
+# prod to avoid config/code skew.
+SIGNALS_DPG_REF="${SIGNALS_DPG_REF:-develop}"
+# Aggregator-DPG git ref the aggregator consent config is fetched from at deploy
+# time (scripts/fetch-configs.sh aggregator). Default develop; pin per env.
+AGGREGATOR_DPG_REF="${AGGREGATOR_DPG_REF:-develop}"
+
 # Namespaces.
 CS_NS="${CS_NS:-common-services}"
 SIGNALS_NS="${SIGNALS_NS:-signals}"
@@ -206,8 +214,29 @@ function apply_kong_crds() {
 }
 
 # 2b) signals (api, ui, notification, match-score) — uses shared common-services DBs
+# Fetch the served network's network.json + consent.json from canonical
+# Signals-DPG (driven by _network/_brand in global-values.yaml) into the chart's
+# files/ dir, where schemas-configmap.yaml renders them into the -schemas
+# ConfigMap. Fetched fresh each deploy; not committed → can't drift.
+function fetch_signals_configs() {
+    bash "$REPO_ROOT/scripts/fetch-configs.sh" signals \
+        --global-values "$GLOBAL_VALUES" \
+        --ref "$SIGNALS_DPG_REF"
+}
+
+# Fetch the aggregator consent (FULL doc, brand>network>default) from canonical
+# Aggregator-DPG into helm/aggregator/files/consent/consent.json, where
+# consent-configmap.yaml renders it into the {release}-consent ConfigMap.
+# Fetched fresh each deploy; not committed → can't drift.
+function fetch_aggregator_configs() {
+    bash "$REPO_ROOT/scripts/fetch-configs.sh" aggregator \
+        --global-values "$GLOBAL_VALUES" \
+        --ref "$AGGREGATOR_DPG_REF"
+}
+
 function deploy_signals() {
     echo -e "\nDeploying signals"
+    fetch_signals_configs
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" \
         -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
@@ -221,6 +250,7 @@ function deploy_signals() {
 # 2c) aggregator (web, api, worker, keycloak) — uses shared common-services DBs
 function deploy_aggregator() {
     echo -e "\nDeploying aggregator"
+    fetch_aggregator_configs
     helm upgrade --install "$AGG_REL" "$AGG_DIR" \
         -n "$AGG_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
@@ -382,6 +412,8 @@ function lint() {
 # installs nothing). Runs preflight first.
 function dry_run() {
     preflight
+    fetch_signals_configs
+    fetch_aggregator_configs
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" -f "$GLOBAL_CREDS" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
