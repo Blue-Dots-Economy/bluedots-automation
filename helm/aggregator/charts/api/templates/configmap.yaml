@@ -31,3 +31,4 @@ data:
   SIGNALSTACK_ACTING_ORG_ID: "{{ .Values.global.signalstack.actingOrgId }}"
   S3_FORCE_PATH_STYLE: "{{ .Values.global.s3.forcePathStyle }}"
   ORG_HIERARCHY_ENABLED: "{{ .Values.global.orgHierarchyEnabled }}"
+  SUPPORT_EMAIL: "{{ .Values.supportEmail }}"

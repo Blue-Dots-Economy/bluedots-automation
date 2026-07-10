@@ -57,7 +57,7 @@ _api_rate_limit_enabled: &api_rate_limit_enabled false
 # Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
 _api_rate_limit_per_minute: &api_rate_limit_per_minute 600
 
-
+support_email: &support_email "support@example.com"
 # =============================================================================
 # Structure — do not edit below unless you know what you're changing.
 # =============================================================================
@@ -278,6 +278,7 @@ alerting:
 
 aggregator-api:
   adminEmails: *aggregator_admin_emails
+  supportEmail: *support_email
 
 mail:
   provider: smtp  # smtp | ses
@@ -318,7 +319,7 @@ api:
     # INSTANCE_SHARED_SECRET set in global-credentials.yaml api.secrets.data.
     PEER_AUTH_MODE: "permissive"
     # ── Contact-support form recipient (PR signals-dpg#281) ─────────────────
-    SUPPORT_EMAIL: "support@example.com"          # contact-form emails go here (sender must be SPF/DMARC authorized)
+    SUPPORT_EMAIL: *support_email          # contact-form emails go here (sender must be SPF/DMARC authorized)
     # ── Consent-copy support email (PR signals-dpg#286) ─────────────────────
     CONSENT_SUPPORT_EMAIL: "hello@bluedotseconomy.org"  # rendered into T&C/Privacy/Grievances consent copy at load
     # ── PII location jitter, metres (PR signals-dpg#271) ────────────────────
