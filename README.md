@@ -59,8 +59,8 @@ that means **Signals** (`helm/signals/`).
 │   └── aggregator/           # chart "aggregator-dpg": web BFF, api, worker, keycloak; files/consent/consent.json
 └── opentofu/
     └── aws/
-        ├── _common/          # Terragrunt include files shared by every env (eks.hcl, iam.hcl, …)
-        ├── modules/          # OpenTofu modules: network, eks, iam, storage, random_passwords, rds, output-file
+        ├── _common/          # Terragrunt include files shared by every env (eks.hcl, iam.hcl, bastion.hcl, pritunl.hcl, …)
+        ├── modules/          # OpenTofu modules: network, eks, iam, storage, random_passwords, rds, output-file, bastion, pritunl
         └── template/         # Reference environment — copy this to make a new env (e.g. dev/)
             ├── install.sh           # ← single entrypoint: infra bootstrap + Helm deploy (function dispatcher)
             ├── global-values.yaml   # ← the one file you edit (anchors at the top)
@@ -70,8 +70,13 @@ that means **Signals** (`helm/signals/`).
             ├── rotate-ghcr-pull.sh  # write/refresh the ghcr-pull image-pull secret
             ├── gp3-sc.yaml          # gp3 StorageClass (made cluster-default)
             ├── root.hcl             # Terragrunt backend/provider generation
-            └── <module>/terragrunt.hcl  # one dir per module: network, eks, iam, storage, rds, …
+            └── <module>/terragrunt.hcl  # one dir per module: network, eks, iam, storage, rds, bastion, pritunl, …
 ```
+
+> **Private-cluster access** is provided by two optional infra modules —
+> **`pritunl`** (a Pritunl OpenVPN host in a public subnet, with an Elastic IP)
+> and **`bastion`** (a deploy workstation in a *private* subnet, no public IP,
+> reachable only over the VPN). See [Private-cluster access](#private-cluster-access-pritunl-vpn--bastion).
 
 > On trunk branches only `template/` exists. Per-deployment branches carry their
 > own `opentofu/aws/<env>/` directory (e.g. `dev/`). Copy `template/` to create one.
@@ -83,7 +88,7 @@ layers files via repeated `-f` (last wins):
 
 | File | Source | Committed? | Holds |
 |------|--------|-----------|-------|
-| `helm/global-resources.yaml`      | in repo, shared       | yes | replicas, HPA, PDB, container resources |
+| `helm/global-resources.yaml`      | in repo, shared       | yes | replicas, HPA, PDB, container resources (incl. explicit CPU/mem requests+limits for `common-services`: Kong `replicaCount: 2`, cert-manager, Redis, `postgresBootstrap`, metrics-server) |
 | `<env>/global-images.yaml`        | in repo, per-env      | yes | image `repository` / `tag` / `pullPolicy` |
 | `<env>/global-values.yaml`        | in repo, **you edit** | yes | all user config (hosts, network/brand, SMTP/MSG91, RDS sizing, app config) — edit the **anchors at the top** |
 | `<env>/global-credentials.yaml`   | **generated** by tofu (`output-file`) | **no** (gitignored) | all secrets (PG/Redis/auth passwords) |
@@ -124,6 +129,13 @@ just deliver it:
 > served through the consent ConfigMap above, so its absence from network config
 > is **expected, not a gap**. Network schemas (`network.json`) remain sourced
 > upstream from Signals-DPG; this repo only syncs the deployed copy.
+
+**Support/grievance email is deploy-time configurable.** The consent JSON carries
+a `__SUPPORT_EMAIL__` placeholder in its T&C / Privacy / Grievances copy; the
+ConfigMap render substitutes it with `api.schemas.consentSupportEmail` (signals)
+or `global.consentSupportEmail` (aggregator) — both default to
+`hello@bluedotseconomy.org`. Change the email in that one value, **never** in the
+consent content, so a brand/network switch keeps the right contact address.
 
 The Signals migrate Job creates the `consent_record` ledger table from the bundled
 `helm/signals/charts/api/files/schema.sql` — refresh that bundle when the upstream
@@ -221,9 +233,19 @@ Plus:
 ## 1. Infrastructure — `opentofu/aws`
 
 Terragrunt-driven. Each module (`network`, `eks`, `iam`, `storage`,
-`random_passwords`, `rds`, `output-file`) is its own directory under an
-environment; they all `include` the shared logic in `_common/*.hcl` and read
-configuration from a single `global-values.yaml`.
+`random_passwords`, `rds`, `output-file`, plus the optional `bastion` and
+`pritunl`) is its own directory under an environment; they all `include` the
+shared logic in `_common/*.hcl` and read configuration from a single
+`global-values.yaml`.
+
+The `network` module splits the VPC into **public** and **private** subnets:
+public subnets carry the internet gateway and one **NAT gateway per AZ** (HA
+egress); private subnets are `private-eks-*` (sized for EKS nodes; the EKS module
+auto-selects these) and the smaller `/28` RDS subnets. `nat_gateway_enabled`
+(default `true`) gives private subnets outbound internet. The EKS node group runs
+in the `private-eks-*` subnets by default, with `eks_node_subnet_keys` to pin
+nodes to a single AZ (EBS volumes are AZ-locked, so a single-node cluster must
+stay put).
 
 ### Configure
 
@@ -237,12 +259,14 @@ _cloud_storage_region:   &cloud_storage_region   "ap-south-1"
 _eks_cluster_version:    &eks_cluster_version    "1.35"
 _eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
 _eks_node_disk_size_gb:  &eks_node_disk_size_gb  40
+_eks_node_capacity_type: &eks_node_capacity_type "ON_DEMAND"  # or SPOT (cheaper; pilot opt-in on the pilot branch)
 _eks_node_count_min:     &eks_node_count_min     1
 _eks_node_count_max:     &eks_node_count_max     2
 _aggregator_host:        &aggregator_host        "aggregator.domain.com"
 _grafana_host:           &grafana_host           "monitoring.domain.com"
 # plus _signals_public_hosts, _network, _brand, SMTP, MSG91, alert emails, RDS sizing, IRSA subjects
 # global.orgHierarchyEnabled (default true) and api.schemas.consentNetwork/consentBrand also live here
+# bastion_enabled / pritunl_enabled (default true), pritunl_ingress_cidrs, bastion_authorized_keys also live here
 ```
 
 The file is heavily commented — read it before applying.
@@ -259,14 +283,19 @@ bash install.sh
 1. **`create_tf_backend`** — creates an encrypted, versioned, private S3 bucket
    for OpenTofu state, and writes `tf.sh` with `AWS_REGION` / `TERRAFORM_BACKEND_BUCKET`.
 2. **`create_tf_resources`** — `source tf.sh` then `terragrunt run --all apply`
-   (network → EKS → IAM → storage → random_passwords → rds → output-file), and
-   writes a fresh kubeconfig. This also generates `global-credentials.yaml` and
-   `global-cloud-values.yaml`.
+   (network → EKS → IAM → storage → random_passwords → rds → output-file, plus
+   `pritunl` after network and `bastion` after EKS), and writes a fresh
+   kubeconfig. This also generates `global-credentials.yaml` and
+   `global-cloud-values.yaml`. The `bastion`/`pritunl` units are skipped from
+   `run --all` when `bastion_enabled`/`pritunl_enabled` is `false`.
 3. **`apply_gp3_default_sc`** — makes `gp3` the default StorageClass (demotes `gp2`).
 
 Targeted re-runs are supported, e.g. `bash install.sh create_tf_resources`, or a
 single module: `bash install.sh apply_tf_output_file` (regenerate just the
-values files).
+values files), `bash install.sh apply_tf_pritunl` / `apply_tf_bastion` (bring up
+just the VPN/bastion — these ignore the `*_enabled` flag). The VPN/bastion pair
+can also be torn down on their own: `bash install.sh destroy_tf_pritunl` /
+`destroy_tf_bastion`.
 
 ### Tear down
 
@@ -283,6 +312,37 @@ bash install.sh destroy_tf_resources
 
 Copy `opentofu/aws/template/` to `opentofu/aws/<env>/` (env name = directory
 basename), edit its `global-values.yaml`, and run its `install.sh`.
+
+### Private-cluster access (Pritunl VPN + bastion)
+
+Two optional modules make the cluster reachable without a public EKS endpoint or
+any public-facing box you deploy from:
+
+- **`pritunl`** — a Pritunl OpenVPN server on an Ubuntu host in a **public**
+  subnet with an Elastic IP. It routes the VPC CIDR to a connected laptop, so it
+  is the single front door for all cluster access. Set `pritunl_enabled` (default
+  `true`), `pritunl_instance_type` (default `t3.small` — MongoDB needs ~1 GB), and
+  `bastion_authorized_keys` (the SSH keys used for the one-time setup shell). The
+  security group opens **SSH 22, OpenVPN 1194 (UDP+TCP), and web-admin 443** to
+  `pritunl_ingress_cidrs` — which **defaults to `0.0.0.0/0` (open to the
+  internet)**. Restrict it to office/home CIDRs and re-apply, since this SG gates
+  all downstream cluster access.
+- **`bastion`** — an Amazon-Linux-2023 deploy workstation in a **private** subnet
+  with **no public IP** (reachable only over the VPN). Its SG allows SSH from the
+  VPC CIDR only. It ships kubectl/helm/aws-cli/k9s/git/yq and, because it applies
+  after EKS, pre-runs `aws eks update-kubeconfig` at boot — so `kubectl`/`helm`
+  work the moment you SSH in. It is mapped into the cluster with cluster-wide
+  `AmazonEKSClusterAdminPolicy` via an EKS access entry. Set `bastion_enabled`
+  (default `true`), `bastion_instance_type` (default `t3.medium` — `nano` OOMs on
+  `helm template`), and the same `bastion_authorized_keys`.
+
+Access is by SSH **public** key only (each developer keeps their private key;
+nothing secret lands in Terraform state). Add/remove a key or CIDR in
+`global-values.yaml` and re-apply `pritunl`/`bastion` to grant/revoke.
+
+> To go fully private, first set both `eks_endpoint_public_access` **and**
+> `eks_endpoint_private_access` `true`, verify from the bastion, then flip
+> `eks_endpoint_public_access` to `false`.
 
 ---
 
@@ -305,7 +365,10 @@ deploy_common_services → deploy_signals → deploy_aggregator → fix_acme_iss
 1. **`monitoring` first** — its `kube-prometheus-stack` also ships the
    ServiceMonitor/PodMonitor/PrometheusRule CRDs the rest of the stack uses, and
    metrics/alerts are live from the start. (Functionally optional, deployed first
-   by default.)
+   by default.) The stock kube-prometheus ruleset is **disabled**
+   (`defaultRules.create: false`) in favour of a curated
+   `additionalPrometheusRulesMap` set (the noisy per-API Kong rate-limit alerts
+   were dropped) — see [`helm/monitoring/README.md`](helm/monitoring/README.md).
 2. **`common-services`** — owns the cluster-wide **Kong** ingress controller,
    `cert-manager`, the `letsencrypt-prod` ClusterIssuer, **and the shared
    Postgres + Redis** the app stacks connect to. Without it, the other charts'
