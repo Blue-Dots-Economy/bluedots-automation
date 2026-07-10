@@ -59,6 +59,16 @@ variable "node_count_desired" {
   default     = null
 }
 
+variable "node_capacity_type" {
+  description = "EC2 purchase option for the managed node group. ON_DEMAND (default, prod) or SPOT (cheaper, pilot). Changing this on an existing node group forces replacement."
+  type        = string
+  default     = "ON_DEMAND"
+  validation {
+    condition     = contains(["ON_DEMAND", "SPOT"], var.node_capacity_type)
+    error_message = "node_capacity_type must be ON_DEMAND or SPOT."
+  }
+}
+
 variable "ebs_csi_addon_version" {
   description = "Version of the aws-ebs-csi-driver EKS add-on (e.g. \"v1.28.0-eksbuild.1\"). Null lets AWS select the latest compatible version."
   type        = string
@@ -99,4 +109,10 @@ variable "endpoint_private_access" {
   description = "Whether the EKS API server endpoint is accessible within the VPC"
   type        = bool
   default     = false
+}
+
+variable "node_subnet_ids" {
+  description = "Subnet IDs for the managed node group. When set, nodes are placed here instead of public_subnet_ids. Leave null to keep nodes in public subnets (backward-compatible default)."
+  type        = list(string)
+  default     = null
 }

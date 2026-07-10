@@ -24,15 +24,6 @@ alerting:
     warningWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
     infoWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
 
-# Canonical per-IP API rate limit (req/min). This default is a fallback; the real
-# value is supplied by global-values.yaml (global.apiRateLimit.defaultMinute), the
-# SAME source the signals/aggregator charts use — so one number drives both the
-# rate-limit config and the per-API alert thresholds in
-# templates/kong-api-ratelimit-alerts.yaml (warn >80%, info <20% of this value).
-global:
-  apiRateLimit:
-    defaultMinute: 600
-
 prometheus:
   enabled: true
 
@@ -82,18 +73,16 @@ prometheus:
   windowsMonitoring:
     enabled: false
 
-  # Disable built-in rules that are false positives on EKS managed control plane.
-  # KubeSchedulerDown / KubeControllerManagerDown / etcdHighNumberOfLeaderChanges:
-  #   absent()-based rules that always fire because AWS hides these components.
-  # KubeletTooManyPods: replaced below with ClusterPodCapacityHigh (cluster-level).
+  # Disable the ENTIRE stock kube-prometheus-stack alerting ruleset. These are the
+  # "default alerts we never configured" — dozens of Kube*/node-exporter/Prometheus*/
+  # etcd*/Watchdog rules, many of which are noisy or false-positive on EKS (AWS hides
+  # the scheduler/controller-manager/etcd control-plane, so the absent()-based rules
+  # fire forever). We rely solely on the curated rules in additionalPrometheusRulesMap
+  # below (infra/signals/aggregator/common-services/info) plus the Kong templates.
+  # Flip back to create: true (and use the `disabled:` map to prune individually) if
+  # you want the upstream defaults again.
   defaultRules:
-    disabled:
-      KubeSchedulerDown: true
-      KubeControllerManagerDown: true
-      etcdHighNumberOfLeaderChanges: true
-      KubeletTooManyPods: true
-      # Replaced by PodHighRestartCount (critical) in additionalPrometheusRulesMap.
-      KubePodCrashLooping: true
+    create: false
 
   nodeExporter:
     enabled: true
@@ -130,34 +119,34 @@ prometheus:
         - name: infra.alerts
           rules:
             - alert: NodeHighCPUUsage
-              expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+              expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
               for: 5m
               labels:
-                severity: warning
+                severity: critical
                 group: infra
               annotations:
                 summary: "High CPU on {{ $labels.instance }}"
-                description: "CPU usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 80%)"
+                description: "CPU usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 90%)"
 
             - alert: NodeHighMemoryUsage
-              expr: 100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) > 80
+              expr: 100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) > 90
               for: 5m
               labels:
-                severity: warning
+                severity: critical
                 group: infra
               annotations:
                 summary: "High memory on {{ $labels.instance }}"
-                description: "Memory usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 80%)"
+                description: "Memory usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 90%)"
 
             - alert: NodeHighDiskUsage
-              expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) > 80
+              expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) > 90
               for: 10m
               labels:
-                severity: warning
+                severity: critical
                 group: infra
               annotations:
                 summary: "High disk on {{ $labels.instance }}"
-                description: "Disk usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} at / (threshold: 80%)"
+                description: "Disk usage is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} at / (threshold: 90%)"
 
             - alert: NodeNotReady
               expr: kube_node_status_condition{condition="Ready",status="true"} == 0
@@ -235,13 +224,13 @@ prometheus:
                 kube_deployment_status_replicas_available{namespace="signals"} == 0
                   unless
                 kube_deployment_spec_replicas{namespace="signals"} == 0
-              for: 5m
+              for: 10m
               labels:
-                severity: critical
+                severity: warning
                 group: signals
               annotations:
                 summary: "Deployment signals/{{ $labels.deployment }} has 0 replicas"
-                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 10 minutes"
 
         - name: aggregator.alerts
           rules:
@@ -293,13 +282,13 @@ prometheus:
                 kube_deployment_status_replicas_available{namespace="aggregator"} == 0
                   unless
                 kube_deployment_spec_replicas{namespace="aggregator"} == 0
-              for: 5m
+              for: 10m
               labels:
-                severity: critical
+                severity: warning
                 group: aggregator
               annotations:
                 summary: "Deployment aggregator/{{ $labels.deployment }} has 0 replicas"
-                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 10 minutes"
 
         - name: common-services.alerts
           rules:
@@ -351,13 +340,13 @@ prometheus:
                 kube_deployment_status_replicas_available{namespace="common-services"} == 0
                   unless
                 kube_deployment_spec_replicas{namespace="common-services"} == 0
-              for: 5m
+              for: 10m
               labels:
-                severity: critical
+                severity: warning
                 group: common-services
               annotations:
                 summary: "Deployment common-services/{{ $labels.deployment }} has 0 replicas"
-                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 5 minutes"
+                description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 10 minutes"
 
         - name: kong.alerts
           rules:
@@ -396,20 +385,6 @@ prometheus:
               annotations:
                 summary: "Sustained rate limiting on {{ $labels.exported_service }}"
                 description: "Service {{ $labels.exported_service }} has been rate limiting more than 100 req/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }} req/min) — a client is not respecting the rate limit"
-
-            # Per-API (route-level) rate limiting — pinpoints WHICH API is being
-            # throttled (the per-service alert above can't, since many APIs share
-            # one backend service). Fires when a single Kong route sustains 429s,
-            # i.e. a client is hammering one specific endpoint past its per-IP limit.
-            - alert: KongApiRateLimited
-              expr: sum by(route) (rate(kong_http_requests_total{code="429"}[5m])) * 60 > 60
-              for: 5m
-              labels:
-                severity: warning
-                group: kong
-              annotations:
-                summary: "API route {{ $labels.route }} is being rate limited"
-                description: "Kong route {{ $labels.route }} has returned more than 60 HTTP 429/min for 5+ consecutive minutes (current: {{ $value | printf \"%.0f\" }}/min) — a client is exceeding the per-API limit on this specific endpoint"
 
             # KIC failed to translate an Ingress/plugin into Kong config — those
             # routes/plugins are NOT applied. This is silent and dangerous: a bad
@@ -450,41 +425,12 @@ prometheus:
                 summary: "High 5xx rate on {{ $labels.exported_service }}"
                 description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate AND ≥15 actual 5xx errors over the last 5 minutes (thresholds: >5% AND ≥15 errors — low-volume noise will NOT alert)."
 
-            # 4xx error rate 10–25% — warning.
-            # Excludes 429s (intentional rate limiting). Upper bound < 25 ensures this
-            # auto-silences when KongCritical4xxRate fires.
-            # Two-tier guard: >= 100 total req fires on percentage alone; < 100 total req
-            # also requires >= 50 absolute 4xx errors to filter bot-noise on low traffic.
-            - alert: KongHigh4xxRate
-              expr: |
-                (
-                  (
-                    sum by(exported_service) (
-                      rate(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                    )
-                    /
-                    sum by(exported_service) (
-                      rate(kong_http_requests_total[5m])
-                    )
-                  ) * 100 > 10
-                ) < 25
-                and
-                sum by(exported_service) (
-                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                ) >= 50
-              for: 5m
-              labels:
-                severity: warning
-                group: kong
-              annotations:
-                summary: "Elevated 4xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate (10–25%) AND ≥50 actual 4xx errors over the last 5 minutes — low-volume bot 4xx will NOT alert."
-
-            # 4xx error rate > 25% — critical.
-            # HARD guard (AND, not OR): requires BOTH >25% 4xx AND >=50 actual 4xx
-            # errors in 5m. The absolute floor of 50 means low-volume bot 4xx
-            # (e.g. 3 4xx out of 3 requests = 100%) NEVER pages — fixes the noisy
-            # KongCritical4xxRate firings on bot traffic.
+            # 4xx error rate — the SOLE 4xx alert (per backend service). Fires only
+            # when BOTH hold for 5m: >25% of the service's requests are 4xx AND there
+            # are >=50 actual 4xx (excluding 429). The absolute floor of 50 means a
+            # low-volume burst (e.g. 3 4xx out of 3 requests = 100%) never pages.
+            # (The 10–25% warning tier and the route-level per-API 4xx twin were
+            # removed — this per-service rule is the only 4xx alert.)
             - alert: KongCritical4xxRate
               expr: |
                 (
@@ -508,48 +454,8 @@ prometheus:
                 summary: "Critical 4xx rate on {{ $labels.exported_service }}"
                 description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate AND ≥50 actual 4xx errors over the last 5 minutes (thresholds: >25% AND ≥50 errors — low-volume bot 4xx will NOT alert)."
 
-            # ─── Per-API (route-level) alerts ──────────────────────────────────
-            # NOTE: the two LIMIT-DERIVED per-API alerts (approaching-limit warning
-            # and under-utilized info) live in templates/kong-api-ratelimit-alerts.yaml,
-            # where their thresholds are COMPUTED from global.apiRateLimit.defaultMinute
-            # (no hardcoded numbers). The 4xx alert below is percentage/absolute based,
-            # so it stays here.
-            #
-            # CRITICAL — per-API 4xx: >25% 4xx (excluding 429) AND >=50 actual
-            # 4xx errors in 5m. Same hard absolute floor as the service alert, so
-            # low-volume bot 4xx never pages.
-            - alert: KongApiCritical4xx
-              expr: |
-                (
-                  sum by(route) (rate(kong_http_requests_total{code=~"4..",code!="429"}[5m]))
-                  /
-                  sum by(route) (rate(kong_http_requests_total[5m]))
-                ) * 100 > 25
-                and
-                sum by(route) (
-                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                ) >= 50
-              for: 5m
-              labels:
-                severity: critical
-                group: kong
-              annotations:
-                summary: "Critical 4xx rate on API route {{ $labels.route }}"
-                description: "Kong route {{ $labels.route }} has a {{ $value | printf \"%.1f\" }}% 4xx rate AND ≥50 actual 4xx errors over the last 5 minutes (thresholds: >25% AND ≥50 errors — low-volume bot 4xx will NOT alert)."
-
         - name: info.alerts
           rules:
-            - alert: PodPending
-              expr: |
-                kube_pod_status_phase{phase="Pending",namespace=~"signals|aggregator|common-services|monitoring"} == 1
-              for: 5m
-              labels:
-                severity: info
-                group: workload
-              annotations:
-                summary: "Pod {{ $labels.pod }} pending in {{ $labels.namespace }}"
-                description: "Pod {{ $labels.pod }} has been stuck in Pending for more than 5 minutes — check node resources or image pull"
-
             - alert: HPAAtMaxReplicas
               expr: |
                 kube_horizontalpodautoscaler_status_current_replicas
@@ -562,23 +468,12 @@ prometheus:
                 summary: "HPA {{ $labels.horizontalpodautoscaler }} maxed out in {{ $labels.namespace }}"
                 description: "HPA {{ $labels.horizontalpodautoscaler }} has been at its maximum replica count ({{ $value | printf \"%.0f\" }}) for 15 minutes — consider raising the limit"
 
-            - alert: CertificateExpiringSoon
-              expr: |
-                (certmanager_certificate_expiration_timestamp_seconds - time()) / 86400 < 30
-              for: 1h
-              labels:
-                severity: info
-                group: infra
-              annotations:
-                summary: "Certificate {{ $labels.name }} expires in {{ $value | printf \"%.0f\" }} days"
-                description: "Certificate {{ $labels.name }} in {{ $labels.namespace }} will expire in {{ $value | printf \"%.0f\" }} days — renew or check cert-manager issuer"
-
             - alert: PVCUsageHigh
               expr: |
                 (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) * 100 > 80
               for: 5m
               labels:
-                severity: info
+                severity: critical
                 group: storage
               annotations:
                 summary: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | printf \"%.1f\" }}% full in {{ $labels.namespace }}"

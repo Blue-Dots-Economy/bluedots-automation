@@ -15,7 +15,7 @@ function changedFiles(repo, prNumber) {
   }
   const out = execFileSync(
     'gh',
-    ['api', `repos/${repo}/pulls/${prNumber}/files`, '--paginate', '-q', '.[].path'],
+    ['api', `repos/${repo}/pulls/${prNumber}/files`, '--paginate', '-q', '.[].filename'],
     { encoding: 'utf8' },
   );
   return out.split('\n').map((s) => s.trim()).filter(Boolean);

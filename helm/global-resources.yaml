@@ -227,16 +227,90 @@ keycloak:
 
 
 # ── Common services (platform) ────────────────────────────────────────────────
-# helm/common-services/  →  subchart keys: postgresql, redis, ingress-nginx
+# helm/common-services/ 
+kong:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
 
+# cert-manager: controller + webhook + cainjector each sized independently.
+cert-manager:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  webhook:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+  cainjector:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# postgresql: DISABLED by default (Postgres migrated to AWS RDS). Kept for
+# reference / rollback — used only if postgresql.enabled is flipped back on.
 postgresql:
   primary:
-    resources: {}    # bitnami default (resourcesPreset: nano); tune per-cluster in env values
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
 
+# redis: shared in-cluster Redis (single master), backs Kong rate-limit counters.
 redis:
   master:
-    resources: {}    # bitnami default (resourcesPreset: nano); tune per-cluster in env values
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
 
+# postgresBootstrap: idempotent post-install Job that creates per-tenant RDS
+# roles/databases/extensions. Short-lived, so kept small.
+postgresBootstrap:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# metrics-server: required for HPA (and kubectl top). Chart default leaves
+# resources unset; give it modest requests so it schedules predictably.
+metrics-server:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# ingress-nginx: RETIRED (disabled; Kong is the sole controller). Kept only so a
+# rollback to nginx has sane sizing.
 ingress-nginx:
   controller:
     resources:

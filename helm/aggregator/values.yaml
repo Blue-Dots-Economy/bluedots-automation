@@ -43,6 +43,13 @@ global:
   # keycloak theme image tag.
   aggregatorBrand: ''
 
+  # Support/grievance email injected into the aggregator consent T&C / Privacy /
+  # Grievances copy at deploy time — it replaces the __SUPPORT_EMAIL__ placeholder
+  # in files/consent/consent.json. Change the email HERE (one place), never in the
+  # consent content. A consent change needs a rollout restart of web + api (subPath
+  # mount doesn't hot-update).
+  consentSupportEmail: hello@bluedotseconomy.org
+
   # Signal-stack integration. Used by api/worker to call the signal-stack
   # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
   #   - actingOrgId: signal-stack `organization` row of type `network_service`
@@ -94,7 +101,7 @@ global:
   # push participants outward via POST /api/v1/admin/* with `x-api-key`.
   # baseUrl = in-cluster DNS to the signals api svc; adminKey = raw key
   # provisioned by signals-DPG's helm migrate-job (see secrets.signalstackAdminKey).
-  signalstackBaseUrl: 'http://dpg-api.signal-stack.svc.cluster.local:2742'
+  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
 
 # ─── Image pull Secret (optional, renders templates/ghcr-pull-secret.yaml) ──
 # Default: pre-create the Secret out-of-band; chart only references it.
@@ -236,7 +243,7 @@ aggregator-api:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
+      eks.amazonaws.com/role-arn: ""
   hpa:
     enabled: false
     minReplicas: 2
@@ -262,7 +269,7 @@ worker:
     create: true
     # IRSA role for S3/SES (EKS). Pods assume this role via the SA token.
     annotations:
-      eks.amazonaws.com/role-arn: <Update the role arnfor s3 access>
+      eks.amazonaws.com/role-arn: ""
 
 keycloak:
   replicaCount: 1
