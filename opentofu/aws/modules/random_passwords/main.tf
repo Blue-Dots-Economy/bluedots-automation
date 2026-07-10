@@ -31,6 +31,12 @@ resource "random_id" "signals_dpg_scoring_secret" {
   byte_length = var.signals_dpg_scoring_secret_bytes
 }
 
+# Inter-instance peer-auth HMAC secret (INSTANCE_SHARED_SECRET). Min 32 chars;
+# byte_length 32 → 64 hex chars. See signals-dpg#255.
+resource "random_id" "signals_instance_shared_secret" {
+  byte_length = var.signals_instance_shared_secret_bytes
+}
+
 # ─── Aggregator chart secrets ───────────────────────────────────────────────
 resource "random_id" "aggregator_postgres_password" {
   byte_length = var.aggregator_postgres_password_bytes
