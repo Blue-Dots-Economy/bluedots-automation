@@ -309,6 +309,21 @@ api:
     NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
     NOTIFICATION_FROM_EMAIL: *smtp_user
     SERVED_DOMAINS: *signals_served_domains
+    # ── Self-signup gate + login channels (PR signals-dpg#276) ──────────────
+    SELF_SIGNUP_MODE: "gated"           # gated (default) = public self-signup OFF; allowed = on
+    LOGIN_CHANNELS: "phone,email"       # allowed OTP channels; subset of: email, phone
+    # ── Inter-instance peer auth rollout gate (PR signals-dpg#255) ──────────
+    # permissive (default): verify token if present, allow missing (mixed-version
+    # rollout). enforced: valid token required on every peer call. Pairs with the
+    # INSTANCE_SHARED_SECRET set in global-credentials.yaml api.secrets.data.
+    PEER_AUTH_MODE: "permissive"
+    # ── Contact-support form recipient (PR signals-dpg#281) ─────────────────
+    SUPPORT_EMAIL: "support@example.com"          # contact-form emails go here (sender must be SPF/DMARC authorized)
+    # ── Consent-copy support email (PR signals-dpg#286) ─────────────────────
+    CONSENT_SUPPORT_EMAIL: "hello@bluedotseconomy.org"  # rendered into T&C/Privacy/Grievances consent copy at load
+    # ── PII location jitter, metres (PR signals-dpg#271) ────────────────────
+    PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
+    PII_LOCATION_JITTER_MAX_METERS: "250"   # 50–1000
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local
   redis:

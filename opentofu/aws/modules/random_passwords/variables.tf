@@ -42,6 +42,11 @@ variable "signals_dpg_scoring_secret_bytes" {
   default = 32
 }
 
+variable "signals_instance_shared_secret_bytes" {
+  type    = number
+  default = 32
+}
+
 # -----------------------------------------------------------------------------
 # Aggregator chart secrets
 # -----------------------------------------------------------------------------
