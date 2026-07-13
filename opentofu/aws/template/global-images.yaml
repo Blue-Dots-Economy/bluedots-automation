@@ -19,13 +19,13 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-98167ad"
+    tag: "sha-bbb80bd"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-98167ad"
+    tag: "sha-bbb80bd"
     pullPolicy: Always
 
 notification-service:
@@ -44,7 +44,7 @@ match-score:
 search:
   image:
     repository: ghcr.io/blue-dots-economy/signals-search
-    tag: "sha-48a3c65"
+    tag: "sha-590254f"
     pullPolicy: Always
 
 # search-embeddings: TEI model image with BAAI/bge-m3 baked in
@@ -59,19 +59,19 @@ search-embeddings:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "sha-374dd99"
+    tag: "sha-06c4188"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "sha-374dd99"
+    tag: "sha-06c4188"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "sha-374dd99"
+    tag: "sha-06c4188"
     pullPolicy: Always
 
 keycloak:
