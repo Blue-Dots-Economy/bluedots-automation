@@ -6,6 +6,7 @@ locals {
   signals_auth_secret_bytes                     = try(local.global_vars.global.signals_auth_secret_bytes, 32)
   signals_notification_secret_bytes             = try(local.global_vars.global.signals_notification_secret_bytes, 32)
   signals_dpg_scoring_secret_bytes              = try(local.global_vars.global.signals_dpg_scoring_secret_bytes, 32)
+  signals_instance_shared_secret_bytes          = try(local.global_vars.global.signals_instance_shared_secret_bytes, 32)
   aggregator_postgres_password_bytes            = try(local.global_vars.global.aggregator_postgres_password_bytes, 16)
   aggregator_kc_bootstrap_admin_password_bytes  = try(local.global_vars.global.aggregator_kc_bootstrap_admin_password_bytes, 16)
   aggregator_keycloak_admin_client_secret_bytes = try(local.global_vars.global.aggregator_keycloak_admin_client_secret_bytes, 32)
@@ -29,6 +30,7 @@ inputs = {
   signals_auth_secret_bytes                     = local.signals_auth_secret_bytes
   signals_notification_secret_bytes             = local.signals_notification_secret_bytes
   signals_dpg_scoring_secret_bytes              = local.signals_dpg_scoring_secret_bytes
+  signals_instance_shared_secret_bytes          = local.signals_instance_shared_secret_bytes
   aggregator_postgres_password_bytes            = local.aggregator_postgres_password_bytes
   aggregator_kc_bootstrap_admin_password_bytes  = local.aggregator_kc_bootstrap_admin_password_bytes
   aggregator_keycloak_admin_client_secret_bytes = local.aggregator_keycloak_admin_client_secret_bytes

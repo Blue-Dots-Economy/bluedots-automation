@@ -29,7 +29,7 @@ opentofu/aws/**/monitoring-values.yaml
 opentofu/aws/**/global-cloud-values.yaml
 # Generated secrets file (written by output-file/main.tf) — never commit.
 opentofu/aws/**/global-credentials.yaml
-tf.sh
+opentofu/aws/**/tf.sh
 
 # Editor / OS junk
 .DS_Store
@@ -41,6 +41,11 @@ tf.sh
 # devops/
 support-scripts/
 
-# Local-only docs (kept out of version control)
-docs/
 opentofu/aws/dev/*
+
+# Network + consent config — fetched fresh from the canonical app repos at deploy
+# time by scripts/fetch-configs.sh. Never hand-vendored, so they can't silently
+# drift from the source.
+helm/signals/charts/api/files/networks/*.json
+helm/signals/charts/api/files/consent/*.json
+helm/aggregator/files/consent/consent.json

@@ -145,7 +145,7 @@ resource "aws_eks_node_group" "default" {
   cluster_name    = aws_eks_cluster.cluster.name
   node_group_name = "${local.cluster_name}-ng-${random_id.node_group.hex}"
   node_role_arn   = aws_iam_role.eks_node.arn
-  subnet_ids      = var.public_subnet_ids
+  subnet_ids      = var.node_subnet_ids != null ? var.node_subnet_ids : var.public_subnet_ids
 
   scaling_config {
     desired_size = coalesce(var.node_count_desired, var.node_count_min)
@@ -154,6 +154,7 @@ resource "aws_eks_node_group" "default" {
   }
 
   instance_types = [var.node_instance_type]
+  capacity_type  = var.node_capacity_type
   disk_size      = var.node_disk_size_gb
 
   tags = merge(
