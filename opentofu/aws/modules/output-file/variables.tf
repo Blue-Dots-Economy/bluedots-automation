@@ -160,6 +160,11 @@ variable "signals_dpg_scoring_secret" {
   sensitive = true
 }
 
+variable "signals_instance_shared_secret" {
+  type      = string
+  sensitive = true
+}
+
 # ─── Aggregator chart secrets ──────────────────────────────────────────────
 variable "aggregator_postgres_password" {
   type      = string

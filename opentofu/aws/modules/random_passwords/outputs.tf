@@ -36,6 +36,11 @@ output "signals_dpg_scoring_secret" {
   sensitive = true
 }
 
+output "signals_instance_shared_secret" {
+  value     = random_id.signals_instance_shared_secret.hex
+  sensitive = true
+}
+
 # ─── Aggregator chart ───────────────────────────────────────────────────────
 output "aggregator_postgres_password" {
   value     = random_id.aggregator_postgres_password.hex
