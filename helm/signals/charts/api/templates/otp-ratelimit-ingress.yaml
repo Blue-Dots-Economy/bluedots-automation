@@ -1,0 +1,61 @@
+{{- if and .Values.ingress.enabled .Values.otpRateLimit.enabled }}
+{{- /*
+  OTP-abuse protection (independent of apiRateLimit — stays on even when per-API RL
+  is disabled). Rate-limits the ONE endpoint that triggers an MSG91 SMS —
+  POST /api/auth/unified-otp/request (better-auth unified-otp plugin) — per client
+  IP, so a single IP can't spam "send OTP" across many numbers and run up the MSG91
+  bill. This path is more specific than the /api and /api/auth routes, so Kong
+  matches it first; the rest of /api/auth/* keeps its normal limit.
+
+  policy: redis + limit_by: ip + {vault://env/redis-password} mirror the other
+  rate-limit plugins; Kong resolves the vault reference from its own pod env, so the
+  plaintext never lands on the KongPlugin CR.
+*/ -}}
+{{- $fullName := include "dpg-api.fullname" . -}}
+{{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
+{{- $rl := .Values.otpRateLimit -}}
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ $fullName }}-rl-otp
+  labels:
+    {{- include "dpg-api.labels" . | nindent 4 }}
+plugin: rate-limiting
+config:
+  minute: {{ $rl.minute | int }}
+  policy: redis
+  limit_by: ip
+  fault_tolerant: true
+  redis:
+    host: {{ $rl.redis.host | quote }}
+    port: {{ $rl.redis.port }}
+    password: "{vault://env/redis-password}"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-otp
+  labels:
+    {{- include "dpg-api.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/plugins: {{ printf "%s-rl-otp" $fullName | quote }}
+spec:
+  {{- with $.Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: {{ $rl.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $.Values.service.port }}
+    {{- end }}
+{{- end }}

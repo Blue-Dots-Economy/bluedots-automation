@@ -1,0 +1,62 @@
+{{- if and .Values.ingress.enabled .Values.loginRateLimit.enabled }}
+{{- /*
+  OTP-abuse ceiling for the Keycloak browser login. The MSG91 OTP SMS fires inside
+  the browser flow on POST /auth/realms/<realm>/login-actions/authenticate (channel
+  = sms step). That SAME path carries every login step (identifier, code verify,
+  resend), so this is a COARSE per-IP ceiling on the whole login flow — not a precise
+  per-OTP limit. minute ≈ a few full logins/min per IP (one login ≈ 3 POSTs). This
+  path is more specific than the /auth catch-all, so Kong matches it first.
+
+  LIMITATION: does NOT cover the registered-but-unused urn:otp:sms direct grant on
+  /auth/.../protocol/openid-connect/token (a shared path, not isolatable at Kong).
+  Disable that grant in the aggregator realm config (app team) to close it.
+
+  policy: redis + limit_by: ip + {vault://env/redis-password} mirror the other
+  rate-limit plugins; Kong resolves the vault reference from its own pod env.
+*/ -}}
+{{- $svc := include "keycloak.fullname" . -}}
+{{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
+{{- $rl := .Values.loginRateLimit -}}
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ $svc }}-rl-login
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+plugin: rate-limiting
+config:
+  minute: {{ $rl.minute | int }}
+  policy: redis
+  limit_by: ip
+  fault_tolerant: true
+  redis:
+    host: {{ $rl.redis.host | quote }}
+    port: {{ $rl.redis.port }}
+    password: "{vault://env/redis-password}"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $svc }}-login-ratelimit
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/plugins: {{ printf "%s-rl-login" $svc | quote }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /auth/realms/{{ $rl.realm }}/login-actions/authenticate
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $svc }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}
