@@ -1,4 +1,6 @@
-{{- if and .Values.ingress.enabled .Values.otpRateLimit.enabled }}
+{{- /* toggle: global.otpRateLimit.enabled (global-values.yaml) wins, else the chart's otpRateLimit.enabled */ -}}
+{{- $otpEnabled := dig "otpRateLimit" "enabled" .Values.otpRateLimit.enabled (.Values.global | default dict) -}}
+{{- if and .Values.ingress.enabled $otpEnabled }}
 {{- /*
   OTP-abuse protection (independent of apiRateLimit — stays on even when per-API RL
   is disabled). Rate-limits the ONE endpoint that triggers an MSG91 SMS —
@@ -14,6 +16,8 @@
 {{- $fullName := include "dpg-api.fullname" . -}}
 {{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
 {{- $rl := .Values.otpRateLimit -}}
+{{- /* single source: global.otpRateLimit.signalsMinute (global-values.yaml), fallback to the chart default */ -}}
+{{- $minute := dig "otpRateLimit" "signalsMinute" $rl.minute (.Values.global | default dict) -}}
 ---
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
@@ -23,7 +27,7 @@ metadata:
     {{- include "dpg-api.labels" . | nindent 4 }}
 plugin: rate-limiting
 config:
-  minute: {{ $rl.minute | int }}
+  minute: {{ $minute | int }}
   policy: redis
   limit_by: ip
   fault_tolerant: true
