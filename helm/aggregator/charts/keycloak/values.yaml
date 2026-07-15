@@ -11,13 +11,6 @@ ingress:
   plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-auth
   annotations: {}
 
-# OTP-abuse ceiling for the Keycloak browser login — see
-# templates/otp-ratelimit-ingress.yaml. Per-IP limit on
-# /auth/realms/<realm>/login-actions/authenticate (where the MSG91 OTP SMS fires on
-# the channel-choice step). That path carries the WHOLE login flow (~3 POSTs/login),
-# so this is a coarse ceiling (minute ≈ a few full logins/min per IP), not a precise
-# per-OTP limit. Renders when ingress.enabled + loginRateLimit.enabled.
-# NOTE: does NOT cover the urn:otp:sms token grant — disable that in the realm.
 loginRateLimit:
   enabled: true
   minute: 20           # per-IP login-flow submits/min (~6 full logins/min per IP)
