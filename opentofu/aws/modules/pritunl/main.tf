@@ -166,11 +166,15 @@ EOF
   ]
 
   # The instance sits in a public subnet, so AWS auto-assigns a public IP at launch
-  # (state shows associate_public_ip_address = true) even though we set false and use the
-  # EIP instead. Ignore that attribute so day-2 changes (e.g. SG ingress edits) don't force
-  # a destroy/recreate of the VPN host — which would wipe the Pritunl org/user/server config.
+  # This VPN host is STATEFUL — the Pritunl org/user/server config lives in MongoDB on its
+  # root volume, set up by hand. So it must NEVER be auto-replaced by day-2 applies:
+  #   - associate_public_ip_address: public subnet forces true vs. our false → drift.
+  #   - ami: data.aws_ami uses most_recent, so a new Ubuntu release would change the AMI id,
+  #     which is ForceNew → instance replacement (this exact thing wiped the config once).
+  # Ignoring both means a plain apply only ever updates the SG/tags in place. To intentionally
+  # move to a newer AMI, do it deliberately (fresh instance + re-run Pritunl setup).
   lifecycle {
-    ignore_changes = [associate_public_ip_address]
+    ignore_changes = [associate_public_ip_address, ami]
   }
 }
 
