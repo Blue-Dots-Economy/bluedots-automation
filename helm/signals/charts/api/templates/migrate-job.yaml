@@ -10,9 +10,7 @@ metadata:
     "helm.sh/hook-weight": "-1"
     "helm.sh/hook-delete-policy": before-hook-creation
 data:
-  # Only the service-user provisioning SQL is vendored here now. The schema DDL
-  # is no longer bundled — it ships inside the api image and is applied by the
-  # migrate-ddl initContainer below (Direction B).
+  # Only service-user provisioning SQL is vendored; schema DDL ships in the api image.
   provision_service_users.sql: |
 {{ .Files.Get "files/provision_service_users.sql" | indent 4 }}
 ---
@@ -44,12 +42,8 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:
-        # Schema DDL, applied from the APP IMAGE (Direction B). Runs, in order,
-        # extensions → drizzle migrate() → core (partitioned items/actions/events)
-        # → version migrations. The image carries its own schema
-        # (apps/api/drizzle + packages/database/.../sql_scripts), so the deployed
-        # schema always matches the running api build — nothing is vendored here.
-        # Uses the SAME image + tag as the api Deployment.
+        # Applies the schema from the api image (migrate.mjs over one Drizzle ledger),
+        # same image+tag as the api Deployment → deployed schema matches the build.
         - name: migrate-ddl
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
@@ -62,10 +56,7 @@ spec:
             - secretRef:
                 name: {{ include "dpg-api.secretName" . }}
       containers:
-        # Provision the integrating-DPG (aggregator-dpg) service org/user/apikey.
-        # Runs on every upgrade so AGGREGATOR_DPG_API_KEY rotations take effect;
-        # idempotent. Runs AFTER migrate-ddl, so the better-auth tables it upserts
-        # into already exist. psql client — reads the ConfigMap-mounted SQL.
+        # Upserts the aggregator-dpg service org/user/apikey after migrate-ddl; idempotent.
         - name: provision
           image: {{ .Values.migrate.image | default "postgres:16-alpine" }}
           imagePullPolicy: {{ .Values.migrate.imagePullPolicy | default "IfNotPresent" }}
