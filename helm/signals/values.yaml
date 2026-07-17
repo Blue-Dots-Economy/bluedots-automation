@@ -204,13 +204,9 @@ api:
     enabled: true
     host: platform-postgresql.common-services.svc.cluster.local
     port: 5432
-    # Admin (superuser) creds left empty: pgcrypto/cube/earthdistance extensions
-    # are created by the common-services Postgres bootstrap (00-bootstrap.sh) on
-    # the `dpg` database. Migrate Job skips CREATE EXTENSION and runs schema as
-    # the `dpg` app user.
-    adminSecret: ""
-    adminUser: postgres
-    adminPasswordKey: *pg_admin_key
+    # Extensions are provisioned by common-services (RDS master) on the `dpg`
+    # database; the migrate Job only asserts they exist, never creates them —
+    # so no admin/superuser creds are needed here.
   redis:
     enabled: true
     host: platform-redis-master.common-services.svc.cluster.local

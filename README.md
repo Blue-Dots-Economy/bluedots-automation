@@ -137,9 +137,9 @@ or `global.consentSupportEmail` (aggregator) — both default to
 `hello@bluedotseconomy.org`. Change the email in that one value, **never** in the
 consent content, so a brand/network switch keeps the right contact address.
 
-The Signals migrate Job creates the `consent_record` ledger table from the bundled
-`helm/signals/charts/api/files/schema.sql` — refresh that bundle when the upstream
-schema changes.
+The Signals migrate Job applies the schema from the **api image**
+(`db:migrate:deploy` runs Drizzle migrations + the raw item/action/event SQL,
+shipped in the image) — no `schema.sql` is vendored in this repo.
 
 ### Org hierarchy
 

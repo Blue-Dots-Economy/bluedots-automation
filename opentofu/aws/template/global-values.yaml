@@ -57,6 +57,11 @@ _api_rate_limit_enabled: &api_rate_limit_enabled false
 # Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
 _api_rate_limit_per_minute: &api_rate_limit_per_minute 600
 
+# ── OTP-abuse rate limiting (Kong) ──────────────────────────────────────────────
+_otp_rate_limit_enabled:    &otp_rate_limit_enabled    true
+_signals_otp_per_minute:    &signals_otp_per_minute    5    # a real login needs ~1–3
+_aggregator_otp_per_minute: &aggregator_otp_per_minute 20   # login flow ≈ 3 POSTs/login
+
 support_email: &support_email "support@example.com"
 # =============================================================================
 # Structure — do not edit below unless you know what you're changing.
@@ -94,6 +99,12 @@ global:
     enabled:       *api_rate_limit_enabled
     defaultMinute: *api_rate_limit_per_minute
 
+  # ── OTP-abuse rate limiting (Kong) — signals api + aggregator keycloak charts
+  otpRateLimit:
+    enabled:          *otp_rate_limit_enabled
+    signalsMinute:    *signals_otp_per_minute
+    aggregatorMinute: *aggregator_otp_per_minute
+
   cloud_storage_region: *cloud_storage_region
 
   # Network configuration (optional - set create_network: false to use an existing VPC)
@@ -130,10 +141,6 @@ global:
       cidr_netnum: 33
       prefix_length: 28
     # ── Private EKS node subnets ─────────────────────────────────────────────
-    # Named 'private-eks-*' so the EKS module selects them automatically and
-    # ignores the smaller RDS /28 subnets above.
-    # /16 VPC (this default): cidr_netnum 6/7 → 10.0.6.0/24 + 10.0.7.0/24 (251 IPs each).
-    # Tight /22 VPC: add prefix_length: 25 (keeps netnum 6/7 → 10.0.3.0/25 + 10.0.3.128/25).
     private-eks-a:
       type: private
       availability_zone: "a"
@@ -180,7 +187,7 @@ global:
   #
   # Restrict WHO can reach the VPN (office, home, etc.) — the bastion host is in a private subnet and only reachable after connecting to the VPN. Add/remove lines + re-apply (pritunl) to grant
   pritunl_ingress_cidrs:
-    - "49.207.54.70/32"       # office (baseline — always allowed)
+    - "106.51.118.115/32"       # office (baseline — always allowed)
     # - "198.51.100.20/32"    # per-env: add home/other IPs, then apply_tf_pritunl
     # - "192.0.2.30/32"
 

@@ -11,6 +11,14 @@ ingress:
   plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-auth
   annotations: {}
 
+loginRateLimit:
+  enabled: true
+  minute: 20           # per-IP login-flow submits/min (~6 full logins/min per IP)
+  realm: aggregator    # Keycloak realm name in the login-actions path
+  redis:               # shared common-services Redis (counters)
+    host: common-services-redis-master.common-services.svc.cluster.local
+    port: 6379
+
 replicaCount: 1
 image:
   repository: aggregator-dpg/keycloak
