@@ -49,7 +49,9 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          command: ["node", "apps/api/scripts/migrate.mjs"]
+          # Guard: fail loudly on a postgres.enabled=false misconfig instead of
+          # migrate.mjs silently falling back to 127.0.0.1.
+          command: ["sh", "-ec", ': "${POSTGRES_HOST:?missing}"; exec node apps/api/scripts/migrate.mjs']
           envFrom:
             - configMapRef:
                 name: {{ include "dpg-api.fullname" . }}

@@ -1,8 +1,8 @@
 -- helmcharts/dpg/charts/api/files/provision_service_users.sql
 --
 -- Idempotent upsert for integrating-DPG service users / apikeys. Applied
--- by the helm migrate-job AFTER schema.sql, on every install AND upgrade
--- (unlike schema.sql which short-circuits when `items` already exists).
+-- by the helm migrate-job's provision container, after migrate-ddl has created
+-- the better-auth tables, on every install AND upgrade.
 --
 -- Source of truth for the raw key is the k8s Secret holding
 -- AGGREGATOR_DPG_API_KEY; this file derives the SHA-256(key) hash that
@@ -14,8 +14,7 @@
 -- Invoked from migrate-job.yaml as:
 --   psql -v aggregator_dpg_api_key="$AGGREGATOR_DPG_API_KEY" -f /sql/provision_service_users.sql
 --
--- Requires pgcrypto (digest, gen_random_uuid) — migrate-job already
--- enables it during the DDL step.
+-- Requires pgcrypto (digest, gen_random_uuid), provisioned by common-services.
 --
 -- Hash format must match @better-auth/api-key `defaultKeyHasher`:
 --   base64url(sha256(raw_key))  — unpadded, '+/' → '-_'.

@@ -193,11 +193,6 @@ postgres:
   enabled: true
   host: dpg-postgres-postgresql
   port: 5432
-  # Admin credentials used by the migrate Job to CREATE EXTENSION (requires
-  # superuser). Leave empty to skip the extension step.
-  adminSecret: ""
-  adminUser: postgres
-  adminPasswordKey: postgres-password
 
 # In-cluster Redis wiring. Set enabled=true to inject host/port from
 # the bundled dpg-redis release.
