@@ -187,7 +187,7 @@ global:
   #
   # Restrict WHO can reach the VPN (office, home, etc.) — the bastion host is in a private subnet and only reachable after connecting to the VPN. Add/remove lines + re-apply (pritunl) to grant
   pritunl_ingress_cidrs:
-    - "49.207.54.70/32"       # office (baseline — always allowed)
+    - "106.51.118.115/32"       # office (baseline — always allowed)
     # - "198.51.100.20/32"    # per-env: add home/other IPs, then apply_tf_pritunl
     # - "192.0.2.30/32"
 
