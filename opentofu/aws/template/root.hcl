@@ -16,6 +16,10 @@ terraform {
     key     = "${path_relative_to_include()}/terraform.tfstate"
     region  = "${get_env("AWS_REGION", "us-east-1")}"
     encrypt = true
+    # State locking via an S3 conditional-write lock file (OpenTofu >= 1.10 /
+    # Terraform >= 1.11) — no DynamoDB table required. Prevents concurrent
+    # applies from corrupting shared state.
+    use_lockfile = true
   }
 }
 EOF
