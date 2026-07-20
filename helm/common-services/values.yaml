@@ -406,8 +406,15 @@ redis:
     appendonly yes
     appendfsync everysec
     save ""
-    maxmemory 256mb
-    maxmemory-policy allkeys-lru
+    maxmemory 512mb
+    # noeviction (NOT allkeys-lru): this instance holds BullMQ job/queue state
+    # and Kong rate-limit counters — LRU eviction would silently drop jobs and
+    # fail rate-limiting open under memory pressure. With noeviction, a full
+    # instance fails writes loudly instead. Requires every producer to bound
+    # its own keys: the Signals item-events stream is trimmed via XADD MAXLEN
+    # (INGEST_STREAM_MAXLEN). Keep maxmemory below the container memory limit
+    # in helm/global-resources.yaml (currently 1Gi) to leave headroom.
+    maxmemory-policy noeviction
   master:
     persistence:
       enabled: true
@@ -418,6 +425,10 @@ redis:
     resources:
       requests: { cpu: 50m,  memory: 128Mi }
       limits:   { cpu: 500m, memory: 512Mi }
+  # replicaCount 0 is the shared default: dev/single-node clusters (see the
+  # 1-node EKS default) cannot schedule a second Redis pod. Production
+  # deployment branches should override this to >= 1 (with replica persistence)
+  # for failover — noeviction makes a lost-master data event more disruptive.
   replica:
     replicaCount: 0
 
