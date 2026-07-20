@@ -37,7 +37,15 @@ jobs:
         run: |
           for chart in monitoring common-services signals aggregator; do
             echo "::group::helm lint $chart"
-            helm lint "helm/$chart"
+            # The aggregator chart guards its mandatory secrets (renders fail on
+            # `change-me`/empty defaults); skip that block for the static check
+            # with a placeholder existingSecret — real deploys validate real
+            # values from global-credentials.yaml.
+            if [ "$chart" = aggregator ]; then
+              helm lint "helm/$chart" --set global.existingSecret=ci-smoke
+            else
+              helm lint "helm/$chart"
+            fi
             echo "::endgroup::"
           done
 
@@ -49,7 +57,12 @@ jobs:
           # template` fails on the missing files. `helm lint` above still covers it.
           for chart in monitoring common-services aggregator; do
             echo "::group::helm template $chart"
-            helm template "$chart" "helm/$chart" -f helm/global-resources.yaml >/dev/null
+            # aggregator: bypass the mandatory-secret guard (see helm lint step).
+            if [ "$chart" = aggregator ]; then
+              helm template "$chart" "helm/$chart" -f helm/global-resources.yaml --set global.existingSecret=ci-smoke >/dev/null
+            else
+              helm template "$chart" "helm/$chart" -f helm/global-resources.yaml >/dev/null
+            fi
             echo "::endgroup::"
           done
 
