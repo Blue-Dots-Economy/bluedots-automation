@@ -71,15 +71,19 @@ jobs:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: tofu-plugins-${{ runner.os }}
 
-      # Informational only: eks/main.tf carries pre-existing fmt drift; surface
-      # it without failing the gate. Drop continue-on-error once it's cleaned up.
-      - name: tofu fmt (informational)
-        continue-on-error: true
+      # Create the plugin cache dir before ANY tofu command. tofu warns
+      # ("plugin cache dir cannot be opened ... may not behave as intended")
+      # whenever TF_PLUGIN_CACHE_DIR is set but missing — which happens on a
+      # cache miss when the restore above finds nothing.
+      - name: Prepare provider plugin cache
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+      # Blocking: formatting drift fails the check. Keep the tree `tofu fmt`-clean.
+      - name: tofu fmt
         run: tofu fmt -check -recursive opentofu/aws
 
       - name: tofu validate (all modules)
         run: |
-          mkdir -p "$TF_PLUGIN_CACHE_DIR"
           rc=0
           for module in opentofu/aws/modules/*/; do
             echo "::group::tofu validate $module"

@@ -139,7 +139,7 @@ When you open a PR, include an **In Plain Terms** section in the description: a 
 `.github/workflows/ci.yml` runs static checks on PRs (and develop/main pushes) that touch `helm/**` or `opentofu/**` — no cluster or cloud creds:
 
 - **helm job** — `helm lint` on all four charts, plus `helm template` render smoke-test on monitoring/common-services/aggregator. `signals` is lint-only in CI because its `helm template` needs the network schema files `install.sh` fetches at deploy time (`fetch_signals_configs`), which aren't committed.
-- **tofu job** — `tofu validate` (with `-backend=false`, provider plugins cached) on every module in `opentofu/aws/modules/*`; `tofu fmt -check` runs informationally (non-blocking) while `eks/main.tf` still carries fmt drift.
+- **tofu job** — a blocking `tofu fmt -check -recursive` plus `tofu validate` (with `-backend=false`, provider plugins cached) on every module in `opentofu/aws/modules/*`. Keep the tree `tofu fmt`-clean or the job fails.
 
 This mirrors `bash install.sh lint` but gates it per-PR. Separately, `.github/workflows/develop-pr-gate.yml` enforces the Release-Notes + doc-update PR gate (see `.claude/rules/pr-gate.md`).
 
