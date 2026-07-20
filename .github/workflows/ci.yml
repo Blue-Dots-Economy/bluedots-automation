@@ -1,0 +1,94 @@
+name: CI
+
+# Minimal static-check CI for the infra repo (PLAN 1.15): catch Helm chart and
+# OpenTofu module errors in a PR instead of at deploy time. No cluster or cloud
+# credentials are used — `helm lint`/`template` render locally and `tofu
+# validate` runs with `-backend=false` (no S3 backend, no AWS calls).
+#
+# Path-filtered to helm/opentofu changes so unrelated PRs don't pay for it.
+on:
+  pull_request:
+    branches: [develop, main, feature]
+    paths:
+      - 'helm/**'
+      - 'opentofu/**'
+      - '.github/workflows/ci.yml'
+  push:
+    branches: [develop, main]
+    paths:
+      - 'helm/**'
+      - 'opentofu/**'
+      - '.github/workflows/ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+
+      - name: helm lint (all charts)
+        run: |
+          for chart in monitoring common-services signals aggregator; do
+            echo "::group::helm lint $chart"
+            helm lint "helm/$chart"
+            echo "::endgroup::"
+          done
+
+      - name: helm template (render smoke test)
+        run: |
+          # `signals` is intentionally excluded: its api subchart renders network
+          # schema files that install.sh fetches at deploy time
+          # (fetch_signals_configs) and are not committed, so a bare `helm
+          # template` fails on the missing files. `helm lint` above still covers it.
+          for chart in monitoring common-services aggregator; do
+            echo "::group::helm template $chart"
+            helm template "$chart" "helm/$chart" -f helm/global-resources.yaml >/dev/null
+            echo "::endgroup::"
+          done
+
+  tofu:
+    runs-on: ubuntu-latest
+    env:
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tofu-plugin-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.4
+          tofu_wrapper: false
+
+      - name: Cache OpenTofu providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: tofu-plugins-${{ runner.os }}
+
+      # Informational only: eks/main.tf carries pre-existing fmt drift; surface
+      # it without failing the gate. Drop continue-on-error once it's cleaned up.
+      - name: tofu fmt (informational)
+        continue-on-error: true
+        run: tofu fmt -check -recursive opentofu/aws
+
+      - name: tofu validate (all modules)
+        run: |
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          rc=0
+          for module in opentofu/aws/modules/*/; do
+            echo "::group::tofu validate $module"
+            if ( cd "$module" && tofu init -backend=false -no-color >/dev/null && tofu validate -no-color ); then
+              echo "$module OK"
+            else
+              echo "::error::tofu validate failed for $module"
+              rc=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$rc"
