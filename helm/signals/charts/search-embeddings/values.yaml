@@ -30,3 +30,12 @@ resources:
   limits:   { cpu: "2", memory: 8Gi }
 serviceAccount:
   create: true
+
+# Container security hardening (#1.12). TEI image: its baked-in user is retained
+# (no forced non-root uid — the model cache is owned by that user), so only drop
+# all capabilities and block privilege escalation, neither of which TEI needs.
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL

@@ -321,3 +321,13 @@ postgresql:
 # already provides `letsencrypt-prod`).
 cert-manager:
   enabled: false
+
+# Namespace-scoped ingress isolation (#1.12). Default OFF: enabling applies an
+# Ingress-only NetworkPolicy (templates/networkpolicy.yaml) that restricts which
+# namespaces may connect TO aggregator pods. Egress is intentionally unrestricted.
+# Keep `common-services` listed — Kong ingress proxies public traffic from there.
+networkPolicy:
+  enabled: false
+  allowedFromNamespaces:
+    - common-services
+    - monitoring

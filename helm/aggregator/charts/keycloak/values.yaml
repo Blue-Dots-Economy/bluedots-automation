@@ -60,3 +60,12 @@ hpa:
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
+
+# Container hardening for the main keycloak container (#1.12). Pod-level
+# fsGroup:0 stays in the deployment template (Keycloak writes to group-0 dirs);
+# here we only drop caps + block privilege escalation, which Keycloak never needs.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL

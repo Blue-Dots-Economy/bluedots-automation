@@ -30,10 +30,14 @@ spec:
       serviceAccountName: {{ include "api.serviceAccountName" . }}
       {{- include "api.imagePullSecrets" . | nindent 6 }}
       {{- include "api.hostAliases" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: api
           image: {{ include "api.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}

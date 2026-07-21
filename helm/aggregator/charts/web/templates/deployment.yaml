@@ -29,10 +29,14 @@ spec:
     spec:
       {{- include "web.imagePullSecrets" . | nindent 6 }}
       {{- include "web.hostAliases" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: web
           image: {{ include "web.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
