@@ -193,6 +193,19 @@ kong:
       upstream_health_metrics: true
       per_consumer: false
 
+  # ─── Correlation id (global) ───────────────────────────────────────────────
+  # Renders one cluster-wide, GLOBAL KongClusterPlugin (templates/kong-correlation-id.yaml)
+  # so EVERY request carries an X-Request-Id: Kong stamps one when absent (an
+  # inbound value is preserved), and echo_downstream returns it to the caller.
+  # Downstream services honour + log it as `x-request-id`, and the aggregator
+  # forwards it to Signals — end-to-end request tracing (PLAN 2.4).
+  correlationId:
+    enabled: true
+    headerName: X-Request-Id
+    # uuid#counter = a per-worker uuid plus a per-request counter (cheap, unique).
+    generator: "uuid#counter"
+    echoDownstream: true
+
   # ─── ServiceMonitor: let Prometheus scrape Kong's /metrics ─────────────────
   # The prometheus plugin above exposes metrics on Kong's status listener
   # (port 8100, /metrics) and the ingress controller exposes its own on the

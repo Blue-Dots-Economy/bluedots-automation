@@ -1,0 +1,31 @@
+{{- /*
+correlation-id plugin → one cluster-scoped, GLOBAL KongClusterPlugin.
+
+The `global: "true"` label makes Kong apply this to every service/route (like the
+prometheus plugin). Kong stamps an `X-Request-Id` on each inbound request that
+lacks one (an inbound value is preserved, not overwritten) and — with
+echo_downstream — returns it to the caller. Downstream services honour and log
+the header as their correlation id (`x-request-id`), and the aggregator forwards
+it on its calls to Signals, so a single request can be traced across the platform
+(Kong → aggregator → Signals → search). See PLAN 2.4.
+
+Tune under kong.correlationId in values.yaml. correlation-id is a bundled Kong
+plugin, so no CRD/registration change is needed (KongClusterPlugin is already
+applied by deploy_common_services).
+*/ -}}
+{{- if and .Values.kong.enabled .Values.kong.correlationId .Values.kong.correlationId.enabled }}
+apiVersion: configuration.konghq.com/v1
+kind: KongClusterPlugin
+metadata:
+  name: correlation-id
+  annotations:
+    kubernetes.io/ingress.class: kong
+  labels:
+    global: "true"
+    {{- include "platform.labels" . | nindent 4 }}
+plugin: correlation-id
+config:
+  header_name: {{ .Values.kong.correlationId.headerName | quote }}
+  generator: {{ .Values.kong.correlationId.generator | quote }}
+  echo_downstream: {{ .Values.kong.correlationId.echoDownstream }}
+{{- end }}
