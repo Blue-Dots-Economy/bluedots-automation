@@ -11,6 +11,12 @@ Guidance for the Helm half of the repo. Read the root `CLAUDE.md` first (the cri
 
 Resource requests/limits (Kong `replicaCount: 2`, cert-manager, Redis, `postgresBootstrap`, metrics-server, app replicas/HPA/PDB) live in the shared `helm/global-resources.yaml`, not per-chart values.
 
+## Cluster Autoscaler (#1.6)
+
+`common-services/templates/cluster-autoscaler.yaml` (first-party, not a vendored subchart) ships the Kubernetes Cluster Autoscaler as SA + cluster-wide RBAC + Deployment, gated by `clusterAutoscaler.enabled` (**default OFF**). It scales the EKS managed node group's ASG between the OpenTofu `node_count_min`/`node_count_max` (raised to **2 / 6** in `modules/eks/variables.tf` — was 1 / 3, which left no headroom) via ASG auto-discovery (`--node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,...`; the node group carries those discovery tags, and EKS propagates them to the ASG). AWS access is **IRSA**, not node creds: `modules/eks/main.tf` adds a `cluster_autoscaler_irsa` role (scoped `attach_cluster_autoscaler_policy`, bound to `common-services:cluster-autoscaler`) and exports **`cluster_autoscaler_role_arn`**.
+
+**To enable per environment:** `tofu apply` (creates the IRSA role + retags the node group), then set `clusterAutoscaler.enabled: true`, `clusterAutoscaler.clusterName: <env>-cluster`, `clusterAutoscaler.awsRegion`, and `clusterAutoscaler.serviceAccount.roleArn: <cluster_autoscaler_role_arn output>` (wire the ARN through `global-cloud-values.yaml` alongside the existing `app_sa_role_arn` IRSA annotations, or set it directly), then `deploy_common_services`. Runs in the `common-services` namespace with cluster-wide RBAC. Default-off because bluedots CI runs no Helm/k8s validation — validate with a live `install.sh dry_run` first.
+
 ## Ingress is Kong, not nginx
 
 `common-services` vendors both `ingress-nginx` and `kong` subcharts, but the committed default is **Kong** (`kong.enabled: true`, `ingress-nginx.enabled: false`). Kong (DB-less) is the sole controller and the cluster-default IngressClass; every app Ingress sets `ingressClassName: kong`. Rate limiting is `KongClusterPlugin` tiers (`rl-auth`/`rl-api`/`rl-public`) in `helm/common-services/values.yaml`, attached per route via the `konghq.com/plugins` annotation, counters in the shared Redis (`policy: redis`). DNS points public hosts at the Kong proxy LB: `kubectl -n common-services get svc common-services-kong-proxy`.
