@@ -157,6 +157,23 @@ hostAliases:
 {{- end -}}
 
 {{/*
+  Validate a mandatory secret: fail the render (loudly) when the value is empty
+  or still a `change-me` placeholder, otherwise return it. This is what turns a
+  forgotten credential into a deploy-time error instead of a cluster running on
+  a well-known default. Only invoked when NOT using global.existingSecret.
+  Usage:
+    {{ include "aggregator.requireSecret" (dict "value" .Values.secrets.sessionKey "name" "sessionKey") | quote }}
+*/}}
+{{- define "aggregator.requireSecret" -}}
+{{- $value := .value -}}
+{{- $name := .name -}}
+{{- if or (not $value) (hasPrefix "change-me" (toString $value)) -}}
+{{- fail (printf "secrets.%s must be set to a real value (found empty or a 'change-me' placeholder). Provide it via the generated global-credentials.yaml / -f overlay, or set global.existingSecret to a pre-created Secret." $name) -}}
+{{- end -}}
+{{- $value -}}
+{{- end -}}
+
+{{/*
   imagePullSecrets block.
 */}}
 {{- define "aggregator.imagePullSecrets" -}}

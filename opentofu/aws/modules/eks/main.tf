@@ -42,6 +42,42 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSServicePolicy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
 }
 
+# KMS envelope encryption for Kubernetes Secrets (see encryption_config on the
+# cluster below). Without this, Secrets sit as plaintext (base64) in etcd.
+# AmazonEKSClusterPolicy carries no KMS permissions, so the cluster role needs
+# an explicit grant on this key or cluster creation with encryption fails.
+resource "aws_kms_key" "eks_secrets" {
+  description             = "EKS envelope encryption for Kubernetes secrets (${local.cluster_name})"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+  tags                    = merge(local.common_tags, { Name = "${local.cluster_name}-eks-secrets" })
+}
+
+resource "aws_kms_alias" "eks_secrets" {
+  name          = "alias/${local.cluster_name}-eks-secrets"
+  target_key_id = aws_kms_key.eks_secrets.key_id
+}
+
+data "aws_iam_policy_document" "eks_cluster_kms" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ListGrants",
+      "kms:DescribeKey",
+      "kms:CreateGrant",
+    ]
+    resources = [aws_kms_key.eks_secrets.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "eks_cluster_kms" {
+  name   = "${var.building_block}-${var.environment}-eks-cluster-kms"
+  role   = aws_iam_role.eks_cluster.id
+  policy = data.aws_iam_policy_document.eks_cluster_kms.json
+}
+
 data "aws_iam_policy_document" "eks_node_assume_role" {
   statement {
     effect = "Allow"
@@ -97,11 +133,22 @@ resource "aws_eks_cluster" "cluster" {
     authentication_mode = "API_AND_CONFIG_MAP"
   }
 
+  # Encrypt Kubernetes Secrets at rest in etcd with the customer-managed KMS
+  # key above (envelope encryption). One-way: EKS does not allow removing this
+  # once enabled.
+  encryption_config {
+    resources = ["secrets"]
+    provider {
+      key_arn = aws_kms_key.eks_secrets.arn
+    }
+  }
+
   tags = merge(local.common_tags, { Name = local.cluster_name })
 
   depends_on = [
     aws_iam_role_policy_attachment.eks_cluster_AmazonEKSClusterPolicy,
-    aws_iam_role_policy_attachment.eks_cluster_AmazonEKSServicePolicy
+    aws_iam_role_policy_attachment.eks_cluster_AmazonEKSServicePolicy,
+    aws_iam_role_policy.eks_cluster_kms
   ]
 }
 
