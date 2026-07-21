@@ -405,7 +405,11 @@ function lint() {
     helm lint "$MON_DIR"
     helm lint "$CS_DIR"
     helm lint "$SIGNALS_DIR"
-    helm lint "$AGG_DIR"
+    # Aggregator secrets are guarded (aggregator.requireSecret fails the render on
+    # empty / `change-me` placeholders). A bare `helm lint` has no real creds, so
+    # point it at a placeholder existingSecret to skip the secret block — a real
+    # deploy still validates its actual values from global-credentials.yaml.
+    helm lint "$AGG_DIR" --set global.existingSecret=lint-only
 }
 
 # helm --dry-run all 4 charts against the current cluster (renders + server-side checks,

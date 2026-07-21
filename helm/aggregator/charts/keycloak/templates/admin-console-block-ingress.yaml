@@ -1,0 +1,57 @@
+{{- /* toggle: global.adminConsoleBlock.enabled (global-values.yaml) wins, else the chart's adminConsoleBlock.enabled */ -}}
+{{- $blockEnabled := dig "adminConsoleBlock" "enabled" .Values.adminConsoleBlock.enabled (.Values.global | default dict) -}}
+{{- if and .Values.ingress.enabled $blockEnabled }}
+{{- /*
+  Blocks the Keycloak admin CONSOLE (web UI) from the public ingress (#1.7).
+  Kong request-termination returns 403 for /auth/admin/master/console — the
+  admin-console SPA entrypoint for all realms in Keycloak 26. This path is more
+  specific than the /auth catch-all, so Kong matches it first (same routing fact
+  the otp-ratelimit ingress relies on).
+
+  It deliberately does NOT block /auth/admin/realms/ (the admin REST API):
+  aggregator-api's Keycloak admin client reaches Keycloak via the PUBLIC
+  KEYCLOAK_URL (aggregator.keycloakUrl helper -> https://<host>/auth), so its
+  user-provisioning calls traverse this same ingress and MUST stay reachable.
+  Blocking all of /auth/admin would break approval-time user creation. Reach the
+  admin console via `kubectl port-forward svc/<release>-keycloak 8080` or the VPN
+  instead of the public host.
+*/ -}}
+{{- $svc := include "keycloak.fullname" . -}}
+{{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ $svc }}-admin-console-block
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+plugin: request-termination
+config:
+  status_code: 403
+  message: "The Keycloak admin console is not available over the public endpoint."
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $svc }}-admin-console-block
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/plugins: {{ printf "%s-admin-console-block" $svc | quote }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /auth/admin/master/console
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $svc }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}
