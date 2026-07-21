@@ -477,3 +477,14 @@ search:
       REDIS_PASSWORD: ""
       EMBEDDING_API_KEY: ""
 
+
+# Namespace-scoped ingress isolation (#1.12). Default OFF: enabling applies an
+# Ingress-only NetworkPolicy (templates/networkpolicy.yaml) that restricts which
+# namespaces may connect TO signals pods. Egress is intentionally unrestricted.
+# Keep `aggregator` listed — it calls the signals API (signalstack).
+networkPolicy:
+  enabled: false
+  allowedFromNamespaces:
+    - common-services
+    - monitoring
+    - aggregator

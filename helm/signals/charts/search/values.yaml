@@ -68,3 +68,18 @@ secrets:
     POSTGRES_PASSWORD: ""
     REDIS_PASSWORD: ""
     EMBEDDING_API_KEY: ""
+
+# Pod/container security hardening (#1.12). Mirrors the signals-api baseline:
+# non-root uid 1000, drop all Linux capabilities, no privilege escalation.
+# Override per-service if an image genuinely needs root (cf. the signals `ui`
+# nginx exception in helm/signals/values.yaml).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
