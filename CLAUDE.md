@@ -98,7 +98,7 @@ Config is **never injected into chart `values.yaml`**. Each `helm upgrade` layer
 | `helm/global-resources.yaml` | in repo, **shared across all envs** | yes | replica counts, HPA, PDB, container resources |
 | `<env>/global-images.yaml` | in repo, **per-env** | yes | image `repository` / `tag` / `pullPolicy` |
 | `<env>/global-values.yaml` | in repo, **per-env, user-edited** | yes | non-secret config: hosts, network/brand, SMTP, MSG91, DB sizing, app config (edit **anchors at the top only**) |
-| `<env>/global-credentials.yaml` | **generated** by `output-file` module | **no** (gitignored) | all secrets (PG/Redis/auth passwords) |
+| `<env>/global-secrets.yaml` | **generated** by `output-file` module | **no** (gitignored) | all secrets (PG/Redis/auth passwords) |
 | `<env>/global-cloud-values.yaml` | **generated** by `output-file` module | **no** (gitignored) | cloud outputs + computed hosts/origins + **RDS Postgres host** (when provisioned) |
 
 `preflight` fails if the two generated files are missing → run `bash install.sh create_tf_resources` (or `terragrunt run --all apply`) first. After editing config that feeds them, regenerate only them with `bash install.sh apply_tf_output_file`. How the RDS host lands in `global-cloud-values.yaml` is in `opentofu/CLAUDE.md`.

@@ -19,7 +19,7 @@ common-services** (it does **not** bundle its own databases).
 | `search-embeddings` | Embeddings worker for search (gated `search-embeddings.enabled`) |
 
 Postgres/Redis credentials are consumed from the generated
-`global-credentials.yaml`; the Postgres/Redis **host** comes from the layered
+`global-secrets.yaml`; the Postgres/Redis **host** comes from the layered
 values (the shared common-services service, or the RDS endpoint when provisioned).
 
 ## Prerequisites
@@ -27,7 +27,7 @@ values (the shared common-services service, or the RDS endpoint when provisioned
 - **`common-services` must already be deployed** (shared Postgres + Redis, Kong
   ingress, `letsencrypt-prod` issuer). Signals attaches to all of them.
 - `kubectl` current-context on the target cluster, `helm` v3.12+.
-- The generated values files exist in the env dir (`global-credentials.yaml`,
+- The generated values files exist in the env dir (`global-secrets.yaml`,
   `global-cloud-values.yaml`) — run `bash install.sh create_tf_resources` first.
 - A `ghcr-pull` image-pull secret in the `signals` namespace (private GHCR
   images) — created by `bash install.sh create_namespaces_and_secrets`.
@@ -51,7 +51,7 @@ helm upgrade --install signals helm/signals \
   -f "$ENV/global-images.yaml" \
   -f "$ENV/global-values.yaml" \
   -f "$ENV/global-cloud-values.yaml" \
-  -f "$ENV/global-credentials.yaml" \
+  -f "$ENV/global-secrets.yaml" \
   --wait --timeout 10m
 ```
 

@@ -168,7 +168,7 @@ hostAliases:
 {{- $value := .value -}}
 {{- $name := .name -}}
 {{- if or (not $value) (hasPrefix "change-me" (toString $value)) -}}
-{{- fail (printf "secrets.%s must be set to a real value (found empty or a 'change-me' placeholder). Provide it via the generated global-credentials.yaml / -f overlay, or set global.existingSecret to a pre-created Secret." $name) -}}
+{{- fail (printf "secrets.%s must be set to a real value (found empty or a 'change-me' placeholder). Provide it via the generated global-secrets.yaml / -f overlay, or set global.existingSecret to a pre-created Secret." $name) -}}
 {{- end -}}
 {{- $value -}}
 {{- end -}}

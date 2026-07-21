@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 # its chart's overrides at ROOT level, so a single `-f` feeds helm directly —
 # no slicing/yq projection needed.
 # Generated credential file — secrets only; shared by all charts.
-GLOBAL_CREDS="${GLOBAL_CREDS:-$SCRIPT_DIR/global-credentials.yaml}"
+GLOBAL_SECRETS="${GLOBAL_SECRETS:-$SCRIPT_DIR/global-secrets.yaml}"
 # Generated cloud infra file — S3 bucket/region + IRSA ARN; non-secret but
 # generated (depends on provisioned resources).
 GLOBAL_CLOUD_VALUES="${GLOBAL_CLOUD_VALUES:-$SCRIPT_DIR/global-cloud-values.yaml}"
@@ -180,7 +180,7 @@ function deploy_monitoring() {
     helm upgrade --install "$MON_REL" "$MON_DIR" \
         -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" \
-        -f "$GLOBAL_CREDS" \
+        -f "$GLOBAL_SECRETS" \
         --wait --timeout 10m
 }
 
@@ -197,7 +197,7 @@ function deploy_common_services() {
         -f "$GLOBAL_IMAGES" \
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
-        -f "$GLOBAL_CREDS" \
+        -f "$GLOBAL_SECRETS" \
         --wait --timeout 5m
 }
 
@@ -243,7 +243,7 @@ function deploy_signals() {
         -f "$GLOBAL_IMAGES" \
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
-        -f "$GLOBAL_CREDS" \
+        -f "$GLOBAL_SECRETS" \
         --wait --timeout 10m
 }
 
@@ -257,7 +257,7 @@ function deploy_aggregator() {
         -f "$GLOBAL_IMAGES" \
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
-        -f "$GLOBAL_CREDS" \
+        -f "$GLOBAL_SECRETS" \
         --wait --timeout 10m
 }
 
@@ -387,7 +387,7 @@ function preflight() {
     command -v helm    >/dev/null || { echo "ERROR: helm not installed"    >&2; exit 1; }
     command -v kubectl >/dev/null || { echo "ERROR: kubectl not installed" >&2; exit 1; }
     kubectl cluster-info >/dev/null 2>&1 || { echo "ERROR: cluster unreachable; check kubeconfig" >&2; exit 1; }
-    for f in "$GLOBAL_CREDS" "$GLOBAL_CLOUD_VALUES"; do
+    for f in "$GLOBAL_SECRETS" "$GLOBAL_CLOUD_VALUES"; do
         test -f "$f" || {
             echo "ERROR: values file not found: $f" >&2
             echo "       Run \`terragrunt run --all apply\` from $SCRIPT_DIR first." >&2
@@ -395,7 +395,7 @@ function preflight() {
         }
     done
     echo "context : $(kubectl config current-context)"
-    echo "creds   : $GLOBAL_CREDS"
+    echo "secrets : $GLOBAL_SECRETS"
     echo "cloud   : $GLOBAL_CLOUD_VALUES"
     echo "config  : $GLOBAL_VALUES (user-edited non-secret config)"
 }
@@ -408,7 +408,7 @@ function lint() {
     # Aggregator secrets are guarded (aggregator.requireSecret fails the render on
     # empty / `change-me` placeholders). A bare `helm lint` has no real creds, so
     # point it at a placeholder existingSecret to skip the secret block — a real
-    # deploy still validates its actual values from global-credentials.yaml.
+    # deploy still validates its actual values from global-secrets.yaml.
     helm lint "$AGG_DIR" --set global.existingSecret=lint-only
 }
 
@@ -419,13 +419,13 @@ function dry_run() {
     fetch_signals_configs
     fetch_aggregator_configs
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
-        -f "$GLOBAL_VALUES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────

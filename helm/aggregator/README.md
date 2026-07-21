@@ -40,7 +40,7 @@ own databases or ingress controller. SMTP is wired to an external relay.
   `global.signalstack.actingOrgId` is the `network_service` org id seeded by the
   signals migrate Job. **Required before login** or aggregator returns
   `SIGNALSTACK_ORG_NOT_REGISTERED`.
-- The generated values files exist (`global-credentials.yaml`,
+- The generated values files exist (`global-secrets.yaml`,
   `global-cloud-values.yaml`) — `bash install.sh create_tf_resources` first.
 - A `ghcr-pull` secret in the `aggregator` namespace —
   `bash install.sh create_namespaces_and_secrets`.
@@ -75,7 +75,7 @@ helm upgrade --install aggregator helm/aggregator \
   -f "$ENV/global-images.yaml" \
   -f "$ENV/global-values.yaml" \
   -f "$ENV/global-cloud-values.yaml" \
-  -f "$ENV/global-credentials.yaml" \
+  -f "$ENV/global-secrets.yaml" \
   --wait --timeout 10m
 ```
 
@@ -123,7 +123,7 @@ kubectl get certificate -n aggregator      # READY=True once ACME completes
 Per-env config layers from `opentofu/aws/<env>/global-values.yaml` (anchors at
 the top); chart defaults in `values.yaml`. Notable: `global.publicHost`
 (aggregator FQDN, from `_aggregator_host`), `global.signalstack.actingOrgId`,
-`secrets.*` (from `global-credentials.yaml`), `mail.smtp.*` / `secrets.smtp*`.
+`secrets.*` (from `global-secrets.yaml`), `mail.smtp.*` / `secrets.smtp*`.
 
 ## Uninstall
 
