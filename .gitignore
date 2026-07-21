@@ -29,6 +29,10 @@ opentofu/aws/**/monitoring-values.yaml
 opentofu/aws/**/global-cloud-values.yaml
 # Generated secrets file (written by output-file/main.tf) — never commit.
 opentofu/aws/**/global-credentials.yaml
+# Operator-provided secrets overlay (#1.2a) — real SMTP/MSG91/Gmail/Maps keys.
+# Layered LAST in helm; keeps secrets out of the committed global-values.yaml.
+# The committed *.example is the template. NEVER commit the real file.
+opentofu/aws/**/global-secrets.yaml
 opentofu/aws/**/tf.sh
 
 # Editor / OS junk

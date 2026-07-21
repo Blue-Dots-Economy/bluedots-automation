@@ -36,14 +36,20 @@ _eks_node_count_min:     &eks_node_count_min     1
 _eks_node_count_max:     &eks_node_count_max     2
 
 # ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
+# ⚠️ SECRETS (#1.2a): do NOT put real credentials in this committed file. The
+# _smtp_password / _msg91_auth_key placeholders below stay as-is; set the REAL
+# SMTP password, MSG91 auth key, Gmail pass, and Maps API key in the gitignored
+# `global-secrets.yaml` (copy `global-secrets.yaml.example`), which install.sh
+# layers LAST over these values. Only NON-secret config (host/port/from/template
+# id) is safe to edit here.
 _smtp_host:         &smtp_host         "smtp.gmail.com"
 _smtp_port:         &smtp_port         587
 _smtp_user:         &smtp_user         "sender@example.com"
-_smtp_password:     &smtp_password     "changeme" # smtp_password must be a Gmail App Password: eg. "abcd efgh ijkl mnop"
+_smtp_password:     &smtp_password     "changeme" # PLACEHOLDER — set real value in global-secrets.yaml
 _smtp_from_display: &smtp_from_display "Blue Dots"
 
 # ── MSG91 (shared by notification service and aggregator) ────────────────────
-_msg91_auth_key:    &msg91_auth_key    "changeme"
+_msg91_auth_key:    &msg91_auth_key    "changeme" # PLACEHOLDER — set real value in global-secrets.yaml
 _msg91_template_id: &msg91_template_id "changeme"
 
 # ── Alert recipients ──────────────────────────────────────────────────────────

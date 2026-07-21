@@ -19,6 +19,15 @@ GLOBAL_CREDS="${GLOBAL_CREDS:-$SCRIPT_DIR/global-credentials.yaml}"
 GLOBAL_CLOUD_VALUES="${GLOBAL_CLOUD_VALUES:-$SCRIPT_DIR/global-cloud-values.yaml}"
 # Non-sensitive config passed directly to Helm via -f (keys match chart schemas).
 GLOBAL_VALUES="${GLOBAL_VALUES:-$SCRIPT_DIR/global-values.yaml}"
+# Operator-provided secrets overlay (#1.2a) — SMTP/MSG91/Gmail/Maps keys and any
+# other real secrets. Gitignored (never committed); see global-secrets.yaml.example.
+# Optional: when present it is layered LAST in every helm deploy so it overrides
+# the committed placeholders in global-values.yaml AND the generated
+# global-credentials.yaml, keeping real secrets out of any committed file. When
+# absent, deploys behave exactly as before.
+GLOBAL_SECRETS="${GLOBAL_SECRETS:-$SCRIPT_DIR/global-secrets.yaml}"
+SECRETS_OPT=()
+[ -f "$GLOBAL_SECRETS" ] && SECRETS_OPT=(-f "$GLOBAL_SECRETS")
 
 # Signals-DPG git ref the network/consent config is fetched from at deploy time
 # (scripts/fetch-configs.sh). Default develop; pin to the api image build SHA for
@@ -181,6 +190,7 @@ function deploy_monitoring() {
         -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CREDS" \
+        "${SECRETS_OPT[@]}" \
         --wait --timeout 10m
 }
 
@@ -198,6 +208,7 @@ function deploy_common_services() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_CREDS" \
+        "${SECRETS_OPT[@]}" \
         --wait --timeout 5m
 }
 
@@ -244,6 +255,7 @@ function deploy_signals() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_CREDS" \
+        "${SECRETS_OPT[@]}" \
         --wait --timeout 10m
 }
 
@@ -258,6 +270,7 @@ function deploy_aggregator() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_CREDS" \
+        "${SECRETS_OPT[@]}" \
         --wait --timeout 10m
 }
 
@@ -415,13 +428,13 @@ function dry_run() {
     fetch_signals_configs
     fetch_aggregator_configs
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
-        -f "$GLOBAL_VALUES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_VALUES" -f "$GLOBAL_CREDS" "${SECRETS_OPT[@]}" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" "${SECRETS_OPT[@]}" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" "${SECRETS_OPT[@]}" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_CREDS" "${SECRETS_OPT[@]}" --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────
