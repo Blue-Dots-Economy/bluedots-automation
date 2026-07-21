@@ -19,6 +19,17 @@ loginRateLimit:
     host: common-services-redis-master.common-services.svc.cluster.local
     port: 6379
 
+# Block the Keycloak admin CONSOLE (web UI) from the public ingress (#1.7).
+# When enabled, Kong request-termination (403) is attached to
+# /auth/admin/master/console only, so the admin REST API under
+# /auth/admin/realms/ — which aggregator-api's Keycloak admin client reaches
+# via the PUBLIC KEYCLOAK_URL — keeps working. Reach the console via
+# `kubectl port-forward` / VPN instead. Default OFF: enabling is a deliberate
+# per-environment opt-in (this ingress cannot be validated by CI, only by a
+# live `install.sh dry_run`). Override via global.adminConsoleBlock.enabled.
+adminConsoleBlock:
+  enabled: false
+
 replicaCount: 1
 image:
   repository: aggregator-dpg/keycloak
