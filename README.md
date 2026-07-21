@@ -127,8 +127,10 @@ just deliver it:
 
 > `consent_text` no longer appears in the deployed `network.json` — consent is
 > served through the consent ConfigMap above, so its absence from network config
-> is **expected, not a gap**. Network schemas (`network.json`) remain sourced
-> upstream from Signals-DPG; this repo only syncs the deployed copy.
+> is **expected, not a gap**. Network schemas and consent are sourced upstream
+> from the unified `Blue-Dots-Economy/bluedots-schemas` repo (fetched
+> fresh each deploy by `scripts/fetch-configs.sh`); this repo only syncs the
+> deployed copy.
 
 **Support/grievance email is deploy-time configurable.** The consent JSON carries
 a `__SUPPORT_EMAIL__` placeholder in its T&C / Privacy / Grievances copy; the

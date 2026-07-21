@@ -20,13 +20,14 @@ GLOBAL_CLOUD_VALUES="${GLOBAL_CLOUD_VALUES:-$SCRIPT_DIR/global-cloud-values.yaml
 # Non-sensitive config passed directly to Helm via -f (keys match chart schemas).
 GLOBAL_VALUES="${GLOBAL_VALUES:-$SCRIPT_DIR/global-values.yaml}"
 
-# Signals-DPG git ref the network/consent config is fetched from at deploy time
-# (scripts/fetch-configs.sh). Default develop; pin to the api image build SHA for
-# prod to avoid config/code skew.
-SIGNALS_DPG_REF="${SIGNALS_DPG_REF:-develop}"
-# Aggregator-DPG git ref the aggregator consent config is fetched from at deploy
-# time (scripts/fetch-configs.sh aggregator). Default develop; pin per env.
-AGGREGATOR_DPG_REF="${AGGREGATOR_DPG_REF:-develop}"
+# Git ref the network/consent config is fetched from at deploy time from the
+# unified schemas repo Blue-Dots-Economy/bluedots-schemas
+# (scripts/fetch-configs.sh). Default main; pin to a tag/SHA for prod to avoid
+# config/code skew.
+SIGNALS_DPG_REF="${SIGNALS_DPG_REF:-main}"
+# Ref the aggregator consent doc is fetched from (same schemas repo,
+# scripts/fetch-configs.sh aggregator). Default main; pin per env.
+AGGREGATOR_DPG_REF="${AGGREGATOR_DPG_REF:-main}"
 
 # Namespaces.
 CS_NS="${CS_NS:-common-services}"
@@ -214,20 +215,22 @@ function apply_kong_crds() {
 }
 
 # 2b) signals (api, ui, notification, match-score) — uses shared common-services DBs
-# Fetch the served network's network.json + consent.json from canonical
-# Signals-DPG (driven by _network/_brand in global-values.yaml) into the chart's
-# files/ dir, where schemas-configmap.yaml renders them into the -schemas
-# ConfigMap. Fetched fresh each deploy; not committed → can't drift.
+# Fetch the served network's network.json + consent.json from the unified schemas
+# repo bluedots-schemas (driven by _network/_brand in
+# global-values.yaml) into the chart's files/ dir, where schemas-configmap.yaml
+# renders them into the -schemas ConfigMap. Fetched fresh each deploy; not
+# committed → can't drift.
 function fetch_signals_configs() {
     bash "$REPO_ROOT/scripts/fetch-configs.sh" signals \
         --global-values "$GLOBAL_VALUES" \
         --ref "$SIGNALS_DPG_REF"
 }
 
-# Fetch the aggregator consent (FULL doc, brand>network>default) from canonical
-# Aggregator-DPG into helm/aggregator/files/consent/consent.json, where
-# consent-configmap.yaml renders it into the {release}-consent ConfigMap.
-# Fetched fresh each deploy; not committed → can't drift.
+# Fetch the aggregator consent (FULL doc, brand>network fallback) from the unified
+# schemas repo bluedots-schemas into
+# helm/aggregator/files/consent/consent.json, where consent-configmap.yaml renders
+# it into the {release}-consent ConfigMap. Fetched fresh each deploy; not
+# committed → can't drift.
 function fetch_aggregator_configs() {
     bash "$REPO_ROOT/scripts/fetch-configs.sh" aggregator \
         --global-values "$GLOBAL_VALUES" \

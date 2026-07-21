@@ -39,7 +39,7 @@ The signals migrate-job does **not** vendor a `schema.sql` in this repo. A `migr
 
 ## Consent config is ConfigMap-delivered (not baked into images)
 
-Consent text/versions ship via ConfigMap so they change with a file edit + rollout, no rebuild. This repo is the downstream sync; canonical content lives in the app repos. The two charts deliver it differently — a real trap:
+Consent text/versions ship via ConfigMap so they change with a file edit + rollout, no rebuild. This repo is the downstream sync; canonical content lives in the unified schemas repo `Blue-Dots-Economy/bluedots-schemas` (per-network dirs at the repo root, e.g. `blue_dot/consent.json`, `blue_dot/upsdm/consent.json`), fetched at deploy time by `scripts/fetch-configs.sh`. The two charts deliver it differently — a real trap:
 
 - **Signals** — source `helm/signals/charts/api/files/consent/<network>.json` (+ optional brand override `<network>.<brand>.json`), selected by `api.schemas.consentNetwork`/`consentBrand`. `schemas-configmap.yaml` renders `consent.json` next to the network schemas; the api reads it because `CONSENT_CONFIG_SOURCE: local` is pinned in values. It **deep-merges a brand file (partial) over the network default — so both files must be delivered**. A `checksum/schemas` annotation rolls pods on change; missing consent files **fail the template render**.
 - **Aggregator** — source `helm/aggregator/files/consent/consent.json`, rendered into a `{release}-consent` ConfigMap, mounted single-file (subPath) into **both web and api** at `/app/config/<network>[/<brand>]/schemas/aggregator/consent.json`. Aggregator brand consent is a **FULL** document (not a partial). **subPath does NOT hot-update** → a consent change needs a rollout restart of web + api.
