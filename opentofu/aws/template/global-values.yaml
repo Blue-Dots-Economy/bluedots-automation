@@ -32,8 +32,8 @@ _eks_node_disk_size_gb:  &eks_node_disk_size_gb  40
 #   eks_node_capacity_type: "SPOT"   # ~$40-45/mo vs ~$124 on-demand
 # Changing capacity_type on an existing node group forces a replacement.
 _eks_node_capacity_type: &eks_node_capacity_type "ON_DEMAND"
-_eks_node_count_min:     &eks_node_count_min     1
-_eks_node_count_max:     &eks_node_count_max     2
+_eks_node_count_min:     &eks_node_count_min     2
+_eks_node_count_max:     &eks_node_count_max     6
 
 # ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
 _smtp_host:         &smtp_host         "smtp.gmail.com"

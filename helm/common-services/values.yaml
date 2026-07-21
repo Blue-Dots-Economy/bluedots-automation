@@ -451,8 +451,9 @@ clusterAutoscaler:
   enabled: false
   image:
     repository: registry.k8s.io/autoscaling/cluster-autoscaler
-    # Pin to the cluster's Kubernetes minor version (EKS >= 1.24). Bump with the cluster.
-    tag: v1.31.1
+    # Pin to the cluster's Kubernetes minor version (EKS >= 1.24). Bump with the
+    # cluster. Cluster is k8s 1.35 (_eks_cluster_version anchor) → CA v1.35.x.
+    tag: v1.35.0
     pullPolicy: IfNotPresent
   # Filled from the eks module via global-cloud-values.yaml at deploy time.
   clusterName: ""
