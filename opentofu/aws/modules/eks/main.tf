@@ -1,12 +1,12 @@
 locals {
   environment_name = "${var.building_block}-${var.environment}"
   cluster_name     = "${local.environment_name}-cluster"
-  
+
   common_tags = {
-    Environment    = var.environment
-    BuildingBlock  = var.building_block
-    ManagedBy      = "Terraform"
-    CloudProvider  = "AWS"
+    Environment   = var.environment
+    BuildingBlock = var.building_block
+    ManagedBy     = "Terraform"
+    CloudProvider = "AWS"
   }
 }
 
@@ -85,8 +85,8 @@ resource "aws_eks_cluster" "cluster" {
   role_arn = aws_iam_role.eks_cluster.arn
 
   vpc_config {
-    subnet_ids         = var.public_subnet_ids
-    security_group_ids = var.security_group_ids
+    subnet_ids              = var.public_subnet_ids
+    security_group_ids      = var.security_group_ids
     endpoint_public_access  = var.endpoint_public_access
     endpoint_private_access = var.endpoint_private_access
   }
@@ -190,18 +190,18 @@ resource "aws_eks_node_group" "default" {
 module "ebs_csi_driver_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.48"
-  
+
   role_name_prefix = "${local.cluster_name}-ebs-csi-"
-  
+
   attach_ebs_csi_policy = true
-  
+
   oidc_providers = {
     main = {
       provider_arn               = aws_iam_openid_connect_provider.oidc.arn
       namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
     }
   }
-  
+
   tags = local.common_tags
 }
 # -------------------------------
