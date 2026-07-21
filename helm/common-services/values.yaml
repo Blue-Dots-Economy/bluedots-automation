@@ -452,3 +452,27 @@ metrics-server:
   args:
     - --kubelet-insecure-tls          # required on EKS (self-signed kubelet cert)
     - --kubelet-preferred-address-types=InternalIP
+
+# Kubernetes Cluster Autoscaler (#1.6). Scales the EKS managed node group's ASG
+# between the tofu node_count_min/max via ASG auto-discovery. DEFAULT OFF: enable
+# per environment once the IRSA role ARN (eks module output
+# cluster_autoscaler_role_arn) + clusterName are wired in via the generated
+# global-cloud-values.yaml, and after an `install.sh dry_run` against the cluster.
+clusterAutoscaler:
+  enabled: false
+  image:
+    repository: registry.k8s.io/autoscaling/cluster-autoscaler
+    # Pin to the cluster's Kubernetes minor version (EKS >= 1.24). Bump with the
+    # cluster. Cluster is k8s 1.35 (_eks_cluster_version anchor) → CA v1.35.x.
+    tag: v1.35.0
+    pullPolicy: IfNotPresent
+  # Filled from the eks module via global-cloud-values.yaml at deploy time.
+  clusterName: ""
+  awsRegion: ap-south-1
+  serviceAccount:
+    name: cluster-autoscaler
+    # IRSA role ARN — eks output `cluster_autoscaler_role_arn`.
+    roleArn: ""
+  resources:
+    requests: { cpu: 100m, memory: 300Mi }
+    limits: { cpu: 200m, memory: 500Mi }
