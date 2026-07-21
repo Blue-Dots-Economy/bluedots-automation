@@ -25,6 +25,10 @@ Resource requests/limits (Kong `replicaCount: 2`, cert-manager, Redis, `postgres
 
 `aggregator` values' `global.signalstack.actingOrgId` only exists **after** the signals migrate-job seeds the `organization` table. After deploying signals, run `./get-signalstack-org-id.sh` (queries shared Postgres for the `network_service` org id), set it in the aggregator config, then deploy aggregator. Skip it and aggregator login fails with `SIGNALSTACK_ORG_NOT_REGISTERED`. This is why the deploy order (signals before aggregator) is strict, not just conventional.
 
+## Signals schema — applied from the api image (no vendored `schema.sql`)
+
+The signals migrate-job does **not** vendor a `schema.sql` in this repo. A `migrate-ddl` initContainer runs the **api image itself** (`node apps/api/scripts/migrate.mjs`, i.e. `db:migrate:deploy`) as the app DB role: extension **preflight** → auto-baseline (legacy cutover) → one Drizzle `migrate()` over the committed `apps/api/drizzle/` ledger (declarative tables + the raw partitioned/geo tables as custom migrations). Because the schema ships inside the image and runs from that same image, the deployed schema always matches the running api build — **parity is automatic, nothing to keep in sync here**. A second `provision` container then upserts the integrating-DPG (aggregator-dpg) apikey from the only SQL still vendored, `provision_service_users.sql`. Extensions are created upstream by `common-services` (`postgresBootstrap`) as the RDS master; the migrate step **asserts they exist and aborts loudly if not** (it never creates them — the app role is not a superuser).
+
 ## Consent config is ConfigMap-delivered (not baked into images)
 
 Consent text/versions ship via ConfigMap so they change with a file edit + rollout, no rebuild. This repo is the downstream sync; canonical content lives in the app repos. The two charts deliver it differently — a real trap:

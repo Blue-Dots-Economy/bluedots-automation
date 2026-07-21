@@ -113,6 +113,10 @@ Two kinds: **trunk** branches that integrate work, and **per-deployment** branch
 
 **Per-deployment branches:** each live deployment has its own long-lived branch (from trunk), carrying only that deployment's config — network JSON schemas, image tags, public hostnames, its own `opentofu/aws/<env>/`. **Never deploy a customer environment from `main`; use its branch.** The set drifts over time — treat `git ls-remote --heads origin` as the source of truth, not a hardcoded list here. As of 2026-07 the prod/live deployment branches are `blue-dots-prod`, `orange-dot-prod`, and `private-cluster` (`purple-dots-prod`, on the old `helmcharts/` layout, has been retired from the remote).
 
+## Authoring pull requests
+
+When you open a PR, include an **In Plain Terms** section in the description: a short, jargon-free explanation a non-expert teammate can follow — what the problem was and what the change does, in everyday language — alongside the usual Summary / Release Notes. Skip it only for a pure chore with no behavioural effect. This lives here as a Claude authoring rule rather than in the GitHub PR template on purpose, so PRs opened from other tools/flows aren't forced through it. (The `develop-pr-gate` still enforces only Release Notes + a `README.md`/`CLAUDE.md` update — see `.claude/rules/pr-gate.md`.)
+
 ---
 
 ## Prerequisites
