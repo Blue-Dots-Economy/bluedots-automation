@@ -10,7 +10,7 @@ locals {
   node_count_max      = local.global_vars.global.eks_node_count_max
 
   enable_cloudwatch_observability = try(local.global_vars.global.enable_cloudwatch_observability, false)
-  cloudwatch_enabled_log_types    = try(local.global_vars.global.cloudwatch_enabled_log_types, ["api", "audit", "authenticator", "controllerManager", "scheduler"])
+  cloudwatch_enabled_log_types    = try(local.global_vars.global.cloudwatch_enabled_log_types, ["api", "controllerManager", "scheduler"])
   endpoint_public_access          = try(local.global_vars.global.eks_endpoint_public_access, true)
   endpoint_private_access         = try(local.global_vars.global.eks_endpoint_private_access, false)
   node_count_desired              = try(local.global_vars.global.eks_node_count_desired, null)

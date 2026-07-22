@@ -186,10 +186,10 @@ global:
   enable_cloudwatch_observability: false
   cloudwatch_enabled_log_types:
     - api
-    - audit
-    - authenticator
     - controllerManager
     - scheduler
+    # - audit
+    # - authenticator
 
   # ══════════════════════════════════════════════════════════════════════════
   # Helm-consumed — passed straight through to the signals + aggregator charts
