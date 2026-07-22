@@ -1,0 +1,20 @@
+{{- /*
+One ConfigMap per network holding the export manifest (the reviewed contract
+of what data may ship). Rendered from files/manifests/<network>.json — a copy
+of the source of truth in adhoc-scripts/signals-s3-export/manifests/. NEVER
+`kubectl edit` these: change the source repo, sync the copy here, upgrade the
+release. The exporter records the manifest sha256 in every S3 run manifest,
+so drift is detectable.
+*/ -}}
+{{- range .Values.networks }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dpg-s3-export.fullname" $ }}-manifest-{{ include "dpg-s3-export.instanceSlug" . }}
+  labels:
+    {{- include "dpg-s3-export.labels" $ | nindent 4 }}
+data:
+  {{ . }}.json: |-
+{{ $.Files.Get (printf "files/manifests/%s.json" .) | required (printf "missing files/manifests/%s.json — copy it from adhoc-scripts/signals-s3-export/manifests/" .) | indent 4 }}
+{{- end }}

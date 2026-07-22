@@ -40,3 +40,8 @@ dependencies:
     repository: "file://../search-embeddings"
     alias: search-embeddings
     condition: search-embeddings.enabled
+  - name: dpg-s3-export
+    version: 0.1.0
+    repository: "file://../s3-export"
+    alias: s3-export
+    condition: s3-export.enabled

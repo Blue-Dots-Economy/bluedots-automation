@@ -1,0 +1,91 @@
+{{- /*
+One CronJob per Signals instance. Stagger schedules between instances (e.g.
+:00 / :30) via each entry's `schedule`. Adding an instance = one values entry
++ its DB secret; same image, same network manifest ConfigMap.
+*/ -}}
+{{- range .Values.instances }}
+{{- $slug := include "dpg-s3-export.instanceSlug" .id }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "dpg-s3-export.fullname" $ }}-{{ $slug }}
+  labels:
+    {{- include "dpg-s3-export.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $slug }}
+spec:
+  schedule: {{ .schedule | quote }}
+  timeZone: {{ $.Values.cronJob.timeZone | quote }}
+  suspend: {{ .suspend | default false }}
+  concurrencyPolicy: {{ $.Values.cronJob.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ $.Values.cronJob.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ $.Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $.Values.cronJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $.Values.cronJob.backoffLimit }}
+      activeDeadlineSeconds: {{ $.Values.cronJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          annotations:
+            checksum/manifest: {{ include (print $.Template.BasePath "/manifest-configmap.yaml") $ | sha256sum }}
+            {{- with $.Values.podAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          labels:
+            {{- include "dpg-s3-export.selectorLabels" $ | nindent 12 }}
+            app.kubernetes.io/component: {{ $slug }}
+            {{- with $.Values.podLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        spec:
+          {{- with $.Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "dpg-s3-export.serviceAccountName" $ }}
+          restartPolicy: Never
+          securityContext:
+            {{- toYaml $.Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: exporter
+              image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              securityContext:
+                {{- toYaml $.Values.securityContext | nindent 16 }}
+              envFrom:
+                - configMapRef:
+                    name: {{ include "dpg-s3-export.fullname" $ }}-env-{{ $slug }}
+                - secretRef:
+                    name: {{ .existingDatabaseSecret | default (printf "%s-db-%s" (include "dpg-s3-export.fullname" $) $slug) }}
+                {{- if $.Values.s3.existingCredentialsSecret }}
+                - secretRef:
+                    name: {{ $.Values.s3.existingCredentialsSecret }}
+                {{- end }}
+              volumeMounts:
+                - name: manifest
+                  mountPath: /etc/signals-export
+                  readOnly: true
+                - name: work
+                  mountPath: /app/data/work
+              resources:
+                {{- toYaml $.Values.resources | nindent 16 }}
+          volumes:
+            - name: manifest
+              configMap:
+                name: {{ include "dpg-s3-export.fullname" $ }}-manifest-{{ include "dpg-s3-export.instanceSlug" .network }}
+            - name: work
+              emptyDir: {}
+          {{- with $.Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $.Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $.Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
