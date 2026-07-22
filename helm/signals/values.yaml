@@ -478,6 +478,27 @@ search:
       EMBEDDING_API_KEY: ""
 
 
+# ── s3-export — Signals non-PII export CronJob (adhoc-scripts image) ────────
+# Default OFF: enable per environment where the campaign-analytics export
+# should run. One `instances` entry per Signals instance (own database);
+# instances sharing one DB must deploy only one entry. DATABASE_URL secrets:
+# pre-create and reference via existingDatabaseSecret (preferred), or pass
+# databaseUrl via --set at install time — never commit it.
+s3-export:
+  enabled: false
+  imagePullSecrets: *image_pull_secrets
+  s3:
+    bucket: signals-export
+    region: ap-south-1
+  # serviceAccount:
+  #   annotations:
+  #     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/signals-s3-export
+  instances: []
+  #  - id: blue_dot_up
+  #    network: blue_dot
+  #    schedule: "0 0,12 * * *"
+  #    existingDatabaseSecret: signals-s3-export-db-blue-dot-up
+
 # Namespace-scoped ingress isolation (#1.12). Default OFF: enabling applies an
 # Ingress-only NetworkPolicy (templates/networkpolicy.yaml) that restricts which
 # namespaces may connect TO signals pods. Egress is intentionally unrestricted.
