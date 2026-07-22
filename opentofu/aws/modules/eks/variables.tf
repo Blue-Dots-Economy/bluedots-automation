@@ -84,7 +84,7 @@ variable "private_ingressgateway_ip" {
 variable "cloudwatch_enabled_log_types" {
   description = "EKS control plane log types to ship to CloudWatch Logs"
   type        = list(string)
-  default     = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  default     = ["api", "controllerManager", "scheduler"]
 }
 
 variable "security_group_ids" {

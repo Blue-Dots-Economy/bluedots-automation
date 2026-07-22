@@ -251,7 +251,7 @@ cert-manager:
 # FQDN (e.g. common-services-postgresql.common-services.svc / common-services-redis-master...).
 #
 # Credentials below are layered in at deploy time from the generated
-# global-credentials.yaml. Left blank in-repo so nothing sensitive is
+# global-secrets.yaml. Left blank in-repo so nothing sensitive is
 # committed; templates/secrets.yaml skips rendering when blank.
 # =============================================================================
 credentials:

@@ -1,13 +1,15 @@
-# =============================================================================
-# Environment inputs — edit values in this section only.
-# Everything inside global: references these anchors.
-# =============================================================================
-
-# ── Identity ──────────────────────────────────────────────────────────────────
+# ── Infrastructure Configuration ────────────────────────────────────────────────────
 _building_block: &building_block "purple-dots"
 _environment:    &environment    "dev"
+_cloud_storage_region: &cloud_storage_region "ap-south-1"
+_eks_cluster_version:    &eks_cluster_version    "1.35"
+_eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
+_eks_node_disk_size_gb:  &eks_node_disk_size_gb  40
+_eks_node_capacity_type: &eks_node_capacity_type "ON_DEMAND"
+_eks_node_count_min:     &eks_node_count_min     2
+_eks_node_count_max:     &eks_node_count_max     6
 
-
+# ── Signals / Aggregator hostnames ─────────────────────────────────────────────
 _signals_public_hosts: &signals_public_hosts
   - "example.domain.com"
   - "example.domain.com"
@@ -20,92 +22,43 @@ _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/see
 
 _network: &network "blue_dot"
 _brand: &brand ""
-# ── AWS ───────────────────────────────────────────────────────────────────────
-_cloud_storage_region: &cloud_storage_region "ap-south-1"
 
-# ── EKS ───────────────────────────────────────────────────────────────────────
-_eks_cluster_version:    &eks_cluster_version    "1.35"
-_eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
-_eks_node_disk_size_gb:  &eks_node_disk_size_gb  40
-# EC2 purchase option for the managed node group. Default is the safe ON_DEMAND
-# profile. PILOT COST OPT-IN (set on the pilot deployment branch, NOT here):
-#   eks_node_capacity_type: "SPOT"   # ~$40-45/mo vs ~$124 on-demand
-# Changing capacity_type on an existing node group forces a replacement.
-_eks_node_capacity_type: &eks_node_capacity_type "ON_DEMAND"
-_eks_node_count_min:     &eks_node_count_min     2
-_eks_node_count_max:     &eks_node_count_max     6
-
-# ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
+# ── SMTP Configuration ────────────────────────────────────────────────────
 _smtp_host:         &smtp_host         "smtp.gmail.com"
 _smtp_port:         &smtp_port         587
 _smtp_user:         &smtp_user         "sender@example.com"
 _smtp_password:     &smtp_password     "changeme" # smtp_password must be a Gmail App Password: eg. "abcd efgh ijkl mnop"
 _smtp_from_display: &smtp_from_display "Blue Dots"
-
-# ── MSG91 (shared by notification service and aggregator) ────────────────────
-_msg91_auth_key:    &msg91_auth_key    "changeme"
-_msg91_template_id: &msg91_template_id "changeme"
-
-# ── Alert recipients ──────────────────────────────────────────────────────────
-_alert_email:             &alert_email             "alerts@example.com"
 _aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
-_signals_google_maps_api_key: &signals_google_maps_api_key ""
+support_email: &support_email "support@example.com"
 
 # ── API rate limiting (Kong) ────────────────────────────────────────────────────
-# Master ON/OFF toggle for per-API rate limiting across signals + aggregator.
-_api_rate_limit_enabled: &api_rate_limit_enabled false
-# Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
-_api_rate_limit_per_minute: &api_rate_limit_per_minute 600
-
+_api_rate_limit_enabled: &api_rate_limit_enabled false # Master ON/OFF toggle for per-API rate limiting across signals + aggregator.
+_api_rate_limit_per_minute: &api_rate_limit_per_minute 600 # Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
 # ── OTP-abuse rate limiting (Kong) ──────────────────────────────────────────────
 _otp_rate_limit_enabled:    &otp_rate_limit_enabled    true
 _signals_otp_per_minute:    &signals_otp_per_minute    5    # a real login needs ~1–3
 _aggregator_otp_per_minute: &aggregator_otp_per_minute 20   # login flow ≈ 3 POSTs/login
 
-support_email: &support_email "support@example.com"
-# =============================================================================
-# Structure — do not edit below unless you know what you're changing.
-# =============================================================================
 
 global:
+  # ══════════════════════════════════════════════════════════════════════════
+  # Infra-consumed — read by terragrunt (opentofu/aws/_common/*.hcl) to
+  # provision AWS resources. Not read by any Helm chart directly.
+  # ══════════════════════════════════════════════════════════════════════════
   building_block: *building_block
   environment:    *environment
+  cloud_storage_region: *cloud_storage_region
 
+  # Feeds output-file's CORS/network locals (signals_allowed_origins, network).
   signals_public_hosts:   *signals_public_hosts
   signals_host_bindings:  *signals_host_bindings
   network:                *network
   signals_served_domains: *signals_served_domains
 
-  # ── Signals Helm config ────────────────────────────────────────────────────
-  publicHosts: *signals_public_hosts
+  # Used by storage.hcl to compute the S3 bucket's CORS allowed origins.
+  # (Same anchor also feeds the Helm-consumed publicHost below.)
   aggregator_host: *aggregator_host
-  orgHierarchyEnabled: true
-
-  # ── Aggregator Helm config ─────────────────────────────────────────────────
-  publicHost:         *aggregator_host
-  aggregatorNetwork:  *network
-  aggregatorBrand:    *brand
-  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
-  signalstack:
-    # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
-    actingOrgId: ""
-  dataPlatform:
-    namespace:       common-services
-    postgresService: common-services-postgresql
-    redisService:    common-services-redis-master
-
-  # ── API rate limiting (Kong) — shared by the signals/aggregator/search charts'
-  apiRateLimit:
-    enabled:       *api_rate_limit_enabled
-    defaultMinute: *api_rate_limit_per_minute
-
-  # ── OTP-abuse rate limiting (Kong) — signals api + aggregator keycloak charts
-  otpRateLimit:
-    enabled:          *otp_rate_limit_enabled
-    signalsMinute:    *signals_otp_per_minute
-    aggregatorMinute: *aggregator_otp_per_minute
-
-  cloud_storage_region: *cloud_storage_region
 
   # Network configuration (optional - set create_network: false to use an existing VPC)
   create_network: true
@@ -170,11 +123,8 @@ global:
   #   - "private-eks-a"
 
   # ── EKS API endpoint access ──────────────────────────────────────────────────
-  # Controls whether kubectl reaches the API server from the internet or VPC only.
-  # Default (below) = public. To go private: first set BOTH true (public+private),
-  # verify from the bastion, then set public:false (private-only). See the KT guide.
-  # eks_endpoint_public_access:  true
-  # eks_endpoint_private_access: false
+  eks_endpoint_public_access:  true
+  eks_endpoint_private_access: false
 
 # ── Pritunl VPN  & bastion host ────────────────────────────────────────────────────────
   pritunl_enabled: true
@@ -225,26 +175,52 @@ global:
     - "system:serviceaccount:aggregator:aggregator-api"
     - "system:serviceaccount:aggregator:aggregator-worker"
 
-  # ── Notification service (signals) ─────────────────────────────────────────
-  signals_google_maps_api_key:   *signals_google_maps_api_key
-  notification_gmail_user:       *smtp_user
-  notification_gmail_pass:       *smtp_password
-  notification_msg91_auth_key:   *msg91_auth_key
-  notification_msg91_template_id: *msg91_template_id
-
-  # ── Aggregator mail (secrets only — non-secret config moved to root sections below) ──
-  aggregator_smtp_user:     *smtp_user
-  aggregator_smtp_password: *smtp_password
-  aggregator_msg91_auth_key: *msg91_auth_key
+  # Read by terragrunt and passed through to the output-file module, which
+  # bakes them into the generated global-secrets.yaml (GMAIL_USER / smtpUser).
+  # The corresponding passwords/keys are UPDATE_THIS_VALUE placeholders set
+  # directly in that generated file — not here.
+  notification_gmail_user: *smtp_user
+  aggregator_smtp_user:    *smtp_user
 
   # CloudWatch observability (Container Insights add-on)
   enable_cloudwatch_observability: false
   cloudwatch_enabled_log_types:
     - api
-    - audit
-    - authenticator
     - controllerManager
     - scheduler
+    # - audit
+    # - authenticator
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Helm-consumed — passed straight through to the signals + aggregator charts
+  # via `.Values.global.*` (shared umbrella-chart values). Not read by
+  # terragrunt.
+  # ══════════════════════════════════════════════════════════════════════════
+  publicHosts: *signals_public_hosts
+  orgHierarchyEnabled: true
+
+  publicHost:         *aggregator_host
+  aggregatorNetwork:  *network
+  aggregatorBrand:    *brand
+  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
+  signalstack:
+    # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
+    actingOrgId: ""
+  dataPlatform:
+    namespace:       common-services
+    postgresService: common-services-postgresql
+    redisService:    common-services-redis-master
+
+  # ── API rate limiting (Kong) — shared by the signals/aggregator/search charts'
+  apiRateLimit:
+    enabled:       *api_rate_limit_enabled
+    defaultMinute: *api_rate_limit_per_minute
+
+  # ── OTP-abuse rate limiting (Kong) — signals api + aggregator keycloak charts
+  otpRateLimit:
+    enabled:          *otp_rate_limit_enabled
+    signalsMinute:    *signals_otp_per_minute
+    aggregatorMinute: *aggregator_otp_per_minute
 
 prometheus:
   grafana:
@@ -259,9 +235,6 @@ prometheus:
           hosts:
             - *grafana_host
 
-# ── SMTP (shared by notification, aggregator, and monitoring) ─────────────────
-# smtp_password must be a Gmail App Password:
-#   Google Account → Security → 2-Step Verification → App passwords
 alerting:
   email:
     enabled: false
@@ -269,10 +242,8 @@ alerting:
     smtpFrom: *smtp_user
     smtpAuthUsername: *smtp_user
     smtpAuthPassword: *smtp_password
-    to: *alert_email
+    to: "CHANGE-ME"
   discord:
-    # Set enabled: true and replace webhooks to activate Discord notifications.
-    # Create one webhook per channel: Channel Settings → Integrations → Webhooks.
     enabled: false
     criticalWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
     warningWebhook:  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
@@ -299,7 +270,8 @@ mail:
     auth: true
 
 keycloak:
-  msg91TemplateId: *msg91_template_id
+  # msg91TemplateId is set directly in the generated global-secrets.yaml
+  # (UPDATE_THIS_VALUE placeholder) — not here.
 
 # =============================================================================
 # Signals chart config (non-sensitive, passed directly via -f global-values.yaml)
@@ -317,19 +289,12 @@ api:
     NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
     NOTIFICATION_FROM_EMAIL: *smtp_user
     SERVED_DOMAINS: *signals_served_domains
-    # ── Self-signup gate + login channels (PR signals-dpg#276) ──────────────
+    # ── Self-signup gate + login channels ──────────────
     SELF_SIGNUP_MODE: "gated"           # gated (default) = public self-signup OFF; allowed = on
     LOGIN_CHANNELS: "phone,email"       # allowed OTP channels; subset of: email, phone
-    # ── Inter-instance peer auth rollout gate (PR signals-dpg#255) ──────────
-    # permissive (default): verify token if present, allow missing (mixed-version
-    # rollout). enforced: valid token required on every peer call. Pairs with the
-    # INSTANCE_SHARED_SECRET set in global-credentials.yaml api.secrets.data.
     PEER_AUTH_MODE: "permissive"
-    # ── Contact-support form recipient (PR signals-dpg#281) ─────────────────
     SUPPORT_EMAIL: *support_email          # contact-form emails go here (sender must be SPF/DMARC authorized)
-    # ── Consent-copy support email (PR signals-dpg#286) ─────────────────────
     CONSENT_SUPPORT_EMAIL: "hello@bluedotseconomy.org"  # rendered into T&C/Privacy/Grievances consent copy at load
-    # ── PII location jitter, metres (PR signals-dpg#271) ────────────────────
     PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
     PII_LOCATION_JITTER_MAX_METERS: "250"   # 50–1000
   postgres:
@@ -345,12 +310,9 @@ api:
 ui:
   apiUpstream: "http://signals-api:2742"
   uiVariant: "signals"
-  # hostBindings is conditionally set in global-cloud-values.yaml — only emitted
-  # when signals_host_bindings is non-empty, to avoid nginx conflicting parameter error.
   runtimeConfig:
     VITE_DEFAULT_VIEW_MODE: "map"
     VITE_MAP_PROVIDER: "google-maps"
-    VITE_GOOGLE_MAPS_API_KEY: *signals_google_maps_api_key
     VITE_ACTION_POLL_INTERVAL_MS: "30000"
     VITE_NETWORK_NAME: *network
     VITE_BRAND_NAME: *brand

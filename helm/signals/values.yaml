@@ -428,7 +428,7 @@ match-score:
 # pgcrypto/cube/earthdistance extensions are created by the common-services
 # Postgres bootstrap. credentials.postgresql.password / credentials.redis.password
 # above MUST match the common-services `dpg-password` / `redis-password`
-# (layered in from the generated global-credentials.yaml at deploy time).
+# (layered in from the generated global-secrets.yaml at deploy time).
 
 # ─── Signals search engine (TEI embeddings + ingestion worker + query API) ──
 # `search` indexes items into item_search (pgvector+PostGIS) and serves

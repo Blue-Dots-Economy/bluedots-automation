@@ -139,18 +139,31 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
   (`rl-auth`/`rl-api`/`rl-public`). Toggle with `_api_rate_limit_enabled` /
   `_api_rate_limit_per_minute`.
 - **Auth channels:**
-  - **SMS OTP (MSG91)** — anchors `_msg91_auth_key` / `_msg91_template_id` →
-    `MSG91_AUTH_KEY` / `MSG91_TEMPLATE_ID`.
-  - **Email (SMTP)** — anchors `_smtp_host/_port/_user/_password/_from_display`
-    (Gmail App Password if using `smtp.gmail.com`). Shared by notification,
-    aggregator, monitoring.
-  - `AUTH_SECRET` is generated into `global-credentials.yaml` (do not hand-set).
+  - **SMS OTP (MSG91)** — the auth key and each service's own template id
+    (`notification-service.secrets.data.MSG91_AUTH_KEY`/`MSG91_TEMPLATE_ID`,
+    aggregator `secrets.msg91AuthKey`/`keycloak.msg91TemplateId`) are
+    `UPDATE_THIS_VALUE` placeholders in the **generated** `global-secrets.yaml`
+    — edit them there directly (post-generation, no `global-values.yaml` edit
+    or re-apply).
+  - **Email (SMTP)** — anchors `_smtp_host/_port/_user/_from_display` in
+    `global-values.yaml`; the notification-service and aggregator app
+    passwords (`GMAIL_PASS`, `secrets.smtpPassword`) are `UPDATE_THIS_VALUE`
+    placeholders in the generated `global-secrets.yaml` (Gmail App
+    Password if using `smtp.gmail.com`). The `_smtp_password` anchor still
+    lives in `global-values.yaml` — it only feeds monitoring's alertmanager
+    (`alerting.email.smtpAuthPassword`), a separate copy.
+  - `AUTH_SECRET` is generated into `global-secrets.yaml` (do not hand-set).
 - **Fetch / data limits (signals api config):** `ALLOW_EXTRA_SCHEMA_DATA`
   (`"false"` = reject unknown fields) is set in the chart values. `BULK_MAX_ITEMS`
   (bulk-upload cap) is a supported api env var but not surfaced in the chart
   today — add it under `api.config` only if you need to override the app default.
-- **Geocoding / maps** — `_signals_google_maps_api_key`; `PHOTON_URL` defaults
-  to the public Photon.
+- **Geocoding / maps** — both the frontend Maps JS key
+  (`ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY`) and the backend geocoding key
+  (`api.secrets.data.GOOGLE_GEOCODING_API_KEY`, may be the same key with
+  Geocoding API also enabled) are `UPDATE_THIS_VALUE` placeholders in the
+  generated `global-secrets.yaml` — edit them there directly (no
+  `global-values.yaml` edit or re-apply needed). `PHOTON_URL` defaults to the
+  public Photon.
 - **Other** — `_alert_email`, `_aggregator_admin_emails`,
   `global.orgHierarchyEnabled` (default `true`).
 
@@ -171,7 +184,7 @@ All commands run from `opentofu/aws/<env>/`.
 
 1. **Infra** (creates the S3 backend, provisions VPC→EKS→IAM→storage→
    random_passwords→rds→output-file, writes kubeconfig, and **generates**
-   `global-credentials.yaml` + `global-cloud-values.yaml`):
+   `global-secrets.yaml` + `global-cloud-values.yaml`):
    ```bash
    bash install.sh                 # no-arg: create_tf_backend → create_tf_resources → apply_gp3_default_sc
    ```
@@ -238,7 +251,7 @@ config all set.
 | Auth channels | `global-values.yaml` | `_msg91_*`, `_smtp_*` |
 | Limits / rate | `global-values.yaml` / `api.config` | `ALLOW_EXTRA_SCHEMA_DATA`, `_api_rate_limit_*` (`BULK_MAX_ITEMS` = optional api env override) |
 | Image tags | `global-images.yaml` | per-service `repository`/`tag` |
-| Secrets | generated → `global-credentials.yaml` | `AUTH_SECRET`, DB/Redis passwords |
+| Secrets | generated → `global-secrets.yaml` | `AUTH_SECRET`, DB/Redis passwords |
 | actingOrgId | `global-values.yaml` (post-deploy) | `global.signalstack.actingOrgId` |
 
 See [DEPLOYMENT.md](../DEPLOYMENT.md) for the full `install.sh` function

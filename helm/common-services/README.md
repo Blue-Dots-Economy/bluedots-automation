@@ -26,7 +26,7 @@ false`) — Kong is the active controller. When RDS is provisioned the in-cluste
 ## Prerequisites
 
 - `kubectl` current-context pointed at the target cluster, `helm` v3.12+.
-- The generated values files exist in the env dir: `global-credentials.yaml` +
+- The generated values files exist in the env dir: `global-secrets.yaml` +
   `global-cloud-values.yaml` (run `bash install.sh create_tf_resources` first).
 - `gp3` must be the default StorageClass (Postgres/Redis PVCs bind to it) — the
   deploy step applies it for you.
@@ -60,7 +60,7 @@ helm upgrade --install common-services helm/common-services \
   -f "$ENV/global-images.yaml" \
   -f "$ENV/global-values.yaml" \
   -f "$ENV/global-cloud-values.yaml" \
-  -f "$ENV/global-credentials.yaml" \
+  -f "$ENV/global-secrets.yaml" \
   --wait --timeout 5m
 ```
 

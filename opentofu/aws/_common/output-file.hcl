@@ -12,16 +12,14 @@ locals {
   # schema mount, VITE_NETWORK_NAME) AND aggregator (aggregatorNetwork).
   network = try(local.global_vars.global.network, "orange_dot")
   # CORS origins: localhost dev + https://<each served host>.
-  signals_allowed_origins        = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
-  signals_google_maps_api_key    = try(local.global_vars.global.signals_google_maps_api_key, "")
-  notification_gmail_user        = try(local.global_vars.global.notification_gmail_user, "")
-  notification_gmail_pass        = try(local.global_vars.global.notification_gmail_pass, "")
-  notification_msg91_auth_key    = try(local.global_vars.global.notification_msg91_auth_key, "")
-  notification_msg91_template_id = try(local.global_vars.global.notification_msg91_template_id, "")
+  signals_allowed_origins = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
+  # notification_gmail_pass, notification_msg91_auth_key, notification_msg91_template_id,
+  # aggregator_smtp_password, aggregator_msg91_auth_key, and signals_google_maps_api_key are
+  # no longer read from global-values.yaml — global-secrets.yaml.tfpl bakes in
+  # "UPDATE_THIS_VALUE" placeholders for those instead; edit the generated file directly.
+  notification_gmail_user = try(local.global_vars.global.notification_gmail_user, "")
 
-  aggregator_smtp_user      = try(local.global_vars.global.aggregator_smtp_user, "")
-  aggregator_smtp_password  = try(local.global_vars.global.aggregator_smtp_password, "")
-  aggregator_msg91_auth_key = try(local.global_vars.global.aggregator_msg91_auth_key, "")
+  aggregator_smtp_user = try(local.global_vars.global.aggregator_smtp_user, "")
 
 }
 
@@ -119,15 +117,9 @@ inputs = {
   aggregator_session_key                  = dependency.random_passwords.outputs.aggregator_session_key
   aggregator_oidc_client_secret           = dependency.random_passwords.outputs.aggregator_oidc_client_secret
 
-  signals_google_maps_api_key    = local.signals_google_maps_api_key
-  notification_gmail_user        = local.notification_gmail_user
-  notification_gmail_pass        = local.notification_gmail_pass
-  notification_msg91_auth_key    = local.notification_msg91_auth_key
-  notification_msg91_template_id = local.notification_msg91_template_id
+  notification_gmail_user = local.notification_gmail_user
 
-  aggregator_smtp_user      = local.aggregator_smtp_user
-  aggregator_smtp_password  = local.aggregator_smtp_password
-  aggregator_msg91_auth_key = local.aggregator_msg91_auth_key
+  aggregator_smtp_user = local.aggregator_smtp_user
 
   monitoring_grafana_password = dependency.random_passwords.outputs.monitoring_grafana_password
 }

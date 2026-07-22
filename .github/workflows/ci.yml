@@ -40,7 +40,7 @@ jobs:
             # The aggregator chart guards its mandatory secrets (renders fail on
             # `change-me`/empty defaults); skip that block for the static check
             # with a placeholder existingSecret — real deploys validate real
-            # values from global-credentials.yaml.
+            # values from global-secrets.yaml.
             if [ "$chart" = aggregator ]; then
               helm lint "helm/$chart" --set global.existingSecret=ci-smoke
             else
