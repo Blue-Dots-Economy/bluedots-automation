@@ -1,0 +1,22 @@
+# Historical findings acknowledged after review — gitleaks scans full history
+# (secret-scanning.yml, fetch-depth 0), so these old blobs fail every PR even
+# though none of them is a live secret at HEAD. Each entry is one reviewed
+# fingerprint (commit:file:rule:line); new leaks still fail the scan.
+
+# Terragrunt mock_outputs — literal dummy values ("dummyredispass" etc.),
+# never real credentials. File since sanitized further on main.
+3c6765447f5c86750366634d4c55459f60aec1f2:opentofu/aws/_common/output-file.hcl:hashicorp-tf-password:62
+3c6765447f5c86750366634d4c55459f60aec1f2:opentofu/aws/_common/output-file.hcl:hashicorp-tf-password:63
+3c6765447f5c86750366634d4c55459f60aec1f2:opentofu/aws/_common/output-file.hcl:hashicorp-tf-password:64
+
+# Vendored upstream jaeger chart docs — example private keys from the
+# upstream project's own README/values/NOTES, not our material.
+bbe0720de31d9796400261c1fc6ea1950fbd7ac8:helm/monitoring/charts/jaeger/README.md:private-key:226
+bbe0720de31d9796400261c1fc6ea1950fbd7ac8:helm/monitoring/charts/jaeger/charts/elasticsearch/values.yaml:private-key:438
+bbe0720de31d9796400261c1fc6ea1950fbd7ac8:helm/monitoring/charts/jaeger/charts/kafka/templates/NOTES.txt:private-key:122
+
+# Google Maps browser key (VITE_*, client-exposed by design) committed in an
+# old blob; removed at HEAD. REAL key — restrict/rotate in Google Cloud
+# console (see PR discussion); ignoring here only unblocks CI, rotation is
+# the actual remediation.
+188102fc35ca4f61c0c2677ece2728895cebf906:opentofu/aws/modules/output-file/signals-values.yaml.tfpl:generic-api-key:74
