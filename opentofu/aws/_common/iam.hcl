@@ -42,4 +42,10 @@ inputs = {
   service_account_subjects   = lookup(local.global_vars.global, "service_account_subjects", [
     "system:serviceaccount:app:app-sa"
   ])
+
+  # Signals S3-export exporter IRSA role — created only when a bucket keyed
+  # "signals-export" exists in global.buckets (try() ⇒ "" otherwise, which
+  # disables the role in the iam module).
+  signals_export_bucket     = try(dependency.storage.outputs.buckets["signals-export"].id, "")
+  signals_export_sa_subject = lookup(local.global_vars.global, "signals_export_sa_subject", "system:serviceaccount:signals:signals-s3-export")
 }
