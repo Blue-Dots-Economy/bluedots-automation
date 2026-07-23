@@ -38,8 +38,6 @@ s3:
 export:
   # 'aggregator_onboarded' (default) or 'all' (explicit opt-in to everything).
   scope: aggregator_onboarded
-  # Date folders + run naming follow this timezone; manifests stay UTC.
-  timezone: Asia/Kolkata
 
 # ── instances — one CronJob + env ConfigMap (+ optional DB Secret) each ─────
 # Each Signals instance (own database) exports separately. If two instances
