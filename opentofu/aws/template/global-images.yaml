@@ -94,8 +94,8 @@ keycloak:
 postgresql:
   image:
     registry: docker.io
-    repository: bitnamilegacy/postgresql
-    tag: "17.6.0"
+    repository: vinodbbhorge/postgresql
+    tag: "17.6.0-pgvector-portable"
     pullPolicy: IfNotPresent
 
 redis:
