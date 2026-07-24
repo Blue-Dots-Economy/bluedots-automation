@@ -1,0 +1,63 @@
+# Build & push the custom PostgreSQL image (Bitnami base + portable pgvector).
+#
+# MANUAL TRIGGER ONLY (workflow_dispatch) — this is a rarely-rebuilt base image,
+# not part of the app CI/CD, so it never runs on push/PR. Dockerfile + rationale:
+# dockerfiles/postgres/Dockerfile.
+#
+# Pushes to GHCR using the built-in GITHUB_TOKEN (no extra secrets needed). The
+# image is ghcr.io/<repo-owner>/postgres-pgvector, tagged with the commit SHA it
+# was built from.
+name: Build Postgres pgvector image
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Target platforms (comma-separated)"
+        required: true
+        default: "linux/amd64"
+      push:
+        description: "Push to the registry (false = build only)"
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image ref (ghcr.io/<owner>/postgres-pgvector:<commit-sha>)
+        id: ref
+        run: |
+          owner_lc=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image=ghcr.io/${owner_lc}/postgres-pgvector:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: ${{ inputs.push }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: dockerfiles/postgres
+          file: dockerfiles/postgres/Dockerfile
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.ref.outputs.image }}
+          provenance: false
