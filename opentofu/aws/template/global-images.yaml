@@ -91,11 +91,16 @@ keycloak:
 # to the bitnamilegacy/* namespace, so keep these on bitnamilegacy or the pull
 # breaks. Pin to specific digests/tags for production stability.
 
+# Custom Bitnami-base image with a PORTABLE pgvector .so (stock Bitnami pgvector
+# faults with SIGILL building HNSW indexes on non-AVX-512 x86 nodes, e.g. m6a).
+# Built + published to the org GHCR by .github/workflows/build-postgres-image.yml
+# (Dockerfile: dockerfiles/postgres/Dockerfile); tag is the sha- of the build
+# commit. Requires global.security.allowInsecureImages (non-Bitnami repo).
 postgresql:
   image:
-    registry: docker.io
-    repository: bitnamilegacy/postgresql
-    tag: "17.6.0"
+    registry: ghcr.io
+    repository: blue-dots-economy/postgres-pgvector
+    tag: "sha-5d4f334"
     pullPolicy: IfNotPresent
 
 redis:
