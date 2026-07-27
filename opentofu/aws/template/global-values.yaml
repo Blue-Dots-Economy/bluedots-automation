@@ -27,7 +27,6 @@ _brand: &brand ""
 _smtp_host:         &smtp_host         "smtp.gmail.com"
 _smtp_port:         &smtp_port         587
 _smtp_user:         &smtp_user         "sender@example.com"
-_smtp_password:     &smtp_password     "changeme" # smtp_password must be a Gmail App Password: eg. "abcd efgh ijkl mnop"
 _smtp_from_display: &smtp_from_display "Blue Dots"
 _aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
 support_email: &support_email "support@example.com"
@@ -241,7 +240,7 @@ alerting:
     smtpHost: "smtp.gmail.com:587"  # host:port combined — keep in sync with _smtp_host/_smtp_port
     smtpFrom: *smtp_user
     smtpAuthUsername: *smtp_user
-    smtpAuthPassword: *smtp_password
+    smtpAuthPassword: "CHANGE-ME"
     to: "CHANGE-ME"
   discord:
     enabled: false
