@@ -260,8 +260,8 @@ _eks_cluster_version:    &eks_cluster_version    "1.35"
 _eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
 _eks_node_disk_size_gb:  &eks_node_disk_size_gb  40
 _eks_node_capacity_type: &eks_node_capacity_type "ON_DEMAND"  # or SPOT (cheaper; pilot opt-in on the pilot branch)
-_eks_node_count_min:     &eks_node_count_min     1
-_eks_node_count_max:     &eks_node_count_max     2
+_eks_node_count_min:     &eks_node_count_min     2   # multi-AZ HA: one node per AZ
+_eks_node_count_max:     &eks_node_count_max     6   # headroom for the cluster autoscaler
 _aggregator_host:        &aggregator_host        "aggregator.domain.com"
 _grafana_host:           &grafana_host           "monitoring.domain.com"
 # plus _signals_public_hosts, _network, _brand, SMTP, MSG91, alert emails, RDS sizing, IRSA subjects
@@ -270,6 +270,8 @@ _grafana_host:           &grafana_host           "monitoring.domain.com"
 ```
 
 The file is heavily commented — read it before applying.
+
+> The node group is sized 2–6 to give the (opt-in) Cluster Autoscaler headroom — see `helm/CLAUDE.md → Cluster Autoscaler`.
 
 ### Provision
 
