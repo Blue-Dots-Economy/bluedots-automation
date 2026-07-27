@@ -152,18 +152,18 @@ kubectl get nodes                         # nodes Ready
 # gp3 is the default StorageClass (gp2 must NOT be default)
 kubectl get sc                            # gp3 (default) ; gp2 (no default marker)
 
-# the three generated per-chart values files exist
-ls -l common-services-values.yaml signals-values.yaml aggregator-values.yaml
+# the two generated values files exist
+ls -l global-secrets.yaml global-cloud-values.yaml
 
-# hosts were templated from global-values.yaml
-grep -E "host:|publicHost:" signals-values.yaml aggregator-values.yaml
+# hosts were templated from global-values.yaml anchors into the cloud-values file
+grep -E "host:|publicHost:|publicHosts:" global-cloud-values.yaml
 
 # tooling + cluster + files, all in one (install.sh helper)
 bash install.sh preflight
 ```
 
 Expected: context points at the new cluster, nodes `Ready`, `gp3 (default)`,
-all three values files present, and `preflight` prints the context + values
+both generated values files present, and `preflight` prints the context + values
 paths with no error.
 
 ---

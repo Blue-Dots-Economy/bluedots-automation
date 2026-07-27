@@ -117,6 +117,15 @@ kubectl get certificate -n aggregator      # READY=True once ACME completes
   ServiceAccount.
 - **Bitnami `postgres-password` key**. When wiring an existing Secret for
   Postgres, it MUST contain a key named exactly `postgres-password`.
+- **Keycloak admin-console block (#1.7)**. `keycloak.adminConsoleBlock.enabled`
+  (**default off**; global override `global.adminConsoleBlock.enabled`) publishes
+  a more-specific Kong Ingress at `/auth/admin/master/console` returning 403,
+  while the admin REST API (`/auth/admin/realms/`) stays reachable for approval-time
+  user provisioning. Reach the console via `kubectl port-forward` / VPN. See
+  `helm/CLAUDE.md → Keycloak admin-console block`.
+- **NetworkPolicies (#1.12)**. `networkPolicy.enabled` (**default off**) renders an
+  Ingress-only policy. Keep `common-services` (Kong) in
+  `networkPolicy.allowedFromNamespaces` or you cut the ingress path into the portal.
 
 ## Key config
 

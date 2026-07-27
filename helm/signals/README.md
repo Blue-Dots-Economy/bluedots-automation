@@ -85,6 +85,10 @@ anchors at the top); chart defaults are in `helm/signals/values.yaml`. Key knobs
 | `api.config.SERVED_DOMAINS` | which `<network>/<domain>` pairs the API serves — via `_signals_served_domains` |
 | `api.config.NETWORK_CONFIG_*` | network schema source (local file mounted from a ConfigMap, or URLs) |
 | `ui.runtimeConfig.*` | browser-side config rendered into `/config.js` at runtime (no rebuild) |
+| `networkPolicy.enabled` | opt-in (**default OFF**) Ingress-only NetworkPolicy. You **must** list `aggregator` + `common-services` in `networkPolicy.allowedFromNamespaces`, or you cut the aggregator→signals path and Kong ingress |
+
+All subcharts (including `search`) run **non-root with dropped capabilities** by
+default; the `ui` nginx is the documented root exception.
 
 ### Adding / editing a network
 

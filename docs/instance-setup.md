@@ -153,6 +153,10 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
     lives in `global-values.yaml` — it only feeds monitoring's alertmanager
     (`alerting.email.smtpAuthPassword`), a separate copy.
   - `AUTH_SECRET` is generated into `global-secrets.yaml` (do not hand-set).
+  - **Per-IP OTP rate limiting** — on by default (`_otp_rate_limit_enabled`),
+    with `_signals_otp_per_minute` (5) / `_aggregator_otp_per_minute` (20)
+    guarding the OTP login endpoints. See `helm/CLAUDE.md → Per-IP OTP-abuse
+    rate limiting`; tightening these too far can lock out legitimate logins.
 - **Fetch / data limits (signals api config):** `ALLOW_EXTRA_SCHEMA_DATA`
   (`"false"` = reject unknown fields) is set in the chart values. `BULK_MAX_ITEMS`
   (bulk-upload cap) is a supported api env var but not surfaced in the chart
