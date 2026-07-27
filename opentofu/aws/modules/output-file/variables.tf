@@ -72,47 +72,18 @@ variable "signalstack_admin_key" {
 }
 
 # ─── Signals notification service ─────────────────────────────────────────
+# notification_gmail_pass, notification_msg91_auth_key, notification_msg91_template_id
+# are no longer sourced from global-values.yaml — global-secrets.yaml.tfpl
+# bakes in "UPDATE_THIS_VALUE" placeholders instead; edit the generated file directly.
 variable "notification_gmail_user" {
   type    = string
   default = ""
 }
 
-variable "notification_gmail_pass" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
-
-variable "notification_msg91_auth_key" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
-
-variable "notification_msg91_template_id" {
-  type    = string
-  default = ""
-}
-
 # ─── Aggregator mail ───────────────────────────────────────────────────────
+# aggregator_smtp_password and aggregator_msg91_auth_key are no longer sourced
+# from global-values.yaml — see note above.
 variable "aggregator_smtp_user" {
-  type    = string
-  default = ""
-}
-
-variable "aggregator_smtp_password" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
-
-variable "aggregator_msg91_auth_key" {
-  type      = string
-  sensitive = true
-  default   = ""
-}
-
-variable "signals_google_maps_api_key" {
   type    = string
   default = ""
 }

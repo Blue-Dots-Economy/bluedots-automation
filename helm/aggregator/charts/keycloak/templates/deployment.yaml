@@ -145,6 +145,8 @@ spec:
         - name: keycloak
           image: {{ include "keycloak.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           args:
             - start
             {{- if .Values.optimized }}

@@ -27,6 +27,8 @@ spec:
         - name: tei-embeddings
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           args:
             - "--model-id"
             - {{ .Values.embeddings.modelId | quote }}
@@ -52,6 +54,8 @@ spec:
         - name: tei-reranker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           args: ["--model-id", "{{ .Values.reranker.modelId }}", "--port", "{{ .Values.reranker.port }}"]
           ports:
             - name: rerank

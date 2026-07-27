@@ -32,8 +32,8 @@ by chart/component so helm reads it directly — no slicing, no `yq`:
 |------|--------|-----------|-------|
 | `helm/global-resources.yaml`     | in repo, shared across envs | yes | replicas, HPA, PDB, container resources |
 | `<env>/global-images.yaml`       | in repo, per-env            | yes | image `repository` / `tag` / `pullPolicy` |
-| `<env>/global-values.yaml`       | in repo, **you edit**       | yes | non-secret config (hosts, network/brand, SMTP/MSG91, RDS sizing, app config) — edit the **anchors at the top** |
-| `<env>/global-credentials.yaml`  | **generated** by tofu (`output-file`) | **no** (gitignored) | all secrets |
+| `<env>/global-values.yaml`       | in repo, **you edit**       | yes | non-secret config (hosts, network/brand, some SMTP/MSG91/maps fields, RDS sizing, app config) — edit the **anchors at the top** |
+| `<env>/global-secrets.yaml`  | **generated** by tofu (`output-file`) | **no** (gitignored) | all secrets |
 | `<env>/global-cloud-values.yaml` | **generated** by tofu (`output-file`) | **no** (gitignored) | cloud outputs + computed config (S3, IRSA ARN, RDS Postgres host, hostBindings) |
 
 The two generated files are templated by the `output-file` opentofu module
@@ -43,8 +43,17 @@ charts** (keyed by chart-component), not one file per chart. Shared secrets (e.g
 the redis password, used by multiple charts) are templated from the same tofu
 variable, so they can never drift.
 
+A few fields (aggregator `secrets.smtpPassword`/`msg91AuthKey`, signals
+`notification-service.secrets.data.GMAIL_PASS`/`MSG91_AUTH_KEY`/`MSG91_TEMPLATE_ID`,
+`api.secrets.data.GOOGLE_GEOCODING_API_KEY`) are the exception: the `.tfpl`
+bakes in a literal `UPDATE_THIS_VALUE` instead of a tofu variable, so you edit
+the real value directly in the generated `global-secrets.yaml` — no
+`global-values.yaml` edit or re-apply needed. Re-running
+`apply_tf_output_file` regenerates the file and resets these back to the
+placeholder, so do it after your last regen for the env.
+
 ```yaml
-# global-credentials.yaml (secrets — root keys by component)
+# global-secrets.yaml (secrets — root keys by component)
 credentials:                       # common-services
   postgresAdminPassword: <generated>
   aggregatorPassword: <generated>
@@ -174,7 +183,7 @@ If you keep the values files elsewhere (a separate secrets repo, manually
 maintained files), point the script at them via env vars:
 
 ```bash
-GLOBAL_CREDS=/etc/bluedots/global-credentials.yaml \
+GLOBAL_SECRETS=/etc/bluedots/global-secrets.yaml \
 GLOBAL_CLOUD_VALUES=/etc/bluedots/global-cloud-values.yaml \
 GLOBAL_VALUES=/etc/bluedots/global-values.yaml \
 GLOBAL_IMAGES=/etc/bluedots/global-images.yaml \
@@ -269,10 +278,10 @@ bash install.sh destroy_tf_resources
 ## Troubleshooting
 
 - **`ERROR: values file not found: <path>`** (from `preflight`) — opentofu
-  hasn't generated `global-credentials.yaml` / `global-cloud-values.yaml` yet.
+  hasn't generated `global-secrets.yaml` / `global-cloud-values.yaml` yet.
   `cd opentofu/aws/<env>` then `bash install.sh create_tf_resources` (or
   `apply_tf_output_file`). Point the script elsewhere via
-  `GLOBAL_CREDS=... GLOBAL_CLOUD_VALUES=... bash install.sh ...` if they live
+  `GLOBAL_SECRETS=... GLOBAL_CLOUD_VALUES=... bash install.sh ...` if they live
   elsewhere.
 - **`ERROR: cluster unreachable`** (from `preflight`) — your kubeconfig
   current-context isn't pointed at the target cluster. Check `kubectl config

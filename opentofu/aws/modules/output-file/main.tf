@@ -2,12 +2,20 @@ locals {
   values_dir = "${var.base_location}/.."
 }
 
-# Single credential file for all charts — secrets only at ROOT level.
+# Renamed from global_credentials -> global_secrets (file renamed to
+# global-secrets.yaml). Keeps existing state pointed at the same object
+# instead of destroying/recreating it.
+moved {
+  from = local_sensitive_file.global_credentials
+  to   = local_sensitive_file.global_secrets
+}
+
+# Single secrets file for all charts — secrets only at ROOT level.
 # Each chart reads this same file; helm ignores keys it doesn't recognise.
-resource "local_sensitive_file" "global_credentials" {
-  filename        = "${local.values_dir}/global-credentials.yaml"
+resource "local_sensitive_file" "global_secrets" {
+  filename        = "${local.values_dir}/global-secrets.yaml"
   file_permission = "0600"
-  content = templatefile("${path.module}/global-credentials.yaml.tfpl", {
+  content = templatefile("${path.module}/global-secrets.yaml.tfpl", {
     postgres_admin_password                 = var.postgres_admin_password
     aggregator_postgres_password            = var.aggregator_postgres_password
     signals_postgres_password               = var.signals_postgres_password
@@ -20,18 +28,12 @@ resource "local_sensitive_file" "global_credentials" {
     aggregator_oidc_client_secret           = var.aggregator_oidc_client_secret
     signalstack_admin_key                   = var.signalstack_admin_key
     aggregator_smtp_user                    = var.aggregator_smtp_user
-    aggregator_smtp_password                = var.aggregator_smtp_password
-    aggregator_msg91_auth_key               = var.aggregator_msg91_auth_key
     signals_auth_secret                     = var.signals_auth_secret
     signals_pii_key                         = var.signals_pii_key
     signals_notification_secret             = var.signals_notification_secret
     signals_dpg_scoring_secret              = var.signals_dpg_scoring_secret
     signals_instance_shared_secret          = var.signals_instance_shared_secret
-    signals_google_maps_api_key             = var.signals_google_maps_api_key
     notification_gmail_user                 = var.notification_gmail_user
-    notification_gmail_pass                 = var.notification_gmail_pass
-    notification_msg91_auth_key             = var.notification_msg91_auth_key
-    notification_msg91_template_id          = var.notification_msg91_template_id
   })
 }
 

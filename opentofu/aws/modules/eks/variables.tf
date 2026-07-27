@@ -42,15 +42,15 @@ variable "node_disk_size_gb" {
 }
 
 variable "node_count_min" {
-  description = "Minimum number of worker nodes"
+  description = "Minimum number of worker nodes (autoscaler floor). Raised to 2 for control-plane-adjacent HA (#1.6)."
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "node_count_max" {
-  description = "Maximum number of worker nodes"
+  description = "Maximum number of worker nodes (autoscaler ceiling). Raised to 6 to give the cluster-autoscaler real headroom (#1.6)."
   type        = number
-  default     = 3
+  default     = 6
 }
 
 variable "node_count_desired" {
@@ -84,7 +84,7 @@ variable "private_ingressgateway_ip" {
 variable "cloudwatch_enabled_log_types" {
   description = "EKS control plane log types to ship to CloudWatch Logs"
   type        = list(string)
-  default     = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  default     = ["api", "controllerManager", "scheduler"]
 }
 
 variable "security_group_ids" {

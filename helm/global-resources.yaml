@@ -276,7 +276,10 @@ postgresql:
         cpu: "2"
         memory: 2Gi
 
-# redis: shared in-cluster Redis (single master), backs Kong rate-limit counters.
+# redis: shared in-cluster Redis (single master), backs Kong rate-limit counters
+# and BullMQ job state. Memory limit must sit above the `maxmemory 512mb` set in
+# common-services/values.yaml so `noeviction` has headroom (replication buffers,
+# COW on AOF rewrite, client output buffers) before the container itself OOMs.
 redis:
   master:
     resources:
@@ -285,7 +288,7 @@ redis:
         memory: 128Mi
       limits:
         cpu: 500m
-        memory: 512Mi
+        memory: 1Gi
 
 # postgresBootstrap: idempotent post-install Job that creates per-tenant RDS
 # roles/databases/extensions. Short-lived, so kept small.
