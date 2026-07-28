@@ -193,6 +193,19 @@ kong:
       upstream_health_metrics: true
       per_consumer: false
 
+  # ─── Correlation id (global) ───────────────────────────────────────────────
+  # Renders one cluster-wide, GLOBAL KongClusterPlugin (templates/kong-correlation-id.yaml)
+  # so EVERY request carries an X-Request-Id: Kong stamps one when absent (an
+  # inbound value is preserved), and echo_downstream returns it to the caller.
+  # Downstream services honour + log it as `x-request-id`, and the aggregator
+  # forwards it to Signals — end-to-end request tracing (PLAN 2.4).
+  correlationId:
+    enabled: true
+    headerName: X-Request-Id
+    # uuid#counter = a per-worker uuid plus a per-request counter (cheap, unique).
+    generator: "uuid#counter"
+    echoDownstream: true
+
   # ─── ServiceMonitor: let Prometheus scrape Kong's /metrics ─────────────────
   # The prometheus plugin above exposes metrics on Kong's status listener
   # (port 8100, /metrics) and the ingress controller exposes its own on the
@@ -251,7 +264,7 @@ cert-manager:
 # FQDN (e.g. common-services-postgresql.common-services.svc / common-services-redis-master...).
 #
 # Credentials below are layered in at deploy time from the generated
-# global-credentials.yaml. Left blank in-repo so nothing sensitive is
+# global-secrets.yaml. Left blank in-repo so nothing sensitive is
 # committed; templates/secrets.yaml skips rendering when blank.
 # =============================================================================
 credentials:
@@ -406,8 +419,15 @@ redis:
     appendonly yes
     appendfsync everysec
     save ""
-    maxmemory 256mb
-    maxmemory-policy allkeys-lru
+    maxmemory 512mb
+    # noeviction (NOT allkeys-lru): this instance holds BullMQ job/queue state
+    # and Kong rate-limit counters — LRU eviction would silently drop jobs and
+    # fail rate-limiting open under memory pressure. With noeviction, a full
+    # instance fails writes loudly instead. Requires every producer to bound
+    # its own keys: the Signals item-events stream is trimmed via XADD MAXLEN
+    # (INGEST_STREAM_MAXLEN). Keep maxmemory below the container memory limit
+    # in helm/global-resources.yaml (currently 1Gi) to leave headroom.
+    maxmemory-policy noeviction
   master:
     persistence:
       enabled: true
@@ -418,6 +438,10 @@ redis:
     resources:
       requests: { cpu: 50m,  memory: 128Mi }
       limits:   { cpu: 500m, memory: 512Mi }
+  # replicaCount 0 is the shared default: dev/single-node clusters (see the
+  # 1-node EKS default) cannot schedule a second Redis pod. Production
+  # deployment branches should override this to >= 1 (with replica persistence)
+  # for failover — noeviction makes a lost-master data event more disruptive.
   replica:
     replicaCount: 0
 
@@ -441,3 +465,27 @@ metrics-server:
   args:
     - --kubelet-insecure-tls          # required on EKS (self-signed kubelet cert)
     - --kubelet-preferred-address-types=InternalIP
+
+# Kubernetes Cluster Autoscaler (#1.6). Scales the EKS managed node group's ASG
+# between the tofu node_count_min/max via ASG auto-discovery. DEFAULT OFF: enable
+# per environment once the IRSA role ARN (eks module output
+# cluster_autoscaler_role_arn) + clusterName are wired in via the generated
+# global-cloud-values.yaml, and after an `install.sh dry_run` against the cluster.
+clusterAutoscaler:
+  enabled: false
+  image:
+    repository: registry.k8s.io/autoscaling/cluster-autoscaler
+    # Pin to the cluster's Kubernetes minor version (EKS >= 1.24). Bump with the
+    # cluster. Cluster is k8s 1.35 (_eks_cluster_version anchor) → CA v1.35.x.
+    tag: v1.35.0
+    pullPolicy: IfNotPresent
+  # Filled from the eks module via global-cloud-values.yaml at deploy time.
+  clusterName: ""
+  awsRegion: ap-south-1
+  serviceAccount:
+    name: cluster-autoscaler
+    # IRSA role ARN — eks output `cluster_autoscaler_role_arn`.
+    roleArn: ""
+  resources:
+    requests: { cpu: 100m, memory: 300Mi }
+    limits: { cpu: 200m, memory: 500Mi }

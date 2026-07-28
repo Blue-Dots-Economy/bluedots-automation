@@ -28,7 +28,7 @@ opentofu/aws/**/monitoring-values.yaml
 # Legacy single combined file (pre-split) — still ignore if present locally.
 opentofu/aws/**/global-cloud-values.yaml
 # Generated secrets file (written by output-file/main.tf) — never commit.
-opentofu/aws/**/global-credentials.yaml
+opentofu/aws/**/global-secrets.yaml
 opentofu/aws/**/tf.sh
 
 # Editor / OS junk
@@ -49,3 +49,5 @@ opentofu/aws/dev/*
 helm/signals/charts/api/files/networks/*.json
 helm/signals/charts/api/files/consent/*.json
 helm/aggregator/files/consent/consent.json
+
+opentofu/aws/*-cluster

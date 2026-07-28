@@ -53,3 +53,8 @@ output "cloudwatch_observability_role_arn" {
   description = "IAM role ARN used by the CloudWatch Observability add-on"
   value       = var.enable_cloudwatch_observability ? aws_iam_role.cloudwatch_observability[0].arn : null
 }
+
+output "cluster_autoscaler_role_arn" {
+  description = "IRSA role ARN for the cluster-autoscaler service account (kube-system:cluster-autoscaler). Annotate it onto the autoscaler SA (helm value clusterAutoscaler.serviceAccount.roleArn)."
+  value       = module.cluster_autoscaler_irsa.iam_role_arn
+}

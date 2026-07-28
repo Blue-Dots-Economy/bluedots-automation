@@ -19,7 +19,7 @@ common-services** (it does **not** bundle its own databases).
 | `search-embeddings` | Embeddings worker for search (gated `search-embeddings.enabled`) |
 
 Postgres/Redis credentials are consumed from the generated
-`global-credentials.yaml`; the Postgres/Redis **host** comes from the layered
+`global-secrets.yaml`; the Postgres/Redis **host** comes from the layered
 values (the shared common-services service, or the RDS endpoint when provisioned).
 
 ## Prerequisites
@@ -27,7 +27,7 @@ values (the shared common-services service, or the RDS endpoint when provisioned
 - **`common-services` must already be deployed** (shared Postgres + Redis, Kong
   ingress, `letsencrypt-prod` issuer). Signals attaches to all of them.
 - `kubectl` current-context on the target cluster, `helm` v3.12+.
-- The generated values files exist in the env dir (`global-credentials.yaml`,
+- The generated values files exist in the env dir (`global-secrets.yaml`,
   `global-cloud-values.yaml`) — run `bash install.sh create_tf_resources` first.
 - A `ghcr-pull` image-pull secret in the `signals` namespace (private GHCR
   images) — created by `bash install.sh create_namespaces_and_secrets`.
@@ -51,7 +51,7 @@ helm upgrade --install signals helm/signals \
   -f "$ENV/global-images.yaml" \
   -f "$ENV/global-values.yaml" \
   -f "$ENV/global-cloud-values.yaml" \
-  -f "$ENV/global-credentials.yaml" \
+  -f "$ENV/global-secrets.yaml" \
   --wait --timeout 10m
 ```
 
@@ -85,6 +85,10 @@ anchors at the top); chart defaults are in `helm/signals/values.yaml`. Key knobs
 | `api.config.SERVED_DOMAINS` | which `<network>/<domain>` pairs the API serves — via `_signals_served_domains` |
 | `api.config.NETWORK_CONFIG_*` | network schema source (local file mounted from a ConfigMap, or URLs) |
 | `ui.runtimeConfig.*` | browser-side config rendered into `/config.js` at runtime (no rebuild) |
+| `networkPolicy.enabled` | opt-in (**default OFF**) Ingress-only NetworkPolicy. You **must** list `aggregator` + `common-services` in `networkPolicy.allowedFromNamespaces`, or you cut the aggregator→signals path and Kong ingress |
+
+All subcharts (including `search`) run **non-root with dropped capabilities** by
+default; the `ui` nginx is the documented root exception.
 
 ### Adding / editing a network
 

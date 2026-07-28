@@ -17,6 +17,7 @@ Redis this chart owns.
 | **Postgres** | shared DB (admin + `dpg` + `aggregator` databases) | `postgresql` 18.6.6 |
 | **Redis** | shared cache / rate-limit counters | `redis` 19.6.4 |
 | `metrics-server` | resource metrics for HPA / `kubectl top` | `metrics-server` 3.12.1 |
+| **Cluster Autoscaler** | scales the EKS node group's ASG (opt-in) | template in this chart |
 
 `ingress-nginx` 4.15.1 is also vendored but **disabled** (`ingress-nginx.enabled:
 false`) — Kong is the active controller. When RDS is provisioned the in-cluster
@@ -26,7 +27,7 @@ false`) — Kong is the active controller. When RDS is provisioned the in-cluste
 ## Prerequisites
 
 - `kubectl` current-context pointed at the target cluster, `helm` v3.12+.
-- The generated values files exist in the env dir: `global-credentials.yaml` +
+- The generated values files exist in the env dir: `global-secrets.yaml` +
   `global-cloud-values.yaml` (run `bash install.sh create_tf_resources` first).
 - `gp3` must be the default StorageClass (Postgres/Redis PVCs bind to it) — the
   deploy step applies it for you.
@@ -60,7 +61,7 @@ helm upgrade --install common-services helm/common-services \
   -f "$ENV/global-images.yaml" \
   -f "$ENV/global-values.yaml" \
   -f "$ENV/global-cloud-values.yaml" \
-  -f "$ENV/global-credentials.yaml" \
+  -f "$ENV/global-secrets.yaml" \
   --wait --timeout 5m
 ```
 
@@ -98,9 +99,18 @@ above. Common edits:
 
 - `kong` — controller service annotations (cloud LB type), rate-limit
   `KongClusterPlugin` tiers (`rl-auth` / `rl-api` / `rl-public`, backed by Redis).
+- `kong.correlationId.enabled` — global `X-Request-Id` stamping across
+  Kong → aggregator → Signals → search (**default on**; see `helm/CLAUDE.md → Correlation id`).
+- `clusterAutoscaler.enabled` — the Cluster Autoscaler (**default off**). When on,
+  set `clusterName` / `awsRegion` and the IRSA `serviceAccount.roleArn`
+  (the `cluster_autoscaler_role_arn` OpenTofu output) — see `helm/CLAUDE.md → Cluster Autoscaler`.
 - `issuer.acmeEmail` / `issuer.server` — Let's Encrypt registration email;
   switch `server` to the staging directory while debugging to avoid rate limits.
 - `postgresql` / `redis` — sizing, PVC size, `initdb` extensions.
+- `redis.commonConfiguration` — pinned to `maxmemory-policy noeviction` +
+  `maxmemory 512mb` (kept below the 1Gi container limit). Redis holds rate-limit
+  counters and OTP state, so **do not** switch to `allkeys-lru` — evicting keys
+  would silently drop rate-limit accounting.
 
 ## Uninstall
 

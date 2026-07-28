@@ -1,12 +1,12 @@
 locals {
   environment_name = "${var.building_block}-${var.environment}"
   cluster_name     = "${local.environment_name}-cluster"
-  
+
   common_tags = {
-    Environment    = var.environment
-    BuildingBlock  = var.building_block
-    ManagedBy      = "Terraform"
-    CloudProvider  = "AWS"
+    Environment   = var.environment
+    BuildingBlock = var.building_block
+    ManagedBy     = "Terraform"
+    CloudProvider = "AWS"
   }
 }
 
@@ -40,6 +40,42 @@ resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSClusterPolicy" {
 resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSServicePolicy" {
   role       = aws_iam_role.eks_cluster.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+}
+
+# KMS envelope encryption for Kubernetes Secrets (see encryption_config on the
+# cluster below). Without this, Secrets sit as plaintext (base64) in etcd.
+# AmazonEKSClusterPolicy carries no KMS permissions, so the cluster role needs
+# an explicit grant on this key or cluster creation with encryption fails.
+resource "aws_kms_key" "eks_secrets" {
+  description             = "EKS envelope encryption for Kubernetes secrets (${local.cluster_name})"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+  tags                    = merge(local.common_tags, { Name = "${local.cluster_name}-eks-secrets" })
+}
+
+resource "aws_kms_alias" "eks_secrets" {
+  name          = "alias/${local.cluster_name}-eks-secrets"
+  target_key_id = aws_kms_key.eks_secrets.key_id
+}
+
+data "aws_iam_policy_document" "eks_cluster_kms" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ListGrants",
+      "kms:DescribeKey",
+      "kms:CreateGrant",
+    ]
+    resources = [aws_kms_key.eks_secrets.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "eks_cluster_kms" {
+  name   = "${var.building_block}-${var.environment}-eks-cluster-kms"
+  role   = aws_iam_role.eks_cluster.id
+  policy = data.aws_iam_policy_document.eks_cluster_kms.json
 }
 
 data "aws_iam_policy_document" "eks_node_assume_role" {
@@ -85,8 +121,8 @@ resource "aws_eks_cluster" "cluster" {
   role_arn = aws_iam_role.eks_cluster.arn
 
   vpc_config {
-    subnet_ids         = var.public_subnet_ids
-    security_group_ids = var.security_group_ids
+    subnet_ids              = var.public_subnet_ids
+    security_group_ids      = var.security_group_ids
     endpoint_public_access  = var.endpoint_public_access
     endpoint_private_access = var.endpoint_private_access
   }
@@ -97,11 +133,22 @@ resource "aws_eks_cluster" "cluster" {
     authentication_mode = "API_AND_CONFIG_MAP"
   }
 
+  # Encrypt Kubernetes Secrets at rest in etcd with the customer-managed KMS
+  # key above (envelope encryption). One-way: EKS does not allow removing this
+  # once enabled.
+  encryption_config {
+    resources = ["secrets"]
+    provider {
+      key_arn = aws_kms_key.eks_secrets.arn
+    }
+  }
+
   tags = merge(local.common_tags, { Name = local.cluster_name })
 
   depends_on = [
     aws_iam_role_policy_attachment.eks_cluster_AmazonEKSClusterPolicy,
-    aws_iam_role_policy_attachment.eks_cluster_AmazonEKSServicePolicy
+    aws_iam_role_policy_attachment.eks_cluster_AmazonEKSServicePolicy,
+    aws_iam_role_policy.eks_cluster_kms
   ]
 }
 
@@ -159,7 +206,14 @@ resource "aws_eks_node_group" "default" {
 
   tags = merge(
     local.common_tags,
-    { Name = "${local.cluster_name}-node" }
+    {
+      Name = "${local.cluster_name}-node"
+      # Cluster Autoscaler ASG auto-discovery (#1.6). EKS managed node groups
+      # also propagate these onto the underlying Auto Scaling group, which is
+      # what the autoscaler's autoDiscovery.clusterName scan looks for.
+      "k8s.io/cluster-autoscaler/enabled"               = "true"
+      "k8s.io/cluster-autoscaler/${local.cluster_name}" = "owned"
+    }
   )
 
   depends_on = [
@@ -190,20 +244,49 @@ resource "aws_eks_node_group" "default" {
 module "ebs_csi_driver_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.48"
-  
+
   role_name_prefix = "${local.cluster_name}-ebs-csi-"
-  
+
   attach_ebs_csi_policy = true
-  
+
   oidc_providers = {
     main = {
       provider_arn               = aws_iam_openid_connect_provider.oidc.arn
       namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
     }
   }
-  
+
   tags = local.common_tags
 }
+
+# -------------------------------
+# Cluster Autoscaler IRSA role (#1.6)
+# Lets the cluster-autoscaler pod (kube-system:cluster-autoscaler) resize the
+# node group's Auto Scaling group via IRSA — no static node creds. The scoped
+# policy (attach_cluster_autoscaler_policy) is restricted to this cluster's ASGs.
+# The role ARN is exported (outputs.tf) and annotated onto the autoscaler SA.
+# -------------------------------
+module "cluster_autoscaler_irsa" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.48"
+
+  role_name_prefix                 = "${local.cluster_name}-ca-"
+  attach_cluster_autoscaler_policy = true
+  cluster_autoscaler_cluster_names = [local.cluster_name]
+
+  oidc_providers = {
+    main = {
+      provider_arn = aws_iam_openid_connect_provider.oidc.arn
+      # Deployed by the common-services Helm release into its own namespace
+      # (cluster-wide RBAC is granted via ClusterRole, so it still scales the
+      # whole cluster). Keep this in sync with the helm SA name/namespace.
+      namespace_service_accounts = ["common-services:cluster-autoscaler"]
+    }
+  }
+
+  tags = local.common_tags
+}
+
 # -------------------------------
 # EKS Add-on: AWS EBS CSI Driver
 # Installs the aws-ebs-csi-driver addon and binds it to the IRSA role
