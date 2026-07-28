@@ -39,17 +39,24 @@ export:
   # 'aggregator_onboarded' (default) or 'all' (explicit opt-in to everything).
   scope: aggregator_onboarded
 
+# Shared DATABASE_URL (read-only role) for all instances — normally injected
+# from the generated global-secrets.yaml (output-file builds it from the
+# signals_export_ro role + its password). Renders a shared <fullname>-db Secret.
+# Per-instance existingDatabaseSecret / databaseUrl override this when set.
+databaseUrl: ""
+
 # ── instances — one CronJob + env ConfigMap (+ optional DB Secret) each ─────
 # Each Signals instance (own database) exports separately. If two instances
 # still share one database, deploy only one entry (two would double-export).
+# DB creds resolve per instance: existingDatabaseSecret > databaseUrl >
+# the shared top-level databaseUrl above.
 instances: []
 #  - id: blue_dot_up
 #    network: blue_dot
 #    schedule: "0 0,12 * * *"        # in cronJob.timeZone
 #    suspend: false
-#    # EITHER reference a pre-created Secret holding DATABASE_URL (preferred)…
+#    # Override the shared read-only DATABASE_URL only for a different DB:
 #    existingDatabaseSecret: ""
-#    # …OR let the chart render one (pass via --set, never commit):
 #    databaseUrl: ""
 
 # Networks whose export manifest ConfigMaps to render, from

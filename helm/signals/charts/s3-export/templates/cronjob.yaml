@@ -57,7 +57,13 @@ spec:
                 - configMapRef:
                     name: {{ include "dpg-s3-export.fullname" $ }}-env-{{ $slug }}
                 - secretRef:
-                    name: {{ .existingDatabaseSecret | default (printf "%s-db-%s" (include "dpg-s3-export.fullname" $) $slug) }}
+                    {{- if .existingDatabaseSecret }}
+                    name: {{ .existingDatabaseSecret }}
+                    {{- else if .databaseUrl }}
+                    name: {{ include "dpg-s3-export.fullname" $ }}-db-{{ $slug }}
+                    {{- else }}
+                    name: {{ include "dpg-s3-export.fullname" $ }}-db
+                    {{- end }}
                 {{- if $.Values.s3.existingCredentialsSecret }}
                 - secretRef:
                     name: {{ $.Values.s3.existingCredentialsSecret }}
