@@ -19,13 +19,13 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-bbb80bd"
+    tag: "sha-1965ad6"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-bbb80bd"
+    tag: "sha-1965ad6"
     pullPolicy: Always
 
 notification-service:
@@ -44,7 +44,7 @@ match-score:
 search:
   image:
     repository: ghcr.io/blue-dots-economy/signals-search
-    tag: "sha-590254f"
+    tag: "sha-c0e8fd7"
     pullPolicy: Always
 
 # search-embeddings: TEI model image with BAAI/bge-m3 baked in
@@ -59,19 +59,19 @@ search-embeddings:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "sha-06c4188"
+    tag: "sha-ab6be25"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "sha-06c4188"
+    tag: "sha-ab6be25"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "sha-06c4188"
+    tag: "sha-ab6be25"
     pullPolicy: Always
 
 keycloak:
@@ -85,23 +85,19 @@ keycloak:
     pullPolicy: Always
 
 
-# ── Common services (platform) ────────────────────────────────────────────────
-# Released as: helm/common-services/  →  subchart keys: postgresql, redis, ingress-nginx
-# Pins mirror helm/common-services/values.yaml. Bitnami moved its public images
-# to the bitnamilegacy/* namespace, so keep these on bitnamilegacy or the pull
-# breaks. Pin to specific digests/tags for production stability.
+# ── Common services (platform) ───────────────────────────────────────────────
 
-# Custom Bitnami-base image with a PORTABLE pgvector .so (stock Bitnami pgvector
-# faults with SIGILL building HNSW indexes on non-AVX-512 x86 nodes, e.g. m6a).
-# Built + published to the org GHCR by .github/workflows/build-postgres-image.yml
-# (Dockerfile: dockerfiles/postgres/Dockerfile); tag is the sha- of the build
-# commit. Requires global.security.allowInsecureImages (non-Bitnami repo).
 postgresql:
+  enabled: true
   image:
-    registry: ghcr.io
+    registry:  ghcr.io
     repository: blue-dots-economy/postgres-pgvector
     tag: "sha-5d4f334"
     pullPolicy: IfNotPresent
+    # Private GHCR package — attach the ghcr-pull secret or kubelet pulls
+    # anonymously and gets 401 (docker.io Bitnami images didn't need this).
+    pullSecrets:
+      - ghcr-pull
 
 redis:
   image:

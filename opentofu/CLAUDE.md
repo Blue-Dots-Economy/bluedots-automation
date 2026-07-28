@@ -33,7 +33,25 @@ VPC split into **public** and **private** subnets. Public subnets host the IGW a
 
 `output-file` is what makes `preflight` pass: it generates the two gitignored files (`global-secrets.yaml` = all secrets; `global-cloud-values.yaml` = cloud outputs + computed hosts/origins + the RDS host above). After editing config that feeds them, regenerate just these with `bash install.sh apply_tf_output_file` rather than re-running the whole apply.
 
-**A handful of secret-tier fields are `UPDATE_THIS_VALUE` placeholders, not tf variables.** `secrets.smtpPassword`/`secrets.msg91AuthKey`/`keycloak.msg91TemplateId` (aggregator), `notification-service.secrets.data.GMAIL_PASS`/`MSG91_AUTH_KEY`/`MSG91_TEMPLATE_ID`, `api.secrets.data.GOOGLE_GEOCODING_API_KEY`, and `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` (signals) are hardcoded literals in `global-secrets.yaml.tfpl` — deliberately decoupled from `global-values.yaml` so you edit the real value directly in the generated (gitignored) `global-secrets.yaml` without touching tofu at all. The tradeoff: re-running `apply_tf_output_file` regenerates the file from the template and resets these back to the placeholder — re-paste the real values after any regeneration. Monitoring's alertmanager SMTP password (`alerting.email.smtpAuthPassword`) is **not** part of this — it still comes from a plain anchor in `global-values.yaml` (`_smtp_password`).
+### Hand-entered secrets live in `<env>/secrets.yaml` (the third input file)
+
+Some secrets can neither be committed (they're real credentials) nor generated (`random_passwords` can't invent a Gmail App Password). Those live in **`<env>/secrets.yaml`** — gitignored and operator-owned. Create it once per env by copying the committed **`secrets.example.yaml`** (`cp secrets.example.yaml secrets.yaml`) and filling in the real values. `install.sh` deliberately does **not** manage this file: it only has to exist before the `output-file` module runs, which is the only thing that reads it.
+
+`_common/output-file.hcl` reads it every apply (`fileexists()` guard → `{}` when absent, then per-key `try()` → the placeholder), passes the values as module variables, and the `.tfpl` interpolates them. **That's what makes regeneration safe: `apply_tf_output_file` re-renders `global-secrets.yaml` from the same `secrets.yaml`, so hand-entered values are never lost** — the earlier "re-paste after every regenerate" footgun is gone.
+
+Seven keys, **one per distinct secret**, each fanned out to every consumer so per-chart copies can't drift:
+
+| `secrets.yaml` key | Rendered into |
+|---|---|
+| `smtp_password` | notification-service `GMAIL_PASS`, aggregator `secrets.smtpPassword`, monitoring `alerting.email.smtpAuthPassword` |
+| `msg91_auth_key` | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
+| `msg91_template_id` | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
+| `google_maps_api_key` | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` **and** `api.secrets.data.GOOGLE_GEOCODING_API_KEY` — one key for both, so enable **Maps JavaScript API + Geocoding API** on it |
+| `discord_{critical,warning,info}_webhook` | monitoring `alerting.discord.*Webhook` |
+
+Two gotchas worth keeping: the Discord placeholders stay **URL-shaped** (`https://discord.com/api/webhooks/UPDATE_THIS_VALUE/...`) because Alertmanager validates `webhook_url` as a URL at config load — a bare placeholder bricks the whole alertmanager config when discord is enabled. And the `.gitignore` entry is **path-scoped** (`opentofu/aws/**/secrets.yaml`): a bare `secrets.yaml` pattern would also swallow the charts' committed `helm/**/templates/secrets.yaml`.
+
+Never hand-edit `global-secrets.yaml` — it's regenerated output. Edit `secrets.yaml` and re-run `apply_tf_output_file`. `preflight` warns (doesn't fail) if `UPDATE_THIS_VALUE` placeholders remain, since some are legitimately unused (MSG91 with SMS off, Discord when alerting is email-only).
 
 ## Private-cluster access (`pritunl` + `bastion`, both `*_enabled` default `true`)
 
