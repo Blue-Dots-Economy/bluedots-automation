@@ -234,19 +234,18 @@ prometheus:
           hosts:
             - *grafana_host
 
+# Alerting secrets (email.smtpAuthPassword, discord.*Webhook) are set directly
+# in the generated global-secrets.yaml (UPDATE_THIS_VALUE placeholders) — not
+# here. Only the non-secret config lives below; the two files deep-merge.
 alerting:
   email:
     enabled: false
     smtpHost: "smtp.gmail.com:587"  # host:port combined — keep in sync with _smtp_host/_smtp_port
     smtpFrom: *smtp_user
     smtpAuthUsername: *smtp_user
-    smtpAuthPassword: "CHANGE-ME"
     to: "CHANGE-ME"
   discord:
     enabled: false
-    criticalWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-    warningWebhook:  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-    infoWebhook:     "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
 
 # =============================================================================
 # Aggregator chart config (non-sensitive, passed directly via -f global-values.yaml)
@@ -267,10 +266,6 @@ mail:
     secure: false
     starttls: true
     auth: true
-
-keycloak:
-  # msg91TemplateId is set directly in the generated global-secrets.yaml
-  # (UPDATE_THIS_VALUE placeholder) — not here.
 
 # =============================================================================
 # Signals chart config (non-sensitive, passed directly via -f global-values.yaml)
