@@ -54,6 +54,13 @@ search-embeddings:
     tag: "sha-1c7d576d1af74f3e0cdf659cea033ecee26733c8"
     pullPolicy: IfNotPresent
 
+# s3-export: Signals non-PII export CronJob (adhoc-scripts)
+s3-export:
+  image:
+    repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
+    tag: "main"          # pin to an immutable sha/semver tag per environment
+    pullPolicy: IfNotPresent
+
 # ── Aggregator stack ─────────────────────────────────────────────────────────
 
 aggregator-api:

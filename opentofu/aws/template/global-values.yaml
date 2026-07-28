@@ -382,34 +382,12 @@ search:
 rdsRelay:
   enabled: false
 
-# ── s3-export — Signals non-PII export CronJob (adhoc-scripts image) ─────────
-# OPT-IN per environment (chart default OFF). To enable:
-#   1. Uncomment the `signals-export` bucket under global.buckets, then
-#      `tofu apply` storage + iam. The iam module then creates the write-only
-#      exporter role: arn:aws:iam::<account_id>:role/<building_block>-<environment>-signals-s3-export
-#   2. Create the read-only DB role signals_export_ro on the signals database
-#      and a K8s Secret (below) holding its DATABASE_URL.
-#   3. Set enabled: true, fill the role-arn / bucket / instances below.
-# Details: helm/signals/charts/s3-export + adhoc-scripts/signals-s3-export README.
 s3-export:
   enabled: false
-  image:
-    repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
-    tag: "main"          # pin to an immutable sha/semver tag per environment
-    pullPolicy: IfNotPresent
-  serviceAccount:
-    create: true
-    name: signals-s3-export        # must match global.signals_export_sa_subject
-    annotations:
-      # Replace <account_id> / <building_block> / <environment> (iam module output).
-      eks.amazonaws.com/role-arn: arn:aws:iam::<account_id>:role/<building_block>-<environment>-signals-s3-export
-  s3:
-    bucket: <building_block>-<environment>-<account_id>-signals-export
-    region: ap-south-1
   networks:
     - blue_dot
   instances: []
   #  - id: blue_dot_dev
   #    network: blue_dot
-  #    schedule: "0 0,12 * * *"       # midnight + noon IST (cronJob.timeZone)
+  #    schedule: "0 0,12 * * *"
   #    existingDatabaseSecret: signals-s3-export-db-blue-dot-dev

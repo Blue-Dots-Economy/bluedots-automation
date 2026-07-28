@@ -38,6 +38,19 @@ worker:
     create: true
     annotations:
       eks.amazonaws.com/role-arn: ${app_sa_role_arn}
+%{ if signals_export_role_arn != "" ~}
+
+# signals s3-export subchart — IRSA role + bucket (from iam + storage modules).
+s3-export:
+  serviceAccount:
+    create: true
+    name: signals-s3-export
+    annotations:
+      eks.amazonaws.com/role-arn: ${signals_export_role_arn}
+  s3:
+    bucket: ${signals_export_bucket}
+    region: ${cloud_storage_region}
+%{ endif ~}
 
 # ─── signals chart — computed config ─────────────────────────────────────────
 # Values that require HCL operations plain YAML anchors can't do:

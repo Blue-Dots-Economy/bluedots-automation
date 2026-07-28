@@ -50,7 +50,8 @@ dependency "iam" {
   config_path                            = "../iam"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    app_sa_role_arn = "arn:aws:iam::123456789012:role/dummy-app-sa"
+    app_sa_role_arn         = "arn:aws:iam::123456789012:role/dummy-app-sa"
+    signals_export_role_arn = ""
   }
 }
 
@@ -59,6 +60,7 @@ dependency "storage" {
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
     storage_bucket_public = ""
+    buckets               = {}
   }
 }
 
@@ -108,10 +110,12 @@ inputs = {
   signals_allowed_origins = local.signals_allowed_origins
 
   # IAM
-  app_sa_role_arn = dependency.iam.outputs.app_sa_role_arn
+  app_sa_role_arn         = dependency.iam.outputs.app_sa_role_arn
+  signals_export_role_arn = dependency.iam.outputs.signals_export_role_arn == null ? "" : dependency.iam.outputs.signals_export_role_arn
 
   # Storage
   storage_bucket_public = dependency.storage.outputs.storage_bucket_public == null ? "" : dependency.storage.outputs.storage_bucket_public
+  signals_export_bucket = try(dependency.storage.outputs.buckets["signals-export"].id, "")
 
   # RDS (managed Postgres) — endpoint hostname injected into all three chart overlays
   postgres_host = dependency.rds.outputs.db_address
