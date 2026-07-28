@@ -17,6 +17,11 @@ variable "signals_postgres_password_bytes" {
   default = 16
 }
 
+variable "signals_export_ro_password_bytes" {
+  type    = number
+  default = 16
+}
+
 variable "signals_redis_password_bytes" {
   type    = number
   default = 16

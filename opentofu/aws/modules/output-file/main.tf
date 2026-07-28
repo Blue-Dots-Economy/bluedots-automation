@@ -19,6 +19,7 @@ resource "local_sensitive_file" "global_secrets" {
     postgres_admin_password                 = var.postgres_admin_password
     aggregator_postgres_password            = var.aggregator_postgres_password
     signals_postgres_password               = var.signals_postgres_password
+    signals_export_ro_password              = var.signals_export_ro_password
     signals_redis_password                  = var.signals_redis_password
     monitoring_grafana_password             = var.monitoring_grafana_password
     aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password

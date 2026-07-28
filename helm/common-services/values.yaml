@@ -273,6 +273,7 @@ credentials:
   # per-tenant app passwords
   aggregatorPassword: ""  # AGGREGATOR_PG_PW
   dpgPassword: ""  # DPG_PG_PW
+  signalsExportRoPassword: ""  # signals-s3-export read-only role (bootstrap-created)
   redisPassword: ""  # REDIS_PW
 
 # -----------------------------------------------------------------------------
@@ -314,6 +315,15 @@ postgresBootstrap:
     - name: keycloak
       owner: aggregator
       extensions: []
+  # Read-only role for the signals-s3-export CronJob — created here (privileged),
+  # never the dpg app user. Table SELECTs are auto-granted as `owner` creates
+  # tables (ALTER DEFAULT PRIVILEGES), so it stays read-only. Opt-in: set
+  # enabled true where s3-export runs (needs credentials.signalsExportRoPassword).
+  signalsExportRole:
+    enabled: false
+    name: signals_export_ro
+    database: dpg
+    owner: dpg
 
 # -----------------------------------------------------------------------------
 # Bitnami Postgres subchart — single shared instance, multi-tenant.

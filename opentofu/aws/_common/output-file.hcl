@@ -82,6 +82,7 @@ dependency "random_passwords" {
     postgres_admin_password = "0000000000000000000000000000000c"
 
     signals_postgres_password      = "00000000000000000000000000000001"
+    signals_export_ro_password     = "0000000000000000000000000000000e"
     signals_redis_password         = "00000000000000000000000000000002"
     signals_auth_secret            = "00000000000000000000000000000003"
     signals_pii_key                = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
@@ -126,6 +127,7 @@ inputs = {
   postgres_admin_password = dependency.random_passwords.outputs.postgres_admin_password
 
   signals_postgres_password      = dependency.random_passwords.outputs.signals_postgres_password
+  signals_export_ro_password     = dependency.random_passwords.outputs.signals_export_ro_password
   signals_redis_password         = dependency.random_passwords.outputs.signals_redis_password
   signals_auth_secret            = dependency.random_passwords.outputs.signals_auth_secret
   signals_pii_key                = dependency.random_passwords.outputs.signals_pii_key

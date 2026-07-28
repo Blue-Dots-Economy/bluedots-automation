@@ -170,6 +170,11 @@ variable "signals_postgres_password" {
   sensitive = true
 }
 
+variable "signals_export_ro_password" {
+  type      = string
+  sensitive = true
+}
+
 variable "signals_redis_password" {
   type      = string
   sensitive = true
