@@ -390,4 +390,3 @@ s3-export:
   #  - id: blue_dot_dev
   #    network: blue_dot
   #    schedule: "0 0,12 * * *"
-  #    existingDatabaseSecret: signals-s3-export-db-blue-dot-dev

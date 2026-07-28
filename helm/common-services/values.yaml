@@ -320,7 +320,7 @@ postgresBootstrap:
   # tables (ALTER DEFAULT PRIVILEGES), so it stays read-only. Opt-in: set
   # enabled true where s3-export runs (needs credentials.signalsExportRoPassword).
   signalsExportRole:
-    enabled: false
+    enabled: true
     name: signals_export_ro
     database: dpg
     owner: dpg
