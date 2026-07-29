@@ -187,6 +187,10 @@ secrets:
     # AGGREGATOR_DPG_API_KEY above — not an HMAC keyId/secret pair.
     SIGNALS_SEARCH_ENDPOINT: ""
     SIGNALS_SEARCH_API_KEY: ""
+    # Discover BFF → signals-search (signals-dpg#203). Separate consumer from
+    # match-score; shares SIGNALS_SEARCH_API_KEY. Unset → discover falls back to
+    # native in-repo search silently, so absence is easy to miss.
+    SIGNALS_SEARCH_URL: ""
 
 # DB schema migration Job. A migrate-ddl initContainer runs the api image's
 # db:migrate:deploy (drizzle migrations + raw item/action/event SQL, all shipped

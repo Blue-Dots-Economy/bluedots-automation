@@ -125,6 +125,15 @@ credentials:
       # keyId+secret pair, so the retired secret must not be reused here.
       SIGNALS_SEARCH_ENDPOINT: "http://signals-search:3100"
       SIGNALS_SEARCH_API_KEY: ""
+      # Discover BFF → signals-search (signals-dpg#203), a SEPARATE consumer
+      # from match-score above. Read by SignalsSearchSecretsSchema, which shares
+      # SIGNALS_SEARCH_API_KEY with MatchScoreSecretsSchema — one key, two
+      # callers. Same in-cluster service, so same URL as the endpoint above.
+      # Both keys are .optional(): when either is unset the discover BFF falls
+      # back to the native in-repo search path SILENTLY — no crash, no error, so
+      # losing this value is invisible until someone notices Discover results
+      # changed. That is why it is pinned here rather than left to be set by hand.
+      SIGNALS_SEARCH_URL: "http://signals-search:3100"
   notificationService: &notification_service_secrets
     create: true
     existingSecret: ""
