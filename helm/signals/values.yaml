@@ -112,15 +112,12 @@ credentials:
       NOTIFICATION_SERVICE_KEY_ID: *notification_key_id
       NOTIFICATION_SERVICE_SECRET: *notification_secret
       SMS_TEMPLATE_ID: ""
-      # Match-score provider. Deliberately UNSET until signals-dpg #352 ships.
-      # The pre-#352 api pins this to z.enum(['dpg_scoring']), so setting
-      # "signals_search" now fails MatchScoreSecretsSchema.parse() in
-      # apps/api/src/env.ts — a boot crash, not a graceful error. An empty
-      # string is dropped by charts/api/templates/secret.yaml, so the env var
-      # is absent → provider undefined → getMatchScoreClient() returns
-      # undefined (match-score unavailable, no crash) on EITHER api build.
-      # Flip to "signals_search" once #352 is merged AND its image deployed.
-      MATCH_SCORE_PROVIDER: ""
+      # Match-score provider. Requires an api image built from signals-dpg#352
+      # or later: only that build accepts "signals_search" in
+      # MatchScoreSecretsSchema (pre-#352 pins z.enum(['dpg_scoring']) and
+      # fails .parse() at boot). Relevance also needs both items indexed with
+      # embeddings from the same model version, or scoring returns errors.
+      MATCH_SCORE_PROVIDER: "signals_search"
       # signals-search POST /v1/relevance. In-cluster service is
       # {release}-search:3100 (charts/search "search.fullname" + api.port).
       # Auth is a plain x-api-key checked by authenticateApiKey against the
