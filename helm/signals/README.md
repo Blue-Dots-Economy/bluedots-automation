@@ -14,7 +14,6 @@ common-services** (it does **not** bundle its own databases).
 | `api` | Fastify/Node Signals API |
 | `ui` | Vite/React UI behind nginx |
 | `notification-service` | Email/SMS OTP + notifications (gated `notification-service.enabled`) |
-| `match-score` | Match-scoring service (gated `match-score.enabled`) |
 | `search` | Signals search service (gated `search.enabled`) |
 | `search-embeddings` | Embeddings worker for search (gated `search-embeddings.enabled`) |
 

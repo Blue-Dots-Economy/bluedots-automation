@@ -211,7 +211,6 @@ misbranded / unable to send OTP / unable to log in. Two layers:
 | `secrets.smtpUser` | Sender email for aggregator SMTP auth |
 | `api.adminEmails` | Admin notification recipient(s) |
 | `mail.smtp.from` | From address on outgoing mail |
-| `match-score.configFiles.aiProvidersJson` → `openai.apiKey` | replace `REPLACE_WITH_OPENAI_API_KEY` |
 
 ### `secrets.yaml` (the secrets you fill in)
 

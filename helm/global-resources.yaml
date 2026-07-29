@@ -12,7 +12,7 @@
 
 
 # ── Signals (dpg) ─────────────────────────────────────────────────────────────
-# helm/signals/  →  subchart keys: api, ui, notification-service, match-score
+# helm/signals/  →  subchart keys: api, ui, notification-service, search, search-embeddings
 
 api:
   replicaCount: 2
@@ -59,28 +59,6 @@ ui:
 
 
 notification-service:
-  replicaCount: 1
-
-  autoscaling:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 3
-    targetCPUUtilizationPercentage: 70
-
-  podDisruptionBudget:
-    enabled: false
-    minAvailable: 1
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 512Mi
-    limits:
-      cpu: 500m
-      memory: 1Gi
-
-
-match-score:
   replicaCount: 1
 
   autoscaling:

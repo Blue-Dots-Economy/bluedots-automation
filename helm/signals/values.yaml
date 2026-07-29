@@ -21,7 +21,7 @@ global:
   publicHosts: []
 
 # -----------------------------------------------------------------------------
-# Images — single source for all 4 components
+# Images — single source for every component
 # -----------------------------------------------------------------------------
 images:
   api: &api_image
@@ -34,10 +34,6 @@ images:
     pullPolicy: Always
   notificationService: &notification_service_image
     repository: vinodbbhorge/notification-service
-    tag: "latest"             # branch tag emitted by build-images.yaml; override per environment.
-    pullPolicy: IfNotPresent
-  matchScore: &match_score_image
-    repository: vinodbbhorge/match-scoring
     tag: "latest"             # branch tag emitted by build-images.yaml; override per environment.
     pullPolicy: IfNotPresent
 
@@ -60,7 +56,7 @@ imagePullSecret:
   email: ''
 
 # -----------------------------------------------------------------------------
-# Resources — single source for all 4 components
+# Resources — single source for every component
 # -----------------------------------------------------------------------------
 resources:
   api: &api_resources {}
@@ -72,13 +68,6 @@ resources:
     #   memory: 256Mi
   ui: &ui_resources {}
   notificationService: &notification_service_resources {}
-  matchScore: &match_score_resources {}
-    # limits:
-    #   cpu: 200m
-    #   memory: 128Mi
-    # requests:
-    #   cpu: 50m
-    #   memory: 64Mi
 
 # -----------------------------------------------------------------------------
 # Credentials — single source for all secret material.
@@ -123,15 +112,22 @@ credentials:
       NOTIFICATION_SERVICE_KEY_ID: *notification_key_id
       NOTIFICATION_SERVICE_SECRET: *notification_secret
       SMS_TEMPLATE_ID: ""
-      # Match-score (dpg-scoring) provider. keyId+secret MUST match
-      # match-score.configFiles.authKeysJson keys[] entry below.
-      MATCH_SCORE_PROVIDER: "dpg_scoring"
-      DPG_SCORING_ENDPOINT: "http://signals-match-score:3000"
-      DPG_SCORING_KEY_ID: "match-score-client"
-      DPG_SCORING_SECRET: ""
-      DPG_SCORING_PATH: ""           # blank → client uses default 'api/v1/scores/match'
-      DPG_SCORING_VERSION: ""
-      DPG_SCORING_PROMPT_VERSION: ""
+      # Match-score provider. Deliberately UNSET until signals-dpg #352 ships.
+      # The pre-#352 api pins this to z.enum(['dpg_scoring']), so setting
+      # "signals_search" now fails MatchScoreSecretsSchema.parse() in
+      # apps/api/src/env.ts — a boot crash, not a graceful error. An empty
+      # string is dropped by charts/api/templates/secret.yaml, so the env var
+      # is absent → provider undefined → getMatchScoreClient() returns
+      # undefined (match-score unavailable, no crash) on EITHER api build.
+      # Flip to "signals_search" once #352 is merged AND its image deployed.
+      MATCH_SCORE_PROVIDER: ""
+      # signals-search POST /v1/relevance. In-cluster service is
+      # {release}-search:3100 (charts/search "search.fullname" + api.port).
+      # Auth is a plain x-api-key checked by authenticateApiKey against the
+      # shared better-auth apikey table — NOT the old dpg-scoring HMAC
+      # keyId+secret pair, so the retired secret must not be reused here.
+      SIGNALS_SEARCH_ENDPOINT: "http://signals-search:3100"
+      SIGNALS_SEARCH_API_KEY: ""
   notificationService: &notification_service_secrets
     create: true
     existingSecret: ""
@@ -141,11 +137,6 @@ credentials:
       GMAIL_PASS: ""    # 16-char App Password (2FA required)
       MSG91_AUTH_KEY: ""     # MSG91 API key for SMS OTP
       MSG91_TEMPLATE_ID: ""  # MSG91 template ID for OTP message
-  matchScore: &match_score_secrets
-    create: true
-    existingSecret: ""
-    data:
-      REDIS_PASSWORD: *redis_password
 
 # =============================================================================
 # Subchart pass-throughs — do NOT edit values here.
@@ -349,77 +340,6 @@ notification-service:
       {
         "dpg-api-client": {
           "secret": " "
-        }
-      }
-
-match-score:
-  enabled: true
-  image: *match_score_image
-  imagePullSecrets: *image_pull_secrets
-  resources: *match_score_resources
-  secrets: *match_score_secrets
-
-  replicaCount: 1
-  service:
-    type: ClusterIP
-    port: 3000
-    targetPort: 3000
-  ingress:
-    enabled: false
-
-  redis:
-    enabled: true
-    host: platform-redis-master.common-services.svc.cluster.local
-    port: 6379
-
-  config:
-    NODE_ENV: production
-    HOST: 0.0.0.0
-    PORT: "3000"
-    MATCH_SCORE_PROVIDER: openai
-    MATCH_SCORE_MODEL: gpt-4o-mini
-    AUTH_SECRETS_FILE: /app/config/auth.keys.json
-    AI_PROVIDER_SECRETS_FILE: /app/config/ai.providers.local.json
-
-  # AI auth + provider config — mirrors VM compose host-mounts of
-  # ../dpg-scoring/config/{auth.keys.json,ai.providers.local.json}.
-  # Stored in a k8s Secret, projected as files at /app/config/.
-  # NEVER commit real keys: override at install time with --set-file:
-  #   --set-file match-score.configFiles.authKeysJson=./auth.keys.json
-  #   --set-file match-score.configFiles.aiProvidersJson=./ai.providers.local.json
-  # Or pre-create a Secret and reference via existingSecret (keys must match
-  # authKeysFileName + aiProvidersFileName).
-  configFiles:
-    create: true
-    existingSecret: ""
-    mountPath: /app/config
-    authKeysFileName: auth.keys.json
-    # Schema (validated by zod in dpg-scoring/src/lib/auth/secrets.ts):
-    #   { keys: [{ keyId: string, secret: string }, ...] }
-    # Defaults are placeholders — override before deploy.
-    authKeysJson: |
-      {
-        "keys": [
-          {
-            "keyId": "match-score-client",
-            "secret": " "
-          }
-        ]
-      }
-    aiProvidersFileName: ai.providers.local.json
-    # Schema (validated by zod in dpg-scoring/src/lib/ai/provider-secrets.ts):
-    #   { providers: { <name>: { apiKey: string }, ... } }
-    # <name> must match config.MATCH_SCORE_PROVIDER above (default: openai).
-    # update the Key for the respective provider you will opt for.
-    aiProvidersJson: |
-      {
-        "providers": {
-          "openai": {
-            "apiKey": "REPLACE_WITH_OPENAI_API_KEY"
-          },
-          "gemini": {
-            "apiKey": "REPLACE_WITH_GEMINI_API_KEY"
-          }
         }
       }
 

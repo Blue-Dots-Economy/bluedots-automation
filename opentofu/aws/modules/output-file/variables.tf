@@ -83,6 +83,12 @@ variable "signalstack_admin_key" {
   description = "Shared API key for aggregator.signalstackAdminKey and signals AGGREGATOR_DPG_API_KEY (same value, two consumers)"
 }
 
+variable "signals_search_api_key" {
+  type        = string
+  sensitive   = true
+  description = "API key the signals api sends to signals-search /v1/relevance as x-api-key (signals SIGNALS_SEARCH_API_KEY)"
+}
+
 # ─── Signals notification service ─────────────────────────────────────────
 variable "notification_gmail_user" {
   type    = string
@@ -201,11 +207,6 @@ variable "signals_pii_key" {
 }
 
 variable "signals_notification_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "signals_dpg_scoring_secret" {
   type      = string
   sensitive = true
 }

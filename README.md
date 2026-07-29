@@ -31,7 +31,7 @@ that means **Signals** (`helm/signals/`).
 |-------------------------|------------------|-------------------|-------------------|-------------------------------------------------------------------------|
 | `helm/monitoring`       | `monitoring`     | `monitoring`      | `monitoring`      | Prometheus + Alertmanager + Loki + Alloy + Jaeger + Grafana             |
 | `helm/common-services`  | `platform`       | `common-services` | `common-services` | **Kong** ingress, cert-manager, `letsencrypt-prod` issuer, **shared Postgres + Redis**, metrics-server |
-| `helm/signals`          | `dpg`            | `signals`         | `signals`         | **Signals / signalstack** — api, ui, notification-service, match-score  |
+| `helm/signals`          | `dpg`            | `signals`         | `signals`         | **Signals / signalstack** — api, ui, notification-service, search       |
 | `helm/aggregator`       | `aggregator-dpg` | `aggregator`      | `aggregator`      | **Aggregator portal** — web (BFF), api, worker, keycloak                |
 
 > **"Signals" lives in `helm/signals/` but the chart is called `dpg`.** When
@@ -55,7 +55,7 @@ that means **Signals** (`helm/signals/`).
 │   ├── global-resources.yaml # shared replica/HPA/PDB/resource overrides (all envs)
 │   ├── monitoring/           # chart "monitoring": kube-prometheus-stack, Loki, Alloy, Jaeger, Grafana
 │   ├── common-services/      # chart "platform": Kong, cert-manager, Postgres, Redis, metrics-server
-│   ├── signals/              # chart "dpg": Signals (api/ui/notification/match-score); charts/api/files/{networks,consent}/*.json
+│   ├── signals/              # chart "dpg": Signals (api/ui/notification/search); charts/api/files/{networks,consent}/*.json
 │   └── aggregator/           # chart "aggregator-dpg": web BFF, api, worker, keycloak; files/consent/consent.json
 └── opentofu/
     └── aws/
@@ -443,7 +443,6 @@ environment there):
 | Signals — api         | `ghcr.io/blue-dots-economy/signals-dpg/api`            |
 | Signals — ui          | `vinodbbhorge/signalstack-ui`                          |
 | Signals — notification | `ghcr.io/blue-dots-economy/notification-service` |
-| Signals — match-score  | `vinodbbhorge/match-scoring`                            |
 | Aggregator — web / api / worker | `ghcr.io/blue-dots-economy/aggregator-dpg/{web,api,worker}` |
 | Aggregator — keycloak | `vinodbbhorge/aggregator-dpg-keycloak`                 |
 

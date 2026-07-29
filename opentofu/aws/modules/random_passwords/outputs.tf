@@ -36,11 +36,6 @@ output "signals_notification_secret" {
   sensitive = true
 }
 
-output "signals_dpg_scoring_secret" {
-  value     = random_id.signals_dpg_scoring_secret.hex
-  sensitive = true
-}
-
 output "signals_instance_shared_secret" {
   value     = random_id.signals_instance_shared_secret.hex
   sensitive = true
@@ -100,5 +95,11 @@ output "random_string" {
 output "signalstack_admin_key" {
   description = "Shared API key for aggregator.signalstackAdminKey AND signals AGGREGATOR_DPG_API_KEY"
   value       = random_password.signalstack_admin_key.result
+  sensitive   = true
+}
+
+output "signals_search_api_key" {
+  description = "API key the signals api sends to signals-search /v1/relevance (signals SIGNALS_SEARCH_API_KEY)"
+  value       = random_password.signals_search_api_key.result
   sensitive   = true
 }

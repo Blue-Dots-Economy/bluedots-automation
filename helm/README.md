@@ -9,7 +9,7 @@ Install in this strict order:
 |---|-------------------|------------------|-------------------|-------------------|------------------------------------------------------------------|
 | 1 | `monitoring`      | `monitoring`     | `monitoring`      | `monitoring`      | kube-prometheus-stack (Prometheus, Alertmanager) + Loki + Alloy + Jaeger + Grafana |
 | 2 | `common-services` | `platform`       | `common-services` | `common-services` | **Kong** ingress, cert-manager, `letsencrypt-prod` ClusterIssuer, shared Postgres + Redis, metrics-server |
-| 3 | `signals`         | `dpg`            | `signals`         | `signals`         | Signals monorepo: api, ui, notification-service, match-score     |
+| 3 | `signals`         | `dpg`            | `signals`         | `signals`         | Signals monorepo: api, ui, notification-service, search          |
 | 4 | `aggregator`      | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal: web (BFF), api, worker, keycloak              |
 
 > The directory, chart `name`, release, and namespace are **not** the same. Only
@@ -68,7 +68,7 @@ secrets:                           # aggregator
   kcBootstrapAdminPassword: <generated>
   signalstackAdminKey: <generated>
   smtpUser / smtpPassword: ...
-api / notification-service / match-score / search: { secrets: { ... } }   # signals
+api / notification-service / search: { secrets: { ... } }                # signals
 
 # global-cloud-values.yaml (cloud + computed)
 global: { dataPlatform: { namespace: common-services, ... } }

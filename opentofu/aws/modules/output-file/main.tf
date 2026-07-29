@@ -42,7 +42,7 @@ resource "local_sensitive_file" "global_secrets" {
     signals_auth_secret                     = var.signals_auth_secret
     signals_pii_key                         = var.signals_pii_key
     signals_notification_secret             = var.signals_notification_secret
-    signals_dpg_scoring_secret              = var.signals_dpg_scoring_secret
+    signals_search_api_key                  = var.signals_search_api_key
     signals_instance_shared_secret          = var.signals_instance_shared_secret
     notification_gmail_user                 = var.notification_gmail_user
 
