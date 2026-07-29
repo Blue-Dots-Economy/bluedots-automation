@@ -170,11 +170,21 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
   (`"false"` = reject unknown fields) is set in the chart values. `BULK_MAX_ITEMS`
   (bulk-upload cap) is a supported api env var but not surfaced in the chart
   today — add it under `api.config` only if you need to override the app default.
-- **Geocoding / maps** — a single `google_maps_api_key` in `secrets.yaml` feeds
-  both the frontend Maps JS key (`ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY`)
-  and the backend geocoding key (`api.secrets.data.GOOGLE_GEOCODING_API_KEY`),
-  so enable **both** the Maps JavaScript API and the Geocoding API on that key
-  in Google Cloud Console. `PHOTON_URL` defaults to the public Photon.
+- **Geocoding / maps** — **two** keys in `secrets.yaml`, because a Google API key
+  accepts only one application restriction (HTTP referrers *or* IP addresses):
+  - `google_maps_api_key` → `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY`
+    (browser). Google Cloud Console: API restriction *Maps JavaScript API*,
+    application restriction *HTTP referrers* = `https://<each signals host>/*`.
+  - `google_geocoding_api_key` → `api.secrets.data.GOOGLE_GEOCODING_API_KEY`
+    (server). API restriction *Geocoding API*, application restriction
+    *IP addresses* = the env's NAT gateway Elastic IPs — **both** of them, since
+    pods egress via either AZ (`cd network && terragrunt output nat_gateway_public_ips`).
+
+  Set both to the same key value if you're not restricting them yet. Note that
+  clusters whose nodes run in **public** subnets have no NAT gateway, so their
+  egress is the node's own auto-assigned public IP, which changes on node
+  replacement — prefer referrer restriction there, or give them a fixed egress.
+  `PHOTON_URL` defaults to the public Photon.
 - **Other** — `_alert_email`, `_aggregator_admin_emails`,
   `global.orgHierarchyEnabled` (default `true`).
 

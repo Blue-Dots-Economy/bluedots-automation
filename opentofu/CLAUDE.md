@@ -39,19 +39,20 @@ Some secrets can neither be committed (they're real credentials) nor generated (
 
 `_common/output-file.hcl` reads it every apply (`fileexists()` guard → `{}` when absent, then per-key `try()` → the placeholder), passes the values as module variables, and the `.tfpl` interpolates them. **That's what makes regeneration safe: `apply_tf_output_file` re-renders `global-secrets.yaml` from the same `secrets.yaml`, so hand-entered values are never lost** — the earlier "re-paste after every regenerate" footgun is gone.
 
-Seven keys, **one per distinct secret**, each fanned out to every consumer so per-chart copies can't drift:
+Eight keys. Most are **one per distinct secret**, fanned out to every consumer so per-chart copies can't drift. The two Google keys are the deliberate exception — a Google API key accepts only **one** application restriction (HTTP referrers *or* IP addresses), so the browser key and the server key have to be separate entries to be restrictable at all (`google_maps_api_key` → referrers on the signals hosts; `google_geocoding_api_key` → the env's NAT gateway EIPs, both AZs). They may hold the same value if unrestricted.
 
 | `secrets.yaml` key | Rendered into |
 |---|---|
 | `smtp_password` | notification-service `GMAIL_PASS`, aggregator `secrets.smtpPassword`, monitoring `alerting.email.smtpAuthPassword` |
 | `msg91_auth_key` | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
 | `msg91_template_id` | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
-| `google_maps_api_key` | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` **and** `api.secrets.data.GOOGLE_GEOCODING_API_KEY` — one key for both, so enable **Maps JavaScript API + Geocoding API** on it |
+| `google_maps_api_key` | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` (browser) |
+| `google_geocoding_api_key` | signals `api.secrets.data.GOOGLE_GEOCODING_API_KEY` (server) |
 | `discord_{critical,warning,info}_webhook` | monitoring `alerting.discord.*Webhook` |
 
 Two gotchas worth keeping: the Discord placeholders stay **URL-shaped** (`https://discord.com/api/webhooks/UPDATE_THIS_VALUE/...`) because Alertmanager validates `webhook_url` as a URL at config load — a bare placeholder bricks the whole alertmanager config when discord is enabled. And the `.gitignore` entry is **path-scoped** (`opentofu/aws/**/secrets.yaml`): a bare `secrets.yaml` pattern would also swallow the charts' committed `helm/**/templates/secrets.yaml`.
 
-Never hand-edit `global-secrets.yaml` — it's regenerated output. Edit `secrets.yaml` and re-run `apply_tf_output_file`. `preflight` warns (doesn't fail) if `UPDATE_THIS_VALUE` placeholders remain, since some are legitimately unused (MSG91 with SMS off, Discord when alerting is email-only).
+Never hand-edit `global-secrets.yaml` — it's regenerated output. Edit `secrets.yaml` and re-run `apply_tf_output_file`. Leaving a key as `UPDATE_THIS_VALUE` is fine for anything the deployment doesn't use (MSG91 with SMS off, Discord when alerting is email-only) — it renders through and only matters to the service that reads it.
 
 ## Private-cluster access (`pritunl` + `bastion`, both `*_enabled` default `true`)
 

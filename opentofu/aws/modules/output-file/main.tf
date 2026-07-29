@@ -52,6 +52,7 @@ resource "local_sensitive_file" "global_secrets" {
     msg91_auth_key           = var.msg91_auth_key
     msg91_template_id        = var.msg91_template_id
     google_maps_api_key      = var.google_maps_api_key
+    google_geocoding_api_key = var.google_geocoding_api_key
     discord_critical_webhook = var.discord_critical_webhook
     discord_warning_webhook  = var.discord_warning_webhook
     discord_info_webhook     = var.discord_info_webhook
