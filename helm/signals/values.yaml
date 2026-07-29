@@ -112,11 +112,7 @@ credentials:
       NOTIFICATION_SERVICE_KEY_ID: *notification_key_id
       NOTIFICATION_SERVICE_SECRET: *notification_secret
       SMS_TEMPLATE_ID: ""
-      # Match-score provider. Requires an api image built from signals-dpg#352
-      # or later: only that build accepts "signals_search" in
-      # MatchScoreSecretsSchema (pre-#352 pins z.enum(['dpg_scoring']) and
-      # fails .parse() at boot). Relevance also needs both items indexed with
-      # embeddings from the same model version, or scoring returns errors.
+      # Needs an api image from signals-dpg#352+; older builds reject it at boot.
       MATCH_SCORE_PROVIDER: "signals_search"
       # signals-search POST /v1/relevance. In-cluster service is
       # {release}-search:3100 (charts/search "search.fullname" + api.port).
@@ -125,14 +121,7 @@ credentials:
       # keyId+secret pair, so the retired secret must not be reused here.
       SIGNALS_SEARCH_ENDPOINT: "http://signals-search:3100"
       SIGNALS_SEARCH_API_KEY: ""
-      # Discover BFF → signals-search (signals-dpg#203), a SEPARATE consumer
-      # from match-score above. Read by SignalsSearchSecretsSchema, which shares
-      # SIGNALS_SEARCH_API_KEY with MatchScoreSecretsSchema — one key, two
-      # callers. Same in-cluster service, so same URL as the endpoint above.
-      # Both keys are .optional(): when either is unset the discover BFF falls
-      # back to the native in-repo search path SILENTLY — no crash, no error, so
-      # losing this value is invisible until someone notices Discover results
-      # changed. That is why it is pinned here rather than left to be set by hand.
+      # Discover BFF → signals-search (signals-dpg#203). Unset = silent fallback to native search.
       SIGNALS_SEARCH_URL: "http://signals-search:3100"
   notificationService: &notification_service_secrets
     create: true
