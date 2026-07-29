@@ -33,10 +33,6 @@ resource "random_id" "signals_notification_secret" {
   byte_length = var.signals_notification_secret_bytes
 }
 
-resource "random_id" "signals_dpg_scoring_secret" {
-  byte_length = var.signals_dpg_scoring_secret_bytes
-}
-
 # Inter-instance peer-auth HMAC secret (INSTANCE_SHARED_SECRET). Min 32 chars;
 # byte_length 32 → 64 hex chars. See signals-dpg#255.
 resource "random_id" "signals_instance_shared_secret" {
@@ -92,5 +88,17 @@ resource "random_password" "random_string" {
 #   - signals helm chart:    api.apiconfig.data.AGGREGATOR_DPG_API_KEY
 resource "random_password" "signalstack_admin_key" {
   length  = var.signalstack_admin_key_length
+  special = false
+}
+
+# Raw api key the signals api sends to signals-search POST /v1/relevance as
+# x-api-key (backs match-score since signals-dpg#352 retired dpg_scoring).
+# Same shape as signalstack_admin_key above and seeded the same way: the api
+# migrate-job hashes it into the better-auth `apikey` table via
+# provision_service_users.sql, so only the hash reaches the callee. A distinct
+# key (not a reuse of signalstack_admin_key) keeps the two callers separately
+# rotatable and separately rate-limitable.
+resource "random_password" "signals_search_api_key" {
+  length  = var.signals_search_api_key_length
   special = false
 }

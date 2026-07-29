@@ -193,7 +193,7 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
 ## §E — Image tags
 
 Pin per-service images in `opentofu/aws/<env>/global-images.yaml` (plaintext,
-per-env): `api`, `ui`, `notification-service`, `match-score`, `search`,
+per-env): `api`, `ui`, `notification-service`, `search`,
 `search-embeddings`; aggregator `web`/`api`/`worker`; `keycloak` (brand theme
 tag, §C). Prefer immutable SHAs for prod; dev may track a branch tag.
 

@@ -42,11 +42,6 @@ variable "signals_notification_secret_bytes" {
   default = 32
 }
 
-variable "signals_dpg_scoring_secret_bytes" {
-  type    = number
-  default = 32
-}
-
 variable "signals_instance_shared_secret_bytes" {
   type    = number
   default = 32
@@ -124,5 +119,15 @@ variable "signalstack_admin_key_length" {
   validation {
     condition     = var.signalstack_admin_key_length >= 32
     error_message = "signalstack_admin_key_length must be at least 32."
+  }
+}
+
+variable "signals_search_api_key_length" {
+  type        = number
+  description = "Length of the signals api → signals-search /v1/relevance api key (signals SIGNALS_SEARCH_API_KEY). Must be >= 32; provision_service_users.sql rejects anything shorter."
+  default     = 48
+  validation {
+    condition     = var.signals_search_api_key_length >= 32
+    error_message = "signals_search_api_key_length must be at least 32."
   }
 }

@@ -344,26 +344,6 @@ notification-service:
     fileName: internal-secrets.json
     mountPath: /app/config
 
-match-score:
-  secrets:
-    create: true
-  redis:
-    host: common-services-redis-master.common-services.svc.cluster.local
-  configFiles:
-    create: true
-    aiProvidersFileName: ai.providers.local.json
-    aiProvidersJson: |
-      {
-        "providers": {
-          "openai": {
-            "apiKey": "REPLACE_WITH_OPENAI_API_KEY"
-          },
-          "gemini": {
-            "apiKey": "REPLACE_WITH_GEMINI_API_KEY"
-          }
-        }
-      }
-
 search:
   # In-cluster Postgres by default. The opentofu RDS overlay
   # (global-cloud-values.yaml) overrides search.postgres.host with the managed
