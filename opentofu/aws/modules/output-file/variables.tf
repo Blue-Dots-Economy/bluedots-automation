@@ -45,10 +45,22 @@ variable "app_sa_role_arn" {
   default = ""
 }
 
+# Signals s3-export exporter IRSA role ARN (empty when not provisioned).
+variable "signals_export_role_arn" {
+  type    = string
+  default = ""
+}
+
 # -----------------------------------------------------------------------------
 # Storage (S3)
 # -----------------------------------------------------------------------------
 variable "storage_bucket_public" {
+  type    = string
+  default = ""
+}
+
+# Dedicated Signals s3-export bucket name (empty when not provisioned).
+variable "signals_export_bucket" {
   type    = string
   default = ""
 }
@@ -154,6 +166,11 @@ variable "postgres_admin_password" {
 
 # ─── Signals chart secrets ─────────────────────────────────────────────────
 variable "signals_postgres_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "signals_export_ro_password" {
   type      = string
   sensitive = true
 }

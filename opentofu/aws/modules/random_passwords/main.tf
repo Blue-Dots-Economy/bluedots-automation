@@ -9,6 +9,12 @@ resource "random_id" "signals_postgres_password" {
   byte_length = var.signals_postgres_password_bytes
 }
 
+# Read-only role for the signals-s3-export CronJob. Created by the
+# common-services postgres bootstrap; never the app (dpg) user.
+resource "random_id" "signals_export_ro_password" {
+  byte_length = var.signals_export_ro_password_bytes
+}
+
 resource "random_id" "signals_redis_password" {
   byte_length = var.signals_redis_password_bytes
 }

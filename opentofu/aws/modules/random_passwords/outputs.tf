@@ -10,6 +10,11 @@ output "signals_postgres_password" {
   sensitive = true
 }
 
+output "signals_export_ro_password" {
+  value     = random_id.signals_export_ro_password.hex
+  sensitive = true
+}
+
 output "signals_redis_password" {
   value     = random_id.signals_redis_password.hex
   sensitive = true

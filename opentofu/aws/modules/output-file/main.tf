@@ -1,5 +1,14 @@
 locals {
   values_dir = "${var.base_location}/.."
+
+  # DB URL for the signals-s3-export exporter: the read-only role (created by the
+  # common-services bootstrap), never the dpg app user. Host follows the RDS
+  # endpoint when present, else the in-cluster Postgres service.
+  signals_export_db_host = var.postgres_host != "" ? var.postgres_host : "common-services-postgresql.common-services.svc.cluster.local"
+  signals_export_database_url = format(
+    "postgresql://signals_export_ro:%s@%s:5432/dpg",
+    var.signals_export_ro_password, local.signals_export_db_host,
+  )
 }
 
 # Renamed from global_credentials -> global_secrets (file renamed to
@@ -19,6 +28,8 @@ resource "local_sensitive_file" "global_secrets" {
     postgres_admin_password                 = var.postgres_admin_password
     aggregator_postgres_password            = var.aggregator_postgres_password
     signals_postgres_password               = var.signals_postgres_password
+    signals_export_ro_password              = var.signals_export_ro_password
+    signals_export_database_url             = local.signals_export_database_url
     signals_redis_password                  = var.signals_redis_password
     monitoring_grafana_password             = var.monitoring_grafana_password
     aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
@@ -57,6 +68,8 @@ resource "local_sensitive_file" "global_cloud_values" {
     cloud_storage_region    = var.cloud_storage_region
     storage_bucket_public   = var.storage_bucket_public
     app_sa_role_arn         = var.app_sa_role_arn
+    signals_export_role_arn = var.signals_export_role_arn
+    signals_export_bucket   = var.signals_export_bucket
     signals_public_hosts    = var.signals_public_hosts
     signals_allowed_origins = var.signals_allowed_origins
     signals_network         = var.signals_network
