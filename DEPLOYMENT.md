@@ -219,12 +219,19 @@ One key per secret — each is templated into **every** chart that needs it, so
 the per-chart copies can never drift. Leave any you don't use as
 `UPDATE_THIS_VALUE`.
 
+> The two Google keys are a deliberate exception to "one key per secret": a
+> Google API key accepts only **one** application restriction (HTTP referrers
+> *or* IP addresses, never both), so the browser key and the server key must be
+> separate to be restrictable at all. Set both to the same value if you don't
+> intend to restrict them.
+
 | `secrets.yaml` key | Value | Ends up as |
 |---|---|---|
 | `smtp_password` | 16-char Gmail **App Password** — **strip the display spaces** (16 chars, not 19) | notification-service `GMAIL_PASS`, aggregator `secrets.smtpPassword`, monitoring `alerting.email.smtpAuthPassword` |
 | `msg91_auth_key` | MSG91 key (SMS OTP; leave as placeholder if unused) | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
 | `msg91_template_id` | MSG91 OTP template id | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
-| `google_maps_api_key` | Google Maps API key — enable **both** Maps JavaScript API and Geocoding API on it | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` (frontend) **and** `api.secrets.data.GOOGLE_GEOCODING_API_KEY` (backend) |
+| `google_maps_api_key` | Google Maps **browser** key — API restriction: Maps JavaScript API; application restriction: **HTTP referrers** (`https://<each signals host>/*`) | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` |
+| `google_geocoding_api_key` | Google Maps **server** key — API restriction: Geocoding API; application restriction: **IP addresses** (the env's NAT gateway Elastic IPs, **both** AZs) | signals `api.secrets.data.GOOGLE_GEOCODING_API_KEY` |
 | `discord_critical_webhook`<br>`discord_warning_webhook`<br>`discord_info_webhook` | Discord webhook URLs (Channel Settings → Integrations → Webhooks); enable via `alerting.discord.enabled` in `global-values.yaml` | monitoring `alerting.discord.*Webhook` |
 
 Any key left as `UPDATE_THIS_VALUE` is rendered through as-is, so an unfilled

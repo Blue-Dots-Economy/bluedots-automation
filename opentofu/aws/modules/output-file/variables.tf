@@ -113,8 +113,18 @@ variable "msg91_template_id" {
   default     = "UPDATE_THIS_VALUE"
 }
 
+# Two separate Google keys: a Google API key takes only ONE application
+# restriction (HTTP referrers OR IP addresses), so the browser key and the
+# server key must be distinct to be restrictable at all.
 variable "google_maps_api_key" {
-  description = "Google Maps API key — needs both Maps JavaScript API and Geocoding API enabled. Feeds signals ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY (frontend) and api GOOGLE_GEOCODING_API_KEY (backend)."
+  description = "Google Maps JS API key, BROWSER-side → signals ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY. Restrict by HTTP referrers (the signals public hosts)."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
+variable "google_geocoding_api_key" {
+  description = "Google Geocoding API key, SERVER-side → signals api GOOGLE_GEOCODING_API_KEY. Restrict by IP (the env's NAT gateway Elastic IPs, both AZs)."
   type        = string
   sensitive   = true
   default     = "UPDATE_THIS_VALUE"

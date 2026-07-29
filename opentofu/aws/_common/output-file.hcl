@@ -32,10 +32,11 @@ locals {
   manual_secrets_path = "${get_terragrunt_dir()}/../secrets.yaml"
   manual_secrets      = fileexists(local.manual_secrets_path) ? yamldecode(file(local.manual_secrets_path)) : {}
 
-  smtp_password       = try(local.manual_secrets.smtp_password, "UPDATE_THIS_VALUE")
-  msg91_auth_key      = try(local.manual_secrets.msg91_auth_key, "UPDATE_THIS_VALUE")
-  msg91_template_id   = try(local.manual_secrets.msg91_template_id, "UPDATE_THIS_VALUE")
-  google_maps_api_key = try(local.manual_secrets.google_maps_api_key, "UPDATE_THIS_VALUE")
+  smtp_password            = try(local.manual_secrets.smtp_password, "UPDATE_THIS_VALUE")
+  msg91_auth_key           = try(local.manual_secrets.msg91_auth_key, "UPDATE_THIS_VALUE")
+  msg91_template_id        = try(local.manual_secrets.msg91_template_id, "UPDATE_THIS_VALUE")
+  google_maps_api_key      = try(local.manual_secrets.google_maps_api_key, "UPDATE_THIS_VALUE")
+  google_geocoding_api_key = try(local.manual_secrets.google_geocoding_api_key, "UPDATE_THIS_VALUE")
 
   discord_critical_webhook = try(local.manual_secrets.discord_critical_webhook, "https://discord.com/api/webhooks/UPDATE_THIS_VALUE/UPDATE_THIS_VALUE")
   discord_warning_webhook  = try(local.manual_secrets.discord_warning_webhook, "https://discord.com/api/webhooks/UPDATE_THIS_VALUE/UPDATE_THIS_VALUE")
@@ -145,6 +146,7 @@ inputs = {
   msg91_auth_key           = local.msg91_auth_key
   msg91_template_id        = local.msg91_template_id
   google_maps_api_key      = local.google_maps_api_key
+  google_geocoding_api_key = local.google_geocoding_api_key
   discord_critical_webhook = local.discord_critical_webhook
   discord_warning_webhook  = local.discord_warning_webhook
   discord_info_webhook     = local.discord_info_webhook
