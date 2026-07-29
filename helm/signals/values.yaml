@@ -114,11 +114,7 @@ credentials:
       SMS_TEMPLATE_ID: ""
       # Needs an api image from signals-dpg#352+; older builds reject it at boot.
       MATCH_SCORE_PROVIDER: "signals_search"
-      # signals-search POST /v1/relevance. In-cluster service is
-      # {release}-search:3100 (charts/search "search.fullname" + api.port).
-      # Auth is a plain x-api-key checked by authenticateApiKey against the
-      # shared better-auth apikey table — NOT the old dpg-scoring HMAC
-      # keyId+secret pair, so the retired secret must not be reused here.
+      # match-score → signals-search POST /v1/relevance; key seeded by the migrate-job.
       SIGNALS_SEARCH_ENDPOINT: "http://signals-search:3100"
       SIGNALS_SEARCH_API_KEY: ""
       # Discover BFF → signals-search (signals-dpg#203). Unset = silent fallback to native search.
