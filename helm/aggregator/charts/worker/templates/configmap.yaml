@@ -1,8 +1,7 @@
 {{- /*
-  Upstream network.json URL — MUST stay byte-identical to the api's copy in
-  charts/api/templates/configmap.yaml (a subchart cannot share the umbrella's
-  _helpers.tpl, hence the duplication). Both halves run the loader; a mismatch puts
-  bulk-row validation and registration acceptance on different network.json files.
+  Upstream network.json URL. Keep identical to charts/api/templates/configmap.yaml —
+  duplicated because a subchart cannot use the umbrella's _helpers.tpl, and both
+  halves must resolve the same network.json.
 */ -}}
 {{- $ns := .Values.global.networkSource | default dict -}}
 {{- $networkSource := $ns.url | default "" -}}
@@ -19,15 +18,11 @@ data:
   # Per-network deployment — mirrors the api configmap so worker
   # validates rows against the same schema the api accepts.
   #
-  # AGGREGATOR_CONFIG_PATH is deliberately NOT set. The app derives
-  # /app/config/<network>[/<brand>]/aggregator.config.yaml from AGGREGATOR_NETWORK
-  # + AGGREGATOR_BRAND below (packages/network-config resolveConfigPath), and an
-  # explicit value WINS over that derivation. The previous explicit value here
-  # omitted the brand segment, so a branded deploy (global.aggregatorBrand set)
-  # pointed the worker at the un-branded network config while the api — which
-  # derives — used the branded one, splitting bulk-row validation from
-  # registration acceptance. Leave unset so both halves resolve identically, and
-  # so the mounted ConfigMap (mounted at the derived path) is actually read.
+  # AGGREGATOR_CONFIG_PATH is deliberately unset: an explicit value wins over the
+  # app's own derivation from AGGREGATOR_NETWORK + AGGREGATOR_BRAND below
+  # (packages/network-config resolveConfigPath), which is also where the
+  # aggregator.config.yaml ConfigMap is mounted. Setting it here would have to
+  # reproduce the brand segment exactly or the mount is bypassed.
   # AGGREGATOR_CONFIG_PATH: "/app/config/{{ .Values.global.aggregatorNetwork }}/aggregator.config.yaml"
   # SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
   # Deploy-time override for the upstream network.json URL. See the api configmap

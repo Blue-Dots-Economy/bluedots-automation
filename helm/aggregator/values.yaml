@@ -44,42 +44,36 @@ global:
   aggregatorBrand: ''
 
   # Deliver aggregator.config.yaml to api + worker from the {release}-network-config
-  # ConfigMap (source: files/network-config/aggregator.config.yaml, committed deploy
-  # state in THIS repo) instead of the copy baked into the image. Keep true for real
-  # deploys — it is what makes the network binding, brand strings, domain labels and
-  # registration modes editable without an image rebuild.
+  # ConfigMap (source: files/network-config/aggregator.config.yaml, fetched per
+  # deploy by scripts/fetch-configs.sh) instead of the copy baked into the image.
+  # Keep true: it is what makes the network binding, brand strings, domain labels
+  # and registration modes changeable without an image rebuild.
   #
-  # false = fall back to the image-baked config (pre-delivery behaviour). Also used
-  # by static checks with no real values: install.sh lint and the CI helm job pass
-  # --set global.networkConfigDelivery=false.
+  # false falls back to the image-baked config, and is how static renders with no
+  # fetched file pass (install.sh lint, CI helm job).
   #
-  # A change to that file needs a pod restart (subPath mounts don't hot-update and
-  # the config is boot-cached in-process) — deploy_aggregator handles this.
+  # A change to that file needs a pod restart — subPath mounts don't hot-update and
+  # the config is boot-cached in-process. deploy_aggregator handles this.
   networkConfigDelivery: true
 
   # ── Upstream network.json source ──────────────────────────────────────────
-  # The aggregator FETCHES network.json over HTTPS at boot (it is never a file on
-  # disk — unlike signals, which mounts it). This block builds that URL and emits it
-  # as AGGREGATOR_NETWORK_SOURCE to api + worker (both run the loader; web does not),
-  # where it overrides `aggregator.network.source` in the delivered config file.
+  # The aggregator fetches network.json over HTTPS at boot rather than mounting it,
+  # so a URL is the only interface. This block builds it and emits it as
+  # AGGREGATOR_NETWORK_SOURCE to api + worker (both run the loader; web does not),
+  # overriding `aggregator.network.source` in the delivered config file.
   #
-  # Derivation MIRRORS scripts/fetch-configs.sh's signals target
-  # (RAW="https://raw.githubusercontent.com/${REPO}/${REF}" then ${RAW}/${NETWORK}/network.json)
-  # so the aggregator resolves the SAME network.json the signals deploy fetched.
-  # install.sh passes repo/ref from $SIGNALS_DPG_REPO/$SIGNALS_DPG_REF, so the two
-  # halves cannot drift. Defaults here match that script's defaults.
-  #
-  # REQUIRES aggregator-dpg#513 in the deployed image — until then nothing reads the
-  # env var and it is silently inert (the YAML value is used instead).
+  # The derivation mirrors scripts/fetch-configs.sh's signals target
+  # (<raw>/<repo>/<ref>/<network>/network.json) so both halves resolve the same
+  # network.json, and install.sh passes repo/ref from $SIGNALS_DPG_REPO /
+  # $SIGNALS_DPG_REF to keep them in lockstep. Requires aggregator-dpg#513 in the
+  # deployed image; older images ignore the env var.
   networkSource:
-    # UPDATE: `main` is a MOVING ref; pin a tag/SHA for prod (do it via
-    # SIGNALS_DPG_REF so signals and the aggregator stay in lockstep).
+    # UPDATE: pin a tag/SHA for prod — via SIGNALS_DPG_REF, so signals moves with it.
     repo: Blue-Dots-Economy/bluedots-schemas
     ref: main
     # Filename inside the per-network directory.
     file: network.json
-    # Full-URL escape hatch. Non-empty wins over the derivation above — use when
-    # network.json is not on raw.githubusercontent (mirror, internal host, S3).
+    # Full-URL override, for a mirror / internal host / S3 instead of the derivation.
     url: ''
 
   # Support/grievance email injected into the aggregator consent T&C / Privacy /

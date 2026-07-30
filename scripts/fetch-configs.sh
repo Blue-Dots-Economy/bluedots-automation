@@ -20,13 +20,35 @@
 #                 -> helm/signals/charts/api/files/{networks,consent}/
 #               network.json's instance_url is normalized to __PUBLIC_API_URL__
 #               (the token schemas-configmap.yaml substitutes with the real host).
-#   aggregator  consent.json (a FULL document) from <network>[/<brand>]/consent.json
-#               in the schemas repo, with a brand > network fallback
+#   aggregator  consent.json (a FULL document) from the aggregator-dpg config tree.
+#               The aggregator's loader requires a top-level {"audiences":…};
+#               bluedots-schemas' <network>/consent.json is the signals document
+#               ({"documents":…}) — a different schema under the same filename.
+#               Candidates, brand > network > repo-wide default:
+#                 <consent-dir>/<network>/<brand>/schemas/aggregator/consent.json
+#                 <consent-dir>/<network>/schemas/aggregator/consent.json
+#                 <consent-dir>/schemas/aggregator/consent.json
 #                 -> helm/aggregator/files/consent/consent.json
+#               Shape is asserted (assert_aggregator_consent) because the app
+#               tolerates a bad document instead of failing.
+#               PLUS aggregator.config.yaml (network binding, brand strings, domain
+#               labels, registration modes), also from aggregator-dpg but with its
+#               own repo/ref/dir/file knobs:
+#                 <config-dir>/<network>[/<brand>]/<config-file>
+#                 -> helm/aggregator/files/network-config/aggregator.config.yaml
+#               Fetched VERBATIM — no placeholder rewriting, no field edits. The
+#               chart mounts it over the image-baked copy, so updating canonical +
+#               redeploying picks it up with NO image rebuild.
 #
 # Usage:
 #   fetch-configs.sh signals    --global-values <path> [--ref <r>] [--repo <o/n>] [--network <n>] [--brand <b>] [--college-dataset <ka|up>]
 #   fetch-configs.sh aggregator --global-values <path> [--ref <r>] [--repo <o/n>] [--network <n>] [--brand <b>]
+#
+# aggregator consent source knobs (flag > env > default), independent of both the
+# schemas repo and the aggregator.config.yaml source above:
+#   --consent-repo / AGGREGATOR_CONSENT_REPO default Blue-Dots-Economy/aggregator-dpg
+#   --consent-ref  / AGGREGATOR_CONSENT_REF  default develop   (pin a tag/SHA for prod)
+#   --consent-dir  / AGGREGATOR_CONSENT_DIR  default config    (empty = repo root)
 #
 # --network/--brand override the _network/_brand anchors read from global-values.yaml.
 # Defaults: both targets ref=main, repo=bluedots-schemas.
@@ -45,6 +67,24 @@ SIGNALS_REPO_DEFAULT="Blue-Dots-Economy/bluedots-schemas"
 SIGNALS_REF_DEFAULT="main"
 AGGREGATOR_REPO_DEFAULT="Blue-Dots-Economy/bluedots-schemas"
 AGGREGATOR_REF_DEFAULT="main"
+
+# aggregator.config.yaml source — INDEPENDENT of the consent/network source above.
+# It lives in the aggregator-dpg repo's config/ tree (the canonical home; the
+# unified schemas repo does not carry it yet). Repo, ref, dir and filename are all
+# overridable via flags or env so this can be repointed — e.g. to bluedots-schemas
+# once it ships aggregator.config.yaml — without touching the charts.
+AGGREGATOR_CONFIG_REPO_DEFAULT="Blue-Dots-Economy/aggregator-dpg"
+AGGREGATOR_CONFIG_REF_DEFAULT="develop"
+AGGREGATOR_CONFIG_DIR_DEFAULT="config"
+AGGREGATOR_CONFIG_FILE_DEFAULT="aggregator.config.yaml"
+
+# Aggregator consent source. Separate from the schemas repo above: the aggregator
+# consent is an {"audiences":…} document that lives in the aggregator-dpg config
+# tree. Separate from the config source below too, so the consent doc and
+# aggregator.config.yaml can be pinned to different refs.
+AGGREGATOR_CONSENT_REPO_DEFAULT="Blue-Dots-Economy/aggregator-dpg"
+AGGREGATOR_CONSENT_REF_DEFAULT="develop"
+AGGREGATOR_CONSENT_DIR_DEFAULT="config"
 
 # Optional auth for a PRIVATE schemas repo. If a token is present we fetch via the
 # GitHub Contents API (the reliable way to pull raw file content from a private
@@ -68,11 +108,35 @@ GH_TOKEN="${SCHEMAS_PAT:-${GHCR_PAT:-}}"
 # and this whole shim can be deleted.
 SUPPORT_EMAIL_LITERALS="${SUPPORT_EMAIL_LITERALS:-support@onest.network hello@bluedotseconomy.org}"
 
-usage() { sed -n '2,35p' "$0"; }
+usage() { sed -n '2,70p' "$0"; }
 
 # Rewrite any known literal support email in a fetched consent file to the
 # __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
 # file already carries the placeholder (canonical post-migration).
+# Validate the fetched aggregator consent. The app renders a generic fallback
+# rather than erroring on a document it cannot read, so the shape is checked here
+# where a wrong source can still fail the deploy.
+assert_aggregator_consent() { # <file>
+  if grep -q '"audiences"' "$1"; then
+    # bulk_upload_attestation is optional in the schema but drives the operator
+    # attestation shown before a bulk upload; warn rather than fail, since
+    # privacy+terms alone is a valid consent set.
+    if ! grep -q '"bulk_upload_attestation"' "$1"; then
+      echo "  ⚠ consent has no 'bulk_upload_attestation' document — bulk upload will show" >&2
+      echo "    the generic attestation label. Check --consent-ref." >&2
+    fi
+    return 0
+  fi
+  echo "ERROR: fetched consent has no top-level \"audiences\" key: ${1}" >&2
+  if grep -q '"documents"' "$1"; then
+    echo "       It has \"documents\" — that is the signals consent schema." >&2
+    echo "       Aggregator consent lives in aggregator-dpg at" >&2
+    echo "       config/[<network>/[<brand>/]]schemas/aggregator/consent.json" >&2
+    echo "       (check --consent-repo / --consent-dir)." >&2
+  fi
+  return 1
+}
+
 normalize_support_email() { # <file>
   local lit esc
   for lit in $SUPPORT_EMAIL_LITERALS; do
@@ -127,7 +191,9 @@ try_fetch() { # <dest> <url>...
 }
 
 TARGET="${1:-}"; shift 2>/dev/null || true
-GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""; COLLEGE_DATASET=""
+GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""
+CFG_REPO=""; CFG_REF=""; CFG_DIR=""; CFG_FILE=""; CFG_DIR_SET=0
+CONSENT_REPO=""; CONSENT_REF=""; CONSENT_DIR=""; CONSENT_DIR_SET=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --global-values) GLOBAL_VALUES="$2"; shift 2 ;;
@@ -135,7 +201,17 @@ while [ $# -gt 0 ]; do
     --repo)          REPO="$2"; shift 2 ;;
     --network)       NETWORK="$2"; shift 2 ;;
     --brand)         BRAND="$2"; shift 2 ;;
-    --college-dataset) COLLEGE_DATASET="$2"; shift 2 ;;
+    # aggregator.config.yaml source overrides (aggregator target only).
+    --config-repo)   CFG_REPO="$2"; shift 2 ;;
+    --config-ref)    CFG_REF="$2"; shift 2 ;;
+    # --config-dir "" is meaningful (= repo root), so track "was it passed?"
+    # separately rather than inferring from emptiness.
+    --config-dir)    CFG_DIR="$2"; CFG_DIR_SET=1; shift 2 ;;
+    --config-file)   CFG_FILE="$2"; shift 2 ;;
+    # aggregator consent source overrides (aggregator target only).
+    --consent-repo)  CONSENT_REPO="$2"; shift 2 ;;
+    --consent-ref)   CONSENT_REF="$2"; shift 2 ;;
+    --consent-dir)   CONSENT_DIR="$2"; CONSENT_DIR_SET=1; shift 2 ;;
     -h|--help)       usage; exit 0 ;;
     *) echo "ERROR: unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -207,12 +283,31 @@ case "$TARGET" in
     echo "fetch-configs[aggregator]: repo=${REPO} ref=${REF} network=${NETWORK} brand=${BRAND:-<none>}"
     warn_if_moving_ref "$REF"
 
-    # Aggregator consent is a FULL document, one file per deployed network+brand.
-    # Prefer the branded doc, then fall back to the network-level doc.
+    # ── aggregator consent ────────────────────────────────────────────────────
+    # From the aggregator-dpg config tree, not the schemas repo: the aggregator's
+    # loader requires {"audiences": {org, aggregator}}
+    # (packages/config-loader AggregatorConsentConfigSchema), whereas the schemas
+    # repo's <network>/consent.json is the signals {"documents":…} schema.
+    CONSENT_REPO="${CONSENT_REPO:-${AGGREGATOR_CONSENT_REPO:-$AGGREGATOR_CONSENT_REPO_DEFAULT}}"
+    CONSENT_REF="${CONSENT_REF:-${AGGREGATOR_CONSENT_REF:-$AGGREGATOR_CONSENT_REF_DEFAULT}}"
+    if [ "$CONSENT_DIR_SET" -eq 0 ]; then
+      CONSENT_DIR="${AGGREGATOR_CONSENT_DIR-$AGGREGATOR_CONSENT_DIR_DEFAULT}"
+    fi
+    CONSENT_BASE="https://raw.githubusercontent.com/${CONSENT_REPO}/${CONSENT_REF}"
+    [ -n "$CONSENT_DIR" ] && CONSENT_BASE="${CONSENT_BASE}/${CONSENT_DIR}"
+    echo "  consent source: repo=${CONSENT_REPO} ref=${CONSENT_REF} dir=${CONSENT_DIR:-<root>}"
+    warn_if_moving_ref "$CONSENT_REF"
+
+    # A FULL document (not a partial override), one per deployed network+brand.
+    # brand > network > repo-wide default. The repo-wide default is required, not
+    # decorative: some networks (e.g. blue_dot) ship no aggregator consent of their
+    # own and resolve entirely via it.
     cands=()
-    [ -n "$BRAND" ] && cands+=("${RAW}/${NETWORK}/${BRAND}/consent.json")
-    cands+=("${RAW}/${NETWORK}/consent.json")
+    [ -n "$BRAND" ] && cands+=("${CONSENT_BASE}/${NETWORK}/${BRAND}/schemas/aggregator/consent.json")
+    cands+=("${CONSENT_BASE}/${NETWORK}/schemas/aggregator/consent.json")
+    cands+=("${CONSENT_BASE}/schemas/aggregator/consent.json")
     try_fetch "$OUT" "${cands[@]}"
+    assert_aggregator_consent "$OUT"
     normalize_support_email "$OUT"
     echo "  aggregator consent -> ${OUT}"
     ;;

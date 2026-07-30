@@ -8,12 +8,12 @@
 {{- $consentPath := printf "/app/config/%s/schemas/aggregator/consent.json" $net -}}
 {{- if $brand }}{{- $consentPath = printf "/app/config/%s/%s/schemas/aggregator/consent.json" $net $brand -}}{{- end -}}
 {{- /*
-  aggregator.config.yaml loader path. Reproduces the app's own derivation
+  aggregator.config.yaml loader path, reproducing the app's own derivation
   (packages/network-config resolveConfigPath):
     CONFIG_ROOT(/app/config)/<network>[/<brand>]/aggregator.config.yaml
-  Brand is a path SEGMENT, not a suffix. Do NOT also set AGGREGATOR_CONFIG_PATH
-  in configmap.yaml — an explicit value wins over this derivation, so the two
-  would silently diverge.
+  Brand is a path segment, not a suffix. Leave AGGREGATOR_CONFIG_PATH unset in
+  configmap.yaml — an explicit value wins over this derivation and bypasses the
+  mount below.
 */ -}}
 {{- $configPath := printf "/app/config/%s/aggregator.config.yaml" $net -}}
 {{- if $brand }}{{- $configPath = printf "/app/config/%s/%s/aggregator.config.yaml" $net $brand -}}{{- end -}}
@@ -154,12 +154,9 @@ spec:
               readOnly: true
             {{- if .Values.global.networkConfigDelivery }}
             # aggregator.config.yaml from the umbrella {release}-network-config
-            # ConfigMap, overlaid on the derived loader path so the network
-            # binding / brand / domain labels / registration modes come from this
-            # repo rather than the image. Single-file subPath: the same directory
-            # holds brand.json (read as a sibling), keycloak.env and
-            # bulk-samples/ from the image, which a dir mount would shadow.
-            # Needs a pod restart to take effect (see the ConfigMap template).
+            # ConfigMap, overlaid on the derived loader path. Single-file subPath
+            # because the same directory holds brand.json (read as a sibling),
+            # keycloak.env and bulk-samples/ from the image.
             - name: network-config
               mountPath: {{ $configPath }}
               subPath: aggregator.config.yaml

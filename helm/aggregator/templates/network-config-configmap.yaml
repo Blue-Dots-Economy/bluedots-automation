@@ -2,38 +2,31 @@
   aggregator.config.yaml for the aggregator api + worker — network binding, brand
   strings, domain labels, registration modes.
 
-  Source: files/network-config/aggregator.config.yaml, fetched FRESH on every
-  deploy by `scripts/fetch-configs.sh aggregator` from canonical (default the
-  aggregator-dpg config/ tree; repo/ref/dir/file all configurable there). NOT
-  committed — see .gitignore — so it can never silently drift from canonical.
+  Source: files/network-config/aggregator.config.yaml, fetched fresh per deploy by
+  `scripts/fetch-configs.sh aggregator` (default the aggregator-dpg config/ tree;
+  repo/ref/dir/file configurable there). Gitignored, so it always tracks canonical.
 
-  Rendered VERBATIM: no placeholder substitution, no field rewriting. Whatever
-  canonical says is what the pods get. The one runtime override is the upstream
-  network.json URL, which the api/worker ConfigMaps supply as
-  AGGREGATOR_NETWORK_SOURCE — so this file never needs editing to repoint schemas.
+  Rendered verbatim — no placeholder substitution. The upstream network.json URL is
+  overridden at runtime instead, via AGGREGATOR_NETWORK_SOURCE from the api/worker
+  ConfigMaps, so this file never needs editing to repoint schemas.
 
   Subpath-mounted by charts/{api,worker}/templates/deployment.yaml over the
-  image-baked copy at the loader path
-  /app/config/<network>[/<brand>]/aggregator.config.yaml. That is what makes
-  "update canonical + redeploy" work with NO image rebuild.
+  image-baked copy at /app/config/<network>[/<brand>]/aggregator.config.yaml, which
+  is what lets config change without an image rebuild. Single-file mount because
+  that directory also holds brand.json (read by the loader as a sibling),
+  keycloak.env and bulk-samples/ from the image.
 
-  Single-file mount on purpose: that directory also holds brand.json (which the
-  loader reads as a SIBLING), keycloak.env and bulk-samples/ from the image — a
-  directory mount would shadow all of them.
+  global.networkConfigDelivery gates this template and the subchart mounts together.
+  It must be a value, not a file-presence check: `.Files` is chart-scoped, so a
+  subchart cannot see whether this template rendered. It also lets static renders
+  with no fetched file skip the block (install.sh lint, CI helm job), falling back
+  to the image-baked config.
 
-  global.networkConfigDelivery gates this template AND the subchart mounts. It has
-  to be a value rather than a file-presence check: `.Files` is chart-scoped, so a
-  subchart cannot see whether this umbrella template rendered. It doubles as the
-  bypass for static renders that have no fetched file (install.sh lint, CI helm
-  job) — with it false the pods fall back to the image-baked config.
-
-  NOTE: subPath mounts do not hot-update, AND api/worker cache the resolved config
-  in a process-local singleton read once at boot — so a change needs a pod
-  restart. A ConfigMap-only change also leaves the Deployment spec untouched, so
-  `helm upgrade` rolls nothing; install.sh's deploy_aggregator calls
-  restart_aggregator_config_consumers for exactly this reason. The subcharts' own
-  checksum/config annotations cannot cover this ConfigMap (umbrella template vs
-  subchart $.Template.BasePath).
+  A change here needs a pod restart: subPath mounts do not hot-update and the
+  resolved config is cached in-process at boot. `helm upgrade` alone rolls nothing
+  because the Deployment spec is unchanged, and the subcharts' checksum/config
+  annotations cannot reach an umbrella template — hence
+  restart_aggregator_config_consumers in install.sh.
 */}}
 {{- if .Values.global.networkConfigDelivery }}
 {{- $file := "files/network-config/aggregator.config.yaml" -}}

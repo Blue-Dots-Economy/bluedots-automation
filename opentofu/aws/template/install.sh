@@ -42,6 +42,12 @@ AGGREGATOR_CONFIG_REPO="${AGGREGATOR_CONFIG_REPO:-Blue-Dots-Economy/aggregator-d
 AGGREGATOR_CONFIG_REF="${AGGREGATOR_CONFIG_REF:-develop}"
 AGGREGATOR_CONFIG_DIR="${AGGREGATOR_CONFIG_DIR-config}"
 AGGREGATOR_CONFIG_FILE="${AGGREGATOR_CONFIG_FILE:-aggregator.config.yaml}"
+# Source of the aggregator consent doc. Also aggregator-dpg, and separate from the
+# config knobs above so the two can be pinned independently: the aggregator consent
+# is an {"audiences":…} document, distinct from the schemas repo's signals consent.
+AGGREGATOR_CONSENT_REPO="${AGGREGATOR_CONSENT_REPO:-Blue-Dots-Economy/aggregator-dpg}"
+AGGREGATOR_CONSENT_REF="${AGGREGATOR_CONSENT_REF:-develop}"
+AGGREGATOR_CONSENT_DIR="${AGGREGATOR_CONSENT_DIR-config}"
 
 # Namespaces.
 CS_NS="${CS_NS:-common-services}"
@@ -253,7 +259,10 @@ function fetch_aggregator_configs() {
         --config-repo "$AGGREGATOR_CONFIG_REPO" \
         --config-ref "$AGGREGATOR_CONFIG_REF" \
         --config-dir "$AGGREGATOR_CONFIG_DIR" \
-        --config-file "$AGGREGATOR_CONFIG_FILE"
+        --config-file "$AGGREGATOR_CONFIG_FILE" \
+        --consent-repo "$AGGREGATOR_CONSENT_REPO" \
+        --consent-ref "$AGGREGATOR_CONSENT_REF" \
+        --consent-dir "$AGGREGATOR_CONSENT_DIR"
 }
 
 function deploy_signals() {
@@ -273,10 +282,9 @@ function deploy_signals() {
 function deploy_aggregator() {
     echo -e "\nDeploying aggregator"
     fetch_aggregator_configs
-    # networkSource repo/ref are passed (not pinned in global-values.yaml) so the
-    # URL the aggregator fetches network.json from is built from the SAME repo+ref
-    # fetch-configs.sh used for the signals deploy. Pinning SIGNALS_DPG_REF/_REPO
-    # once therefore covers both halves and they cannot drift apart.
+    # networkSource repo/ref passed here rather than pinned in global-values.yaml, so
+    # the aggregator's network.json URL is built from the same repo+ref
+    # fetch-configs.sh used for signals — one pin covers both halves.
     helm upgrade --install "$AGG_REL" "$AGG_DIR" \
         -n "$AGG_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
@@ -287,23 +295,17 @@ function deploy_aggregator() {
         --set "global.networkSource.repo=$SIGNALS_DPG_REPO" \
         --set "global.networkSource.ref=$SIGNALS_DPG_REF" \
         --wait --timeout 10m
-    # api + worker read aggregator.config.yaml (and consent) once at boot and cache
-    # the resolved config in a process-local singleton; the subPath mounts don't
-    # hot-update either. A config-only change leaves the Deployment spec untouched,
-    # so `helm upgrade` rolls nothing — restart explicitly so the new config is live.
+    # subPath mounts don't hot-update and the config is boot-cached in-process, so a
+    # config-only change leaves the Deployment spec untouched and helm rolls nothing.
     restart_aggregator_config_consumers
 }
 
 # Roll the workloads that subPath-mount the {release}-network-config /
-# {release}-consent ConfigMaps, so a config-only change takes effect. Safe to
-# re-run: if helm just recreated the pods, this rolls them once more.
+# {release}-consent ConfigMaps, so a config-only change takes effect. Safe to re-run.
 #
-# NON-FATAL BY DESIGN. This script runs under `set -euo pipefail`, and this is the
-# last statement in deploy_aggregator — so a bare failure here would abort
-# deploy_all_services and skip fix_acme_issuer_uri (the cert-manager ACME
-# workaround), breaking TLS as a side effect of a slow rollout, after a helm
-# upgrade that already succeeded. So failures warn and the function still
-# returns 0; the deploy log carries the warning.
+# Non-fatal by design: this runs under `set -euo pipefail` as the last statement in
+# deploy_aggregator, so propagating a slow rollout would abort deploy_all_services
+# and skip the steps after it (fix_acme_issuer_uri). Failures warn and return 0.
 function restart_aggregator_config_consumers() {
     local dep failed=""
     echo "Restarting aggregator config consumers (subPath mounts don't hot-update)"
