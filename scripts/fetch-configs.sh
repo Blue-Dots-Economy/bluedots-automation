@@ -12,16 +12,23 @@
 #                 -> helm/signals/charts/api/files/{networks,consent}/
 #               network.json's instance_url is normalized to __PUBLIC_API_URL__
 #               (the token schemas-configmap.yaml substitutes with the real host).
+#               ALSO the UI's college/institute reference list for the region in
+#               _college_dataset, from signals-dpg apps/ui/public/reference/
+#                 -> helm/signals/charts/ui/files/reference/colleges-<region>.json
+#               (rendered into the {release}-ui-reference ConfigMap). Only the ONE
+#               selected region is fetched — a ConfigMap is capped at 1 MiB and the
+#               two known datasets together exceed it.
 #   aggregator  consent.json (a FULL document) from aggregator-dpg
 #               config/<net>[/<brand>]/schemas/aggregator/consent.json, with a
 #               brand > network > default fallback
 #                 -> helm/aggregator/files/consent/consent.json
 #
 # Usage:
-#   fetch-configs.sh signals    --global-values <path> [--ref <r>] [--repo <o/n>] [--network <n>] [--brand <b>]
+#   fetch-configs.sh signals    --global-values <path> [--ref <r>] [--repo <o/n>] [--network <n>] [--brand <b>] [--college-dataset <ka|up>]
 #   fetch-configs.sh aggregator --global-values <path> [--ref <r>] [--repo <o/n>] [--network <n>] [--brand <b>]
 #
-# --network/--brand override the _network/_brand anchors read from global-values.yaml.
+# --network/--brand/--college-dataset override the _network/_brand/_college_dataset
+# anchors read from global-values.yaml.
 # Defaults: signals ref=develop, aggregator ref=develop; both public repos (no auth).
 set -euo pipefail
 
@@ -93,7 +100,7 @@ try_fetch() { # <dest> <url>...
 }
 
 TARGET="${1:-}"; shift 2>/dev/null || true
-GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""
+GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""; COLLEGE_DATASET=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --global-values) GLOBAL_VALUES="$2"; shift 2 ;;
@@ -101,6 +108,7 @@ while [ $# -gt 0 ]; do
     --repo)          REPO="$2"; shift 2 ;;
     --network)       NETWORK="$2"; shift 2 ;;
     --brand)         BRAND="$2"; shift 2 ;;
+    --college-dataset) COLLEGE_DATASET="$2"; shift 2 ;;
     -h|--help)       usage; exit 0 ;;
     *) echo "ERROR: unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -110,7 +118,12 @@ if [ -n "$GLOBAL_VALUES" ]; then
   [ -f "$GLOBAL_VALUES" ] || { echo "ERROR: --global-values not found: $GLOBAL_VALUES" >&2; exit 1; }
   [ -n "$NETWORK" ] || NETWORK="$(read_anchor "$GLOBAL_VALUES" _network)"
   [ -n "$BRAND" ]   || BRAND="$(read_anchor "$GLOBAL_VALUES" _brand)"
+  [ -n "$COLLEGE_DATASET" ] || COLLEGE_DATASET="$(read_anchor "$GLOBAL_VALUES" _college_dataset)"
 fi
+# Must match the chart's fallback (ui.runtimeConfig.VITE_COLLEGE_DATASET default,
+# itself matching the widget's own "ka" default), or we'd fetch a region the
+# ConfigMap template then can't find.
+COLLEGE_DATASET="${COLLEGE_DATASET:-ka}"
 [ -n "$NETWORK" ] || { echo "ERROR: network not set — pass --network or provide _network in --global-values" >&2; exit 1; }
 
 case "$TARGET" in
@@ -139,6 +152,23 @@ case "$TARGET" in
       normalize_support_email "${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
       echo "  brand consent -> ${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
     fi
+
+    # UI college/institute reference list for the selected region. Lives under
+    # apps/ui/public/ (not examples/schemas/), hence its own RAW base. Only the one
+    # region in _college_dataset is fetched: the ui reference ConfigMap ships
+    # exactly that file, and a ConfigMap can't hold both (1 MiB etcd cap).
+    REF_DIR="$REPO_ROOT/helm/signals/charts/ui/files/reference"
+    mkdir -p "$REF_DIR"
+    UI_RAW="https://raw.githubusercontent.com/${REPO}/${REF}/apps/ui/public/reference"
+    try_fetch "${REF_DIR}/colleges-${COLLEGE_DATASET}.json" \
+      "${UI_RAW}/colleges-${COLLEGE_DATASET}.json"
+    # Fail loudly on non-JSON (e.g. a GitHub 404 HTML page slipping through) rather
+    # than letting `helm template`'s fromJson produce a cryptic parse error.
+    if command -v jq >/dev/null 2>&1; then
+      jq -e . "${REF_DIR}/colleges-${COLLEGE_DATASET}.json" >/dev/null 2>&1 \
+        || { echo "ERROR: fetched colleges-${COLLEGE_DATASET}.json is not valid JSON" >&2; exit 1; }
+    fi
+    echo "  ui reference (${COLLEGE_DATASET}) -> ${REF_DIR}/colleges-${COLLEGE_DATASET}.json"
     ;;
 
   aggregator)

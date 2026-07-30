@@ -84,6 +84,8 @@ anchors at the top); chart defaults are in `helm/signals/values.yaml`. Key knobs
 | `api.config.SERVED_DOMAINS` | which `<network>/<domain>` pairs the API serves — via `_signals_served_domains` |
 | `api.config.NETWORK_CONFIG_*` | network schema source (local file mounted from a ConfigMap, or URLs) |
 | `ui.runtimeConfig.*` | browser-side config rendered into `/config.js` at runtime (no rebuild) |
+| `ui.runtimeConfig.VITE_COLLEGE_DATASET` | `ka` \| `up` — which state's college list the reference picker uses, **and** the one dataset the `ui` reference ConfigMap ships — via `_college_dataset` |
+| `ui.reference.enabled` | deliver the college list via ConfigMap (default on). `false` → fall back to the lists baked into the UI image |
 | `networkPolicy.enabled` | opt-in (**default OFF**) Ingress-only NetworkPolicy. You **must** list `aggregator` + `common-services` in `networkPolicy.allowedFromNamespaces`, or you cut the aggregator→signals path and Kong ingress |
 
 All subcharts (including `search`) run **non-root with dropped capabilities** by
@@ -98,6 +100,44 @@ to `SERVED_DOMAINS` / the `NETWORK_CONFIG_*` keys. See the inline comments in
 `values.yaml`. Re-run `bash install.sh deploy_signals` (use
 `kubectl -n signals rollout restart deploy/signals-ui` if a changed ConfigMap
 isn't picked up).
+
+### Changing / adding a college reference list
+
+The UI's college/institute autocomplete fetches `/reference/colleges-<region>.json`
+from its own nginx. Those lists are ConfigMap-delivered (`signals-ui-reference`,
+mounted over `/usr/share/nginx/html/reference/`), so the data changes with a
+values edit + rollout — no UI image rebuild. The source JSON is **fetched fresh
+from canonical signals-dpg on every deploy** by `scripts/fetch-configs.sh` (like
+the network/consent config) and is not committed here.
+
+- **Switch region:** set `_college_dataset` (`ka` | `up`) in
+  `global-values.yaml`, then `bash install.sh deploy_signals`. That one value
+  drives both what the browser asks for and which file is deployed, so they
+  can't disagree.
+- **Refresh the data:** nothing to do — the list is re-fetched from canonical
+  `signals-dpg apps/ui/public/reference/` on every deploy (gitignored, never
+  vendored), so it can't drift. Pin `SIGNALS_DPG_REF` to a tag/SHA for
+  reproducible deploys.
+- **Add a region:** add `colleges-<code>.json` to canonical
+  `apps/ui/public/reference/` and set `_college_dataset` to `<code>`. A region
+  missing on the fetched ref fails the deploy with the expected path, rather
+  than 404ing in the browser.
+
+**Exactly one dataset ships per release** — and that's a hard limit, not a
+preference. A ConfigMap is a single etcd object capped at **1 MiB**;
+`colleges-up.json` is 1.25 MB pretty-printed, so the template minifies it at
+render (`fromJson | toJson`, lossless here because these files contain only
+strings). Minified: `colleges-ka` ≈ 353 KB, `colleges-up` ≈ 748 KB — either fits
+alone, both together (≈ 1,101 KB) do not. The ConfigMap carries a
+`dpg.bluedots.io/reference-bytes` annotation so you can check headroom without
+decoding it, and the render fails with a byte count if a dataset ever outgrows
+`ui.reference.maxBytes`. Past that ceiling, host the lists off-cluster and point
+`ui.runtimeConfig.VITE_REFERENCE_BASE_URL` at them (that host must send
+permissive CORS headers — the browser fetches it directly).
+
+Because the mount covers the whole `reference/` directory, it **shadows** the
+datasets baked into the image: while `ui.reference.enabled` is true, only the
+selected region is reachable. That's intended — a release serves one region.
 
 ## Uninstall
 

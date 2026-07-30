@@ -23,6 +23,13 @@ _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/see
 _network: &network "blue_dot"
 _brand: &brand ""
 
+# Which state's college/institute list backs the UI's reference-autocomplete
+# field: "ka" | "up". Feeds ui.runtimeConfig.VITE_COLLEGE_DATASET below, which is
+# the single knob: it selects both the dataset the UI requests and the one file
+# the ui reference ConfigMap ships (colleges-<code>.json). Only that region's
+# list is deployed — the two datasets together exceed the 1 MiB ConfigMap cap.
+_college_dataset: &college_dataset "ka"
+
 # ── SMTP Configuration ────────────────────────────────────────────────────
 _smtp_host:         &smtp_host         "smtp.gmail.com"
 _smtp_port:         &smtp_port         587
@@ -328,6 +335,13 @@ ui:
     VITE_MAP_DEFAULT_ZOOM: "5"
     VITE_PROFILE_FETCH_LIMIT: "1000"
     VITE_ENABLED_LANGUAGES: "en,hi" # default: "en,hi" (English, Hindi). Add more codes for additional languages.
+    VITE_COLLEGE_DATASET: *college_dataset
+  # College/institute reference list, delivered to the UI's nginx as a ConfigMap
+  # (see helm/signals/charts/ui/values.yaml for the full rationale). The region
+  # above selects the one file that ships; set enabled: false to fall back to
+  # the datasets baked into the UI image.
+  reference:
+    enabled: true
   service:
     port: 80
     targetPort: 80
