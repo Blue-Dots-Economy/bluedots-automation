@@ -181,12 +181,11 @@ secrets:
     NOTIFICATION_SERVICE_SECRET: ""
     SMS_TEMPLATE_ID: ""
     MATCH_SCORE_PROVIDER: ""
-    # signals-search POST /v1/relevance backs match-score. The API key is a
-    # plain x-api-key (validated against the better-auth `apikey` table by
-    # signals-search), seeded by the migrate-job exactly like
-    # AGGREGATOR_DPG_API_KEY above — not an HMAC keyId/secret pair.
+    # match-score → signals-search /v1/relevance; x-api-key seeded by the migrate-job.
     SIGNALS_SEARCH_ENDPOINT: ""
     SIGNALS_SEARCH_API_KEY: ""
+    # Discover BFF → signals-search (signals-dpg#203); shares SIGNALS_SEARCH_API_KEY.
+    SIGNALS_SEARCH_URL: ""
 
 # DB schema migration Job. A migrate-ddl initContainer runs the api image's
 # db:migrate:deploy (drizzle migrations + raw item/action/event SQL, all shipped

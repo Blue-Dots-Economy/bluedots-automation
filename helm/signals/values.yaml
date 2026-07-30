@@ -112,22 +112,13 @@ credentials:
       NOTIFICATION_SERVICE_KEY_ID: *notification_key_id
       NOTIFICATION_SERVICE_SECRET: *notification_secret
       SMS_TEMPLATE_ID: ""
-      # Match-score provider. Deliberately UNSET until signals-dpg #352 ships.
-      # The pre-#352 api pins this to z.enum(['dpg_scoring']), so setting
-      # "signals_search" now fails MatchScoreSecretsSchema.parse() in
-      # apps/api/src/env.ts — a boot crash, not a graceful error. An empty
-      # string is dropped by charts/api/templates/secret.yaml, so the env var
-      # is absent → provider undefined → getMatchScoreClient() returns
-      # undefined (match-score unavailable, no crash) on EITHER api build.
-      # Flip to "signals_search" once #352 is merged AND its image deployed.
-      MATCH_SCORE_PROVIDER: ""
-      # signals-search POST /v1/relevance. In-cluster service is
-      # {release}-search:3100 (charts/search "search.fullname" + api.port).
-      # Auth is a plain x-api-key checked by authenticateApiKey against the
-      # shared better-auth apikey table — NOT the old dpg-scoring HMAC
-      # keyId+secret pair, so the retired secret must not be reused here.
+      # Needs an api image from signals-dpg#352+; older builds reject it at boot.
+      MATCH_SCORE_PROVIDER: "signals_search"
+      # match-score → signals-search POST /v1/relevance; key seeded by the migrate-job.
       SIGNALS_SEARCH_ENDPOINT: "http://signals-search:3100"
       SIGNALS_SEARCH_API_KEY: ""
+      # Discover BFF → signals-search (signals-dpg#203). Unset = silent fallback to native search.
+      SIGNALS_SEARCH_URL: "http://signals-search:3100"
   notificationService: &notification_service_secrets
     create: true
     existingSecret: ""
