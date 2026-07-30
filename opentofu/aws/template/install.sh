@@ -28,6 +28,20 @@ SIGNALS_DPG_REF="${SIGNALS_DPG_REF:-main}"
 # Ref the aggregator consent doc is fetched from (same schemas repo,
 # scripts/fetch-configs.sh aggregator). Default main; pin per env.
 AGGREGATOR_DPG_REF="${AGGREGATOR_DPG_REF:-main}"
+# Schemas repo the network.json + consent are fetched from. Passed to BOTH
+# fetch-configs.sh (which downloads network.json for signals) and the aggregator
+# chart (which builds AGGREGATOR_NETWORK_SOURCE from the same repo+ref, since the
+# aggregator fetches network.json itself at boot rather than mounting it). Keeping
+# one variable for both is what stops the two halves resolving different schemas.
+SIGNALS_DPG_REPO="${SIGNALS_DPG_REPO:-Blue-Dots-Economy/bluedots-schemas}"
+# Source of aggregator.config.yaml — INDEPENDENT of the schemas repo above, because
+# canonical for that file is the aggregator-dpg config/ tree. All four parts are
+# configurable; override any of them to repoint (e.g. at bluedots-schemas once it
+# carries the file) with no chart change. Pin AGGREGATOR_CONFIG_REF for prod.
+AGGREGATOR_CONFIG_REPO="${AGGREGATOR_CONFIG_REPO:-Blue-Dots-Economy/aggregator-dpg}"
+AGGREGATOR_CONFIG_REF="${AGGREGATOR_CONFIG_REF:-develop}"
+AGGREGATOR_CONFIG_DIR="${AGGREGATOR_CONFIG_DIR-config}"
+AGGREGATOR_CONFIG_FILE="${AGGREGATOR_CONFIG_FILE:-aggregator.config.yaml}"
 
 # Namespaces.
 CS_NS="${CS_NS:-common-services}"
@@ -223,6 +237,7 @@ function apply_kong_crds() {
 function fetch_signals_configs() {
     bash "$REPO_ROOT/scripts/fetch-configs.sh" signals \
         --global-values "$GLOBAL_VALUES" \
+        --repo "$SIGNALS_DPG_REPO" \
         --ref "$SIGNALS_DPG_REF"
 }
 
@@ -234,7 +249,11 @@ function fetch_signals_configs() {
 function fetch_aggregator_configs() {
     bash "$REPO_ROOT/scripts/fetch-configs.sh" aggregator \
         --global-values "$GLOBAL_VALUES" \
-        --ref "$AGGREGATOR_DPG_REF"
+        --ref "$AGGREGATOR_DPG_REF" \
+        --config-repo "$AGGREGATOR_CONFIG_REPO" \
+        --config-ref "$AGGREGATOR_CONFIG_REF" \
+        --config-dir "$AGGREGATOR_CONFIG_DIR" \
+        --config-file "$AGGREGATOR_CONFIG_FILE"
 }
 
 function deploy_signals() {
@@ -254,6 +273,10 @@ function deploy_signals() {
 function deploy_aggregator() {
     echo -e "\nDeploying aggregator"
     fetch_aggregator_configs
+    # networkSource repo/ref are passed (not pinned in global-values.yaml) so the
+    # URL the aggregator fetches network.json from is built from the SAME repo+ref
+    # fetch-configs.sh used for the signals deploy. Pinning SIGNALS_DPG_REF/_REPO
+    # once therefore covers both halves and they cannot drift apart.
     helm upgrade --install "$AGG_REL" "$AGG_DIR" \
         -n "$AGG_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
@@ -261,7 +284,53 @@ function deploy_aggregator() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
+        --set "global.networkSource.repo=$SIGNALS_DPG_REPO" \
+        --set "global.networkSource.ref=$SIGNALS_DPG_REF" \
         --wait --timeout 10m
+    # api + worker read aggregator.config.yaml (and consent) once at boot and cache
+    # the resolved config in a process-local singleton; the subPath mounts don't
+    # hot-update either. A config-only change leaves the Deployment spec untouched,
+    # so `helm upgrade` rolls nothing — restart explicitly so the new config is live.
+    restart_aggregator_config_consumers
+}
+
+# Roll the workloads that subPath-mount the {release}-network-config /
+# {release}-consent ConfigMaps, so a config-only change takes effect. Safe to
+# re-run: if helm just recreated the pods, this rolls them once more.
+#
+# NON-FATAL BY DESIGN. This script runs under `set -euo pipefail`, and this is the
+# last statement in deploy_aggregator — so a bare failure here would abort
+# deploy_all_services and skip fix_acme_issuer_uri (the cert-manager ACME
+# workaround), breaking TLS as a side effect of a slow rollout, after a helm
+# upgrade that already succeeded. So failures warn and the function still
+# returns 0; the deploy log carries the warning.
+function restart_aggregator_config_consumers() {
+    local dep failed=""
+    echo "Restarting aggregator config consumers (subPath mounts don't hot-update)"
+    for dep in "$AGG_REL-api" "$AGG_REL-worker" "$AGG_REL-web"; do
+        if ! kubectl -n "$AGG_NS" get deploy "$dep" >/dev/null 2>&1; then
+            echo "  (skip: deploy/$dep not found in $AGG_NS)"
+            continue
+        fi
+        if ! kubectl -n "$AGG_NS" rollout restart "deploy/$dep"; then
+            echo "  ⚠ could not restart deploy/$dep" >&2
+            failed="$failed $dep"
+            continue
+        fi
+        if ! kubectl -n "$AGG_NS" rollout status "deploy/$dep" --timeout=5m; then
+            echo "  ⚠ deploy/$dep not Ready within 5m" >&2
+            failed="$failed $dep"
+        fi
+    done
+    if [ -n "$failed" ]; then
+        echo "  ⚠ config restart incomplete for:${failed}" >&2
+        echo "    The helm release is applied, but these pods may still be serving the" >&2
+        echo "    PREVIOUS aggregator.config.yaml / consent. Investigate with:" >&2
+        echo "      kubectl -n $AGG_NS get pods" >&2
+        echo "      kubectl -n $AGG_NS logs deploy/<name> --tail=100" >&2
+        echo "    then re-run: bash install.sh restart_aggregator_config_consumers" >&2
+    fi
+    return 0
 }
 
 # ═══ helm: deploy everything ══════════════════════════════════════════════════
@@ -412,6 +481,10 @@ function lint() {
     # empty / `change-me` placeholders). A bare `helm lint` has no real creds, so
     # point it at a placeholder existingSecret to skip the secret block — a real
     # deploy still validates its actual values from global-secrets.yaml.
+    # NOTE: no networkConfigDelivery override needed here. The network-config
+    # template's `fail` fires when the fetched aggregator.config.yaml is absent, but
+    # `helm lint` only logs it as [INFO] and still exits 0 — unlike `helm template`,
+    # which errors (hence the flag in .github/workflows/ci.yml's template step).
     helm lint "$AGG_DIR" --set global.existingSecret=lint-only
 }
 

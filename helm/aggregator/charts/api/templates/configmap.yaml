@@ -1,3 +1,15 @@
+{{- /*
+  Upstream network.json URL. Derived from global.networkSource to MIRROR
+  scripts/fetch-configs.sh's signals target, so the aggregator fetches the same
+  network.json the signals deploy did. global.networkSource.url overrides the
+  derivation wholesale. Keep this expression identical to the worker's copy —
+  a subchart cannot share the umbrella's _helpers.tpl, hence the duplication.
+*/ -}}
+{{- $ns := .Values.global.networkSource | default dict -}}
+{{- $networkSource := $ns.url | default "" -}}
+{{- if and (not $networkSource) $ns.repo $ns.ref -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork ($ns.file | default "network.json") -}}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,6 +32,20 @@ data:
   # redirects api + worker at the matching config folder.
   # AGGREGATOR_CONFIG_PATH: "/app/config/{{ .Values.global.aggregatorNetwork }}/aggregator.config.yaml"
   SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
+  # Deploy-time override for the upstream signalstack network.json URL, which the
+  # aggregator FETCHES over HTTPS at boot (it is never a file on disk — unlike
+  # signals, which mounts network.json). Wins over `aggregator.network.source` in
+  # the mounted aggregator.config.yaml, so the schema source can move without an
+  # image rebuild or a config edit.
+  #
+  # Requires aggregator-dpg#513 in the DEPLOYED IMAGE. Until that ships, nothing
+  # reads this var and it is silently inert — the YAML `source` is still used.
+  # Blank = use the YAML value. Malformed URL = loud boot failure
+  # (CONFIG_PARSE_FAILED), never a silent fallback.
+  #
+  # Must be set identically on api and worker: both run the loader, so a value on
+  # only one half puts them on different network.json files.
+  AGGREGATOR_NETWORK_SOURCE: "{{ $networkSource }}"
   SIGNALSTACK_ITEM_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   AGGREGATOR_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   # Brand skin over the network (UI/config skin). Empty = standard dots.

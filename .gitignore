@@ -54,9 +54,6 @@ opentofu/aws/dev/*
 helm/signals/charts/api/files/networks/*.json
 helm/signals/charts/api/files/consent/*.json
 helm/aggregator/files/consent/consent.json
-# Same deal for the UI's college/institute reference lists (colleges-<region>.json),
-# fetched from signals-dpg apps/ui/public/reference/. Bulk data (0.6–1.3 MB each),
-# so keeping them out of git also keeps the repo light.
-helm/signals/charts/ui/files/reference/*.json
+helm/aggregator/files/network-config/aggregator.config.yaml
 
 opentofu/aws/*-cluster

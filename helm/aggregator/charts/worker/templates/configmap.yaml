@@ -1,3 +1,14 @@
+{{- /*
+  Upstream network.json URL — MUST stay byte-identical to the api's copy in
+  charts/api/templates/configmap.yaml (a subchart cannot share the umbrella's
+  _helpers.tpl, hence the duplication). Both halves run the loader; a mismatch puts
+  bulk-row validation and registration acceptance on different network.json files.
+*/ -}}
+{{- $ns := .Values.global.networkSource | default dict -}}
+{{- $networkSource := $ns.url | default "" -}}
+{{- if and (not $networkSource) $ns.repo $ns.ref -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork ($ns.file | default "network.json") -}}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,8 +18,21 @@ metadata:
 data:
   # Per-network deployment — mirrors the api configmap so worker
   # validates rows against the same schema the api accepts.
-  AGGREGATOR_CONFIG_PATH: "/app/config/{{ .Values.global.aggregatorNetwork }}/aggregator.config.yaml"
+  #
+  # AGGREGATOR_CONFIG_PATH is deliberately NOT set. The app derives
+  # /app/config/<network>[/<brand>]/aggregator.config.yaml from AGGREGATOR_NETWORK
+  # + AGGREGATOR_BRAND below (packages/network-config resolveConfigPath), and an
+  # explicit value WINS over that derivation. The previous explicit value here
+  # omitted the brand segment, so a branded deploy (global.aggregatorBrand set)
+  # pointed the worker at the un-branded network config while the api — which
+  # derives — used the branded one, splitting bulk-row validation from
+  # registration acceptance. Leave unset so both halves resolve identically, and
+  # so the mounted ConfigMap (mounted at the derived path) is actually read.
+  # AGGREGATOR_CONFIG_PATH: "/app/config/{{ .Values.global.aggregatorNetwork }}/aggregator.config.yaml"
   # SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
+  # Deploy-time override for the upstream network.json URL. See the api configmap
+  # for the full rationale — must match the api's value exactly.
+  AGGREGATOR_NETWORK_SOURCE: "{{ $networkSource }}"
   SIGNALSTACK_ITEM_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   AGGREGATOR_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   # Brand skin over the network (UI/config skin). Empty = standard dots.
