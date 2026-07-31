@@ -1,0 +1,46 @@
+{{/*
+  aggregator.config.yaml for the aggregator api + worker — network binding, brand
+  strings, domain labels, registration modes.
+
+  Source: files/network-config/aggregator.config.yaml, fetched fresh per deploy by
+  `scripts/fetch-configs.sh aggregator` (default the aggregator-dpg config/ tree;
+  repo/ref/dir/file configurable there). Gitignored, so it always tracks canonical.
+
+  Rendered verbatim — no placeholder substitution. The upstream network.json URL is
+  overridden at runtime instead, via AGGREGATOR_NETWORK_SOURCE from the api/worker
+  ConfigMaps, so this file never needs editing to repoint schemas.
+
+  Subpath-mounted by charts/{api,worker}/templates/deployment.yaml over the
+  image-baked copy at /app/config/<network>[/<brand>]/aggregator.config.yaml, which
+  is what lets config change without an image rebuild. Single-file mount because
+  that directory also holds brand.json (read by the loader as a sibling),
+  keycloak.env and bulk-samples/ from the image.
+
+  global.networkConfigDelivery gates this template and the subchart mounts together.
+  It must be a value, not a file-presence check: `.Files` is chart-scoped, so a
+  subchart cannot see whether this template rendered. It also lets static renders
+  with no fetched file skip the block (install.sh lint, CI helm job), falling back
+  to the image-baked config.
+
+  A change here needs a pod restart: subPath mounts do not hot-update and the
+  resolved config is cached in-process at boot. `helm upgrade` alone rolls nothing
+  because the Deployment spec is unchanged, and the subcharts' checksum/config
+  annotations cannot reach an umbrella template — hence
+  restart_aggregator_config_consumers in install.sh.
+*/}}
+{{- if .Values.global.networkConfigDelivery }}
+{{- $file := "files/network-config/aggregator.config.yaml" -}}
+{{- $raw := .Files.Get $file -}}
+{{- if not $raw }}
+{{- fail (printf "%s is missing or empty — run `bash scripts/fetch-configs.sh aggregator --global-values <path>` first (install.sh's deploy_aggregator does this via fetch_aggregator_configs). For a static render with no fetched config, pass --set global.networkConfigDelivery=false." $file) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-network-config
+  labels:
+    {{- include "aggregator.labels" . | nindent 4 }}
+data:
+  aggregator.config.yaml: |
+{{ $raw | indent 4 }}
+{{- end }}

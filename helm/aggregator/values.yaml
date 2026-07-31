@@ -43,6 +43,39 @@ global:
   # keycloak theme image tag.
   aggregatorBrand: ''
 
+  # Deliver aggregator.config.yaml to api + worker from the {release}-network-config
+  # ConfigMap (source: files/network-config/aggregator.config.yaml, fetched per
+  # deploy by scripts/fetch-configs.sh) instead of the copy baked into the image.
+  # Keep true: it is what makes the network binding, brand strings, domain labels
+  # and registration modes changeable without an image rebuild.
+  #
+  # false falls back to the image-baked config, and is how static renders with no
+  # fetched file pass (install.sh lint, CI helm job).
+  #
+  # A change to that file needs a pod restart — subPath mounts don't hot-update and
+  # the config is boot-cached in-process. deploy_aggregator handles this.
+  networkConfigDelivery: true
+
+  # ── Upstream network.json source ──────────────────────────────────────────
+  # The aggregator fetches network.json over HTTPS at boot rather than mounting it,
+  # so a URL is the only interface. This block builds it and emits it as
+  # AGGREGATOR_NETWORK_SOURCE to api + worker (both run the loader; web does not),
+  # overriding `aggregator.network.source` in the delivered config file.
+  #
+  # The derivation mirrors scripts/fetch-configs.sh's signals target
+  # (<raw>/<repo>/<ref>/<network>/network.json) so both halves resolve the same
+  # network.json, and install.sh passes repo/ref from $SIGNALS_DPG_REPO /
+  # $SIGNALS_DPG_REF to keep them in lockstep. Requires aggregator-dpg#513 in the
+  # deployed image; older images ignore the env var.
+  networkSource:
+    # UPDATE: pin a tag/SHA for prod — via SIGNALS_DPG_REF, so signals moves with it.
+    repo: Blue-Dots-Economy/bluedots-schemas
+    ref: main
+    # Filename inside the per-network directory.
+    file: network.json
+    # Full-URL override, for a mirror / internal host / S3 instead of the derivation.
+    url: ''
+
   # Support/grievance email injected into the aggregator consent T&C / Privacy /
   # Grievances copy at deploy time — it replaces the __SUPPORT_EMAIL__ placeholder
   # in files/consent/consent.json. Change the email HERE (one place), never in the

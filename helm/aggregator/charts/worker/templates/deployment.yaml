@@ -1,3 +1,14 @@
+{{- /*
+  aggregator.config.yaml loader path, reproducing the app's own derivation
+  (packages/network-config resolveConfigPath):
+    CONFIG_ROOT(/app/config)/<network>[/<brand>]/aggregator.config.yaml
+  Brand is a path segment, not a suffix. Must match the api's derivation — the
+  worker validates bulk rows against the config the api accepts registrations with.
+*/ -}}
+{{- $net := .Values.global.aggregatorNetwork -}}
+{{- $brand := .Values.global.aggregatorBrand | default "" -}}
+{{- $configPath := printf "/app/config/%s/aggregator.config.yaml" $net -}}
+{{- if $brand }}{{- $configPath = printf "/app/config/%s/%s/aggregator.config.yaml" $net $brand -}}{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -85,3 +96,19 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.global.networkConfigDelivery }}
+          # aggregator.config.yaml from the umbrella {release}-network-config
+          # ConfigMap, so bulk-row validation uses the same network binding the api
+          # accepts registrations with. Single-file subPath — see the api deployment.
+          volumeMounts:
+            - name: network-config
+              mountPath: {{ $configPath }}
+              subPath: aggregator.config.yaml
+              readOnly: true
+          {{- end }}
+      {{- if .Values.global.networkConfigDelivery }}
+      volumes:
+        - name: network-config
+          configMap:
+            name: {{ .Release.Name }}-network-config
+      {{- end }}

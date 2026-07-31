@@ -43,30 +43,52 @@ The signals migrate-job does **not** vendor a `schema.sql` in this repo. A `migr
 
 ## Consent config is ConfigMap-delivered (not baked into images)
 
-Consent text/versions ship via ConfigMap so they change with a file edit + rollout, no rebuild. This repo is the downstream sync; canonical content lives in the app repos. The two charts deliver it differently — a real trap:
+Consent text/versions ship via ConfigMap so they change with a file edit + rollout, no rebuild. This repo is the downstream sync; canonical content lives in the unified schemas repo `Blue-Dots-Economy/bluedots-schemas` (per-network dirs at the repo root, e.g. `blue_dot/consent.json`, `blue_dot/upsdm/consent.json`), fetched at deploy time by `scripts/fetch-configs.sh`. The two charts deliver it differently — a real trap:
 
 - **Signals** — source `helm/signals/charts/api/files/consent/<network>.json` (+ optional brand override `<network>.<brand>.json`), selected by `api.schemas.consentNetwork`/`consentBrand`. `schemas-configmap.yaml` renders `consent.json` next to the network schemas; the api reads it because `CONSENT_CONFIG_SOURCE: local` is pinned in values. It **deep-merges a brand file (partial) over the network default — so both files must be delivered**. A `checksum/schemas` annotation rolls pods on change; missing consent files **fail the template render**.
 - **Aggregator** — source `helm/aggregator/files/consent/consent.json`, rendered into a `{release}-consent` ConfigMap, mounted single-file (subPath) into **both web and api** at `/app/config/<network>[/<brand>]/schemas/aggregator/consent.json`. Aggregator brand consent is a **FULL** document (not a partial). **subPath does NOT hot-update** → a consent change needs a rollout restart of web + api.
 
 **Support-email placeholder:** consent JSON ships `__SUPPORT_EMAIL__` in its T&C/Privacy/Grievances copy; both renders substitute it at deploy time via Helm `replace` — signals from `.Values.schemas.consentSupportEmail`, aggregator from `.Values.global.consentSupportEmail`, each defaulting to `hello@bluedotseconomy.org`. **Change the value, never the consent content**, so a brand/network switch keeps the right contact.
 
-## UI college reference lists — ConfigMap-delivered, and 1 MiB is the real constraint
+## `aggregator.config.yaml` is ConfigMap-delivered — fetched, not vendored
 
-The signals UI's college/institute autocomplete fetches `/reference/colleges-<region>.json` from its own nginx (`reference-autocomplete-widget.tsx` resolves `<VITE_REFERENCE_BASE_URL|/reference/><id>.json`). `scripts/fetch-configs.sh signals` pulls `colleges-<region>.json` for the region in `_college_dataset` from canonical `signals-dpg apps/ui/public/reference/` into `helm/signals/charts/ui/files/reference/` (gitignored — **fetched fresh every deploy, never committed**, so it can't silently drift, same as network/consent config); `ui/templates/reference-configmap.yaml` renders it into `{release}-ui-reference`, mounted as a **whole directory** over `/usr/share/nginx/html/reference/`. Whole-dir (not subPath) means kubelet hot-updates it, and a `checksum/reference` annotation rolls the pods anyway.
+Same freshness model as consent and signals' network.json: `scripts/fetch-configs.sh aggregator` pulls it on every deploy into `helm/aggregator/files/network-config/aggregator.config.yaml` (gitignored), and `templates/network-config-configmap.yaml` renders it into `{release}-network-config`, subPath-mounted into api + worker **over the image-baked copy**. Net effect: update canonical, redeploy, config is live — **no image rebuild**.
 
-**Only ONE dataset ships per release, and `ui.runtimeConfig.VITE_COLLEGE_DATASET` is the only knob.** The template derives the ConfigMap key from that same value the browser uses, so the file served can't disagree with the file requested — there's deliberately no second list to keep in sync. Wired from the `_college_dataset` anchor in `global-values.yaml`.
+**Rendered verbatim.** No placeholder rewriting, no field edits — whatever canonical says is what the pods get. The only runtime override is the network.json URL, supplied as `AGGREGATOR_NETWORK_SOURCE` (below), so the file never needs editing to repoint schemas.
 
-**Why one, not both — this is a hard ceiling, not tidiness.** A ConfigMap is one etcd object capped at **1 MiB (1,048,576 B)**. `colleges-up.json` is **1,253,396 B** pretty-printed and *cannot* be stored raw, so the template minifies at render with `fromJson | toJson`. Minified: ka **353,454 B**, up **747,867 B** — either alone fits, both together (**1,101,321 B**) are rejected by the apiserver. Minifying at render (rather than at fetch) keeps the fetched file byte-identical to canonical, so the fetch stays a dumb `curl` with nothing to keep in sync. The round-trip is **lossless only because these datasets contain zero numeric scalars** (verified — all values are strings), so there's no float reformatting; `toJson` does alphabetise keys and HTML-escape `& < >`, both semantically invisible to `JSON.parse`. **If a future reference dataset contains numbers, re-check that assumption before reusing this trick.**
+**Its source is independent of the schemas repo.** Consent and network.json come from `bluedots-schemas`; `aggregator.config.yaml` lives in the `aggregator-dpg` `config/` tree. All four parts are configurable — flag > env > default:
 
-Two traps worth knowing:
-- The mount **shadows** the datasets baked into the image, so a region that isn't selected 404s even though the image contains it. Intended; `ui.reference.enabled: false` restores the baked-in files.
-- An unknown region **fails the helm render** with the expected file path. Without that guard the symptom is an empty college dropdown plus a console error — cheap to catch at template time, expensive in prod.
+| flag | env | default |
+|---|---|---|
+| `--config-repo` | `AGGREGATOR_CONFIG_REPO` | `Blue-Dots-Economy/aggregator-dpg` |
+| `--config-ref` | `AGGREGATOR_CONFIG_REF` | `develop` (pin a tag/SHA for prod) |
+| `--config-dir` | `AGGREGATOR_CONFIG_DIR` | `config` (empty = repo root) |
+| `--config-file` | `AGGREGATOR_CONFIG_FILE` | `aggregator.config.yaml` |
 
-If a dataset ever outgrows `ui.reference.maxBytes` (default 1,000,000 — under the ceiling with room for metadata), don't raise it past ~1048576; that only moves the failure from `helm template` to an opaque apiserver rejection. Host the lists off-cluster and point `VITE_REFERENCE_BASE_URL` at them instead (needs permissive CORS — the browser fetches directly).
+`install.sh` passes all four from same-named variables, so repointing (e.g. to `bluedots-schemas` once it carries the file) needs no chart change. Only the `<network>[/<brand>]/` path segment is fixed — the app derives its own load path from `AGGREGATOR_NETWORK`/`AGGREGATOR_BRAND`, so the layout must match.
 
-Only the ONE selected region is fetched — the ConfigMap ships exactly that file and couldn't hold both anyway. `fetch-configs.sh` reads `_college_dataset` from `global-values.yaml` (falling back to `ka`, matching the chart and widget defaults), so `install.sh` needed no change. It also `jq`-validates the download, because a GitHub 404 returns an HTML page that would otherwise surface as a cryptic `fromJson` parse error at render.
+**Mounted into api + worker, not web.** Both run the loader (`apps/worker/src/services/network-config.ts` has five `getNetworkConfig()` call sites incl. `bulk-row-process.ts`). Web reads config through the api's `GET /v1/aggregator-config` and never touches disk.
 
-Consequence for static checks: a standalone `helm template helm/signals/charts/ui` **fails** until a fetch has run. `helm lint` tolerates it (it reports the `fail` as `[INFO]` and still passes, exactly as it already does for the api's network schemas), and `install.sh dry_run`/`deploy_signals` fetch first. This is the same reason CI keeps signals lint-only.
+**The mount path is derived, not chosen.** `resolveConfigPath()` computes `CONFIG_ROOT(/app/config)/<network>[/<brand>]/aggregator.config.yaml`; both deployment templates reproduce that derivation for `mountPath`. Brand is a path **segment**, not a suffix.
+
+**Never set `AGGREGATOR_CONFIG_PATH`.** An explicit value wins over the derivation (`paths.ts:57`), so the mount — which lands at the derived path — would be ignored and the pod would read the baked file. The worker's ConfigMap used to set it while omitting the brand segment, which also split branded deploys: worker on the un-branded config, api (deriving) on the branded one. Commented out in both now.
+
+**Single-file subPath, never a directory mount.** `/app/config/<network>/` also carries `brand.json` (read by the loader as a *sibling*), `keycloak.env`, `bulk-samples/*.csv` and the brand subtree, all from the image. A directory mount shadows every one of them, and a missing `brand.json` degrades *silently*. Consequence: `brand.json` design tokens (palette/typography/logo) still need an image rebuild; only the flat brand fields inside `aggregator.config.yaml` are ConfigMap-editable.
+
+**Why `global.networkConfigDelivery` is a value and not a file-presence check.** `.Files` is chart-scoped, so a subchart cannot see whether the umbrella ConfigMap rendered — the mounts need a value to gate on. It doubles as the bypass for static renders with no fetched file, which is why `install.sh lint` and the CI helm job pass `--set global.networkConfigDelivery=false`. Setting it false in a real deploy falls back to the image-baked config.
+
+**A change needs a pod restart, and helm won't do it.** subPath mounts don't hot-update, *and* api/worker cache the resolved config in a process-local singleton read once at boot. A config-only change also leaves the Deployment spec untouched, so `helm upgrade` rolls nothing — verified: editing the file leaves all three `checksum/config` annotations byte-identical. Those annotations hash each subchart's *own* configmap, and can't reach an umbrella template. Hence `deploy_aggregator` calls `restart_aggregator_config_consumers` (rollout restart + status wait on api, worker, web) after the upgrade. That function is **deliberately non-fatal**: `install.sh` runs under `set -euo pipefail` and the call is the last statement in `deploy_aggregator`, so propagating a slow-rollout failure would abort `deploy_all_services` and skip `fix_acme_issuer_uri`, breaking TLS as a side effect. It warns and returns 0; re-run standalone with `bash install.sh restart_aggregator_config_consumers`. It rolls pods on *every* deploy — the cost of having no usable checksum. Installing Reloader would let it be dropped.
+
+### `AGGREGATOR_NETWORK_SOURCE` — the network.json URL
+
+The aggregator **fetches network.json over HTTPS at boot** and holds it in memory; it is never a file on disk, unlike signals which mounts it at `/app/schemas/<net>.json`. So there is no path and no ConfigMap for it — the URL is the whole interface.
+
+`global.networkSource` builds it, mirroring `fetch-configs.sh`'s signals derivation (`https://raw.githubusercontent.com/<repo>/<ref>/<network>/<file>`), and both api and worker ConfigMaps emit the result. `deploy_aggregator` passes `repo`/`ref` from `$SIGNALS_DPG_REPO`/`$SIGNALS_DPG_REF` — the same variables that drive the signals fetch — so **the two halves cannot resolve different schemas**. Pin the ref there, not in `global-values.yaml`. `global.networkSource.url` is a full-URL escape hatch for a mirror or internal host.
+
+Two caveats. It **requires aggregator-dpg#513 in the deployed image**; until then nothing reads the var and it is silently inert (the YAML `source` is used). And because the fetch happens from the pod, api/worker need egress to that host, and the last-known-good cache (`dirname(configPath)/.cache`, overridable via `NETWORK_CONFIG_CACHE_DIR`) is per-pod ephemeral — a pod restart during a source outage fails boot.
+
+Once #513 is deployed, canonical can drop `source:` from the YAML entirely (it becomes `.optional()` there), making the env var the single source of truth and turning a missing value into a loud `CONFIG_PARSE_FAILED` instead of a silent fallback. Note `fetch-configs.sh`'s `warn_if_moving_ref` does **not** cover this URL — it bypasses the fetch script.
+
 
 ## Org hierarchy flag
 

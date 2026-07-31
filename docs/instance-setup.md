@@ -24,8 +24,11 @@ Same as [DEPLOYMENT.md §1](../DEPLOYMENT.md): `aws` v2, `tofu` ≥1.6, `terragr
 - AWS creds able to create VPC/EKS/IAM/S3.
 - A GHCR `read:packages` token exported as `GHCR_PAT` (image pulls).
 - DNS control for the instance's public hostnames.
-- The **canonical config source** in `signals-dpg` for the network you're
-  deploying: `examples/schemas/<network>/{network,brand,consent}.json`.
+- The **canonical config source** in the unified schemas repo
+  `Blue-Dots-Economy/bluedots-schemas` for the network you're
+  deploying: `<network>/{network,brand,consent}.json` (+ per-brand
+  `<network>/<brand>/{brand,consent}.json`), with underscore dir names
+  (e.g. `blue_dot`, `orange_dot`, `upsdm`).
 
 > The knowledge in this runbook used to be scattered across `install.sh`
 > comments, `CLAUDE.md`, `README.md`, and chart `values.yaml` comments — this is
@@ -62,9 +65,9 @@ The API image is **network-agnostic**; the network is supplied at runtime via a
 ConfigMap. To serve network `<net>`:
 
 1. **Place the network file** at
-   `helm/signals/charts/api/files/networks/<net>.json`. Copy it from canonical
-   `signals-dpg/examples/schemas/<net>/network.json` — do **not** hand-edit
-   (parity between the two is being enforced; see the #181 roadmap item). It
+   `helm/signals/charts/api/files/networks/<net>.json`. It is fetched fresh each
+   deploy by `scripts/fetch-configs.sh` from canonical
+   `bluedots-schemas/<net>/network.json` — do **not** hand-edit. It
    defines `domains[]`, each domain's `item_schemas.*.required[]`, `instances[]`,
    `actions{}`, and `dashboard_buckets{}`.
    > `consent_text` is intentionally **not** in the deployed `network.json` —
@@ -100,11 +103,14 @@ network identity.
    is the one clearly brand-specific image knob (blue→`blue_dot-upsdm-*`,
    orange→`orange_dot-onetac-*`).
 3. **Brand assets** — logos/colours/typography come from canonical
-   `signals-dpg/examples/schemas/<net>/brand.json` and are shipped with the UI
-   image's brand assets; confirm the UI build carries `<net>`/`<brand>` assets.
+   `bluedots-schemas/<net>/brand.json` (or `<net>/<brand>/brand.json`)
+   and are shipped with the UI image's brand assets; confirm the UI build carries
+   `<net>`/`<brand>` assets.
 
 **Terms & policies (consent)** are ConfigMap-delivered, not baked into the
-image, so they change with a file edit + rollout:
+image, so they change with a file edit + rollout. The consent files below are
+fetched fresh each deploy by `scripts/fetch-configs.sh` from canonical
+`bluedots-schemas/<net>[/<brand>]/consent.json`:
 
 4. **Signals consent** — source file
    `helm/signals/charts/api/files/consent/<net>.json` (terms / privacy /

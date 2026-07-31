@@ -221,6 +221,21 @@ global:
   publicHost:         *aggregator_host
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
+  # Deliver aggregator.config.yaml (network binding, brand strings, domain labels,
+  # registration modes) to the aggregator api + worker from the
+  # {release}-network-config ConfigMap, sourced from
+  # helm/aggregator/files/network-config/aggregator.config.yaml in this repo —
+  # instead of the copy baked into the image. Keep that file in sync with the
+  # _network / _brand anchors above.
+  networkConfigDelivery: true
+  # Upstream network.json URL the aggregator fetches at boot (it never mounts the
+  # file). repo/ref are OVERRIDDEN at deploy time by install.sh from
+  # $SIGNALS_DPG_REPO/$SIGNALS_DPG_REF, so the aggregator and signals always resolve
+  # the same schemas — pin the ref there, not here. Set `url` for a full override
+  # (mirror / internal host). REQUIRES aggregator-dpg#513 in the deployed image.
+  networkSource:
+    file: network.json
+    url: ''
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   signalstack:
     # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
