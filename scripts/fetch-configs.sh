@@ -50,7 +50,8 @@
 #   --consent-ref  / AGGREGATOR_CONSENT_REF  default develop   (pin a tag/SHA for prod)
 #   --consent-dir  / AGGREGATOR_CONSENT_DIR  default config    (empty = repo root)
 #
-# --network/--brand override the _network/_brand anchors read from global-values.yaml.
+# --network/--brand/--college-dataset override the _network/_brand/_college_dataset
+# anchors read from global-values.yaml.
 # Defaults: both targets ref=main, repo=bluedots-schemas.
 # Auth: anonymous if the repo is public; if it is private, export SCHEMAS_PAT
 # (fine-grained token with Contents:read; GHCR_PAT accepted as a fallback) and the
@@ -191,7 +192,7 @@ try_fetch() { # <dest> <url>...
 }
 
 TARGET="${1:-}"; shift 2>/dev/null || true
-GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""
+GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""; COLLEGE_DATASET=""
 CFG_REPO=""; CFG_REF=""; CFG_DIR=""; CFG_FILE=""; CFG_DIR_SET=0
 CONSENT_REPO=""; CONSENT_REF=""; CONSENT_DIR=""; CONSENT_DIR_SET=0
 while [ $# -gt 0 ]; do
@@ -201,6 +202,7 @@ while [ $# -gt 0 ]; do
     --repo)          REPO="$2"; shift 2 ;;
     --network)       NETWORK="$2"; shift 2 ;;
     --brand)         BRAND="$2"; shift 2 ;;
+    --college-dataset) COLLEGE_DATASET="$2"; shift 2 ;;
     # aggregator.config.yaml source overrides (aggregator target only).
     --config-repo)   CFG_REPO="$2"; shift 2 ;;
     --config-ref)    CFG_REF="$2"; shift 2 ;;
