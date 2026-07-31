@@ -31,7 +31,7 @@ that means **Signals** (`helm/signals/`).
 |-------------------------|------------------|-------------------|-------------------|-------------------------------------------------------------------------|
 | `helm/monitoring`       | `monitoring`     | `monitoring`      | `monitoring`      | Prometheus + Alertmanager + Loki + Alloy + Jaeger + Grafana             |
 | `helm/common-services`  | `platform`       | `common-services` | `common-services` | **Kong** ingress, cert-manager, `letsencrypt-prod` issuer, **shared Postgres + Redis**, metrics-server |
-| `helm/signals`          | `dpg`            | `signals`         | `signals`         | **Signals / signalstack** — api, ui, notification-service, search       |
+| `helm/signals`          | `dpg`            | `signals`         | `signals`         | **Signals / signalstack** — api, ui, notification-service, search, s3-export |
 | `helm/aggregator`       | `aggregator-dpg` | `aggregator`      | `aggregator`      | **Aggregator portal** — web (BFF), api, worker, keycloak                |
 
 > **"Signals" lives in `helm/signals/` but the chart is called `dpg`.** When
