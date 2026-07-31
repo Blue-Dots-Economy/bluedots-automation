@@ -162,3 +162,32 @@ resource "aws_s3_bucket_versioning" "this" {
     status = "Enabled"
   }
 }
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Lifecycle — versioned buckets only. Overwriting a fixed key each run (e.g. the signals-export snapshot) turns the
+# previous object into a noncurrent version; without expiry those pile up forever. Expire noncurrent versions after
+# noncurrent_version_expiration_days (default 7) and abort incomplete multipart uploads. CURRENT objects are never
+# expired here — they are the live data.
+# ---------------------------------------------------------------------------------------------------------------------
+resource "aws_s3_bucket_lifecycle_configuration" "this" {
+  for_each = local.versioned_buckets
+
+  bucket = aws_s3_bucket.this[each.key].id
+
+  rule {
+    id     = "expire-noncurrent-versions-and-abort-mpu"
+    status = "Enabled"
+
+    filter {} # whole bucket
+
+    noncurrent_version_expiration {
+      noncurrent_days = var.noncurrent_version_expiration_days
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = var.abort_incomplete_multipart_upload_days
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.this]
+}

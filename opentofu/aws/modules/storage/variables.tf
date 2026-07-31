@@ -103,3 +103,15 @@ variable "buckets" {
     error_message = "Each bucket entry must have a unique key."
   }
 }
+
+variable "noncurrent_version_expiration_days" {
+  description = "Days after which noncurrent object versions expire on versioned buckets (lifecycle). Applies to all versioned buckets."
+  type        = number
+  default     = 7
+}
+
+variable "abort_incomplete_multipart_upload_days" {
+  description = "Days after which incomplete multipart uploads are aborted on versioned buckets (lifecycle)."
+  type        = number
+  default     = 7
+}

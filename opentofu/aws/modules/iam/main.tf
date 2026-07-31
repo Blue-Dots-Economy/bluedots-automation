@@ -102,9 +102,10 @@ resource "aws_iam_role" "signals_export" {
   )
 }
 
-# Write-only access to the dedicated export bucket. No ListBucket/GetObject:
-# the exporter only PUTs (upload_file + put_object). AbortMultipartUpload lets
-# boto3 clean up a failed multipart upload of a large NDJSON part.
+# Write-only access to the dedicated export bucket. No ListBucket/GetObject/
+# DeleteObject: the exporter only PUTs (one fixed object per table, overwritten
+# each run). AbortMultipartUpload lets boto3 clean up a failed multipart upload
+# of a large object.
 resource "aws_iam_role_policy" "signals_export_s3" {
   count = local.signals_export_enabled ? 1 : 0
 
