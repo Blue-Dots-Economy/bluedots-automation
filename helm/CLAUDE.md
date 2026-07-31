@@ -50,6 +50,24 @@ Consent text/versions ship via ConfigMap so they change with a file edit + rollo
 
 **Support-email placeholder:** consent JSON ships `__SUPPORT_EMAIL__` in its T&C/Privacy/Grievances copy; both renders substitute it at deploy time via Helm `replace` — signals from `.Values.schemas.consentSupportEmail`, aggregator from `.Values.global.consentSupportEmail`, each defaulting to `hello@bluedotseconomy.org`. **Change the value, never the consent content**, so a brand/network switch keeps the right contact.
 
+## UI college reference lists — ConfigMap-delivered, and 1 MiB is the real constraint
+
+The signals UI's college/institute autocomplete fetches `/reference/colleges-<region>.json` from its own nginx (`reference-autocomplete-widget.tsx` resolves `<VITE_REFERENCE_BASE_URL|/reference/><id>.json`). `scripts/fetch-configs.sh signals` pulls `colleges-<region>.json` for the region in `_college_dataset` from canonical `signals-dpg apps/ui/public/reference/` into `helm/signals/charts/ui/files/reference/` (gitignored — **fetched fresh every deploy, never committed**, so it can't silently drift, same as network/consent config); `ui/templates/reference-configmap.yaml` renders it into `{release}-ui-reference`, mounted as a **whole directory** over `/usr/share/nginx/html/reference/`. Whole-dir (not subPath) means kubelet hot-updates it, and a `checksum/reference` annotation rolls the pods anyway.
+
+**Only ONE dataset ships per release, and `ui.runtimeConfig.VITE_COLLEGE_DATASET` is the only knob.** The template derives the ConfigMap key from that same value the browser uses, so the file served can't disagree with the file requested — there's deliberately no second list to keep in sync. Wired from the `_college_dataset` anchor in `global-values.yaml`.
+
+**Why one, not both — this is a hard ceiling, not tidiness.** A ConfigMap is one etcd object capped at **1 MiB (1,048,576 B)**. `colleges-up.json` is **1,253,396 B** pretty-printed and *cannot* be stored raw, so the template minifies at render with `fromJson | toJson`. Minified: ka **353,454 B**, up **747,867 B** — either alone fits, both together (**1,101,321 B**) are rejected by the apiserver. Minifying at render (rather than at fetch) keeps the fetched file byte-identical to canonical, so the fetch stays a dumb `curl` with nothing to keep in sync. The round-trip is **lossless only because these datasets contain zero numeric scalars** (verified — all values are strings), so there's no float reformatting; `toJson` does alphabetise keys and HTML-escape `& < >`, both semantically invisible to `JSON.parse`. **If a future reference dataset contains numbers, re-check that assumption before reusing this trick.**
+
+Two traps worth knowing:
+- The mount **shadows** the datasets baked into the image, so a region that isn't selected 404s even though the image contains it. Intended; `ui.reference.enabled: false` restores the baked-in files.
+- An unknown region **fails the helm render** with the expected file path. Without that guard the symptom is an empty college dropdown plus a console error — cheap to catch at template time, expensive in prod.
+
+If a dataset ever outgrows `ui.reference.maxBytes` (default 1,000,000 — under the ceiling with room for metadata), don't raise it past ~1048576; that only moves the failure from `helm template` to an opaque apiserver rejection. Host the lists off-cluster and point `VITE_REFERENCE_BASE_URL` at them instead (needs permissive CORS — the browser fetches directly).
+
+Only the ONE selected region is fetched — the ConfigMap ships exactly that file and couldn't hold both anyway. `fetch-configs.sh` reads `_college_dataset` from `global-values.yaml` (falling back to `ka`, matching the chart and widget defaults), so `install.sh` needed no change. It also `jq`-validates the download, because a GitHub 404 returns an HTML page that would otherwise surface as a cryptic `fromJson` parse error at render.
+
+Consequence for static checks: a standalone `helm template helm/signals/charts/ui` **fails** until a fetch has run. `helm lint` tolerates it (it reports the `fail` as `[INFO]` and still passes, exactly as it already does for the api's network schemas), and `install.sh dry_run`/`deploy_signals` fetch first. This is the same reason CI keeps signals lint-only.
+
 ## Org hierarchy flag
 
 `global.orgHierarchyEnabled` (in `global-values.yaml`, default `true`) is emitted as `ORG_HIERARCHY_ENABLED` to the aggregator **web + api** pods via their ConfigMaps (`helm/aggregator/charts/{web,api}/templates/configmap.yaml`). There's no default in the aggregator chart's own `values.yaml`, so the global value must be present (it is) — set it identically for web and api or the two halves disagree.

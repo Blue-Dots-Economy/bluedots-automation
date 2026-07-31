@@ -122,6 +122,40 @@ runtimeConfig:
   # Brand skin over the network (UI selects it at runtime). Empty = standard
   # dots; one UI build serves all brands. Examples: "upsdm", "onetac".
   VITE_BRAND_NAME: ""
+  # Region code selecting which state's college/institute list backs the
+  # reference-autocomplete field: "ka" | "up". THE SINGLE KNOB — it picks both
+  # the dataset the UI requests and the one file the reference ConfigMap below
+  # ships (colleges-<code>.json), so the two cannot disagree.
+  VITE_COLLEGE_DATASET: "ka"
+  # Base URL the reference datasets are fetched from. Leave EMPTY to use the
+  # UI's own /reference/ path (served by its nginx from the ConfigMap below).
+  # Set to an absolute URL only to host the lists off-cluster (CDN/registry) —
+  # that host must then send permissive CORS headers, since the browser fetches
+  # it directly. Setting this makes reference.enabled below redundant.
+  VITE_REFERENCE_BASE_URL: ""
+
+# College/institute reference list delivered to the UI's nginx as a ConfigMap
+# mounted at /usr/share/nginx/html/reference/, so the list updates with a value
+# edit + rollout instead of a UI image rebuild — the same ConfigMap-delivery
+# model as consent config.
+#
+# EXACTLY ONE dataset ships, chosen by VITE_COLLEGE_DATASET above. There is no
+# list to keep in sync: scripts/fetch-configs.sh pulls colleges-<region>.json
+# from canonical signals-dpg at deploy time into files/reference/ (gitignored,
+# fetched fresh so it can't drift), and this chart renders that same region.
+# One region is also a hard requirement, not just tidiness — a ConfigMap is one
+# etcd object capped at 1 MiB, and the two known datasets minified come to
+# 1,101,321 B, so shipping both would be rejected by the apiserver.
+# One region is ~353 KB (ka) / ~748 KB (up).
+reference:
+  # false -> no ConfigMap, no mount; the UI falls back to the datasets baked
+  # into its image at build time (behaviour before this was added). Use this if
+  # you instead point VITE_REFERENCE_BASE_URL at an external host.
+  enabled: true
+  # Render-time size guard, kept under the 1 MiB etcd ceiling with room for
+  # ConfigMap metadata. Raising it past ~1048576 only moves the failure from
+  # `helm template` to the apiserver, where the error is far less obvious.
+  maxBytes: 1000000
 
 podDisruptionBudget:
   enabled: false
