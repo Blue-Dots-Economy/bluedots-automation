@@ -23,7 +23,10 @@ global:
   ##
   security:
     ## @param global.security.allowInsecureImages Allows skipping image verification
-    allowInsecureImages: false
+    ## Set true because the shared Postgres uses a custom (non-Bitnami repo)
+    ## portable-pgvector image; the Bitnami chart otherwise refuses non-Bitnami
+    ## image repos. NOT a general security downgrade — see opentofu/aws/*/global-images.yaml.
+    allowInsecureImages: true
   postgresql:
     ## @param global.postgresql.fullnameOverride Full chart name (overrides `fullnameOverride`)
     ## @param global.postgresql.auth.postgresPassword Password for the "postgres" admin user (overrides `auth.postgresPassword`)

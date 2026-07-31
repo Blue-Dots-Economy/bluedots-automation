@@ -40,3 +40,20 @@ variable "service_account_subjects" {
     "system:serviceaccount:app:app-sa"
   ]
 }
+
+# ── Signals S3-export exporter (optional, opt-in) ────────────────────────────
+# A dedicated least-privilege IRSA role for the signals-s3-export CronJob,
+# separate from the shared app_sa role. Created only when
+# signals_export_bucket is non-empty (i.e. the cluster provisions a
+# dedicated export bucket). Scoped to write-only access on that one bucket.
+variable "signals_export_bucket" {
+  description = "Name of the dedicated Signals export S3 bucket. Empty disables the exporter IRSA role entirely."
+  type        = string
+  default     = ""
+}
+
+variable "signals_export_sa_subject" {
+  description = "Kubernetes service account subject bound to the exporter role (format: system:serviceaccount:<namespace>:<sa-name>)."
+  type        = string
+  default     = "system:serviceaccount:signals:signals-s3-export"
+}

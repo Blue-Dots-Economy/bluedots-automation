@@ -1,6 +1,6 @@
 apiVersion: v2
 name: dpg
-description: Umbrella chart for DPG monorepo (api, ui, notification-service, match-score) with centralized image/resource/credential values. Postgres + Redis are provided by the shared common-services release.
+description: Umbrella chart for DPG monorepo (api, ui, notification-service, search) with centralized image/resource/credential values. Postgres + Redis are provided by the shared common-services release.
 type: application
 version: 0.1.0
 appVersion: "1.0.0"
@@ -25,11 +25,6 @@ dependencies:
     repository: "file://../notification-service"
     alias: notification-service
     condition: notification-service.enabled
-  - name: dpg-match-score
-    version: 0.1.0
-    repository: "file://../match-score"
-    alias: match-score
-    condition: match-score.enabled
   - name: dpg-search
     version: 0.1.0
     repository: "file://../search"
@@ -40,3 +35,8 @@ dependencies:
     repository: "file://../search-embeddings"
     alias: search-embeddings
     condition: search-embeddings.enabled
+  - name: dpg-s3-export
+    version: 0.1.0
+    repository: "file://../s3-export"
+    alias: s3-export
+    condition: s3-export.enabled

@@ -181,12 +181,11 @@ secrets:
     NOTIFICATION_SERVICE_SECRET: ""
     SMS_TEMPLATE_ID: ""
     MATCH_SCORE_PROVIDER: ""
-    DPG_SCORING_ENDPOINT: ""
-    DPG_SCORING_KEY_ID: ""
-    DPG_SCORING_SECRET: ""
-    DPG_SCORING_PATH: ""
-    DPG_SCORING_VERSION: ""
-    DPG_SCORING_PROMPT_VERSION: ""
+    # match-score → signals-search /v1/relevance; x-api-key seeded by the migrate-job.
+    SIGNALS_SEARCH_ENDPOINT: ""
+    SIGNALS_SEARCH_API_KEY: ""
+    # Discover BFF → signals-search (signals-dpg#203); shares SIGNALS_SEARCH_API_KEY.
+    SIGNALS_SEARCH_URL: ""
 
 # DB schema migration Job. A migrate-ddl initContainer runs the api image's
 # db:migrate:deploy (drizzle migrations + raw item/action/event SQL, all shipped

@@ -63,6 +63,12 @@ spec:
                 secretKeyRef:
                   name: data-postgres
                   key: dpg-password
+            - name: EXPORT_RO_PW
+              valueFrom:
+                secretKeyRef:
+                  name: data-postgres
+                  key: signals-export-ro-password
+                  optional: true
           command:
             - sh
             - -ec
@@ -76,13 +82,19 @@ spec:
               echo "postgres ready; creating roles + databases"
               # Roles + databases on the default `postgres` db. Passwords passed as
               # psql variables (:'var') so they are safely quoted, never interpolated.
-              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" <<-'EOSQL'
+              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" -v export_ro_pw="${EXPORT_RO_PW:-}" <<-'EOSQL'
                 SELECT 'CREATE ROLE aggregator LOGIN'
                   WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aggregator')\gexec
                 SELECT 'CREATE ROLE dpg LOGIN'
                   WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='dpg')\gexec
                 ALTER ROLE aggregator WITH PASSWORD :'agg_pw';
                 ALTER ROLE dpg        WITH PASSWORD :'dpg_pw';
+                {{- if .Values.postgresBootstrap.signalsExportRole.enabled }}
+                SELECT 'CREATE ROLE {{ .Values.postgresBootstrap.signalsExportRole.name }} LOGIN'
+                  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{{ .Values.postgresBootstrap.signalsExportRole.name }}')\gexec
+                ALTER ROLE {{ .Values.postgresBootstrap.signalsExportRole.name }} WITH PASSWORD :'export_ro_pw';
+                ALTER ROLE {{ .Values.postgresBootstrap.signalsExportRole.name }} SET default_transaction_read_only = on;
+                {{- end }}
                 -- On RDS the master is not a true superuser: to CREATE DATABASE owned
                 -- by a role it must be a member of that role (PG16+ "must be able to
                 -- SET ROLE"). Grant each owner to the current (master) user first.
@@ -105,6 +117,18 @@ spec:
                 {{- end }}
               EOSQL
               {{- end }}
+              {{- end }}
+              {{- if .Values.postgresBootstrap.signalsExportRole.enabled }}
+              echo "granting read-only SELECT to {{ .Values.postgresBootstrap.signalsExportRole.name }} on {{ .Values.postgresBootstrap.signalsExportRole.database }}"
+              psql -v ON_ERROR_STOP=1 -d {{ .Values.postgresBootstrap.signalsExportRole.database }} <<-'EOSQL'
+                GRANT CONNECT ON DATABASE {{ .Values.postgresBootstrap.signalsExportRole.database }} TO {{ .Values.postgresBootstrap.signalsExportRole.name }};
+                GRANT USAGE ON SCHEMA public TO {{ .Values.postgresBootstrap.signalsExportRole.name }};
+                -- Existing tables (idempotent catch-up); tables the owner creates
+                -- later during signals migrate are covered by the default privileges.
+                GRANT SELECT ON ALL TABLES IN SCHEMA public TO {{ .Values.postgresBootstrap.signalsExportRole.name }};
+                ALTER DEFAULT PRIVILEGES FOR ROLE {{ .Values.postgresBootstrap.signalsExportRole.owner }} IN SCHEMA public
+                  GRANT SELECT ON TABLES TO {{ .Values.postgresBootstrap.signalsExportRole.name }};
+              EOSQL
               {{- end }}
               echo "[common-services] postgres bootstrap complete"
           resources: {{- toYaml .Values.postgresBootstrap.resources | nindent 12 }}

@@ -213,7 +213,7 @@ function apply_kong_crds() {
     kubectl apply --server-side -f "$CS_DIR/crds/"
 }
 
-# 2b) signals (api, ui, notification, match-score) — uses shared common-services DBs
+# 2b) signals (api, ui, notification, search) — uses shared common-services DBs
 # Fetch the served network's network.json + consent.json from canonical
 # Signals-DPG (driven by _network/_brand in global-values.yaml) into the chart's
 # files/ dir, where schemas-configmap.yaml renders them into the -schemas
@@ -425,6 +425,22 @@ function dry_run() {
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
+}
+
+# helm --dry-run ONLY signals, with the same -f layering as deploy_signals.
+# Installs nothing. Two reasons this exists next to `dry_run`:
+#   - CI can only `helm lint` signals (its `helm template` needs the network
+#     schemas fetch_signals_configs pulls at deploy time), so a full render of
+#     this chart is never validated automatically — only here.
+#   - `dry_run` walks all 4 charts and stops at the first failure, so an
+#     unrelated break in monitoring/common-services hides signals entirely.
+# Unlike `lint`, this loads the env values files, so it catches YAML anchor and
+# values-layering breakage that lint cannot see.
+function dry_run_signals() {
+    preflight
+    fetch_signals_configs
+    helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
 }
 

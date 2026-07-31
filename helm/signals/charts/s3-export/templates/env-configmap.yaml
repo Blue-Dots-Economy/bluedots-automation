@@ -1,0 +1,20 @@
+{{- /* Instance-level env: WHERE to read/write — never WHAT ships. */ -}}
+{{- range .Values.instances }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dpg-s3-export.fullname" $ }}-env-{{ include "dpg-s3-export.instanceSlug" .id }}
+  labels:
+    {{- include "dpg-s3-export.labels" $ | nindent 4 }}
+data:
+  INSTANCE_ID: {{ .id | quote }}
+  EXPORT_NETWORK: {{ .network | quote }}
+  EXPORT_SCOPE: {{ $.Values.export.scope | quote }}
+  EXPORT_MANIFEST_PATH: {{ printf "/etc/signals-export/%s.json" .network | quote }}
+  S3_BUCKET: {{ $.Values.s3.bucket | quote }}
+  S3_PREFIX: {{ $.Values.s3.prefix | quote }}
+  S3_ENDPOINT_URL: {{ $.Values.s3.endpointUrl | quote }}
+  S3_REGION: {{ $.Values.s3.region | quote }}
+  S3_FORCE_PATH_STYLE: {{ $.Values.s3.forcePathStyle | quote }}
+{{- end }}

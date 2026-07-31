@@ -23,11 +23,17 @@ _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/see
 _network: &network "blue_dot"
 _brand: &brand ""
 
+# Which state's college/institute list backs the UI's reference-autocomplete
+# field: "ka" | "up". Feeds ui.runtimeConfig.VITE_COLLEGE_DATASET below, which is
+# the single knob: it selects both the dataset the UI requests and the one file
+# the ui reference ConfigMap ships (colleges-<code>.json). Only that region's
+# list is deployed — the two datasets together exceed the 1 MiB ConfigMap cap.
+_college_dataset: &college_dataset "ka"
+
 # ── SMTP Configuration ────────────────────────────────────────────────────
 _smtp_host:         &smtp_host         "smtp.gmail.com"
 _smtp_port:         &smtp_port         587
 _smtp_user:         &smtp_user         "sender@example.com"
-_smtp_password:     &smtp_password     "changeme" # smtp_password must be a Gmail App Password: eg. "abcd efgh ijkl mnop"
 _smtp_from_display: &smtp_from_display "Blue Dots"
 _aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
 support_email: &support_email "support@example.com"
@@ -168,12 +174,25 @@ global:
     # private:
     #   type: private
     #   versioning_enabled: true
+    # Dedicated PRIVATE bucket for the Signals non-PII S3 export
+    # (helm/signals/charts/s3-export). Uncomment to provision it — its presence
+    # auto-creates the write-only exporter IRSA role in the iam module.
+    # Bucket name: <building_block>-<environment>-<account_id>-signals-export
+    # signals-export:
+    #   type: private
+    #   versioning_enabled: true
 
   cors_max_age_seconds: 3000
 
   service_account_subjects:
     - "system:serviceaccount:aggregator:aggregator-api"
     - "system:serviceaccount:aggregator:aggregator-worker"
+
+  # Exporter ServiceAccount subject bound to the signals-s3-export IRSA role
+  # (only relevant when the signals-export bucket above is provisioned). Must
+  # match s3-export.serviceAccount.name below. The iam module already defaults
+  # to this value — uncomment only to override.
+  # signals_export_sa_subject: "system:serviceaccount:signals:signals-s3-export"
 
   # Read by terragrunt and passed through to the output-file module, which
   # bakes them into the generated global-secrets.yaml (GMAIL_USER / smtpUser).
@@ -235,19 +254,18 @@ prometheus:
           hosts:
             - *grafana_host
 
+# Alerting secrets (email.smtpAuthPassword, discord.*Webhook) are set directly
+# in the generated global-secrets.yaml (UPDATE_THIS_VALUE placeholders) — not
+# here. Only the non-secret config lives below; the two files deep-merge.
 alerting:
   email:
     enabled: false
     smtpHost: "smtp.gmail.com:587"  # host:port combined — keep in sync with _smtp_host/_smtp_port
     smtpFrom: *smtp_user
     smtpAuthUsername: *smtp_user
-    smtpAuthPassword: *smtp_password
     to: "CHANGE-ME"
   discord:
     enabled: false
-    criticalWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-    warningWebhook:  "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
-    infoWebhook:     "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
 
 # =============================================================================
 # Aggregator chart config (non-sensitive, passed directly via -f global-values.yaml)
@@ -268,10 +286,6 @@ mail:
     secure: false
     starttls: true
     auth: true
-
-keycloak:
-  # msg91TemplateId is set directly in the generated global-secrets.yaml
-  # (UPDATE_THIS_VALUE placeholder) — not here.
 
 # =============================================================================
 # Signals chart config (non-sensitive, passed directly via -f global-values.yaml)
@@ -321,6 +335,16 @@ ui:
     VITE_MAP_DEFAULT_ZOOM: "5"
     VITE_PROFILE_FETCH_LIMIT: "1000"
     VITE_ENABLED_LANGUAGES: "en,hi" # default: "en,hi" (English, Hindi). Add more codes for additional languages.
+    VITE_COLLEGE_DATASET: *college_dataset
+  # College/institute reference list, delivered to the UI's nginx as a ConfigMap
+  # (see helm/signals/charts/ui/values.yaml for the full rationale). The region
+  # above selects the one file that ships; set enabled: false to fall back to
+  # the datasets baked into the UI image.
+    VITE_MAP_MARKER_CAP_CLUSTERED: 1000
+    VITE_MAP_MARKER_CAP_INDIVIDUAL: 500
+    VITE_FREETEXT_MATCH_SCORE_ENABLED: false
+  reference:
+    enabled: true
   service:
     port: 80
     targetPort: 80
@@ -336,26 +360,6 @@ notification-service:
     existingSecret: ""
     fileName: internal-secrets.json
     mountPath: /app/config
-
-match-score:
-  secrets:
-    create: true
-  redis:
-    host: common-services-redis-master.common-services.svc.cluster.local
-  configFiles:
-    create: true
-    aiProvidersFileName: ai.providers.local.json
-    aiProvidersJson: |
-      {
-        "providers": {
-          "openai": {
-            "apiKey": "REPLACE_WITH_OPENAI_API_KEY"
-          },
-          "gemini": {
-            "apiKey": "REPLACE_WITH_GEMINI_API_KEY"
-          }
-        }
-      }
 
 search:
   # In-cluster Postgres by default. The opentofu RDS overlay
@@ -374,3 +378,12 @@ search:
 
 rdsRelay:
   enabled: false
+
+s3-export:
+  enabled: false
+  networks:
+    - blue_dot
+  instances: []
+  #  - id: blue_dot_dev
+  #    network: blue_dot
+  #    schedule: "0 0,12 * * *"

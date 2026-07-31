@@ -45,10 +45,22 @@ variable "app_sa_role_arn" {
   default = ""
 }
 
+# Signals s3-export exporter IRSA role ARN (empty when not provisioned).
+variable "signals_export_role_arn" {
+  type    = string
+  default = ""
+}
+
 # -----------------------------------------------------------------------------
 # Storage (S3)
 # -----------------------------------------------------------------------------
 variable "storage_bucket_public" {
+  type    = string
+  default = ""
+}
+
+# Dedicated Signals s3-export bucket name (empty when not provisioned).
+variable "signals_export_bucket" {
   type    = string
   default = ""
 }
@@ -71,21 +83,89 @@ variable "signalstack_admin_key" {
   description = "Shared API key for aggregator.signalstackAdminKey and signals AGGREGATOR_DPG_API_KEY (same value, two consumers)"
 }
 
+variable "signals_search_api_key" {
+  type        = string
+  sensitive   = true
+  description = "API key the signals api sends to signals-search /v1/relevance as x-api-key (signals SIGNALS_SEARCH_API_KEY)"
+}
+
 # ─── Signals notification service ─────────────────────────────────────────
-# notification_gmail_pass, notification_msg91_auth_key, notification_msg91_template_id
-# are no longer sourced from global-values.yaml — global-secrets.yaml.tfpl
-# bakes in "UPDATE_THIS_VALUE" placeholders instead; edit the generated file directly.
 variable "notification_gmail_user" {
   type    = string
   default = ""
 }
 
 # ─── Aggregator mail ───────────────────────────────────────────────────────
-# aggregator_smtp_password and aggregator_msg91_auth_key are no longer sourced
-# from global-values.yaml — see note above.
 variable "aggregator_smtp_user" {
   type    = string
   default = ""
+}
+
+# -----------------------------------------------------------------------------
+# Hand-entered secrets — sourced from the env's gitignored `secrets.yaml`
+# (seeded from `secrets.example.yaml`). NOT from global-values.yaml, and NOT
+# generated: these are values only a human can supply (provider credentials).
+#
+# One variable per DISTINCT secret — each is templated into every chart that
+# needs it, so the per-chart copies can never drift. Defaults are the same
+# placeholders as the example file, so a missing/partial secrets.yaml still
+# renders (and fails loudly at runtime rather than silently using a real value).
+# -----------------------------------------------------------------------------
+variable "smtp_password" {
+  description = "Gmail App Password. Feeds notification-service GMAIL_PASS, aggregator secrets.smtpPassword, monitoring alerting.email.smtpAuthPassword."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
+variable "msg91_auth_key" {
+  description = "MSG91 API key. Feeds notification-service MSG91_AUTH_KEY and aggregator secrets.msg91AuthKey."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
+variable "msg91_template_id" {
+  description = "MSG91 OTP template id. Feeds notification-service MSG91_TEMPLATE_ID and aggregator keycloak.msg91TemplateId."
+  type        = string
+  default     = "UPDATE_THIS_VALUE"
+}
+
+# Two separate Google keys: a Google API key takes only ONE application
+# restriction (HTTP referrers OR IP addresses), so the browser key and the
+# server key must be distinct to be restrictable at all.
+variable "google_maps_api_key" {
+  description = "Google Maps JS API key, BROWSER-side → signals ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY. Restrict by HTTP referrers (the signals public hosts)."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
+variable "google_geocoding_api_key" {
+  description = "Google Geocoding API key, SERVER-side → signals api GOOGLE_GEOCODING_API_KEY. Restrict by IP (the env's NAT gateway Elastic IPs, both AZs)."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
+# Discord webhooks stay URL-shaped: Alertmanager validates webhook_url as a URL
+# at config load, so a bare placeholder would break the alertmanager config.
+variable "discord_critical_webhook" {
+  type      = string
+  sensitive = true
+  default   = "https://discord.com/api/webhooks/UPDATE_THIS_VALUE/UPDATE_THIS_VALUE"
+}
+
+variable "discord_warning_webhook" {
+  type      = string
+  sensitive = true
+  default   = "https://discord.com/api/webhooks/UPDATE_THIS_VALUE/UPDATE_THIS_VALUE"
+}
+
+variable "discord_info_webhook" {
+  type      = string
+  sensitive = true
+  default   = "https://discord.com/api/webhooks/UPDATE_THIS_VALUE/UPDATE_THIS_VALUE"
 }
 
 # ─── Monitoring chart secrets ──────────────────────────────────────────────
@@ -106,6 +186,11 @@ variable "signals_postgres_password" {
   sensitive = true
 }
 
+variable "signals_export_ro_password" {
+  type      = string
+  sensitive = true
+}
+
 variable "signals_redis_password" {
   type      = string
   sensitive = true
@@ -122,11 +207,6 @@ variable "signals_pii_key" {
 }
 
 variable "signals_notification_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "signals_dpg_scoring_secret" {
   type      = string
   sensitive = true
 }

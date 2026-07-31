@@ -173,18 +173,26 @@ paths with no error.
 Some values are **not** auto-generated — you must set them, or services come up
 misbranded / unable to send OTP / unable to log in. Two layers:
 
-- **`<env>/global-values.yaml`** — edit **before** `terragrunt apply` (anchors
-  at the top; see the root `CLAUDE.md` values-file architecture table).
-- **`<env>/global-secrets.yaml`** — generated (gitignored) by the
-  `output-file` module; a handful of secret-tier fields render as literal
-  `UPDATE_THIS_VALUE` placeholders (baked into the module's `.tfpl`, not
-  sourced from `global-values.yaml`) — edit them **directly in the generated
-  file, after** `terragrunt apply` writes it, **before** the helm deploy.
-  > ⚠️ Re-running `bash install.sh apply_tf_output_file` (or a full apply)
-  > **regenerates and overwrites** `global-secrets.yaml`, resetting any
-  > placeholder you already filled in back to `UPDATE_THIS_VALUE`. Fill these
-  > in after your *final* apply for the env, and re-paste them if you ever
-  > regenerate again.
+- **`<env>/global-values.yaml`** — non-secret config. Edit **before**
+  `terragrunt apply` (anchors at the top; see the root `CLAUDE.md` values-file
+  architecture table). Committed.
+- **`<env>/secrets.yaml`** — the hand-entered **secrets** (SMTP / MSG91 / Maps /
+  Discord). Gitignored. Create it once per environment by copying the committed
+  `secrets.example.yaml`; it just has to exist before the `output-file` module
+  runs, since that's the only thing that reads it.
+  > ✅ Tofu **reads** this file on every apply and templates it into
+  > `global-secrets.yaml`, so re-running `apply_tf_output_file` re-renders the
+  > same values — **nothing to re-enter after a regenerate.**
+  ```bash
+  cd opentofu/aws/<env>
+  cp secrets.example.yaml secrets.yaml   # once per env
+  $EDITOR secrets.yaml                   # replace every UPDATE_THIS_VALUE you actually use
+  bash install.sh apply_tf_output_file   # re-render global-secrets.yaml
+  ```
+- **`<env>/global-secrets.yaml`** — **generated output** (gitignored): the
+  `secrets.yaml` values above + the passwords `random_passwords` generates.
+  > ⚠️ Don't hand-edit this file — it's overwritten on every apply. Edit
+  > `secrets.yaml` instead.
 
 ### `global-values.yaml` (public hosts)
 
@@ -199,29 +207,40 @@ misbranded / unable to send OTP / unable to log in. Two layers:
 
 | Path | Value |
 |------|-------|
-| `alerting.email.smtpAuthPassword` | Gmail App Password for monitoring's alertmanager |
 | `global.signalstack.actingOrgId` | network_service org id — **fetched after signals is deployed** (see below) |
 | `secrets.smtpUser` | Sender email for aggregator SMTP auth |
 | `api.adminEmails` | Admin notification recipient(s) |
 | `mail.smtp.from` | From address on outgoing mail |
-| `match-score.configFiles.aiProvidersJson` → `openai.apiKey` | replace `REPLACE_WITH_OPENAI_API_KEY` |
 
-### `global-secrets.yaml` (values you edit here, post-generation)
+### `secrets.yaml` (the secrets you fill in)
 
-| Path | Value |
-|------|-------|
-| `notification-service.secrets.data.GMAIL_USER` | Sender Gmail address (non-secret; still sourced from `global-values.yaml`) |
-| `notification-service.secrets.data.GMAIL_PASS` | 16-char Gmail **App Password** — **strip the display spaces** (16 chars, not 19) |
-| `notification-service.secrets.data.MSG91_AUTH_KEY` | MSG91 key (SMS OTP; leave blank if unused) |
-| `notification-service.secrets.data.MSG91_TEMPLATE_ID` | MSG91 template id (notification-service's own copy) |
-| `keycloak.msg91TemplateId` | MSG91 template id (aggregator's keycloak, separate copy) |
-| `api.secrets.data.GOOGLE_GEOCODING_API_KEY` | Google Geocoding API key (backend; may be the same key as the frontend Maps JS key below, or a separate one) |
-| `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` | Google Maps JS API key (frontend) |
-| `secrets.smtpPassword` | 16-char Gmail App Password — **no spaces** (aggregator's own copy) |
-| `secrets.msg91AuthKey` | MSG91 key (aggregator's own copy) |
+One key per secret — each is templated into **every** chart that needs it, so
+the per-chart copies can never drift. Leave any you don't use as
+`UPDATE_THIS_VALUE`.
+
+> The two Google keys are a deliberate exception to "one key per secret": a
+> Google API key accepts only **one** application restriction (HTTP referrers
+> *or* IP addresses, never both), so the browser key and the server key must be
+> separate to be restrictable at all. Set both to the same value if you don't
+> intend to restrict them.
+
+| `secrets.yaml` key | Value | Ends up as |
+|---|---|---|
+| `smtp_password` | 16-char Gmail **App Password** — **strip the display spaces** (16 chars, not 19) | notification-service `GMAIL_PASS`, aggregator `secrets.smtpPassword`, monitoring `alerting.email.smtpAuthPassword` |
+| `msg91_auth_key` | MSG91 key (SMS OTP; leave as placeholder if unused) | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
+| `msg91_template_id` | MSG91 OTP template id | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
+| `google_maps_api_key` | Google Maps **browser** key — API restriction: Maps JavaScript API; application restriction: **HTTP referrers** (`https://<each signals host>/*`) | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` |
+| `google_geocoding_api_key` | Google Maps **server** key — API restriction: Geocoding API; application restriction: **IP addresses** (the env's NAT gateway Elastic IPs, **both** AZs) | signals `api.secrets.data.GOOGLE_GEOCODING_API_KEY` |
+| `discord_critical_webhook`<br>`discord_warning_webhook`<br>`discord_info_webhook` | Discord webhook URLs (Channel Settings → Integrations → Webhooks); enable via `alerting.discord.enabled` in `global-values.yaml` | monitoring `alerting.discord.*Webhook` |
+
+Any key left as `UPDATE_THIS_VALUE` is rendered through as-is, so an unfilled
+one surfaces as a runtime failure in whichever service needs it (no OTP email,
+no map tiles). Grep the generated `global-secrets.yaml` for `UPDATE_THIS_VALUE`
+if something isn't working.
 
 No manual values needed for `common-services` — Postgres/Redis credentials are
-auto-generated by the `random_passwords` module.
+auto-generated by the `random_passwords` module. `GMAIL_USER`/`smtpUser` come
+from the `_smtp_user` anchor in `global-values.yaml`, not from `secrets.yaml`.
 
 ### `actingOrgId` — fetch it after signals is up
 

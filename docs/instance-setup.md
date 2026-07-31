@@ -138,21 +138,30 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
   `ingress-nginx.enabled: false`); rate limiting via `KongClusterPlugin` tiers
   (`rl-auth`/`rl-api`/`rl-public`). Toggle with `_api_rate_limit_enabled` /
   `_api_rate_limit_per_minute`.
-- **Auth channels:**
-  - **SMS OTP (MSG91)** — the auth key and each service's own template id
-    (`notification-service.secrets.data.MSG91_AUTH_KEY`/`MSG91_TEMPLATE_ID`,
-    aggregator `secrets.msg91AuthKey`/`keycloak.msg91TemplateId`) are
-    `UPDATE_THIS_VALUE` placeholders in the **generated** `global-secrets.yaml`
-    — edit them there directly (post-generation, no `global-values.yaml` edit
-    or re-apply).
-  - **Email (SMTP)** — anchors `_smtp_host/_port/_user/_from_display` in
-    `global-values.yaml`; the notification-service and aggregator app
-    passwords (`GMAIL_PASS`, `secrets.smtpPassword`) are `UPDATE_THIS_VALUE`
-    placeholders in the generated `global-secrets.yaml` (Gmail App
-    Password if using `smtp.gmail.com`). The `_smtp_password` anchor still
-    lives in `global-values.yaml` — it only feeds monitoring's alertmanager
-    (`alerting.email.smtpAuthPassword`), a separate copy.
-  - `AUTH_SECRET` is generated into `global-secrets.yaml` (do not hand-set).
+- **Auth channels** — every hand-entered secret below lives in the env's
+  gitignored **`secrets.yaml`**: `cp secrets.example.yaml secrets.yaml` once per
+  env, then fill it in. Tofu reads that file on every apply and templates it into
+  `global-secrets.yaml`, so re-running `apply_tf_output_file` **keeps** your
+  values — nothing to re-enter. Edit `secrets.yaml`, never `global-secrets.yaml`.
+  - **SMS OTP (MSG91)** — `msg91_auth_key` and `msg91_template_id`. One key
+    each, fanned out to both consumers (notification-service `MSG91_AUTH_KEY`/
+    `MSG91_TEMPLATE_ID`, aggregator `secrets.msg91AuthKey`/
+    `keycloak.msg91TemplateId`), so the copies can't drift.
+  - **Email (SMTP)** — non-secret anchors `_smtp_host/_port/_user/_from_display`
+    stay in `global-values.yaml`; the password is `smtp_password` in
+    `secrets.yaml` (Gmail App Password if using `smtp.gmail.com`), rendered into
+    all three consumers: notification-service `GMAIL_PASS`, aggregator
+    `secrets.smtpPassword`, monitoring `alerting.email.smtpAuthPassword`.
+  - **Alerting (monitoring)** — `discord_critical_webhook` /
+    `discord_warning_webhook` / `discord_info_webhook` in `secrets.yaml`; the
+    on/off toggles (`alerting.email.enabled`, `alerting.discord.enabled`) and
+    recipient (`alerting.email.to`) stay in `global-values.yaml`.
+  - `AUTH_SECRET` and the DB/Redis passwords are **generated** by
+    `random_passwords` into `global-secrets.yaml` (do not hand-set).
+  - Leaving a key as `UPDATE_THIS_VALUE` is fine for anything this deployment
+    doesn't use (MSG91 with SMS off, Discord when alerting is email-only) — it
+    renders through and only matters to the service that reads it.
+    See DEPLOYMENT.md §4.
   - **Per-IP OTP rate limiting** — on by default (`_otp_rate_limit_enabled`),
     with `_signals_otp_per_minute` (5) / `_aggregator_otp_per_minute` (20)
     guarding the OTP login endpoints. See `helm/CLAUDE.md → Per-IP OTP-abuse
@@ -161,13 +170,21 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
   (`"false"` = reject unknown fields) is set in the chart values. `BULK_MAX_ITEMS`
   (bulk-upload cap) is a supported api env var but not surfaced in the chart
   today — add it under `api.config` only if you need to override the app default.
-- **Geocoding / maps** — both the frontend Maps JS key
-  (`ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY`) and the backend geocoding key
-  (`api.secrets.data.GOOGLE_GEOCODING_API_KEY`, may be the same key with
-  Geocoding API also enabled) are `UPDATE_THIS_VALUE` placeholders in the
-  generated `global-secrets.yaml` — edit them there directly (no
-  `global-values.yaml` edit or re-apply needed). `PHOTON_URL` defaults to the
-  public Photon.
+- **Geocoding / maps** — **two** keys in `secrets.yaml`, because a Google API key
+  accepts only one application restriction (HTTP referrers *or* IP addresses):
+  - `google_maps_api_key` → `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY`
+    (browser). Google Cloud Console: API restriction *Maps JavaScript API*,
+    application restriction *HTTP referrers* = `https://<each signals host>/*`.
+  - `google_geocoding_api_key` → `api.secrets.data.GOOGLE_GEOCODING_API_KEY`
+    (server). API restriction *Geocoding API*, application restriction
+    *IP addresses* = the env's NAT gateway Elastic IPs — **both** of them, since
+    pods egress via either AZ (`cd network && terragrunt output nat_gateway_public_ips`).
+
+  Set both to the same key value if you're not restricting them yet. Note that
+  clusters whose nodes run in **public** subnets have no NAT gateway, so their
+  egress is the node's own auto-assigned public IP, which changes on node
+  replacement — prefer referrer restriction there, or give them a fixed egress.
+  `PHOTON_URL` defaults to the public Photon.
 - **Other** — `_alert_email`, `_aggregator_admin_emails`,
   `global.orgHierarchyEnabled` (default `true`).
 
@@ -176,7 +193,7 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
 ## §E — Image tags
 
 Pin per-service images in `opentofu/aws/<env>/global-images.yaml` (plaintext,
-per-env): `api`, `ui`, `notification-service`, `match-score`, `search`,
+per-env): `api`, `ui`, `notification-service`, `search`,
 `search-embeddings`; aggregator `web`/`api`/`worker`; `keycloak` (brand theme
 tag, §C). Prefer immutable SHAs for prod; dev may track a branch tag.
 
