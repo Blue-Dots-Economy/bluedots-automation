@@ -340,6 +340,9 @@ ui:
   # (see helm/signals/charts/ui/values.yaml for the full rationale). The region
   # above selects the one file that ships; set enabled: false to fall back to
   # the datasets baked into the UI image.
+    VITE_MAP_MARKER_CAP_CLUSTERED: 1000
+    VITE_MAP_MARKER_CAP_INDIVIDUAL: 500
+    VITE_FREETEXT_MATCH_SCORE_ENABLED: false
   reference:
     enabled: true
   service:
