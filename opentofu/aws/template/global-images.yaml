@@ -54,7 +54,7 @@ search-embeddings:
 s3-export:
   image:
     repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
-    tag: "sha-954f604"
+    tag: "sha-efa19c9"          # pin to an immutable sha/semver tag per environment
     pullPolicy: IfNotPresent
 
 # ── Aggregator stack ─────────────────────────────────────────────────────────
