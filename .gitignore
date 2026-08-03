@@ -29,6 +29,11 @@ opentofu/aws/**/monitoring-values.yaml
 opentofu/aws/**/global-cloud-values.yaml
 # Generated secrets file (written by output-file/main.tf) — never commit.
 opentofu/aws/**/global-secrets.yaml
+# Hand-entered secrets INPUT (seeded from the committed secrets.example.yaml).
+# Path-scoped on purpose: a bare `secrets.yaml` would also swallow the charts'
+# committed helm/**/templates/secrets.yaml files.
+opentofu/aws/**/secrets.yaml
+!opentofu/aws/**/secrets.example.yaml
 opentofu/aws/**/tf.sh
 
 # Editor / OS junk
@@ -49,5 +54,6 @@ opentofu/aws/dev/*
 helm/signals/charts/api/files/networks/*.json
 helm/signals/charts/api/files/consent/*.json
 helm/aggregator/files/consent/consent.json
+helm/aggregator/files/network-config/aggregator.config.yaml
 
 opentofu/aws/*-cluster

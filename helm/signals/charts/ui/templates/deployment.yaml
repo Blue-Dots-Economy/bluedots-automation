@@ -15,6 +15,14 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.reference.enabled }}
+        # Rolls the pods when a reference dataset changes. The volume below is a
+        # whole-directory mount (not subPath), so kubelet DOES hot-update the
+        # files in place — but nginx serves from disk per request and the widget
+        # caches per page load, so a rollout is still the predictable way to
+        # guarantee every client sees the new list.
+        checksum/reference: {{ include (print $.Template.BasePath "/reference-configmap.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -59,6 +67,17 @@ spec:
               mountPath: /usr/share/nginx/html/config.js
               subPath: config.js
               readOnly: true
+            {{- if .Values.reference.enabled }}
+            # Whole-directory mount, so it SHADOWS the datasets baked into the
+            # image at the same path. Only the single selected region
+            # (colleges-<VITE_COLLEGE_DATASET>.json) is reachable while this is
+            # enabled — any other region 404s even though the image contains it.
+            # Intended: a release serves one region, and the ConfigMap is capped
+            # at 1 MiB so it could not carry them all anyway.
+            - name: reference-data
+              mountPath: /usr/share/nginx/html/reference
+              readOnly: true
+            {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -78,6 +97,13 @@ spec:
             items:
               - key: config.js
                 path: config.js
+        {{- if .Values.reference.enabled }}
+        - name: reference-data
+          configMap:
+            name: {{ include "dpg-ui.fullname" . }}-reference
+            # No `items` filter needed: the ConfigMap holds exactly one key and
+            # that key already IS the filename the widget fetches.
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

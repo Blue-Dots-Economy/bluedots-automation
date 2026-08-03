@@ -20,13 +20,34 @@ GLOBAL_CLOUD_VALUES="${GLOBAL_CLOUD_VALUES:-$SCRIPT_DIR/global-cloud-values.yaml
 # Non-sensitive config passed directly to Helm via -f (keys match chart schemas).
 GLOBAL_VALUES="${GLOBAL_VALUES:-$SCRIPT_DIR/global-values.yaml}"
 
-# Signals-DPG git ref the network/consent config is fetched from at deploy time
-# (scripts/fetch-configs.sh). Default develop; pin to the api image build SHA for
-# prod to avoid config/code skew.
-SIGNALS_DPG_REF="${SIGNALS_DPG_REF:-develop}"
-# Aggregator-DPG git ref the aggregator consent config is fetched from at deploy
-# time (scripts/fetch-configs.sh aggregator). Default develop; pin per env.
-AGGREGATOR_DPG_REF="${AGGREGATOR_DPG_REF:-develop}"
+# Git ref the network/consent config is fetched from at deploy time from the
+# unified schemas repo Blue-Dots-Economy/bluedots-schemas
+# (scripts/fetch-configs.sh). Default main; pin to a tag/SHA for prod to avoid
+# config/code skew.
+SIGNALS_DPG_REF="${SIGNALS_DPG_REF:-main}"
+# Ref the aggregator consent doc is fetched from (same schemas repo,
+# scripts/fetch-configs.sh aggregator). Default main; pin per env.
+AGGREGATOR_DPG_REF="${AGGREGATOR_DPG_REF:-main}"
+# Schemas repo the network.json + consent are fetched from. Passed to BOTH
+# fetch-configs.sh (which downloads network.json for signals) and the aggregator
+# chart (which builds AGGREGATOR_NETWORK_SOURCE from the same repo+ref, since the
+# aggregator fetches network.json itself at boot rather than mounting it). Keeping
+# one variable for both is what stops the two halves resolving different schemas.
+SIGNALS_DPG_REPO="${SIGNALS_DPG_REPO:-Blue-Dots-Economy/bluedots-schemas}"
+# Source of aggregator.config.yaml — INDEPENDENT of the schemas repo above, because
+# canonical for that file is the aggregator-dpg config/ tree. All four parts are
+# configurable; override any of them to repoint (e.g. at bluedots-schemas once it
+# carries the file) with no chart change. Pin AGGREGATOR_CONFIG_REF for prod.
+AGGREGATOR_CONFIG_REPO="${AGGREGATOR_CONFIG_REPO:-Blue-Dots-Economy/aggregator-dpg}"
+AGGREGATOR_CONFIG_REF="${AGGREGATOR_CONFIG_REF:-develop}"
+AGGREGATOR_CONFIG_DIR="${AGGREGATOR_CONFIG_DIR-config}"
+AGGREGATOR_CONFIG_FILE="${AGGREGATOR_CONFIG_FILE:-aggregator.config.yaml}"
+# Source of the aggregator consent doc. Also aggregator-dpg, and separate from the
+# config knobs above so the two can be pinned independently: the aggregator consent
+# is an {"audiences":…} document, distinct from the schemas repo's signals consent.
+AGGREGATOR_CONSENT_REPO="${AGGREGATOR_CONSENT_REPO:-Blue-Dots-Economy/aggregator-dpg}"
+AGGREGATOR_CONSENT_REF="${AGGREGATOR_CONSENT_REF:-develop}"
+AGGREGATOR_CONSENT_DIR="${AGGREGATOR_CONSENT_DIR-config}"
 
 # Namespaces.
 CS_NS="${CS_NS:-common-services}"
@@ -214,24 +235,34 @@ function apply_kong_crds() {
 }
 
 # 2b) signals (api, ui, notification, match-score) — uses shared common-services DBs
-# Fetch the served network's network.json + consent.json from canonical
-# Signals-DPG (driven by _network/_brand in global-values.yaml) into the chart's
-# files/ dir, where schemas-configmap.yaml renders them into the -schemas
-# ConfigMap. Fetched fresh each deploy; not committed → can't drift.
+# Fetch the served network's network.json + consent.json from the unified schemas
+# repo bluedots-schemas (driven by _network/_brand in
+# global-values.yaml) into the chart's files/ dir, where schemas-configmap.yaml
+# renders them into the -schemas ConfigMap. Fetched fresh each deploy; not
+# committed → can't drift.
 function fetch_signals_configs() {
     bash "$REPO_ROOT/scripts/fetch-configs.sh" signals \
         --global-values "$GLOBAL_VALUES" \
+        --repo "$SIGNALS_DPG_REPO" \
         --ref "$SIGNALS_DPG_REF"
 }
 
-# Fetch the aggregator consent (FULL doc, brand>network>default) from canonical
-# Aggregator-DPG into helm/aggregator/files/consent/consent.json, where
-# consent-configmap.yaml renders it into the {release}-consent ConfigMap.
-# Fetched fresh each deploy; not committed → can't drift.
+# Fetch the aggregator consent (FULL doc, brand>network fallback) from the unified
+# schemas repo bluedots-schemas into
+# helm/aggregator/files/consent/consent.json, where consent-configmap.yaml renders
+# it into the {release}-consent ConfigMap. Fetched fresh each deploy; not
+# committed → can't drift.
 function fetch_aggregator_configs() {
     bash "$REPO_ROOT/scripts/fetch-configs.sh" aggregator \
         --global-values "$GLOBAL_VALUES" \
-        --ref "$AGGREGATOR_DPG_REF"
+        --ref "$AGGREGATOR_DPG_REF" \
+        --config-repo "$AGGREGATOR_CONFIG_REPO" \
+        --config-ref "$AGGREGATOR_CONFIG_REF" \
+        --config-dir "$AGGREGATOR_CONFIG_DIR" \
+        --config-file "$AGGREGATOR_CONFIG_FILE" \
+        --consent-repo "$AGGREGATOR_CONSENT_REPO" \
+        --consent-ref "$AGGREGATOR_CONSENT_REF" \
+        --consent-dir "$AGGREGATOR_CONSENT_DIR"
 }
 
 function deploy_signals() {
@@ -251,6 +282,9 @@ function deploy_signals() {
 function deploy_aggregator() {
     echo -e "\nDeploying aggregator"
     fetch_aggregator_configs
+    # networkSource repo/ref passed here rather than pinned in global-values.yaml, so
+    # the aggregator's network.json URL is built from the same repo+ref
+    # fetch-configs.sh used for signals — one pin covers both halves.
     helm upgrade --install "$AGG_REL" "$AGG_DIR" \
         -n "$AGG_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
@@ -258,7 +292,47 @@ function deploy_aggregator() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
+        --set "global.networkSource.repo=$SIGNALS_DPG_REPO" \
+        --set "global.networkSource.ref=$SIGNALS_DPG_REF" \
         --wait --timeout 10m
+    # subPath mounts don't hot-update and the config is boot-cached in-process, so a
+    # config-only change leaves the Deployment spec untouched and helm rolls nothing.
+    restart_aggregator_config_consumers
+}
+
+# Roll the workloads that subPath-mount the {release}-network-config /
+# {release}-consent ConfigMaps, so a config-only change takes effect. Safe to re-run.
+#
+# Non-fatal by design: this runs under `set -euo pipefail` as the last statement in
+# deploy_aggregator, so propagating a slow rollout would abort deploy_all_services
+# and skip the steps after it (fix_acme_issuer_uri). Failures warn and return 0.
+function restart_aggregator_config_consumers() {
+    local dep failed=""
+    echo "Restarting aggregator config consumers (subPath mounts don't hot-update)"
+    for dep in "$AGG_REL-api" "$AGG_REL-worker" "$AGG_REL-web"; do
+        if ! kubectl -n "$AGG_NS" get deploy "$dep" >/dev/null 2>&1; then
+            echo "  (skip: deploy/$dep not found in $AGG_NS)"
+            continue
+        fi
+        if ! kubectl -n "$AGG_NS" rollout restart "deploy/$dep"; then
+            echo "  ⚠ could not restart deploy/$dep" >&2
+            failed="$failed $dep"
+            continue
+        fi
+        if ! kubectl -n "$AGG_NS" rollout status "deploy/$dep" --timeout=5m; then
+            echo "  ⚠ deploy/$dep not Ready within 5m" >&2
+            failed="$failed $dep"
+        fi
+    done
+    if [ -n "$failed" ]; then
+        echo "  ⚠ config restart incomplete for:${failed}" >&2
+        echo "    The helm release is applied, but these pods may still be serving the" >&2
+        echo "    PREVIOUS aggregator.config.yaml / consent. Investigate with:" >&2
+        echo "      kubectl -n $AGG_NS get pods" >&2
+        echo "      kubectl -n $AGG_NS logs deploy/<name> --tail=100" >&2
+        echo "    then re-run: bash install.sh restart_aggregator_config_consumers" >&2
+    fi
+    return 0
 }
 
 # ═══ helm: deploy everything ══════════════════════════════════════════════════
@@ -409,6 +483,10 @@ function lint() {
     # empty / `change-me` placeholders). A bare `helm lint` has no real creds, so
     # point it at a placeholder existingSecret to skip the secret block — a real
     # deploy still validates its actual values from global-secrets.yaml.
+    # NOTE: no networkConfigDelivery override needed here. The network-config
+    # template's `fail` fires when the fetched aggregator.config.yaml is absent, but
+    # `helm lint` only logs it as [INFO] and still exits 0 — unlike `helm template`,
+    # which errors (hence the flag in .github/workflows/ci.yml's template step).
     helm lint "$AGG_DIR" --set global.existingSecret=lint-only
 }
 
@@ -425,6 +503,22 @@ function dry_run() {
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
+}
+
+# helm --dry-run ONLY signals, with the same -f layering as deploy_signals.
+# Installs nothing. Two reasons this exists next to `dry_run`:
+#   - CI can only `helm lint` signals (its `helm template` needs the network
+#     schemas fetch_signals_configs pulls at deploy time), so a full render of
+#     this chart is never validated automatically — only here.
+#   - `dry_run` walks all 4 charts and stops at the first failure, so an
+#     unrelated break in monitoring/common-services hides signals entirely.
+# Unlike `lint`, this loads the env values files, so it catches YAML anchor and
+# values-layering breakage that lint cannot see.
+function dry_run_signals() {
+    preflight
+    fetch_signals_configs
+    helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
 }
 

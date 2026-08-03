@@ -1,0 +1,15 @@
+apiVersion: v2
+name: dpg-s3-export
+description: Helm chart for the Signals non-PII S3 export CronJob (adhoc-scripts/signals-s3-export) — periodic allowlisted dumps for campaign analytics.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - dpg
+  - export
+  - s3
+  - cronjob
+sources:
+  - https://github.com/Blue-Dots-Economy/adhoc-scripts
+maintainers:
+  - name: Sanketika

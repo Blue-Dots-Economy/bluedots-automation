@@ -5,8 +5,8 @@ Guidance for the Helm half of the repo. Read the root `CLAUDE.md` first (the cri
 ## The four umbrella charts
 
 - **`monitoring/`** (chart `monitoring`) — `kube-prometheus-stack` (Prometheus Operator + Prometheus + Alertmanager + node-exporter + kube-state-metrics, **and the monitoring CRDs** others depend on), `loki`, `alloy` (DaemonSet log shipper, replaced Promtail), `jaeger`, Grafana (`_grafana_host`). The stock kube-prometheus ruleset is **disabled** (`defaultRules.create: false`) — alerting is a curated `additionalPrometheusRulesMap`. See `helm/monitoring/README.md`.
-- **`common-services/`** (chart `platform`) — Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres`/`data-redis` Secrets in the `common-services` namespace.
-- **`signals/`** (chart `dpg`) — api, ui, notification-service, match-score. Connects to the shared DBs in `common-services`.
+- **`common-services/`** (chart `platform`) — Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres`/`data-redis` Secrets in the `common-services` namespace. The Bitnami `postgresql` subchart runs the org **portable-pgvector** image (`ghcr.io/blue-dots-economy/postgres-pgvector`, #93) — a Postgres + pgvector + PostGIS build compiled without AVX-512 so it doesn't SIGILL on non-AVX-512 nodes; it needs the `image.*` override plus `allowInsecureImages`, since the Bitnami chart otherwise refuses a non-Bitnami image.
+- **`signals/`** (chart `dpg`) — api, ui, notification-service, search (+ search-embeddings), s3-export. Connects to the shared DBs in `common-services`. The `match-score` subchart (the external dpg-scoring service) was removed in #89 — match-score now calls signals-search `POST /v1/relevance`. The **`s3-export`** subchart (chart `dpg-s3-export`, #86) is a CronJob that dumps allowlisted **non-PII** Signals data to S3 for campaign analytics.
 - **`aggregator/`** (chart `aggregator-dpg`) — web (BFF), api, worker, keycloak. Vendored `ingress-nginx`/`cert-manager` subcharts are **disabled** (`platform` owns them). Keycloak init Job depends on Postgres readiness → longest rollout.
 
 Resource requests/limits (Kong `replicaCount: 2`, cert-manager, Redis, `postgresBootstrap`, metrics-server, app replicas/HPA/PDB) live in the shared `helm/global-resources.yaml`, not per-chart values.
@@ -43,12 +43,52 @@ The signals migrate-job does **not** vendor a `schema.sql` in this repo. A `migr
 
 ## Consent config is ConfigMap-delivered (not baked into images)
 
-Consent text/versions ship via ConfigMap so they change with a file edit + rollout, no rebuild. This repo is the downstream sync; canonical content lives in the app repos. The two charts deliver it differently — a real trap:
+Consent text/versions ship via ConfigMap so they change with a file edit + rollout, no rebuild. This repo is the downstream sync; canonical content lives in the unified schemas repo `Blue-Dots-Economy/bluedots-schemas` (per-network dirs at the repo root, e.g. `blue_dot/consent.json`, `blue_dot/upsdm/consent.json`), fetched at deploy time by `scripts/fetch-configs.sh`. The two charts deliver it differently — a real trap:
 
 - **Signals** — source `helm/signals/charts/api/files/consent/<network>.json` (+ optional brand override `<network>.<brand>.json`), selected by `api.schemas.consentNetwork`/`consentBrand`. `schemas-configmap.yaml` renders `consent.json` next to the network schemas; the api reads it because `CONSENT_CONFIG_SOURCE: local` is pinned in values. It **deep-merges a brand file (partial) over the network default — so both files must be delivered**. A `checksum/schemas` annotation rolls pods on change; missing consent files **fail the template render**.
 - **Aggregator** — source `helm/aggregator/files/consent/consent.json`, rendered into a `{release}-consent` ConfigMap, mounted single-file (subPath) into **both web and api** at `/app/config/<network>[/<brand>]/schemas/aggregator/consent.json`. Aggregator brand consent is a **FULL** document (not a partial). **subPath does NOT hot-update** → a consent change needs a rollout restart of web + api.
 
 **Support-email placeholder:** consent JSON ships `__SUPPORT_EMAIL__` in its T&C/Privacy/Grievances copy; both renders substitute it at deploy time via Helm `replace` — signals from `.Values.schemas.consentSupportEmail`, aggregator from `.Values.global.consentSupportEmail`, each defaulting to `hello@bluedotseconomy.org`. **Change the value, never the consent content**, so a brand/network switch keeps the right contact.
+
+## `aggregator.config.yaml` is ConfigMap-delivered — fetched, not vendored
+
+Same freshness model as consent and signals' network.json: `scripts/fetch-configs.sh aggregator` pulls it on every deploy into `helm/aggregator/files/network-config/aggregator.config.yaml` (gitignored), and `templates/network-config-configmap.yaml` renders it into `{release}-network-config`, subPath-mounted into api + worker **over the image-baked copy**. Net effect: update canonical, redeploy, config is live — **no image rebuild**.
+
+**Rendered verbatim.** No placeholder rewriting, no field edits — whatever canonical says is what the pods get. The only runtime override is the network.json URL, supplied as `AGGREGATOR_NETWORK_SOURCE` (below), so the file never needs editing to repoint schemas.
+
+**Its source is independent of the schemas repo.** Consent and network.json come from `bluedots-schemas`; `aggregator.config.yaml` lives in the `aggregator-dpg` `config/` tree. All four parts are configurable — flag > env > default:
+
+| flag | env | default |
+|---|---|---|
+| `--config-repo` | `AGGREGATOR_CONFIG_REPO` | `Blue-Dots-Economy/aggregator-dpg` |
+| `--config-ref` | `AGGREGATOR_CONFIG_REF` | `develop` (pin a tag/SHA for prod) |
+| `--config-dir` | `AGGREGATOR_CONFIG_DIR` | `config` (empty = repo root) |
+| `--config-file` | `AGGREGATOR_CONFIG_FILE` | `aggregator.config.yaml` |
+
+`install.sh` passes all four from same-named variables, so repointing (e.g. to `bluedots-schemas` once it carries the file) needs no chart change. Only the `<network>[/<brand>]/` path segment is fixed — the app derives its own load path from `AGGREGATOR_NETWORK`/`AGGREGATOR_BRAND`, so the layout must match.
+
+**Mounted into api + worker, not web.** Both run the loader (`apps/worker/src/services/network-config.ts` has five `getNetworkConfig()` call sites incl. `bulk-row-process.ts`). Web reads config through the api's `GET /v1/aggregator-config` and never touches disk.
+
+**The mount path is derived, not chosen.** `resolveConfigPath()` computes `CONFIG_ROOT(/app/config)/<network>[/<brand>]/aggregator.config.yaml`; both deployment templates reproduce that derivation for `mountPath`. Brand is a path **segment**, not a suffix.
+
+**Never set `AGGREGATOR_CONFIG_PATH`.** An explicit value wins over the derivation (`paths.ts:57`), so the mount — which lands at the derived path — would be ignored and the pod would read the baked file. The worker's ConfigMap used to set it while omitting the brand segment, which also split branded deploys: worker on the un-branded config, api (deriving) on the branded one. Commented out in both now.
+
+**Single-file subPath, never a directory mount.** `/app/config/<network>/` also carries `brand.json` (read by the loader as a *sibling*), `keycloak.env`, `bulk-samples/*.csv` and the brand subtree, all from the image. A directory mount shadows every one of them, and a missing `brand.json` degrades *silently*. Consequence: `brand.json` design tokens (palette/typography/logo) still need an image rebuild; only the flat brand fields inside `aggregator.config.yaml` are ConfigMap-editable.
+
+**Why `global.networkConfigDelivery` is a value and not a file-presence check.** `.Files` is chart-scoped, so a subchart cannot see whether the umbrella ConfigMap rendered — the mounts need a value to gate on. It doubles as the bypass for static renders with no fetched file, which is why `install.sh lint` and the CI helm job pass `--set global.networkConfigDelivery=false`. Setting it false in a real deploy falls back to the image-baked config.
+
+**A change needs a pod restart, and helm won't do it.** subPath mounts don't hot-update, *and* api/worker cache the resolved config in a process-local singleton read once at boot. A config-only change also leaves the Deployment spec untouched, so `helm upgrade` rolls nothing — verified: editing the file leaves all three `checksum/config` annotations byte-identical. Those annotations hash each subchart's *own* configmap, and can't reach an umbrella template. Hence `deploy_aggregator` calls `restart_aggregator_config_consumers` (rollout restart + status wait on api, worker, web) after the upgrade. That function is **deliberately non-fatal**: `install.sh` runs under `set -euo pipefail` and the call is the last statement in `deploy_aggregator`, so propagating a slow-rollout failure would abort `deploy_all_services` and skip `fix_acme_issuer_uri`, breaking TLS as a side effect. It warns and returns 0; re-run standalone with `bash install.sh restart_aggregator_config_consumers`. It rolls pods on *every* deploy — the cost of having no usable checksum. Installing Reloader would let it be dropped.
+
+### `AGGREGATOR_NETWORK_SOURCE` — the network.json URL
+
+The aggregator **fetches network.json over HTTPS at boot** and holds it in memory; it is never a file on disk, unlike signals which mounts it at `/app/schemas/<net>.json`. So there is no path and no ConfigMap for it — the URL is the whole interface.
+
+`global.networkSource` builds it, mirroring `fetch-configs.sh`'s signals derivation (`https://raw.githubusercontent.com/<repo>/<ref>/<network>/<file>`), and both api and worker ConfigMaps emit the result. `deploy_aggregator` passes `repo`/`ref` from `$SIGNALS_DPG_REPO`/`$SIGNALS_DPG_REF` — the same variables that drive the signals fetch — so **the two halves cannot resolve different schemas**. Pin the ref there, not in `global-values.yaml`. `global.networkSource.url` is a full-URL escape hatch for a mirror or internal host.
+
+Two caveats. It **requires aggregator-dpg#513 in the deployed image**; until then nothing reads the var and it is silently inert (the YAML `source` is used). And because the fetch happens from the pod, api/worker need egress to that host, and the last-known-good cache (`dirname(configPath)/.cache`, overridable via `NETWORK_CONFIG_CACHE_DIR`) is per-pod ephemeral — a pod restart during a source outage fails boot.
+
+Once #513 is deployed, canonical can drop `source:` from the YAML entirely (it becomes `.optional()` there), making the env var the single source of truth and turning a missing value into a loud `CONFIG_PARSE_FAILED` instead of a silent fallback. Note `fetch-configs.sh`'s `warn_if_moving_ref` does **not** cover this URL — it bypasses the fetch script.
+
 
 ## Org hierarchy flag
 
@@ -64,7 +104,7 @@ Private images at `ghcr.io/blue-dots-economy/*` need a `ghcr-pull` secret per na
 
 ## Pod securityContexts + NetworkPolicies (#1.12)
 
-**securityContexts.** The signals `api`/`ui`/`notification-service`/`match-score` subcharts already ship `podSecurityContext:`+`securityContext:` defaults wired via `toYaml` in their deployments. #1.12 extended the same per-subchart convention to the workloads that lacked it: aggregator `api`/`web`/`worker` and signals `search` (api+worker) get the node-app baseline (`runAsNonRoot`, `runAsUser: 1000`, `fsGroup: 1000`, drop ALL caps, `allowPrivilegeEscalation: false`); the TEI `search-embeddings` containers and the `keycloak` container get container-only hardening (drop ALL + no privilege escalation, **no forced uid** — TEI keeps its baked-cache user, keycloak keeps its pod-level `fsGroup: 0`). Override per-service in the subchart/umbrella values if an image needs root (cf. the signals `ui` nginx exception).
+**securityContexts.** The signals `api`/`ui`/`notification-service` subcharts already ship `podSecurityContext:`+`securityContext:` defaults wired via `toYaml` in their deployments. #1.12 extended the same per-subchart convention to the workloads that lacked it: aggregator `api`/`web`/`worker` and signals `search` (api+worker) get the node-app baseline (`runAsNonRoot`, `runAsUser: 1000`, `fsGroup: 1000`, drop ALL caps, `allowPrivilegeEscalation: false`); the TEI `search-embeddings` containers and the `keycloak` container get container-only hardening (drop ALL + no privilege escalation, **no forced uid** — TEI keeps its baked-cache user, keycloak keeps its pod-level `fsGroup: 0`). Override per-service in the subchart/umbrella values if an image needs root (cf. the signals `ui` nginx exception).
 
 **NetworkPolicies.** `networkPolicy.enabled` (umbrella values for both `signals` and `aggregator`; **default OFF**) renders `templates/networkpolicy.yaml` — an **Ingress-only** policy selecting all pods in the namespace, allowing connections only from the same namespace + `networkPolicy.allowedFromNamespaces` (matched on the built-in `kubernetes.io/metadata.name` label). Egress is intentionally unrestricted (keeps cross-namespace DB/Redis/Keycloak/DNS working without a second policy). It's default-off and opt-in because it can only be validated by a live `install.sh dry_run` (bluedots CI runs no Helm validation) — **validate `allowedFromNamespaces` against your topology before enabling** (e.g. `aggregator` must stay listed for signals, since aggregator-dpg calls the signals API; `common-services` must stay listed everywhere, as Kong proxies public traffic from there). Mirrors the existing `common-services` DB-ingress policy pattern.
 

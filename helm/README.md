@@ -9,7 +9,7 @@ Install in this strict order:
 |---|-------------------|------------------|-------------------|-------------------|------------------------------------------------------------------|
 | 1 | `monitoring`      | `monitoring`     | `monitoring`      | `monitoring`      | kube-prometheus-stack (Prometheus, Alertmanager) + Loki + Alloy + Jaeger + Grafana |
 | 2 | `common-services` | `platform`       | `common-services` | `common-services` | **Kong** ingress, cert-manager, `letsencrypt-prod` ClusterIssuer, shared Postgres + Redis, metrics-server |
-| 3 | `signals`         | `dpg`            | `signals`         | `signals`         | Signals monorepo: api, ui, notification-service, match-score     |
+| 3 | `signals`         | `dpg`            | `signals`         | `signals`         | Signals monorepo: api, ui, notification-service, search          |
 | 4 | `aggregator`      | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal: web (BFF), api, worker, keycloak              |
 
 > The directory, chart `name`, release, and namespace are **not** the same. Only
@@ -32,8 +32,9 @@ by chart/component so helm reads it directly — no slicing, no `yq`:
 |------|--------|-----------|-------|
 | `helm/global-resources.yaml`     | in repo, shared across envs | yes | replicas, HPA, PDB, container resources |
 | `<env>/global-images.yaml`       | in repo, per-env            | yes | image `repository` / `tag` / `pullPolicy` |
-| `<env>/global-values.yaml`       | in repo, **you edit**       | yes | non-secret config (hosts, network/brand, some SMTP/MSG91/maps fields, RDS sizing, app config) — edit the **anchors at the top** |
-| `<env>/global-secrets.yaml`  | **generated** by tofu (`output-file`) | **no** (gitignored) | all secrets |
+| `<env>/global-values.yaml`       | in repo, **you edit**       | yes | non-secret config (hosts, network/brand, SMTP host/user, RDS sizing, app config) — edit the **anchors at the top** |
+| `<env>/secrets.yaml`             | **you edit**, seeded from the committed `secrets.example.yaml` | **no** (gitignored) | hand-entered secrets: SMTP password, MSG91 key/template, Google Maps key, Discord webhooks — **not** passed to helm directly; tofu reads it |
+| `<env>/global-secrets.yaml`  | **generated** by tofu (`output-file`) | **no** (gitignored) | all secrets — `secrets.yaml` values + the `random_passwords` ones |
 | `<env>/global-cloud-values.yaml` | **generated** by tofu (`output-file`) | **no** (gitignored) | cloud outputs + computed config (S3, IRSA ARN, RDS Postgres host, hostBindings) |
 
 The two generated files are templated by the `output-file` opentofu module
@@ -43,14 +44,16 @@ charts** (keyed by chart-component), not one file per chart. Shared secrets (e.g
 the redis password, used by multiple charts) are templated from the same tofu
 variable, so they can never drift.
 
-A few fields (aggregator `secrets.smtpPassword`/`msg91AuthKey`, signals
-`notification-service.secrets.data.GMAIL_PASS`/`MSG91_AUTH_KEY`/`MSG91_TEMPLATE_ID`,
-`api.secrets.data.GOOGLE_GEOCODING_API_KEY`) are the exception: the `.tfpl`
-bakes in a literal `UPDATE_THIS_VALUE` instead of a tofu variable, so you edit
-the real value directly in the generated `global-secrets.yaml` — no
-`global-values.yaml` edit or re-apply needed. Re-running
-`apply_tf_output_file` regenerates the file and resets these back to the
-placeholder, so do it after your last regen for the env.
+Secrets a human must supply (SMTP password, MSG91 key/template id, Google Maps
+key, Discord webhooks) can't be committed and can't be generated, so they live
+in **`<env>/secrets.yaml`** — gitignored; copy it once per env from the
+committed `secrets.example.yaml`. Tofu **reads** it on every
+apply and templates the values into `global-secrets.yaml`, which means
+re-running `apply_tf_output_file` re-renders the same values — **nothing to
+re-enter after a regenerate.** One key per secret, fanned out to every chart
+that needs it (e.g. `smtp_password` → notification-service `GMAIL_PASS` +
+aggregator `secrets.smtpPassword` + monitoring `alerting.email.smtpAuthPassword`),
+so the copies can't drift. Edit `secrets.yaml`, never `global-secrets.yaml`.
 
 ```yaml
 # global-secrets.yaml (secrets — root keys by component)
@@ -65,7 +68,7 @@ secrets:                           # aggregator
   kcBootstrapAdminPassword: <generated>
   signalstackAdminKey: <generated>
   smtpUser / smtpPassword: ...
-api / notification-service / match-score / search: { secrets: { ... } }   # signals
+api / notification-service / search: { secrets: { ... } }                # signals
 
 # global-cloud-values.yaml (cloud + computed)
 global: { dataPlatform: { namespace: common-services, ... } }
@@ -220,6 +223,11 @@ bash install.sh deploy_all_services                # re-run all releases
 Because the same tofu variable is templated into every place that needs it (e.g.
 `signalstack_admin_key` lands in both `secrets.signalstackAdminKey` for aggregator
 **and** the signals api secret), the releases never drift apart.
+
+Rotating the generated passwords doesn't disturb the hand-entered ones —
+`global-secrets.yaml` is re-rendered from `secrets.yaml` each apply, so the
+SMTP/MSG91/Maps/Discord values carry over untouched. To rotate one of *those*,
+edit `secrets.yaml` and re-run `apply_tf_output_file`.
 
 ## Aggregator overrides applied in this repo
 

@@ -1,0 +1,68 @@
+{{- /*
+  Reference dataset (college/institute picker) delivered as a ConfigMap so the
+  list changes with a value edit + rollout, no UI image rebuild — same rationale
+  as consent config (see helm/CLAUDE.md).
+
+  EXACTLY ONE dataset ships. files/reference/ is populated at deploy time by
+  scripts/fetch-configs.sh, which pulls colleges-<region>.json from canonical
+  signals-dpg apps/ui/public/reference/ for the region in _college_dataset —
+  fetched fresh, NOT committed, so it can't silently drift (same model as the
+  network/consent config). That single value is the ONLY knob: the widget
+  resolves source "colleges" to colleges-<VITE_COLLEGE_DATASET> and fetches it
+  from <VITE_REFERENCE_BASE_URL|/reference/>, and this template derives the
+  ConfigMap key from the same value — so the file served can never disagree with
+  the file requested.
+
+  Consequence for static checks: `helm template`/`lint` on this subchart alone
+  finds no dataset unless a deploy (or fetch-configs.sh) has run, which is why
+  install.sh's lint tolerates it and CI keeps signals lint-only.
+
+  The UI image already bakes the datasets at /usr/share/nginx/html/reference/;
+  the deployment mounts this ConfigMap over that directory, so this wins and the
+  baked copies are shadowed.
+
+  ── Why the JSON is minified at render (`fromJson | toJson`) ──────────────────
+  A ConfigMap is a single etcd object and CANNOT exceed 1 MiB (1,048,576 B).
+  colleges-up.json is 1,253,396 B pretty-printed — it does not fit raw. Minified
+  it is ~748 KB, and colleges-ka.json ~353 KB, so one region fits with headroom
+  (which is the other reason only one ships: both together are 1,101,321 B and
+  would be rejected by the apiserver). Minifying at render rather than
+  committing minified files keeps the committed files byte-identical to
+  canonical, so re-syncing is a plain copy.
+
+  Round-tripping is lossless here because these datasets contain only strings —
+  no numbers, so no float reformatting. `toJson` does reorder object keys
+  alphabetically and HTML-escapes the three chars & < > into their JSON unicode
+  escape form (Go json.Marshal behaviour); both are semantically identical once
+  the browser runs JSON.parse.
+*/ -}}
+{{- if .Values.reference.enabled }}
+{{- $region := (.Values.runtimeConfig).VITE_COLLEGE_DATASET | default "ka" -}}
+{{- $id := printf "colleges-%s" $region -}}
+{{- $file := printf "files/reference/%s.json" $id -}}
+{{- $raw := $.Files.Get $file -}}
+{{- if not $raw }}
+{{- fail (printf "ui.runtimeConfig.VITE_COLLEGE_DATASET=%q needs %s, which is missing. It is fetched at deploy time — run `bash install.sh deploy_signals` (or scripts/fetch-configs.sh signals --global-values <env>/global-values.yaml), check the region exists at signals-dpg apps/ui/public/reference/ on the fetched ref, or set ui.reference.enabled=false to fall back to the datasets baked into the UI image." $region $file) }}
+{{- end }}
+{{- $json := $raw | fromJson | toJson -}}
+{{- $bytes := len $json -}}
+{{- $budget := int (.Values.reference.maxBytes | default 1000000) -}}
+{{- if gt $bytes $budget }}
+{{- fail (printf "reference dataset %s renders %d bytes, over the %d-byte budget (ConfigMaps are hard-capped at 1 MiB by etcd). Split the dataset or serve it off-cluster via ui.runtimeConfig.VITE_REFERENCE_BASE_URL." $id $bytes $budget) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dpg-ui.fullname" . }}-reference
+  labels:
+    {{- include "dpg-ui.labels" . | nindent 4 }}
+  annotations:
+    # Which region shipped, and its rendered size — for operators eyeballing
+    # headroom against the 1 MiB cap without decoding the payload.
+    dpg.bluedots.io/reference-dataset: {{ $id | quote }}
+    dpg.bluedots.io/reference-bytes: {{ $bytes | quote }}
+data:
+  # Key IS the filename the widget fetches: /reference/<id>.json
+  {{ $id }}.json: |-
+{{ $json | indent 4 }}
+{{- end }}

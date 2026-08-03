@@ -1,3 +1,15 @@
+{{- /*
+  Upstream network.json URL. Derived from global.networkSource to MIRROR
+  scripts/fetch-configs.sh's signals target, so the aggregator fetches the same
+  network.json the signals deploy did. global.networkSource.url overrides the
+  derivation wholesale. Keep this expression identical to the worker's copy —
+  a subchart cannot share the umbrella's _helpers.tpl, hence the duplication.
+*/ -}}
+{{- $ns := .Values.global.networkSource | default dict -}}
+{{- $networkSource := $ns.url | default "" -}}
+{{- if and (not $networkSource) $ns.repo $ns.ref -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork ($ns.file | default "network.json") -}}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,6 +32,15 @@ data:
   # redirects api + worker at the matching config folder.
   # AGGREGATOR_CONFIG_PATH: "/app/config/{{ .Values.global.aggregatorNetwork }}/aggregator.config.yaml"
   SCHEMA_ROOT_DIR: "/app/config/{{ .Values.global.aggregatorNetwork }}/schemas"
+  # Upstream network.json URL. The aggregator fetches this over HTTPS at boot rather
+  # than mounting it, so a URL is the only interface. Wins over
+  # `aggregator.network.source` in the mounted aggregator.config.yaml, letting the
+  # schema source move without an image rebuild or a config edit. Blank = use the
+  # YAML value; a malformed URL fails boot with CONFIG_PARSE_FAILED.
+  #
+  # Requires aggregator-dpg#513 in the deployed image; older images ignore it.
+  # Must match the worker's value — both run the loader.
+  AGGREGATOR_NETWORK_SOURCE: "{{ $networkSource }}"
   SIGNALSTACK_ITEM_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   AGGREGATOR_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   # Brand skin over the network (UI/config skin). Empty = standard dots.

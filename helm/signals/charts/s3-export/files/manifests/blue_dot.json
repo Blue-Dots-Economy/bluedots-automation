@@ -1,0 +1,112 @@
+{
+  "manifest_version": 1,
+  "network": "blue_dot",
+  "network_json_ref": "d16e1a534f1b53e6952d3b297be3f87c2cb90b8a",
+  "format": "ndjson",
+  "tables": {
+    "user": {
+      "columns": [
+        "id",
+        "created_at",
+        "updated_at",
+        "domains",
+        "onboarded_by_org_id",
+        "onboarded_via",
+        "onboarded_source_id",
+        "onboarded_at",
+        "tags"
+      ],
+      "row_filters": ["exclude_test_users"]
+    },
+    "items": {
+      "columns": [
+        "item_network",
+        "item_domain",
+        "item_type",
+        "item_id",
+        "lifecycle_status",
+        "created_by",
+        "item_locations",
+        "created_at",
+        "updated_at"
+      ],
+      "row_filters": ["exclude_test_owned"],
+      "jsonb": {
+        "item_state": {
+          "seeker/profile_1.0": [
+            "gender",
+            "age",
+            "workExperience",
+            "workExperienceYearsConditional",
+            "natureOfJobsInterestedIn",
+            "nameOfJobRolesInterestedIn",
+            "otherHelpNeeded",
+            "educationCategory",
+            "schoolQualification",
+            "schoolQualificationOther",
+            "collegeQualification",
+            "collegeQualificationOther",
+            "itiTrade",
+            "itiTradeOther",
+            "vocationalTrainingOther",
+            "polytechnicDiploma",
+            "polytechnicDiplomaOther",
+            "certificationDetails",
+            "itiInstitute",
+            "nameOfLastRoleHeld",
+            "languageSpoken"
+          ],
+          "provider/job_posting_1.0": [
+            "jobProviderName",
+            "role",
+            "positions",
+            "natureOfJob",
+            "stipendMin",
+            "stipendMax",
+            "salaryMin",
+            "salaryMax",
+            "taskRateMin",
+            "taskRateMax",
+            "candidateExperienceType",
+            "minEducationalInstitute",
+            "workExperienceYears",
+            "lastRoleHeld",
+            "title",
+            "minQualificationSchool",
+            "minQualificationSchoolOther",
+            "minQualificationCollege",
+            "minQualificationCollegeOther",
+            "minQualificationVocational",
+            "minQualificationPolytechnic",
+            "minQualificationPolytechnicOther",
+            "minQualificationCert",
+            "minQualificationInformal"
+          ]
+        }
+      }
+    },
+    "item_actions": {
+      "columns": [
+        "partition_network",
+        "action_type",
+        "action_id",
+        "action_status",
+        "update_count",
+        "source_item_network",
+        "source_item_domain",
+        "source_item_type",
+        "source_item_id",
+        "source_item_owner",
+        "target_item_network",
+        "target_item_domain",
+        "target_item_type",
+        "target_item_id",
+        "target_item_owner",
+        "performed_by_org_id",
+        "created_at",
+        "updated_at"
+      ],
+      "row_filters": ["exclude_test_action_owners"]
+    }
+  }
+}
