@@ -203,7 +203,7 @@ global:
     # - audit
     # - authenticator
   # Retention (days) for the EKS control-plane log group; 0 = never expire (AWS default).
-  cloudwatch_log_retention_in_days: 90
+  cloudwatch_log_retention_in_days: 30
 
   # ══════════════════════════════════════════════════════════════════════════
   # Helm-consumed — passed straight through to the signals + aggregator charts
