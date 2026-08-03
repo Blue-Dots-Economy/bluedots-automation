@@ -7,6 +7,16 @@
 {{- $brand := .Values.global.aggregatorBrand | default "" -}}
 {{- $consentPath := printf "/app/config/%s/schemas/aggregator/consent.json" $net -}}
 {{- if $brand }}{{- $consentPath = printf "/app/config/%s/%s/schemas/aggregator/consent.json" $net $brand -}}{{- end -}}
+{{- /*
+  aggregator.config.yaml loader path, reproducing the app's own derivation
+  (packages/network-config resolveConfigPath):
+    CONFIG_ROOT(/app/config)/<network>[/<brand>]/aggregator.config.yaml
+  Brand is a path segment, not a suffix. Leave AGGREGATOR_CONFIG_PATH unset in
+  configmap.yaml — an explicit value wins over this derivation and bypasses the
+  mount below.
+*/ -}}
+{{- $configPath := printf "/app/config/%s/aggregator.config.yaml" $net -}}
+{{- if $brand }}{{- $configPath = printf "/app/config/%s/%s/aggregator.config.yaml" $net $brand -}}{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -142,7 +152,22 @@ spec:
               mountPath: {{ $consentPath }}
               subPath: consent.json
               readOnly: true
+            {{- if .Values.global.networkConfigDelivery }}
+            # aggregator.config.yaml from the umbrella {release}-network-config
+            # ConfigMap, overlaid on the derived loader path. Single-file subPath
+            # because the same directory holds brand.json (read as a sibling),
+            # keycloak.env and bulk-samples/ from the image.
+            - name: network-config
+              mountPath: {{ $configPath }}
+              subPath: aggregator.config.yaml
+              readOnly: true
+            {{- end }}
       volumes:
         - name: consent
           configMap:
             name: {{ .Release.Name }}-consent
+        {{- if .Values.global.networkConfigDelivery }}
+        - name: network-config
+          configMap:
+            name: {{ .Release.Name }}-network-config
+        {{- end }}
