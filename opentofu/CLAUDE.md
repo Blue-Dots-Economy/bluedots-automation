@@ -70,3 +70,16 @@ tfstate lives in an S3 bucket (encrypted, versioned, private) — never committe
 The S3 backend uses **`use_lockfile = true`** (`root.hcl`) — OpenTofu's native S3 conditional-write state lock, so concurrent applies can't corrupt state. No DynamoDB lock table is needed (or created).
 
 The `eks` module encrypts **Kubernetes Secrets at rest** in etcd via a customer-managed KMS key (`aws_kms_key.eks_secrets`, rotation on) wired into the cluster's `encryption_config { resources = ["secrets"] }`. The cluster IAM role gets an inline KMS-usage policy (the AWS-managed `AmazonEKSClusterPolicy` has none). Enabling secrets encryption is **one-way** in EKS — it can't later be removed, and applying this to a live cluster is an in-place update.
+
+## Control-plane log retention (`eks` module)
+
+When `cloudwatch_enabled_log_types` is non-empty, EKS ships control-plane logs to CloudWatch and — if the log group `/aws/eks/<cluster>/cluster` doesn't already exist — **auto-creates it with no retention (logs never expire → unbounded cost)**. To control that, the `eks` module declares the group explicitly (`aws_cloudwatch_log_group.eks`, gated on log types being enabled) and the cluster `depends_on` it, so retention is set by `cloudwatch_log_retention_in_days` (`global-values.yaml`, default `90`; `0` = never expire). The knob only matters when log types are enabled — with none, no group is created.
+
+**Existing clusters:** if EKS already auto-created the group, the first apply fails with "log group already exists". Import it once, then apply:
+
+```bash
+cd opentofu/aws/<env>/eks
+terragrunt import aws_cloudwatch_log_group.eks '/aws/eks/<building_block>-<environment>-cluster/cluster'
+```
+
+New clusters (and clusters that currently have logging disabled) need no import.

@@ -9,8 +9,9 @@ locals {
   node_count_min      = local.global_vars.global.eks_node_count_min
   node_count_max      = local.global_vars.global.eks_node_count_max
 
-  enable_cloudwatch_observability = try(local.global_vars.global.enable_cloudwatch_observability, false)
-  cloudwatch_enabled_log_types    = try(local.global_vars.global.cloudwatch_enabled_log_types, ["api", "controllerManager", "scheduler"])
+  enable_cloudwatch_observability  = try(local.global_vars.global.enable_cloudwatch_observability, false)
+  cloudwatch_enabled_log_types     = try(local.global_vars.global.cloudwatch_enabled_log_types, ["api", "controllerManager", "scheduler"])
+  cloudwatch_log_retention_in_days = try(local.global_vars.global.cloudwatch_log_retention_in_days, 30)
   endpoint_public_access          = try(local.global_vars.global.eks_endpoint_public_access, true)
   endpoint_private_access         = try(local.global_vars.global.eks_endpoint_private_access, false)
   node_count_desired              = try(local.global_vars.global.eks_node_count_desired, null)
@@ -59,8 +60,9 @@ inputs = {
   node_count_min     = local.node_count_min
   node_count_max     = local.node_count_max
 
-  enable_cloudwatch_observability = local.enable_cloudwatch_observability
-  cloudwatch_enabled_log_types    = local.cloudwatch_enabled_log_types
+  enable_cloudwatch_observability  = local.enable_cloudwatch_observability
+  cloudwatch_enabled_log_types     = local.cloudwatch_enabled_log_types
+  cloudwatch_log_retention_in_days = local.cloudwatch_log_retention_in_days
   security_group_ids              = [dependency.network.outputs.security_group_id]
   endpoint_public_access          = local.endpoint_public_access
   endpoint_private_access         = local.endpoint_private_access

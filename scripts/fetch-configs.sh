@@ -312,6 +312,32 @@ case "$TARGET" in
     assert_aggregator_consent "$OUT"
     normalize_support_email "$OUT"
     echo "  aggregator consent -> ${OUT}"
+
+    # ── aggregator.config.yaml ────────────────────────────────────────────────
+    # Network binding, brand strings, domain labels, registration modes. Its own
+    # repo/ref/dir/file knobs so it can be pinned independently of the consent doc.
+    # templates/network-config-configmap.yaml requires this file, so a missing
+    # fetch here fails the helm render rather than degrading.
+    CFG_REPO="${CFG_REPO:-${AGGREGATOR_CONFIG_REPO:-$AGGREGATOR_CONFIG_REPO_DEFAULT}}"
+    CFG_REF="${CFG_REF:-${AGGREGATOR_CONFIG_REF:-$AGGREGATOR_CONFIG_REF_DEFAULT}}"
+    if [ "$CFG_DIR_SET" -eq 0 ]; then
+      CFG_DIR="${AGGREGATOR_CONFIG_DIR-$AGGREGATOR_CONFIG_DIR_DEFAULT}"
+    fi
+    CFG_FILE="${CFG_FILE:-${AGGREGATOR_CONFIG_FILE:-$AGGREGATOR_CONFIG_FILE_DEFAULT}}"
+    CFG_BASE="https://raw.githubusercontent.com/${CFG_REPO}/${CFG_REF}"
+    [ -n "$CFG_DIR" ] && CFG_BASE="${CFG_BASE}/${CFG_DIR}"
+    CFG_OUT="$REPO_ROOT/helm/aggregator/files/network-config/aggregator.config.yaml"
+    mkdir -p "$(dirname "$CFG_OUT")"
+    echo "  aggregator.config source: repo=${CFG_REPO} ref=${CFG_REF} dir=${CFG_DIR:-<root>} file=${CFG_FILE}"
+    warn_if_moving_ref "$CFG_REF"
+
+    # Brand copy first — a brand folder is a full copy of its network folder, not a
+    # partial override. Fetched verbatim; the chart mounts it over the image copy.
+    cands=()
+    [ -n "$BRAND" ] && cands+=("${CFG_BASE}/${NETWORK}/${BRAND}/${CFG_FILE}")
+    cands+=("${CFG_BASE}/${NETWORK}/${CFG_FILE}")
+    try_fetch "$CFG_OUT" "${cands[@]}"
+    echo "  aggregator config -> ${CFG_OUT}"
     ;;
 
   *)
