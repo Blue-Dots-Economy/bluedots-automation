@@ -79,11 +79,24 @@ app.kubernetes.io/instance: {{ $top.Release.Name }}
 {{- end -}}
 
 {{/*
-  Internal in-cluster Keycloak Service DNS (used by hooks + workers that
-  don't need the public issuer string).
+  Internal in-cluster Keycloak Service DNS.
+
+  Keycloak is no longer part of this release — it is the shared `keycloak`
+  release in the common-services namespace (helm/keycloak), so this resolves
+  cross-namespace. `global.keycloak.internalUrl` is a full-URL override for an
+  environment still running a local Keycloak during migration.
+
+  NOTE the PUBLIC issuer (aggregator.oidcIssuer / aggregator.keycloakUrl) is
+  UNCHANGED by the move: Kong still serves /auth on the same public host. That is
+  what makes this a low-risk cutover — tokens, redirect URIs and the
+  aggregator-portal client config are all keyed on the public URL, not this one.
 */}}
 {{- define "aggregator.keycloakInternalUrl" -}}
-http://{{ include "aggregator.fullname" . }}-keycloak:{{ .Values.keycloak.service.port }}/auth
+{{- if .Values.global.keycloak.internalUrl -}}
+{{- .Values.global.keycloak.internalUrl -}}
+{{- else -}}
+{{- printf "http://%s.%s.svc.cluster.local:%v/auth" .Values.global.keycloak.serviceName .Values.global.keycloak.namespace (.Values.global.keycloak.servicePort | toString) -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

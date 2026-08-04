@@ -227,3 +227,12 @@ schemas:
   # cross-network fetch, the value must parse as a URL.
   crossNetworkUrl: "http://dpg-api:2742"
   networks: []
+
+# ─── Shared Keycloak coordinates ─────────────────────────────────────────────
+# Set by the umbrella (helm/signals/values.yaml) from global.keycloak.*; these
+# must match the `keycloak` release exactly. Empty values are omitted from the
+# ConfigMap so an environment that has not moved to Keycloak yet renders nothing.
+keycloak:
+  realm: ""
+  publicBaseUrl: ""
+  internalBaseUrl: ""

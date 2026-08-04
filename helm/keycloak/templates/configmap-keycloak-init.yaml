@@ -1,0 +1,20 @@
+{{- /*
+Both realm-reconciliation scripts, mounted at /init by the init Job.
+
+These are this repo's own copies, not a mirror of any app repo (plan §3.1).
+apply-user-profile.sh is the 536-line version — a verified functional superset of
+the signals local copy: same acting-org mapper call sites, same phoneNumber /
+unmanagedAttributePolicy surface, plus aggregator_id, org_owner and the
+signals-ui login-theme override.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "keycloak-platform.fullname" . }}-init
+  labels:
+    {{- include "keycloak-platform.labels" . | nindent 4 }}
+data:
+  apply-user-profile.sh: |-
+{{ .Files.Get "files/apply-user-profile.sh" | indent 4 }}
+  apply-portal-gate.py: |-
+{{ .Files.Get "files/apply-portal-gate.py" | indent 4 }}

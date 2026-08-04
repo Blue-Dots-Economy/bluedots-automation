@@ -56,7 +56,13 @@ spec:
     - host: {{ $host | quote }}
       http:
         paths:
-          - path: /auth/realms/{{ $rl.realm }}/login-actions/authenticate
+          {{- /*
+            The realm segment MUST track the realm Keycloak actually serves.
+            It used to come from a hardcoded `loginRateLimit.realm: aggregator`
+            default, so once the realm was renamed this route matched nothing and
+            the per-IP login limit FAILED OPEN with no error. Derive it.
+          */}}
+          - path: /auth/realms/{{ include "keycloak.realm" . }}/login-actions/authenticate
             pathType: Prefix
             backend:
               service:

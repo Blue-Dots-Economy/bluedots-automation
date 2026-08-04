@@ -18,3 +18,29 @@ data:
   REDIS_HOST: {{ .Values.redis.host | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
   {{- end }}
+  {{- /*
+    ── Shared Keycloak coordinates ──────────────────────────────────────────
+    DERIVED, not free-form values, because they must match the `keycloak` release
+    exactly — one realm holds both DPGs' clients, so a mismatch here means signals
+    validates tokens against the wrong issuer and every login fails.
+
+    KEYCLOAK_BASE_URL is the PUBLIC issuer base and must be the host Keycloak is
+    served on (the aggregator/Keycloak host, global.keycloak.publicHost), NOT one
+    of signals' own hosts — the issuer string in a token is what signals compares
+    against. KEYCLOAK_INTERNAL_BASE_URL is the in-cluster address used for JWKS +
+    Admin REST so those calls do not egress through Kong.
+
+    Emitted unconditionally so the wiring is present and inert while
+    AUTH_PROVIDER=betterauth; signals only asserts these once the flag moves.
+  */}}
+  {{- with .Values.keycloak }}
+  {{- if .realm }}
+  KEYCLOAK_REALM: {{ .realm | quote }}
+  {{- end }}
+  {{- if .publicBaseUrl }}
+  KEYCLOAK_BASE_URL: {{ .publicBaseUrl | quote }}
+  {{- end }}
+  {{- if .internalBaseUrl }}
+  KEYCLOAK_INTERNAL_BASE_URL: {{ .internalBaseUrl | quote }}
+  {{- end }}
+  {{- end }}

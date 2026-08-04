@@ -174,7 +174,7 @@ bash install.sh create_namespaces_and_secrets                    # interactive p
 
 ```bash
 bash install.sh preflight   # tooling + cluster + generated values files present
-bash install.sh lint        # helm lint all four charts
+bash install.sh lint        # realm assertions + helm lint all five charts
 bash install.sh dry_run     # helm --dry-run all four against the current cluster
 ```
 

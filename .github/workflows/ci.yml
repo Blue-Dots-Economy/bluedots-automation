@@ -12,12 +12,14 @@ on:
     paths:
       - 'helm/**'
       - 'opentofu/**'
+      - 'scripts/**'
       - '.github/workflows/ci.yml'
   push:
     branches: [develop, main]
     paths:
       - 'helm/**'
       - 'opentofu/**'
+      - 'scripts/**'
       - '.github/workflows/ci.yml'
 
 permissions:
@@ -33,19 +35,38 @@ jobs:
         with:
           version: v3.16.4
 
+      - name: assert shared realm invariants
+        # Guards the deployment realm this repo OWNS. Not a diff against the app
+        # repos — their infra/keycloak/ trees are independent developer-local
+        # setups and are SUPPOSED to differ (localhost redirects, sslRequired).
+        # These are the properties that must hold regardless, and the first one
+        # (no localhost in a production client's allow-lists) is a security
+        # property that is completely invisible in a working deployment.
+        run: bash scripts/assert-realm.sh
+
       - name: helm lint (all charts)
         run: |
-          for chart in monitoring common-services signals aggregator; do
+          for chart in monitoring common-services keycloak signals aggregator; do
             echo "::group::helm lint $chart"
             # The aggregator chart guards its mandatory secrets (renders fail on
             # `change-me`/empty defaults); skip that block for the static check
             # with a placeholder existingSecret — real deploys validate real
             # values from global-secrets.yaml.
-            if [ "$chart" = aggregator ]; then
-              helm lint "helm/$chart" --set global.existingSecret=ci-smoke
-            else
-              helm lint "helm/$chart"
-            fi
+            case "$chart" in
+              aggregator)
+                helm lint "helm/$chart" --set global.existingSecret=ci-smoke
+                ;;
+              keycloak)
+                # Same secret guard, PLUS a required realm name: the realm is
+                # per-instance and deliberately has no literal default.
+                helm lint "helm/$chart" \
+                  --set global.existingSecret=ci-smoke \
+                  --set global.keycloakRealm=ci-smoke
+                ;;
+              *)
+                helm lint "helm/$chart"
+                ;;
+            esac
             echo "::endgroup::"
           done
 
@@ -55,17 +76,25 @@ jobs:
           # schema files that install.sh fetches at deploy time
           # (fetch_signals_configs) and are not committed, so a bare `helm
           # template` fails on the missing files. `helm lint` above still covers it.
-          for chart in monitoring common-services aggregator; do
+          for chart in monitoring common-services keycloak aggregator; do
             echo "::group::helm template $chart"
             # aggregator: bypass the mandatory-secret guard + the fetched-config
             # requirement (see helm lint step).
-            if [ "$chart" = aggregator ]; then
-              helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
-                --set global.existingSecret=ci-smoke \
-                --set global.networkConfigDelivery=false >/dev/null
-            else
-              helm template "$chart" "helm/$chart" -f helm/global-resources.yaml >/dev/null
-            fi
+            case "$chart" in
+              aggregator)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  --set global.existingSecret=ci-smoke \
+                  --set global.networkConfigDelivery=false >/dev/null
+                ;;
+              keycloak)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  --set global.existingSecret=ci-smoke \
+                  --set global.keycloakRealm=ci-smoke >/dev/null
+                ;;
+              *)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml >/dev/null
+                ;;
+            esac
             echo "::endgroup::"
           done
 

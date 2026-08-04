@@ -11,10 +11,26 @@ ingress:
   plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-auth
   annotations: {}
 
+# Realm name. Empty = inherit global.keycloakRealm (the normal case); set only as
+# a per-release escape hatch. There is deliberately NO literal default: the realm
+# name is per-instance, and a hardcoded one is what silently broke the
+# login-rate-limit route below once the realm stopped being called `aggregator`.
+realm: ""
+
+# Substituted into the realm's display name (__BRAND_LONG_NAME__).
+brandLongName: Blue Dots
+
+# Explicit signals-UI origins for the shared realm's signals-ui allow-lists.
+# Empty = derive from global.publicHosts (the normal case). Set only to override.
+# These are the SIGNALS hostnames, NOT the Keycloak/aggregator host — see
+# keycloak.signalsOrigins in _helpers.tpl.
+signalsOrigins: []
+
 loginRateLimit:
   enabled: true
   minute: 20           # per-IP login-flow submits/min (~6 full logins/min per IP)
-  realm: aggregator    # Keycloak realm name in the login-actions path
+  # NOTE: no `realm` key here on purpose — the template derives it via
+  # keycloak.realm so this route cannot drift from the realm Keycloak serves.
   redis:               # shared common-services Redis (counters)
     host: common-services-redis-master.common-services.svc.cluster.local
     port: 6379

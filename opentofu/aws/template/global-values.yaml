@@ -20,6 +20,12 @@ _grafana_host:    &grafana_host    "monitoring.domain.com"
 
 _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
 
+# Shared Keycloak realm — ONE realm per instance holding BOTH DPGs' clients.
+# Per-instance, derived from the network/domain. There is no literal default in
+# any chart, so this must be set. Changing it on a live instance is a user-visible
+# migration (every session/SSO cookie is invalidated), not a config tweak.
+_keycloak_realm: &keycloak_realm "bluedots"
+
 _network: &network "blue_dot"
 _brand: &brand ""
 
@@ -221,6 +227,22 @@ global:
   orgHierarchyEnabled: true
 
   publicHost:         *aggregator_host
+
+  # ── Shared Keycloak (the `keycloak` release, common-services namespace) ────
+  # The realm name is consumed by THREE charts — keycloak, aggregator and signals.
+  # They must agree or tokens are validated against the wrong issuer.
+  keycloakRealm: *keycloak_realm
+  keycloak:
+    namespace: common-services
+    serviceName: keycloak-keycloak
+    servicePort: 8080
+    internalUrl: ''
+    # Realm name + the public issuer base, for the signals chart. publicBaseUrl is
+    # the KEYCLOAK host (i.e. the aggregator host) — NOT a signals host, because
+    # the issuer string inside a token is built from it.
+    realm: *keycloak_realm
+    publicBaseUrl: ''   # leave empty to use https://<aggregator_host>/auth
+    internalBaseUrl: http://keycloak-keycloak.common-services.svc.cluster.local:8080/auth
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
   # Deliver aggregator.config.yaml (network binding, brand strings, domain labels,
@@ -257,6 +279,31 @@ global:
     enabled:          *otp_rate_limit_enabled
     signalsMinute:    *signals_otp_per_minute
     aggregatorMinute: *aggregator_otp_per_minute
+
+# ─── keycloak release (helm/keycloak) ────────────────────────────────────────
+# Shared identity for both DPGs. Deployed between common-services and signals.
+keycloak:
+  # Postgres role Keycloak logs in as. NEW clusters: `keycloak` (created by
+  # common-services' bootstrap). EXISTING clusters: set `aggregator` — the
+  # keycloak database there is already owned by that role and re-owning a live
+  # database is not worth the risk.
+  postgres:
+    username: keycloak
+    database: keycloak
+  smtp:
+    SMTP_HOST: *smtp_host
+    SMTP_PORT: *smtp_port
+    SMTP_FROM: *smtp_user
+    SMTP_FROM_DISPLAY: *smtp_from_display
+    SMTP_SECURE: "false"
+    SMTP_STARTTLS: "true"
+    SMTP_AUTH: "true"
+  # keycloak subchart. Per-IP OTP/login rate limit; the realm segment of the
+  # route is DERIVED from global.keycloakRealm — never hardcode it here.
+  keycloak:
+    loginRateLimit:
+      enabled: *otp_rate_limit_enabled
+      minute: *aggregator_otp_per_minute
 
 prometheus:
   grafana:

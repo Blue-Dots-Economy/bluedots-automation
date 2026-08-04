@@ -1,0 +1,121 @@
+{{- /*
+Realm reconciliation Job.
+
+WHY IT EXISTS: `--import-realm` applies ONLY to an empty realm. Every subsequent
+boot skips the import entirely, so this Job is the only thing that reconciles
+realm state on an existing realm — user-profile (unmanaged attributes +
+phoneNumber), SMTP, the org_owner role, the manage-realm grant, the acting-org
+claim mappers, the per-client login theme, and the aggregator-portal entitlement
+gate. Both scripts are idempotent and safe to re-run on every upgrade.
+
+ORDERING: hook-weight 10, deliberately above the common-services
+postgres-extensions-job (5) and postgres-bootstrap-job (0). Helm orders equal
+weights by name, which is meaningless — keep realm reconciliation unambiguously
+last. This is a separate release from common-services so those weights do not
+actually interleave, but the value documents the intent if it is ever merged.
+
+KNOWN GAP (see plan §11.2): these scripts RECONCILE what exists; they do not
+create clients. `ensure_acting_org_mapper` logs "client '<id>' not found —
+skipping" and returns 0. On a realm that predates the merged realm.json, that
+means missing signals clients are silently tolerated and this Job still exits 0.
+Verify realm contents against the chart's realm.json after any migration.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "keycloak-platform.fullname" . }}-init
+  labels:
+    {{- include "keycloak-platform.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "keycloak-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-init
+    spec:
+      restartPolicy: OnFailure
+      {{- include "keycloak-platform.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: kc-init
+          image: {{ .Values.init.image | quote }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              apk add --no-cache curl jq python3 >/dev/null
+              echo "[kc-init] 1/2 apply-user-profile.sh"
+              sh /init/apply-user-profile.sh
+              echo "[kc-init] 2/2 apply-portal-gate.py"
+              python3 /init/apply-portal-gate.py
+              echo "[kc-init] realm reconciliation complete"
+          env:
+            - name: KC_URL
+              value: {{ include "keycloak-platform.internalUrl" . | quote }}
+            - name: KC_REALM
+              value: {{ include "keycloak-platform.realm" . | quote }}
+            # apply-user-profile.sh reads KC_BOOTSTRAP_ADMIN_*; apply-portal-gate.py
+            # reads KC_ADMIN_*. Same credential, both names supplied.
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: {{ .Values.keycloak.bootstrapAdminUsername | quote }}
+            - name: KC_ADMIN_USERNAME
+              value: {{ .Values.keycloak.bootstrapAdminUsername | quote }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            - name: KC_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            - name: UNMANAGED_POLICY
+              value: ENABLED
+            - name: PORTAL_CLIENT_ID
+              value: {{ .Values.clients.portalClientId | quote }}
+            - name: SERVICE_CLIENT_ID
+              value: {{ .Values.clients.apiClientId | quote }}
+            - name: API_CLIENT_ID
+              value: {{ .Values.clients.apiClientId | quote }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: OIDC_CLIENT_SECRET
+            - name: BFF_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: BFF_SERVICE_CLIENT_SECRET
+            {{- range $k, $v := .Values.smtp }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+          volumeMounts:
+            - name: init-scripts
+              mountPath: /init
+              readOnly: true
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: {{ include "keycloak-platform.fullname" . }}-init
+            defaultMode: 0755

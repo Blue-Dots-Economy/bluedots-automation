@@ -32,6 +32,10 @@ resource "local_sensitive_file" "global_secrets" {
     signals_export_database_url             = local.signals_export_database_url
     signals_redis_password                  = var.signals_redis_password
     monitoring_grafana_password             = var.monitoring_grafana_password
+    keycloak_postgres_password              = var.keycloak_postgres_password
+    signals_api_client_secret               = var.signals_api_client_secret
+    signalstack_client_secret               = var.signalstack_client_secret
+    voice_dpg_signals_secret                = var.voice_dpg_signals_secret
     aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
     aggregator_keycloak_admin_client_secret = var.aggregator_keycloak_admin_client_secret
     aggregator_approval_token_secret        = var.aggregator_approval_token_secret

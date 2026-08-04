@@ -417,7 +417,7 @@ Without it, aggregator login fails with `SIGNALSTACK_ORG_NOT_REGISTERED`.
 ### Static checks (no cluster needed for lint)
 
 ```bash
-bash install.sh lint        # helm lint all four charts
+bash install.sh lint        # realm assertions + helm lint all five charts
 bash install.sh dry_run     # helm --dry-run all four against the current cluster (needs kubeconfig)
 bash install.sh preflight   # verify helm + kubectl + cluster + generated values files
 ```

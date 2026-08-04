@@ -20,6 +20,20 @@ global:
   #   - bluedotssignals.seeker.org
   publicHosts: []
 
+  # ── Shared Keycloak (the `keycloak` release in common-services) ────────────
+  # ONE realm holds both DPGs' clients, so these MUST match that release and the
+  # aggregator's global.keycloakRealm. A mismatch means signals validates tokens
+  # against the wrong issuer and every login fails.
+  keycloak:
+    # Per-instance realm name. REQUIRED before AUTH_PROVIDER=keycloak.
+    realm: ""
+    # Host Keycloak is served on — the AGGREGATOR host, not a signals host. The
+    # issuer string inside a token is built from this, and signals compares
+    # against it. Include the /auth suffix.
+    publicBaseUrl: ""          # e.g. https://aggregator.example.com/auth
+    # In-cluster address for JWKS + Admin REST (keeps them off the public path).
+    internalBaseUrl: http://keycloak-keycloak.common-services.svc.cluster.local:8080/auth
+
 # -----------------------------------------------------------------------------
 # Images — single source for every component
 # -----------------------------------------------------------------------------
@@ -119,6 +133,14 @@ credentials:
       SIGNALS_SEARCH_API_KEY: ""
       # Discover BFF → signals-search (signals-dpg#203). Unset = silent fallback to native search.
       SIGNALS_SEARCH_URL: "http://signals-search:3100"
+      # ── Keycloak (AUTH_PROVIDER=keycloak) ─────────────────────────────────
+      # Confidential client secret for the `signals-api` client. The SAME value
+      # must reach the shared keycloak release as secrets.signalsApiSecret — that
+      # release renders the realm which DEFINES this client. Generate it once in
+      # global-secrets.yaml and reference it from both, or signals' service-account
+      # token calls fail with invalid_client.
+      # Not needed to VALIDATE tokens, only to obtain them.
+      KEYCLOAK_API_CLIENT_SECRET: ""       # KEYCLOAK_SIGNALS_API_SECRET
   notificationService: &notification_service_secrets
     create: true
     existingSecret: ""
@@ -138,6 +160,11 @@ credentials:
 api:
   image: *api_image
   imagePullSecrets: *image_pull_secrets
+  # Shared Keycloak coordinates — see global.keycloak above.
+  keycloak:
+    realm: ""
+    publicBaseUrl: ""
+    internalBaseUrl: http://keycloak-keycloak.common-services.svc.cluster.local:8080/auth
   resources: *api_resources
   secrets: *api_secrets
 
@@ -161,6 +188,30 @@ api:
     API_DOMAIN: http://api.dpg.local
     API_PORT: "2742"
     AUTH_MIDDLEWARE_ENABLED: "true"
+
+    # ── Auth provider ─────────────────────────────────────────────────────
+    # `betterauth` or `keycloak` ONLY. `dual` was REMOVED in signals Phase 4, so
+    # there is no mode that accepts both — the cutover per environment is a HARD
+    # flip, not a ramp, and every existing user must already be provisioned into
+    # the realm before flipping. Leave at betterauth until that is done; the
+    # KEYCLOAK_* wiring below is inert while it is.
+    AUTH_PROVIDER: "betterauth"
+
+    # ── Keycloak (shared realm; used when AUTH_PROVIDER=keycloak) ──────────
+    # KEYCLOAK_BASE_URL / KEYCLOAK_INTERNAL_BASE_URL / KEYCLOAK_REALM are DERIVED
+    # and emitted by charts/api/templates/configmap.yaml — they must match the
+    # keycloak release, so they are not free-form values here.
+    KEYCLOAK_UI_CLIENT_ID: "signals-ui"
+    KEYCLOAK_API_CLIENT_ID: "signals-api"
+    # LOAD-BEARING. The realm is SHARED with aggregator, so signals must reject
+    # tokens minted for clients it does not serve. Keep this `signals-ui` only:
+    # adding an aggregator client would let an aggregator-portal token be honoured
+    # on signals' human session path, and `signals-api` is a confidential service
+    # client that must never be accepted as a human session.
+    KEYCLOAK_ACCEPTED_CLIENT_IDS: "signals-ui"
+    # Service clients allowed on the service-auth path. Set to `aggregator-dpg`
+    # only when Phase C (x-api-key -> client-credentials bearer) is turned on.
+    KEYCLOAK_SERVICE_CLIENT_IDS: ""
     CREATE_TEST_OTP: "false"
     ALLOWED_ORIGINS: "http://localhost:8080"
     # Update these domain according to the networks you want to serve. (purple dot, yellow_dot, blue dots)

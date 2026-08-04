@@ -57,6 +57,30 @@ output "aggregator_keycloak_admin_client_secret" {
   sensitive = true
 }
 
+output "keycloak_postgres_password" {
+  description = "Keycloak's own Postgres role password (credentials.keycloakPassword == secrets.keycloakPostgresPassword)"
+  value       = random_id.keycloak_postgres_password.hex
+  sensitive   = true
+}
+
+output "signals_api_client_secret" {
+  description = "signals-api Keycloak client secret (keycloak secrets.signalsApiSecret == signals KEYCLOAK_API_CLIENT_SECRET)"
+  value       = random_id.signals_api_client_secret.hex
+  sensitive   = true
+}
+
+output "signalstack_client_secret" {
+  description = "aggregator-dpg Keycloak service-client secret (Phase C service auth)"
+  value       = random_id.signalstack_client_secret.hex
+  sensitive   = true
+}
+
+output "voice_dpg_signals_secret" {
+  description = "voice-dpg Keycloak service-client secret"
+  value       = random_id.voice_dpg_signals_secret.hex
+  sensitive   = true
+}
+
 output "aggregator_approval_token_secret" {
   value     = random_id.aggregator_approval_token_secret.hex
   sensitive = true

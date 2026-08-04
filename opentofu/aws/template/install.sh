@@ -54,18 +54,23 @@ CS_NS="${CS_NS:-common-services}"
 SIGNALS_NS="${SIGNALS_NS:-signals}"
 AGG_NS="${AGG_NS:-aggregator}"
 MON_NS="${MON_NS:-monitoring}"
+# Keycloak is a shared common service: its own RELEASE, but it lives in the
+# common-services NAMESPACE (deliberate exception to the dir==ns convention).
+KC_NS="${KC_NS:-$CS_NS}"
 
 # Helm release names.
 CS_REL="${CS_REL:-common-services}"
 SIGNALS_REL="${SIGNALS_REL:-signals}"
 AGG_REL="${AGG_REL:-aggregator}"
 MON_REL="${MON_REL:-monitoring}"
+KC_REL="${KC_REL:-keycloak}"
 
 # Chart directories.
 CS_DIR="$REPO_ROOT/helm/common-services"
 SIGNALS_DIR="$REPO_ROOT/helm/signals"
 AGG_DIR="$REPO_ROOT/helm/aggregator"
 MON_DIR="$REPO_ROOT/helm/monitoring"
+KC_DIR="$REPO_ROOT/helm/keycloak"
 
 # Resource overrides (replica counts, HPA, PDB, container resources) — shared across environments.
 # Edit helm/global-resources.yaml to change settings across all environments.
@@ -265,6 +270,31 @@ function fetch_aggregator_configs() {
         --consent-dir "$AGGREGATOR_CONSENT_DIR"
 }
 
+# Shared Keycloak — its OWN release, in the common-services namespace.
+#
+# WHY A SEPARATE RELEASE and not a subchart of common-services: the `keycloak`
+# database is created by common-services' postgres-bootstrap-job, which is a
+# post-install HOOK (weight 0). Helm with --wait installs main resources, waits
+# for them to be Ready, and only THEN runs post-install hooks. A Keycloak
+# Deployment inside that release would crash-loop on the missing database while
+# the hook that creates it never runs — the release deadlocks and times out.
+# Keeping it a later release means the database already exists by the time
+# Keycloak starts. Do not "simplify" this back into common-services.
+#
+# Must run AFTER deploy_common_services and BEFORE deploy_signals: signals' api
+# asserts its Keycloak config at boot once AUTH_PROVIDER=keycloak.
+function deploy_keycloak() {
+    echo -e "\nDeploying keycloak (shared realm, both DPGs) into $KC_NS"
+    helm upgrade --install "$KC_REL" "$KC_DIR" \
+        -n "$KC_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" \
+        -f "$GLOBAL_IMAGES" \
+        -f "$GLOBAL_VALUES" \
+        -f "$GLOBAL_CLOUD_VALUES" \
+        -f "$GLOBAL_SECRETS" \
+        --wait --timeout 10m
+}
+
 function deploy_signals() {
     echo -e "\nDeploying signals"
     fetch_signals_configs
@@ -343,10 +373,11 @@ function deploy_all_services() {
     create_namespaces_and_secrets
     deploy_monitoring
     deploy_common_services
+    deploy_keycloak
     deploy_signals
     deploy_aggregator
     fix_acme_issuer_uri
-    echo -e "\n✔ all releases deployed: monitoring, common-services, signals, aggregator"
+    echo -e "\n✔ all releases deployed: monitoring, common-services, keycloak, signals, aggregator"
 }
 
 # cert-manager v1.20.2 bug (cert-manager/cert-manager#7846): the controller
@@ -408,6 +439,17 @@ function destroy_aggregator() {
     kubectl delete namespace "$AGG_NS" --wait=true --timeout=120s || true
 }
 
+# Remove ONLY the keycloak release. It shares the common-services namespace, so
+# this must NOT delete the namespace — that would take Postgres/Redis/Kong with it.
+#
+# DANGER: uninstalling Keycloak does not drop the `keycloak` database, so users
+# survive a re-install. Deleting the common-services NAMESPACE does destroy it,
+# and that now wipes identity for BOTH DPGs, not just the aggregator.
+function destroy_keycloak() {
+    echo -e "\nDestroying keycloak (release only — namespace $KC_NS is left intact)"
+    helm uninstall "$KC_REL" -n "$KC_NS" || true
+}
+
 function destroy_common_services() {
     echo -e "\nDestroying common-services"
     helm uninstall "$CS_REL" -n "$CS_NS" || true
@@ -448,6 +490,7 @@ function destroy_signals() {
 function cleanup_all_services() {
     destroy_aggregator
     destroy_signals
+    destroy_keycloak
     destroy_common_services
     destroy_monitoring
     echo -e "\n✔ all releases removed"
@@ -474,11 +517,18 @@ function preflight() {
     echo "config  : $GLOBAL_VALUES (user-edited non-secret config)"
 }
 
-# helm lint all 4 charts.
+# helm lint all 5 charts.
 function lint() {
     helm lint "$MON_DIR"
     helm lint "$CS_DIR"
     helm lint "$SIGNALS_DIR"
+    # Keycloak guards its secrets the same way the aggregator does, AND requires a
+    # realm name with no literal default (the realm is per-instance). Static
+    # renders have neither, so supply both.
+    helm lint "$KC_DIR" --set global.existingSecret=lint-only --set global.keycloakRealm=lint-only
+    # Realm content invariants — no localhost redirects, no test users, org_owner
+    # present, all 7 clients, gate scoped to the portal. See scripts/assert-realm.sh.
+    bash "$REPO_ROOT/scripts/assert-realm.sh"
     # Aggregator secrets are guarded (aggregator.requireSecret fails the render on
     # empty / `change-me` placeholders). A bare `helm lint` has no real creds, so
     # point it at a placeholder existingSecret to skip the secret block — a real
@@ -490,7 +540,7 @@ function lint() {
     helm lint "$AGG_DIR" --set global.existingSecret=lint-only
 }
 
-# helm --dry-run all 4 charts against the current cluster (renders + server-side checks,
+# helm --dry-run all 5 charts against the current cluster (renders + server-side checks,
 # installs nothing). Runs preflight first.
 function dry_run() {
     preflight
@@ -500,6 +550,8 @@ function dry_run() {
         -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
+    helm upgrade --install "$KC_REL" "$KC_DIR" -n "$KC_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
@@ -511,7 +563,7 @@ function dry_run() {
 #   - CI can only `helm lint` signals (its `helm template` needs the network
 #     schemas fetch_signals_configs pulls at deploy time), so a full render of
 #     this chart is never validated automatically — only here.
-#   - `dry_run` walks all 4 charts and stops at the first failure, so an
+#   - `dry_run` walks all 5 charts and stops at the first failure, so an
 #     unrelated break in monitoring/common-services hides signals entirely.
 # Unlike `lint`, this loads the env values files, so it catches YAML anchor and
 # values-layering breakage that lint cannot see.

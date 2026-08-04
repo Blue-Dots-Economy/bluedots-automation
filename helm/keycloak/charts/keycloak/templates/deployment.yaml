@@ -68,16 +68,53 @@ spec:
                 configMapKeyRef:
                   name: {{ include "keycloak.envConfigMap" . }}
                   key: PUBLIC_BASE_URL
-            - name: OIDC_CLIENT_SECRET
+            # The realm NAME is substituted into the realm JSON, so it is a
+            # render input, not merely a runtime setting.
+            - name: KEYCLOAK_REALM
+              value: {{ include "keycloak.realm" . | quote }}
+            - name: BRAND_LONG_NAME
+              value: {{ .Values.brandLongName | quote }}
+            {{- /*
+              signals-ui's redirect/origin/post-logout allow-lists, built from
+              the SIGNALS hostnames — not the Keycloak host. See the note in
+              render-realm.sh: getting this wrong fails signals login with
+              invalid_redirect_uri, and it is invisible in local dev.
+            */}}
+            - name: SIGNALS_ORIGINS
+              value: {{ include "keycloak.signalsOrigins" . | quote }}
+            # All six client secrets the shared realm declares — both DPGs'.
+            # render-realm.sh fails hard on any unset one rather than importing
+            # an empty secret onto a confidential client.
+            - name: AGGREGATOR_PORTAL_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "keycloak.secretName" . }}
                   key: OIDC_CLIENT_SECRET
-            - name: BFF_SERVICE_CLIENT_SECRET
+            - name: AGGREGATOR_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            - name: AGGREGATOR_BFF_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "keycloak.secretName" . }}
                   key: BFF_SERVICE_CLIENT_SECRET
+            - name: SIGNALS_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: SIGNALS_API_SECRET
+            - name: SIGNALSTACK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: SIGNALSTACK_CLIENT_SECRET
+            - name: VOICE_DPG_SIGNALS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: VOICE_DPG_SIGNALS_SECRET
             - name: SMTP_HOST
               valueFrom:
                 configMapKeyRef:
