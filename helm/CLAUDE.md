@@ -67,12 +67,33 @@ reads `secrets.keycloakPostgresPassword` (**not** `secrets.postgresPassword`, wh
 is the aggregator database password in that same shared root block), and
 `secrets.signalsApiSecret` must equal signals' `KEYCLOAK_API_CLIENT_SECRET`.
 
-**The init Job reconciles; it does not create clients.** `apply-user-profile.sh`
-creates `org_owner` and grants `manage-realm`, but `ensure_acting_org_mapper` logs
-`client '<id>' not found — skipping` and **returns 0**. On a realm that predates the
-merged realm.json, missing signals clients are silently tolerated and the Job still
-succeeds. After any realm migration, assert the *running* realm's contents, not
-just the file.
+**The init Job reconciles realm CONTENTS in place — step order is load-bearing.**
+It runs four steps: render the realm (reusing the pod's own `render-realm.sh`, so
+the substitution cannot differ), then `apply-realm-config.py`, then
+`apply-user-profile.sh`, then `apply-portal-gate.py`.
+
+`apply-realm-config.py` must stay **first**. The two scripts after it reconcile but
+never CREATE a client — `ensure_acting_org_mapper` and `ensure_login_theme` both log
+`client '<id>' not found — skipping` and **return 0**. Run them first and a realm
+predating a realm.json change keeps its missing clients while the Job still exits 0:
+a silent no-op. Reconciling clients first is what makes the rest effective.
+
+It uses Keycloak's own `partialImport` with `ifResourceExists: SKIP`, never
+OVERWRITE — re-creating an existing client changes its service-account user id, and
+those ids are referenced from the aggregator database. It also grants the
+`realm-management` client roles each service account needs, because creating a
+client with `serviceAccountsEnabled` makes the SA user but grants it nothing.
+
+It strips `authenticationFlowBindingOverrides` before importing: a binding
+references a flow by id, and importing a client whose flow does not exist yet fails
+with an opaque HTTP 500. `apply-portal-gate.py` owns that binding and reconciles it
+every run anyway.
+
+**This is why no realm rename is needed.** Renaming a realm to pick up new clients
+changes the issuer URL and invalidates every session; reconciling in place does
+not. Verified on 26.5.5: adding 5 clients + 3 roles to a stale realm, idempotent on
+re-run (`added=0 skipped=10`), with existing client id, service-account user id and
+client secret all unchanged.
 
 ## Cluster Autoscaler (#1.6)
 

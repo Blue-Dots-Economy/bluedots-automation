@@ -74,3 +74,36 @@ deploy identity on a well-known default. Mirrors aggregator.requireSecret.
 {{- $v -}}
 {{- end -}}
 {{- end -}}
+
+{{- /*
+Names of the two ConfigMaps the keycloak SUBCHART renders. The init Job mounts
+both so it can reuse render-realm.sh verbatim rather than duplicating the
+placeholder substitution. Kept in step with charts/keycloak/templates/_helpers.tpl
+(keycloak.realmConfigMap / keycloak.renderScriptConfigMap) — an umbrella cannot
+call a subchart's helpers.
+*/ -}}
+{{- define "keycloak-platform.realmConfigMap" -}}
+{{- printf "%s-keycloak-realm" (include "keycloak-platform.fullname" .) -}}
+{{- end -}}
+
+{{- define "keycloak-platform.renderScriptConfigMap" -}}
+{{- printf "%s-keycloak-render" (include "keycloak-platform.fullname" .) -}}
+{{- end -}}
+
+{{- /*
+Same derivation as the subchart's keycloak.signalsOrigins. The init Job renders
+the realm too, so it must produce a byte-identical result — if these two drift,
+the reconciler would import signals-ui with different allow-lists than the pod.
+*/ -}}
+{{- define "keycloak-platform.signalsOrigins" -}}
+{{- if .Values.keycloak.signalsOrigins -}}
+{{- join "," .Values.keycloak.signalsOrigins -}}
+{{- else -}}
+{{- $proto := .Values.global.publicProtocol | default "https" -}}
+{{- $out := list -}}
+{{- range (.Values.global.publicHosts | default list) -}}
+{{- if . -}}{{- $out = append $out (printf "%s://%s" $proto .) -}}{{- end -}}
+{{- end -}}
+{{- join "," (uniq $out) -}}
+{{- end -}}
+{{- end -}}

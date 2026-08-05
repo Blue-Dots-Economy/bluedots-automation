@@ -17,8 +17,11 @@ data:
     #!/bin/sh
     set -eu
 
-    SRC_DIR="/opt/keycloak/data/import-template"
-    DST_DIR="/opt/keycloak/data/import"
+    # Overridable so the keycloak-init Job can reuse this exact script to render
+    # the realm for its reconcile step, instead of duplicating the substitution
+    # logic. Defaults are the paths the Keycloak pod's initContainer uses.
+    SRC_DIR="${SRC_DIR:-/opt/keycloak/data/import-template}"
+    DST_DIR="${DST_DIR:-/opt/keycloak/data/import}"
 
     # ── Required: no defaults, deploy fails if missing ─────────────────────
     : "${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set}"

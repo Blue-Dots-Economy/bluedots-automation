@@ -6,6 +6,11 @@ apply-user-profile.sh is the 536-line version — a verified functional superset
 the signals local copy: same acting-org mapper call sites, same phoneNumber /
 unmanagedAttributePolicy surface, plus aggregator_id, org_owner and the
 signals-ui login-theme override.
+
+apply-realm-config.py closes the gap those scripts leave: they RECONCILE what
+exists but never create a client, so a realm predating a realm.json change would
+silently keep missing clients (`client '<id>' not found — skipping`, exit 0). It
+runs FIRST so the mapper and theme steps that follow actually find the clients.
 */ -}}
 apiVersion: v1
 kind: ConfigMap
@@ -18,3 +23,5 @@ data:
 {{ .Files.Get "files/apply-user-profile.sh" | indent 4 }}
   apply-portal-gate.py: |-
 {{ .Files.Get "files/apply-portal-gate.py" | indent 4 }}
+  apply-realm-config.py: |-
+{{ .Files.Get "files/apply-realm-config.py" | indent 4 }}
