@@ -619,22 +619,34 @@ So a naive "deploy the new chart and let the init Job reconcile" leaves the real
 without any signals client, and the init Job **exits 0** while doing so. That is
 the failure mode to design against: it looks like a clean deploy.
 
-### 11.2.0 RESOLVED — neither path was taken
+### 11.2.0 RESOLVED — Path A, minus the rename
 
-**Superseded by implementation.** Both paths below assumed the realm had to be
-renamed or recreated to gain the missing clients. It does not: `keycloak-init` now
-runs `apply-realm-config.py`, which reconciles clients, realm roles and
-service-account grants **in place** via Keycloak's own `partialImport`
-(`ifResourceExists: SKIP`). The realm keeps its name, the issuer is unchanged, and
-with `PERSISTENT_USER_SESSIONS` enabled on 26.5.5 there is no forced re-login.
+**Path A stands: the new unified realm is created fresh and users are copied into
+it with ids preserved.** Two corrections to it, both from implementation:
 
-Consequences: no rename, no user export, no `partialImport` of user data, and the
-credential-count pre-flight is moot. Verified on 26.5.5 — 5 clients + 3 roles added
-to a stale realm, idempotent on re-run, existing client/service-account ids and
-secrets untouched.
+1. **No realm is renamed.** Path A below renames the existing realm aside to free
+   the target name. That is unnecessary — the unified realm name *differs* from the
+   existing one, so `--import-realm` simply creates it alongside. Verified: the
+   previously-deployed chart realm pins no authentication-flow ids, so the new
+   realm's pinned entitlement-gate flow cannot collide with it.
 
-The operational procedure is `docs/unified-keycloak-migration-runbook.md`. The two
-paths below are kept only as the record of why the in-place route was chosen.
+2. **The credential-count pre-flight is dropped.** These realms are OTP-only, so
+   there are no password credentials for the copy to lose. §6.3 of the runbook keeps
+   a cheap confirmation of that premise instead.
+
+Separately, and **additive** to the migration rather than a replacement for it,
+`keycloak-init` now runs `apply-realm-config.py`, which reconciles clients, realm
+roles and service-account grants in place via `partialImport`
+(`ifResourceExists: SKIP`). That closes the gap the older scripts left — they
+reconcile but never create, logging `client '<id>' not found — skipping` and
+returning 0. It is a no-op on this migration, where the fresh import already creates
+everything; its purpose is any realm that later drifts from `realm.json`. Verified
+on 26.5.5: 5 clients + 3 roles added to a deliberately stale realm, idempotent on
+re-run (`added=0 skipped=10`), with existing client id, service-account user id and
+client secret all unchanged.
+
+Path B was not taken. The operational procedure is
+`docs/unified-keycloak-migration-runbook.md`.
 
 ### 11.2.1 Two migration paths — pick on one pre-flight fact (HISTORICAL)
 

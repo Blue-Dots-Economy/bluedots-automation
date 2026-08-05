@@ -89,11 +89,15 @@ references a flow by id, and importing a client whose flow does not exist yet fa
 with an opaque HTTP 500. `apply-portal-gate.py` owns that binding and reconciles it
 every run anyway.
 
-**This is why no realm rename is needed.** Renaming a realm to pick up new clients
-changes the issuer URL and invalidates every session; reconciling in place does
-not. Verified on 26.5.5: adding 5 clients + 3 roles to a stale realm, idempotent on
-re-run (`added=0 skipped=10`), with existing client id, service-account user id and
-client secret all unchanged.
+**Scope: drift, not migration.** On a fresh realm import this step is a no-op —
+everything already exists. Its job is a realm that has *drifted* from `realm.json`
+after the fact, which is precisely what used to fail silently. Migrating an existing
+environment onto the unified realm is a separate procedure
+(`docs/unified-keycloak-migration-runbook.md` §6): the new realm is imported fresh
+and users are copied in with ids preserved. Verified on 26.5.5: 5 clients + 3 roles
+added to a deliberately stale realm, idempotent on re-run
+(`added=0 skipped=10`), existing client id, service-account user id and client
+secret all unchanged.
 
 ## Cluster Autoscaler (#1.6)
 
