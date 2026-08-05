@@ -32,15 +32,47 @@ data:
 
     Emitted unconditionally so the wiring is present and inert while
     AUTH_PROVIDER=betterauth; signals only asserts these once the flag moves.
+
+    RESOLUTION ORDER — this used to read .Values.keycloak alone, which the
+    umbrella declares as empty strings and nothing ever populated: Helm exposes
+    globals to a subchart at .Values.global.*, it does NOT map global.keycloak.*
+    onto a subchart's own .Values.keycloak. So the realm and issuer silently
+    rendered as NOTHING while only the umbrella's hardcoded internalBaseUrl
+    landed. Harmless under betterauth, but it fails the AUTH_PROVIDER=keycloak
+    cutover — which has no `dual` mode, so it fails closed for every user at
+    once. Hence an explicit chain, most specific first.
   */}}
-  {{- with .Values.keycloak }}
-  {{- if .realm }}
-  KEYCLOAK_REALM: {{ .realm | quote }}
+  {{- $kc := .Values.keycloak | default dict }}
+  {{- $g := .Values.global | default dict }}
+  {{- $gkc := $g.keycloak | default dict }}
+  {{- $realm := $kc.realm | default $gkc.realm | default $g.keycloakRealm }}
+  {{- $publicBase := $kc.publicBaseUrl | default $gkc.publicBaseUrl }}
+  {{- /*
+    Derive the issuer base the same way keycloak-platform.publicBaseUrl does, so
+    the two cannot drift. NOTE global.publicHost (singular) is the AGGREGATOR /
+    Keycloak host in this repo's overlays; global.publicHosts (plural) is the
+    signals hosts. The issuer must be the former — see the comment above.
+  */}}
+  {{- if and (not $publicBase) $g.publicHost }}
+  {{- $publicBase = printf "%s://%s/auth" ($g.publicProtocol | default "https") $g.publicHost }}
   {{- end }}
-  {{- if .publicBaseUrl }}
-  KEYCLOAK_BASE_URL: {{ .publicBaseUrl | quote }}
+  {{- $internalBase := $kc.internalBaseUrl | default $gkc.internalBaseUrl }}
+  {{- /*
+    Fail the render rather than ship a half-configured cutover. Matches how the
+    realm renderer and aggregator.requireSecret behave: a missing value here is
+    invisible until every login breaks.
+  */}}
+  {{- if eq (.Values.config.AUTH_PROVIDER | default "") "keycloak" }}
+  {{- if not $realm }}{{ fail "AUTH_PROVIDER=keycloak but no realm resolved — set global.keycloakRealm (or api.keycloak.realm)" }}{{ end }}
+  {{- if not $publicBase }}{{ fail "AUTH_PROVIDER=keycloak but no issuer resolved — set global.publicHost (or api.keycloak.publicBaseUrl)" }}{{ end }}
+  {{- if not $internalBase }}{{ fail "AUTH_PROVIDER=keycloak but no internal Keycloak URL resolved — set global.keycloak.internalBaseUrl" }}{{ end }}
   {{- end }}
-  {{- if .internalBaseUrl }}
-  KEYCLOAK_INTERNAL_BASE_URL: {{ .internalBaseUrl | quote }}
+  {{- if $realm }}
+  KEYCLOAK_REALM: {{ $realm | quote }}
   {{- end }}
+  {{- if $publicBase }}
+  KEYCLOAK_BASE_URL: {{ $publicBase | quote }}
+  {{- end }}
+  {{- if $internalBase }}
+  KEYCLOAK_INTERNAL_BASE_URL: {{ $internalBase | quote }}
   {{- end }}

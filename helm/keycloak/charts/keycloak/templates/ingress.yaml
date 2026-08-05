@@ -2,9 +2,27 @@
 {{- /*
   Template-driven ingress for Keycloak (auth). Routing STRUCTURE fixed here:
   path /auth, strip-path "false" — Keycloak serves natively under /auth
-  (KC_HTTP_RELATIVE_PATH=/auth). Host comes from global.publicHost. No
-  cert-manager annotation: the web ingress owns the shared host cert; this
-  object references the derived TLS secret.
+  (KC_HTTP_RELATIVE_PATH=/auth). Host comes from global.publicHost.
+
+  TLS IS OFF BY DEFAULT, and that is load-bearing. Keycloak shares the
+  AGGREGATOR's public host, and the certificate for that SNI is owned by the
+  aggregator release's web Ingress — which now lives in a DIFFERENT namespace.
+  Ingress `tls.secretName` is namespace-local (there is no cross-namespace
+  Secret reference), so declaring it here names a Secret that does not exist in
+  common-services. Kong then has an unresolvable certificate for the SNI and
+  serves its DEFAULT SELF-SIGNED cert for the whole host — every browser and
+  every OIDC discovery call fails, including the aggregator's own, even though
+  the aggregator's Secret is present and valid in its namespace.
+
+  This Ingress does not need a `tls:` block at all: Kong's certificate store is
+  keyed by SNI globally, so once any Ingress supplies the cert for this host the
+  route is served over TLS. That is the same arrangement the sibling
+  `-login-ratelimit` Ingress already relies on.
+
+  Set ingress.tls.enabled=true ONLY when this release owns the certificate in
+  its own namespace (i.e. you also add a cert-manager issuer annotation via
+  ingress.annotations). Two Certificates for one hostname also burns the Let's
+  Encrypt duplicate-certificate allowance (5/week).
 
   NOTE: this Ingress is named after the keycloak subchart (<release>-keycloak),
   replacing the former parent-template name <release>-auth.
@@ -29,10 +47,12 @@ spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
   {{- end }}
+  {{- if (.Values.ingress.tls).enabled }}
   tls:
     - hosts:
         - {{ $host }}
-      secretName: {{ printf "%s-tls" ($host | replace "." "-") }}
+      secretName: {{ (.Values.ingress.tls).secretName | default (printf "%s-tls" ($host | replace "." "-")) }}
+  {{- end }}
   rules:
     - host: {{ $host | quote }}
       http:

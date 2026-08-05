@@ -229,9 +229,20 @@ schemas:
   networks: []
 
 # ─── Shared Keycloak coordinates ─────────────────────────────────────────────
-# Set by the umbrella (helm/signals/values.yaml) from global.keycloak.*; these
-# must match the `keycloak` release exactly. Empty values are omitted from the
-# ConfigMap so an environment that has not moved to Keycloak yet renders nothing.
+# PER-SUBCHART OVERRIDE ONLY — leave empty and configure globals instead.
+#
+# These are NOT populated from global.keycloak.* by the umbrella (an earlier
+# comment here claimed they were; nothing did it, so the realm and issuer
+# rendered as nothing). templates/configmap.yaml now resolves them itself:
+#
+#   realm           api.keycloak.realm > global.keycloak.realm > global.keycloakRealm
+#   publicBaseUrl   api.keycloak.publicBaseUrl > global.keycloak.publicBaseUrl
+#                   > <global.publicProtocol|https>://<global.publicHost>/auth
+#   internalBaseUrl api.keycloak.internalBaseUrl > global.keycloak.internalBaseUrl
+#
+# They must match the `keycloak` release exactly. Empty resolves to nothing in
+# the ConfigMap while AUTH_PROVIDER=betterauth; once it is `keycloak` the render
+# FAILS instead, rather than shipping a silently broken cutover.
 keycloak:
   realm: ""
   publicBaseUrl: ""

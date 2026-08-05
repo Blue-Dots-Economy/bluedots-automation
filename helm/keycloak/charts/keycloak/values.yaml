@@ -10,6 +10,14 @@ ingress:
   className: ""        # e.g. kong
   plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-auth
   annotations: {}
+  # OFF by default — see the long note in templates/ingress.yaml. Keycloak shares
+  # the aggregator's public host, whose certificate is owned by the aggregator
+  # release's web Ingress in ANOTHER namespace; tls.secretName cannot cross
+  # namespaces, so declaring it here makes Kong serve its default self-signed
+  # cert for the entire host. Enable only if this release issues its own cert.
+  tls:
+    enabled: false
+    secretName: ""     # empty -> <host with dots as dashes>-tls
 
 # Realm name. Empty = inherit global.keycloakRealm (the normal case); set only as
 # a per-release escape hatch. There is deliberately NO literal default: the realm
@@ -60,7 +68,16 @@ bootstrapAdminUsername: admin
 # When true, container starts with `--optimized` (skips build at runtime).
 # Set to false if a build-time SPI option (e.g. KC_SPI_SMS_PROVIDER) is supplied
 # at runtime — `--optimized` rejects build-time mismatches and exits.
-optimized: true
+#
+# FALSE, and it must stay false until the server image bakes the SPI in. The
+# org's keycloak-server images do NOT carry kc.spi-sms-provider in their
+# persisted build, so `--optimized` aborts on the mismatch with exit code 2 and
+# a single "build time options ... differ from what is persisted" line — the
+# realm renders fine and both initContainers pass, so it reads as a healthy
+# deploy right up to the CrashLoopBackOff. This was the aggregator chart's
+# long-standing setting and was inverted when the subchart moved here; flipping
+# it back. Only set true once `kc.sh build` in aggregator-dpg bakes the option.
+optimized: false
 smsProvider: log
 msg91TemplateId: ''
 msg91OtpVarName: ''
