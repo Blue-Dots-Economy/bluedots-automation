@@ -51,12 +51,17 @@ that means **Signals** (`helm/signals/`).
 │   ├── workflows/            # develop-pr-gate.yml (gate), pr-gate-tests.yml (action unit tests)
 │   └── PULL_REQUEST_TEMPLATE.md  # Summary / Release Notes / Checklist
 ├── DEPLOYMENT.md             # authoritative end-to-end runbook + troubleshooting
-├── helm/                     # Application stack — four umbrella charts
+├── dockerfiles/              # Base images this repo builds (manual workflow_dispatch only)
+│   ├── postgres/             # Bitnami Postgres 17 + portable pgvector → ghcr.io/<owner>/postgres-pgvector
+│   └── keycloak/             # Keycloak + OTP authenticator SPI → ghcr.io/<owner>/keycloak-server
+├── helm/                     # Application stack — five umbrella charts
 │   ├── global-resources.yaml # shared replica/HPA/PDB/resource overrides (all envs)
 │   ├── monitoring/           # chart "monitoring": kube-prometheus-stack, Loki, Alloy, Jaeger, Grafana
 │   ├── common-services/      # chart "platform": Kong, cert-manager, Postgres, Redis, metrics-server
+│   ├── keycloak/             # chart "keycloak-platform": shared realm for BOTH DPGs (deploys into common-services ns)
 │   ├── signals/              # chart "dpg": Signals (api/ui/notification/search); charts/api/files/{networks,consent}/*.json
-│   └── aggregator/           # chart "aggregator-dpg": web BFF, api, worker, keycloak; files/consent/consent.json
+│   └── aggregator/           # chart "aggregator-dpg": web BFF, api, worker; files/consent/consent.json
+├── scripts/                  # build-realm.sh + assert-realm.sh (shared realm), fetch-configs.sh
 └── opentofu/
     └── aws/
         ├── _common/          # Terragrunt include files shared by every env (eks.hcl, iam.hcl, bastion.hcl, pritunl.hcl, …)
@@ -440,13 +445,39 @@ bash install.sh destroy_monitoring
 App images are pinned per component in `<env>/global-images.yaml` (override per
 environment there):
 
-| Component             | Image                                                  |
-|-----------------------|--------------------------------------------------------|
-| Signals — api         | `ghcr.io/blue-dots-economy/signals-dpg/api`            |
-| Signals — ui          | `vinodbbhorge/signalstack-ui`                          |
-| Signals — notification | `ghcr.io/blue-dots-economy/notification-service` |
-| Aggregator — web / api / worker | `ghcr.io/blue-dots-economy/aggregator-dpg/{web,api,worker}` |
-| Aggregator — keycloak | `vinodbbhorge/aggregator-dpg-keycloak`                 |
+| Component             | Image                                                  | Built by |
+|-----------------------|--------------------------------------------------------|----------|
+| Signals — api         | `ghcr.io/blue-dots-economy/signals-dpg/api`            | signals-dpg |
+| Signals — ui          | `vinodbbhorge/signalstack-ui`                          | signals-dpg |
+| Signals — notification | `ghcr.io/blue-dots-economy/notification-service`      | signals-dpg |
+| Aggregator — web / api / worker | `ghcr.io/blue-dots-economy/aggregator-dpg/{web,api,worker}` | aggregator-dpg |
+| Keycloak — server     | `ghcr.io/blue-dots-economy/keycloak-server`            | **this repo** (`dockerfiles/keycloak/`) |
+| Keycloak — theme init | `ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme` | aggregator-dpg (per network/brand) |
+| Postgres (shared)     | `ghcr.io/blue-dots-economy/postgres-pgvector`          | **this repo** (`dockerfiles/postgres/`) |
+
+### Base images built here
+
+Two images are built from this repo rather than from an app repo, because they
+are **shared infrastructure** rather than one app's artifact. Both are
+**manual-dispatch only** — they are rarely-rebuilt base images, deliberately kept
+out of app CI/CD:
+
+| Workflow | Builds | Rebuild when |
+|----------|--------|--------------|
+| *Build Postgres pgvector image* | `dockerfiles/postgres/` | pgvector or the Bitnami Postgres base changes |
+| *Build Keycloak image* | `dockerfiles/keycloak/` | the OTP authenticator jar or the Keycloak minor changes |
+
+Run either from **Actions → workflow → Run workflow**, then pin the resulting tag
+in the target environment's `<env>/global-images.yaml`. Prefer the immutable
+`sha-xxxxxxx` tag over a branch tag for anything production.
+
+Keycloak's server image carries the **OTP authenticator SPI** the shared realm's
+login flows are bound to; it moved here from `aggregator-dpg` because Keycloak is
+a common service serving *both* DPGs, so releasing its image from one of the two
+consumers was backwards. Provenance and the jar-bump procedure:
+[`dockerfiles/keycloak/providers/README.md`](dockerfiles/keycloak/providers/README.md).
+The **theme** image is still built in `aggregator-dpg` — its brand strings come
+from that repo's `config/<network>/keycloak.env` tree.
 
 ### Image pull secret
 

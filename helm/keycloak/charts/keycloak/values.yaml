@@ -47,9 +47,14 @@ adminConsoleBlock:
   enabled: false
 
 replicaCount: 1
+# Built from this repo: dockerfiles/keycloak/ (upstream Keycloak + the OTP
+# authenticator SPI baked in and pre-indexed), published by
+# .github/workflows/build-keycloak-image.yml. Real deploys override the tag from
+# the per-env opentofu/aws/<env>/global-images.yaml — prefer an immutable
+# `sha-xxxxxxx` there over a branch tag.
 image:
-  repository: aggregator-dpg/keycloak
-  tag: '26.5.5-aggregator'
+  repository: ghcr.io/blue-dots-economy/keycloak-server
+  tag: develop
   pullPolicy: IfNotPresent
 bootstrapAdminUsername: admin
 # When true, container starts with `--optimized` (skips build at runtime).
@@ -69,8 +74,11 @@ resources:
 realmRenderer:
   image: alpine:3.20
 
-# Theme initContainer — produced by `infra/keycloak/build-theme-image.sh`
-# per network. Set `tag` to the network's release tag (e.g.
+# Theme initContainer — produced per network by aggregator-dpg's
+# `infra/keycloak/build-theme-image.sh` (that repo still owns the theme image:
+# its brand strings come from config/<network>/keycloak.env there, unlike the
+# network-agnostic server image above, which is built from dockerfiles/keycloak/
+# in THIS repo). Set `tag` to the network's release tag (e.g.
 # `blue_dot-v1`, `purple_dot-v1`); leave `themesInit: null` in values
 # (or omit the block) to fall back to the JAR-baked theme.
 themesInit:

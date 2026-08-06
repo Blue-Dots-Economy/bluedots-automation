@@ -76,10 +76,16 @@ worker:
     pullPolicy: Always
 
 keycloak:
+  # Server image: built from THIS repo (dockerfiles/keycloak/) by the manual
+  # "Build Keycloak image" workflow. Moved out of aggregator-dpg because Keycloak
+  # is a common service serving both DPGs.
   image:
-    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-server
+    repository: ghcr.io/blue-dots-economy/keycloak-server
     tag: "develop"
     pullPolicy: IfNotPresent
+  # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
+  # because its brand strings come from that repo's config/<network>/keycloak.env.
+  # Tag is <network>[-<brand>]-<branch>.
   themesInit:
     image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
     tag: blue_dot-develop

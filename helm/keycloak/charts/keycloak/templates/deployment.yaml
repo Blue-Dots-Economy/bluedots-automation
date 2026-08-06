@@ -44,7 +44,9 @@ spec:
       initContainers:
         {{- with .Values.themesInit }}
         - name: themes-init
-          # Per-network theme image (built by `infra/keycloak/build-theme-image.sh`).
+          # Per-network theme image (built by aggregator-dpg's
+          # `infra/keycloak/build-theme-image.sh`; the SERVER image below is built
+          # from this repo's dockerfiles/keycloak/).
           # Copies `/custom/otp` into the shared emptyDir and exits.
           # Image hash uniquely identifies the brand baked into
           # theme.properties, so swapping networks = swapping the tag.

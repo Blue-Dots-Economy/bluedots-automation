@@ -793,7 +793,7 @@ prerequisites this plan cannot satisfy from here:
 | Dependency | Where | Blocks |
 |---|---|---|
 | Every existing signals user provisioned into the shared realm | signals-dpg operational task | P6 step 15. `dual` was removed, so there is no just-in-time backfill during cutover — the flip is all-or-nothing. |
-| Keycloak image containing **both** `otp` and `signals` themes plus the OTP SPI jar | image build | P1.6. Signals logins render the aggregator brand otherwise. The image is currently built from the aggregator repo (`aggregator-dpg/keycloak:26.5.5-aggregator`) — decide whether that build moves into this repo's `dockerfiles/`, now that this repo owns deployment. |
+| ~~Keycloak image containing **both** `otp` and `signals` themes plus the OTP SPI jar~~ | ~~image build~~ | **RESOLVED.** The **server** image (OTP SPI jar) moved into this repo as `dockerfiles/keycloak/`, published as `ghcr.io/<owner>/keycloak-server` by the manual *Build Keycloak image* workflow — it is network-agnostic and serves both DPGs, so releasing it from one consumer was backwards. The **themes** (`otp` + `signals`, both already in one image) stay in aggregator-dpg, because the brand strings baked into `theme.properties` come from that repo's `config/<network>[/<brand>]/keycloak.env`; they reach the pod via the `themes-init` initContainer, not the server image. So P1.6's requirement is met by the themes-init image, not by the server image. |
 | A named owner for this repo's realm artefact | this repo | P5.2. Someone has to run the re-merge when either app repo's Keycloak setup changes. |
 | `partialImport` round-trip verified on a database copy | this repo, pre-migration | P6 Path A. Do not trust it untested on a live realm. |
 
