@@ -387,6 +387,25 @@ api:
     NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
     NOTIFICATION_FROM_EMAIL: *smtp_user
     SERVED_DOMAINS: *signals_served_domains
+    # ── Auth provider ──────────────────────────────────
+    # `betterauth` or `keycloak` ONLY. `dual` was REMOVED in signals #456 and the
+    # api has a startup guard that rejects it with an actionable message.
+    #
+    # DEFAULTS TO betterauth ON PURPOSE. There is no mixed mode, so flipping this
+    # cuts every user over at once and fails closed if anything is wrong. Leave it
+    # here until the environment has been checked:
+    #   - the signals api + ui images contain the Keycloak migration (signals #456)
+    #   - the shared realm exists with the signals-ui and signals-api clients
+    #   - the signals-api client secret authenticates against the token endpoint
+    #   - signals-ui's redirect URIs resolve to the SIGNALS hosts, not the Keycloak
+    #     host, or every login fails invalid_redirect_uri
+    #   - EVERY existing better-auth user is already provisioned into the realm.
+    #     There is no just-in-time backfill during cutover (plan §12).
+    #
+    # Rollback is a one-line revert plus a redeploy: better-auth's code stays in
+    # the image and its passwordless OTP needs no `account` row, so a
+    # Keycloak-created user can still sign in after a flip back.
+    AUTH_PROVIDER: "betterauth"
     # ── Self-signup gate + login channels ──────────────
     SELF_SIGNUP_MODE: "gated"           # gated (default) = public self-signup OFF; allowed = on
     LOGIN_CHANNELS: "phone,email"       # allowed OTP channels; subset of: email, phone
