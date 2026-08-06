@@ -1,0 +1,68 @@
+{{- if .Values.migrate.enabled }}
+{{/*
+  Hook-scoped env for the migrate Job.
+
+  The migrate Job runs as a pre-install/pre-upgrade hook, because the schema must
+  exist before any signals pod starts: the api queries `items` during boot
+  (app.ts -> refreshConsumedSchemas) and signals-search-embeddings fails fast if
+  item_search is absent. But a pre-install hook cannot consume the api's own
+  ConfigMap/Secret — those are ordinary release resources, and Helm creates them
+  in the install phase, i.e. *after* pre-install hooks have run. Wiring the Job
+  to them makes it die with CreateContainerConfigError.
+
+  So render a hook-scoped copy carrying only the keys migrate.mjs and the
+  provision step actually read. Populated from the same .Values as the api
+  ConfigMap/Secret (and, for POSTGRES_HOST/PORT, in the same key precedence), so
+  they cannot drift from what the api itself is given.
+
+  When secrets.create=false the operator supplies an existingSecret that already
+  exists independently of the release, so no hook copy is needed — the Job
+  references it directly (see the dpg-api.migrateEnvFrom helper).
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dpg-api.fullname" . }}-migrate-env
+  labels:
+    {{- include "dpg-api.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  {{- range $key, $val := .Values.config }}
+  {{- if and (hasPrefix "POSTGRES_" $key) (ne ($val | toString) "") }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
+  {{- end }}
+  {{- if .Values.postgres.enabled }}
+  POSTGRES_HOST: {{ .Values.postgres.host | quote }}
+  POSTGRES_PORT: {{ .Values.postgres.port | quote }}
+  {{- end }}
+{{- if .Values.secrets.create }}
+---
+{{/*
+  Keys the Job reads: migrate.mjs needs the POSTGRES_* connection vars; the
+  provision container additionally seeds the aggregator-dpg and signals-search
+  service apikeys. Add to this list if the Job ever needs another secret.
+*/}}
+{{- $needed := list "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "AGGREGATOR_DPG_API_KEY" "SIGNALS_SEARCH_API_KEY" }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "dpg-api.fullname" . }}-migrate-env
+  labels:
+    {{- include "dpg-api.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-3"
+    "helm.sh/hook-delete-policy": before-hook-creation
+type: Opaque
+stringData:
+  {{- range $key, $val := .Values.secrets.data }}
+  {{- if and (has $key $needed) (ne ($val | toString) "") }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
