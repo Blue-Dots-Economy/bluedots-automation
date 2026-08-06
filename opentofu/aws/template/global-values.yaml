@@ -341,6 +341,11 @@ api:
 ui:
   apiUpstream: "http://signals-api:2742"
   uiVariant: "signals"
+  # Use when splitting a unified domain into per-participant domains.
+  # blockedHosts:
+  #   - "legacy.domain.com"
+  # blockedHostStatusCode: 410      # 404 if you'd rather not advertise the retirement
+  # blockedHostMessage: ""          # blank -> built-in default
   runtimeConfig:
     VITE_DEFAULT_VIEW_MODE: "map"
     VITE_MAP_PROVIDER: "google-maps"
