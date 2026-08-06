@@ -69,3 +69,24 @@ Secret name to mount as envFrom.
 {{- include "dpg-api.fullname" . }}
 {{- end }}
 {{- end }}
+
+{{/*
+envFrom sources for the migrate Job. The Job runs as a pre-install/pre-upgrade
+hook, so it must NOT reference the api's own ConfigMap/Secret — those are
+ordinary release resources that Helm creates only after pre-install hooks have
+finished, so the Job would fail with CreateContainerConfigError. Point it at the
+hook-scoped copies from migrate-env.yaml instead. An operator-supplied
+existingSecret already exists outside the release, so that one is consumed
+directly.
+*/}}
+{{- define "dpg-api.migrateEnvFrom" -}}
+- configMapRef:
+    name: {{ include "dpg-api.fullname" . }}-migrate-env
+{{- if .Values.secrets.create }}
+- secretRef:
+    name: {{ include "dpg-api.fullname" . }}-migrate-env
+{{- else }}
+- secretRef:
+    name: {{ include "dpg-api.secretName" . }}
+{{- end }}
+{{- end }}
