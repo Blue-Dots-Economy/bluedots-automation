@@ -114,6 +114,33 @@ hosts at the **Kong proxy** LoadBalancer created by `common-services`:
 kubectl -n common-services get svc common-services-kong-proxy   # external hostname
 ```
 
+### Retiring a host from end users (`ui.blockedHosts`)
+
+When a unified domain is split into per-participant domains, the old host usually
+**cannot simply be dropped** from `_signals_public_hosts`: it is the identity
+already written into every existing row's `item_instance_url` / `item_schema_url`
+and advertised as `instances[].instance_url` in network.json, and the api
+re-fetches those schema URLs over it at boot (`cacheReferencedItemSchemas`).
+Remove it and existing profiles stop matching — connects fail with
+`INVALID_TARGET_INSTANCE`.
+
+Instead keep it in `_signals_public_hosts` (first, so it stays `API_DOMAIN`) and
+list it under `ui.blockedHosts`:
+
+```yaml
+ui:
+  blockedHosts:
+    - "legacy.example.com"
+  # blockedHostStatusCode: 410   # default; 404 to not advertise the retirement
+```
+
+The host is dropped from the **ui** ingress rules and answered by a Kong
+`request-termination` route (`blocked-host-ingress.yaml`), while the api ingress
+keeps serving `/api` on it — Kong matches the more specific path first. It stays
+in the ui ingress `tls` list, so the shared multi-SAN cert still covers it.
+Set directly under `ui:` (not an anchor), so no `apply_tf_output_file` is needed
+— just redeploy signals.
+
 ## Prerequisites
 
 - Kubernetes 1.24+ (EKS provisioned via `opentofu/aws/template`)
