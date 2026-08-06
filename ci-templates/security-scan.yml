@@ -1,0 +1,184 @@
+﻿# Reusable security-scan workflow (Sec-Audit A2 / signals-dpg#300)
+#
+# Home: commit this to the org `.github` repo at
+#   .github/workflows/security-scan.yml
+# then call it from each repo with a thin caller (see CALLERS.md).
+#
+# What it does (all findings upload as SARIF -> the calling repo's Security tab):
+#   * Trivy `fs`  — dependency CVEs (walks every lockfile: pnpm-lock/uv.lock/etc.),
+#                   IaC/Dockerfile misconfig, and filesystem secret detection.
+#   * Native audit (belt-and-suspenders, report-only text): `pnpm audit` (ts) /
+#                   `uv-secure` (python, reads uv.lock directly). Trivy is the
+#                   SARIF source; this just surfaces advisories Trivy's DB may lag on.
+#   * Trivy `image` — per-image CVE scan for any refs passed in `image-refs`.
+#   * gitleaks (optional) — git-history/diff secret scan via the OSS image
+#                   (no marketplace-action org licence needed).
+#
+# NOT here: CodeQL. Enable it once per repo via *default setup* instead —
+#   gh api -X PUT repos/Blue-Dots-Economy/<repo>/code-scanning/default-setup \
+#     -f state=configured -f query_suite=default
+# (covers TS + Python, auto-uploads SARIF, zero workflow to maintain).
+#
+# Failure policy: `block: false` (default) = report-only, never fails the build
+# (Phase A: populate the triage backlog). Flip to `block: true` after Phase-B
+# triage to fail on HIGH/CRITICAL.
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: "ts | python | iac | none — selects the native audit step"
+        type: string
+        default: "ts"
+      node-version:
+        description: "Node version for `pnpm audit` (ts repos)"
+        type: string
+        default: "24"
+      audit-level:
+        description: "pnpm audit threshold (low|moderate|high|critical)"
+        type: string
+        default: "high"
+      image-refs:
+        description: 'JSON array of image refs to pull + scan, e.g. ''["ghcr.io/org/api:sha-abc","ghcr.io/org/ui:sha-abc"]''. Empty = skip image scan.'
+        type: string
+        default: ""
+      registry:
+        description: "Registry to log into for image-refs pulls"
+        type: string
+        default: "ghcr.io"
+      run-gitleaks:
+        description: "Run the gitleaks git-secret scan"
+        type: boolean
+        default: false
+      block:
+        description: "true = fail the build on HIGH/CRITICAL; false = report-only"
+        type: boolean
+        default: false
+      trivy-action-version:
+        description: "Pinned aquasecurity/trivy-action ref"
+        type: string
+        default: "0.28.0"
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF to code-scanning
+  packages: read           # required to pull image-refs from GHCR
+
+jobs:
+  # ── Dependencies + IaC misconfig + filesystem secrets (the workhorse) ──────
+  trivy-fs:
+    name: trivy-fs (deps + misconfig + secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@${{ inputs.trivy-action-version }}
+        with:
+          scan-type: fs
+          scanners: vuln,misconfig,secret
+          format: sarif
+          output: trivy-fs.sarif
+          # Report-only: capture everything, never fail. Block mode: fail on H/C.
+          severity: ${{ inputs.block && 'HIGH,CRITICAL' || 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL' }}
+          exit-code: ${{ inputs.block && '1' || '0' }}
+          ignore-unfixed: false
+
+      - name: Upload Trivy fs SARIF
+        if: always()   # still publish findings even when block mode fails the step
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  # ── Native dependency audit (report-only, no SARIF) ────────────────────────
+  deps-audit:
+    name: deps-audit (${{ inputs.language }})
+    if: inputs.language == 'ts' || inputs.language == 'python'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # TypeScript: pnpm audit reads the lockfile (no install needed).
+      - name: Setup Node + pnpm
+        if: inputs.language == 'ts'
+        uses: actions/setup-node@v4
+        with: { node-version: "${{ inputs.node-version }}" }
+      - name: pnpm audit
+        if: inputs.language == 'ts'
+        run: |
+          corepack enable
+          # Report-only regardless of `block`: Trivy is the gate; this is signal.
+          pnpm audit --audit-level="${{ inputs.audit-level }}" || \
+            echo "::warning::pnpm audit reported advisories (see log; Trivy fs is the SARIF gate)"
+
+      # Python (uv): audit uv.lock DIRECTLY — no requirements-export shim.
+      # uv-secure reads uv.lock natively and, given multiple lockfiles, covers
+      # the whole multi-package layout (ai-diffusion = 12 uv packages) in one call.
+      - name: Setup uv
+        if: inputs.language == 'python'
+        uses: astral-sh/setup-uv@v5
+      - name: uv-secure (uv.lock audit)
+        if: inputs.language == 'python'
+        run: |
+          # Every uv.lock in the tree; uv-secure is uv-native (reads the lock, not a pip export).
+          LOCKS="$(git ls-files 'uv.lock' '**/uv.lock')"
+          uvx uv-secure $LOCKS || \
+            echo "::warning::uv-secure reported advisories (Trivy fs, which also reads uv.lock, is the SARIF gate)"
+
+  # ── Container image scan (only if image-refs provided) ─────────────────────
+  image-scan:
+    name: trivy-image
+    if: inputs.image-refs != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(inputs.image-refs) }}
+    steps:
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@${{ inputs.trivy-action-version }}
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: ${{ inputs.block && 'HIGH,CRITICAL' || 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL' }}
+          exit-code: ${{ inputs.block && '1' || '0' }}
+
+      - name: Upload Trivy image SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          # Distinct category per image so alerts don't overwrite each other.
+          category: trivy-image-${{ strategy.job-index }}
+
+  # ── Git secret scan (optional; complements native GitHub secret scanning) ──
+  gitleaks:
+    name: gitleaks
+    if: inputs.run-gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # full history so gitleaks scans past commits
+      - name: gitleaks (OSS image — no marketplace licence)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
+            detect --source=/repo --redact \
+            --report-format sarif --report-path /repo/gitleaks.sarif \
+            --exit-code ${{ inputs.block && '1' || '0' }} || true
+      - name: Upload gitleaks SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
