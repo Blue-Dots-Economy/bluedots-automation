@@ -54,10 +54,6 @@ on:
         description: "true = fail the build on HIGH/CRITICAL; false = report-only"
         type: boolean
         default: false
-      trivy-action-version:
-        description: "Pinned aquasecurity/trivy-action ref"
-        type: string
-        default: "0.28.0"
 
 permissions:
   contents: read
@@ -74,7 +70,11 @@ jobs:
         with: { fetch-depth: 0 }
 
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@${{ inputs.trivy-action-version }}
+        # Ref is pinned literally, NOT taken from an input: GitHub resolves a step's
+        # `uses:` before the job starts, so no `${{ }}` context is available here.
+        # Bump this line to upgrade; Dependabot's `github-actions` ecosystem will
+        # open the PRs for new releases once it's enabled on this repo.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scanners: vuln,misconfig,secret
@@ -145,7 +145,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@${{ inputs.trivy-action-version }}
+        # Ref is pinned literally, NOT taken from an input: GitHub resolves a step's
+        # `uses:` before the job starts, so no `${{ }}` context is available here.
+        # Bump this line to upgrade; Dependabot's `github-actions` ecosystem will
+        # open the PRs for new releases once it's enabled on this repo.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: ${{ matrix.image }}
