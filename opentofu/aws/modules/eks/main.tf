@@ -1,6 +1,6 @@
 locals {
   environment_name = "${var.building_block}-${var.environment}"
-  cluster_name     = "${local.environment_name}-cluster"
+  cluster_name     = "${local.environment_name}"
 
   common_tags = {
     Environment   = var.environment
