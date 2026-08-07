@@ -38,6 +38,7 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write   # Trivy image scan uploads SARIF to code-scanning
 
 concurrency:
   group: keycloak-image-${{ github.ref }}
@@ -100,6 +101,39 @@ jobs:
           cache-from: type=gha,scope=keycloak-server
           cache-to: type=gha,mode=max,scope=keycloak-server
           provenance: false
+
+      # Image scanning (Sec-Audit A2 — Blue-Dots-Economy/signals-dpg#300).
+      # An upstream Keycloak base plus a bundled OTP authenticator jar — almost
+      # nothing in it is described by this repo, so the image scan is the only
+      # inventory of its contents. Keycloak fronts authentication for both DPGs,
+      # which makes this the highest-consequence image in the estate.
+      #
+      # Gated on `inputs.push`, the same condition that drives the build's `push:`.
+      # A `digest != ''` guard would look equivalent but is not reliable: with some
+      # buildx drivers the digest output is populated even for a build-only run, and
+      # Trivy would then try to pull an image that was never published
+      # (MANIFEST_UNKNOWN). Build-only runs therefore skip the scan cleanly.
+      #
+      # Addressed by digest rather than by tag: this image is tagged by BRANCH
+      # (see the header note), so `:develop` is deliberately mutable — the digest
+      # ties each result to the exact artifact that run produced.
+      - name: Trivy image scan
+        if: ${{ inputs.push }}
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.ref.outputs.image }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"   # Phase A: report-only, never fails the build
+
+      - name: Upload Trivy image SARIF
+        if: ${{ always() && inputs.push }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-keycloak-server
 
       - name: Summary
         run: |
