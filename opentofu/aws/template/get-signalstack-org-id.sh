@@ -9,12 +9,15 @@
 #
 #   in-cluster  the Bitnami Postgres StatefulSet in common-services. The query
 #               runs via `kubectl exec` into that pod, as it always has.
-#   RDS         a managed Postgres reachable only from inside the VPC. There is
-#               no pod to exec into — with RDS the Bitnami subchart is disabled
-#               (postgresql.enabled=false), so the StatefulSet does not exist.
-#               The query instead runs in a short-lived pod scheduled onto an EKS
-#               node, which is the same path the common-services postgres
-#               bootstrap Job uses to reach RDS.
+#   RDS         a managed Postgres reachable only from inside the VPC. With RDS
+#               the Bitnami subchart is disabled (postgresql.enabled=false), so
+#               that StatefulSet does not exist. The query runs instead via
+#               `kubectl exec` into the rds-relay pod's `psql` sidecar — the same
+#               shape as the in-cluster path, just a different pod.
+#
+#               If rds-relay is not deployed (rdsRelay.enabled=false), it falls
+#               back to a short-lived pod scheduled onto an EKS node. Same route
+#               the common-services postgresBootstrap Job uses to reach RDS.
 #
 # The backend is chosen from the host the signals API is ACTUALLY configured
 # with, not from what happens to be deployed. That distinction matters during a
@@ -31,7 +34,7 @@
 #
 # Overridable via env: SIGNALS_NS, CS_NS, CS_REL, PG_STS, PG_HOST, PG_PORT,
 #                      PG_DB, PG_USER, PG_SECRET, PG_SECRET_KEY, ORG_TYPE,
-#                      PSQL_IMAGE
+#                      RELAY_NS, RELAY_DEPLOY, RELAY_CONTAINER, PSQL_IMAGE
 #
 # Set PG_HOST explicitly to bypass detection entirely (e.g. to query a database
 # the charts do not know about).
@@ -47,8 +50,13 @@ PG_USER="${PG_USER:-dpg}"
 PG_SECRET="${PG_SECRET:-dpg-postgres}"
 PG_SECRET_KEY="${PG_SECRET_KEY:-password}"
 ORG_TYPE="${ORG_TYPE:-network_service}"
-# Matches common-services' postgresBootstrap.image, so RDS deployments already
-# pull this image and no new dependency is introduced.
+# rds-relay carries a psql sidecar; see helm/common-services/templates/rds-relay.yaml.
+# Its Deployment is pinned to the `default` namespace by that template.
+RELAY_NS="${RELAY_NS:-default}"
+RELAY_DEPLOY="${RELAY_DEPLOY:-rds-relay}"
+RELAY_CONTAINER="${RELAY_CONTAINER:-psql}"
+# Only used by the no-relay fallback. Matches common-services'
+# postgresBootstrap.image, so nothing new is pulled.
 PSQL_IMAGE="${PSQL_IMAGE:-postgres:17-alpine}"
 
 log() { echo "$*" >&2; }
@@ -106,14 +114,39 @@ if [[ "$MODE" == "in-cluster" ]]; then
   ORG_ID="$(kubectl -n "$CS_NS" exec "statefulset/$PG_STS" -- \
     env PGPASSWORD="$PGPW" psql -U "$PG_USER" -d "$PG_DB" -tAc "$SQL" 2>/dev/null \
     | tr -d '[:space:]')"
+elif kubectl -n "$RELAY_NS" get "deployment/$RELAY_DEPLOY" >/dev/null 2>&1; then
+  # RDS, relay present: exec into the relay's psql sidecar. Same shape as the
+  # in-cluster branch above — a long-lived pod that already has a psql client
+  # and sits on an EKS node whose SG the RDS security group allows on 5432.
+  log "route: exec into $RELAY_NS/$RELAY_DEPLOY ($RELAY_CONTAINER container)"
+
+  PGPW="$(kubectl -n "$SIGNALS_NS" get secret "$PG_SECRET" \
+            -o jsonpath="{.data.$PG_SECRET_KEY}" 2>/dev/null | base64 -d || true)"
+  [[ -n "$PGPW" ]] || { log "ERROR: could not read $PG_SECRET/$PG_SECRET_KEY in ns $SIGNALS_NS"; exit 1; }
+
+  # The password is passed as exec env rather than a secretKeyRef because the
+  # relay lives in RELAY_NS while the secret lives in SIGNALS_NS, and Kubernetes
+  # has no cross-namespace secret reference. Same exposure as the in-cluster
+  # branch, which has always done this.
+  if ! ORG_ID="$(kubectl -n "$RELAY_NS" exec "deployment/$RELAY_DEPLOY" -c "$RELAY_CONTAINER" -- \
+      env PGPASSWORD="$PGPW" PGCONNECT_TIMEOUT=10 \
+      psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -tAc "$SQL" 2>&1 \
+      | tr -d '[:space:]')"; then
+    log "ERROR: query failed via the relay: $ORG_ID"
+    log "       If the sidecar is missing, this relay predates it — redeploy"
+    log "       common-services, or set rdsRelay.psql.enabled=true."
+    exit 1
+  fi
 else
-  # RDS: no pod to exec into. Run psql in a throwaway pod on an EKS node, whose
-  # SG is the one the RDS security group allows on 5432.
+  # RDS, no relay deployed (rdsRelay.enabled=false): fall back to a throwaway
+  # pod on an EKS node — the same route the postgresBootstrap Job takes.
   #
   # The pod runs in SIGNALS_NS so it can read the password via secretKeyRef —
   # the password is therefore never placed in the pod spec, an argv, or this
   # shell. (Secrets cannot be referenced across namespaces, which is why this
   # does not run in CS_NS.)
+  log "route: throwaway pod in $SIGNALS_NS (no $RELAY_DEPLOY deployment in $RELAY_NS)"
+
   kubectl -n "$SIGNALS_NS" get secret "$PG_SECRET" >/dev/null 2>&1 \
     || { log "ERROR: secret $PG_SECRET not found in ns $SIGNALS_NS"; exit 1; }
 
@@ -151,10 +184,15 @@ if [[ -z "$ORG_ID" ]]; then
   if [[ "$MODE" == "rds" ]]; then
     log "       RDS notes: the app roles/databases must already exist (the"
     log "       common-services postgresBootstrap Job creates them), and the pod"
-    log "       must be able to reach $PG_HOST:$PG_PORT. Re-run with the psql"
-    log "       command by hand if you need the connection error:"
-    log "         kubectl -n $SIGNALS_NS run pgtest --rm -it --restart=Never \\"
-    log "           --image=$PSQL_IMAGE -- psql -h $PG_HOST -U $PG_USER -d $PG_DB"
+    log "       must be able to reach $PG_HOST:$PG_PORT. To see the raw"
+    log "       connection error, run psql by hand:"
+    if kubectl -n "$RELAY_NS" get "deployment/$RELAY_DEPLOY" >/dev/null 2>&1; then
+      log "         kubectl -n $RELAY_NS exec -it deployment/$RELAY_DEPLOY -c $RELAY_CONTAINER -- \\"
+      log "           psql -h $PG_HOST -U $PG_USER -d $PG_DB"
+    else
+      log "         kubectl -n $SIGNALS_NS run pgtest --rm -it --restart=Never \\"
+      log "           --image=$PSQL_IMAGE -- psql -h $PG_HOST -U $PG_USER -d $PG_DB"
+    fi
   fi
   exit 1
 fi
