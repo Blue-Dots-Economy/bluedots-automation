@@ -60,20 +60,48 @@ created next to it and users are copied across.
 - The `unified-keycloak` changes are deployed from this branch.
 - `kubectl` context points at the target cluster. **Confirm before every step:**
   `kubectl config current-context`.
-- The Keycloak image tag in `<env>/global-images.yaml` was built **after** the
-  `signals` login theme landed. The shared realm points `signals-ui` at a
-  `signals` theme; an older image renders signals logins with the aggregator
-  brand. Verify before starting, not after.
+- The **theme** image tag in `<env>/global-images.yaml` ships **both** the `otp`
+  and `signals` themes. This is a hard gate, not a cosmetic one: the shared realm
+  points `signals-ui` at `login_theme: signals`, and if that theme is absent
+  Keycloak falls back to its **built-in** theme — *not* to `otp`. The built-in
+  theme has no `login-otp-identifier.ftl` (it ships with the OTP SPI), so the
+  render throws `TemplateNotFoundException` and **every signals login returns
+  HTTP 500**. The aggregator is unaffected, because it uses the realm default, so
+  the failure looks signals-specific rather than like a Keycloak problem.
+
+  Confirm on the running pod before you rely on it — the image tag alone does not
+  tell you, since older images staged only `otp`:
+
+  ```bash
+  kubectl -n common-services exec <keycloak-pod> -c keycloak -- ls /opt/keycloak/themes
+  # must list BOTH: otp  signals
+  ```
+
+  Current images log `themes staged at /shared: otp, signals` from the
+  `themes-init` initContainer and fail loudly if either is missing.
 - Four new secrets exist in the generated `global-secrets.yaml`:
 
   ```bash
   cd opentofu/aws/<env>
-  bash install.sh apply_tf_output_file
+  # ORDER MATTERS. output-file reads random_passwords' outputs; if the four new
+  # random_ids do not exist yet, terragrunt falls back to the mock_outputs in
+  # _common/output-file.hcl and writes literal 0000... strings into
+  # global-secrets.yaml as real client secrets.
+  bash install.sh plan_tf_random_passwords     # GATE: "4 to add, 0 to change, 0 to destroy"
+  AUTO_APPROVE=1 bash install.sh apply_tf_random_passwords
+  AUTO_APPROVE=1 bash install.sh apply_tf_output_file
   grep -E "signalsApiSecret|signalstackClientSecret|voiceDpgSignalsSecret|keycloakPostgresPassword" global-secrets.yaml
   ```
 
+  Treat the plan output as a stop condition. Anything other than `0 to change`
+  means the tfstate is not what you think it is, and applying would regenerate
+  **every** password in it — including the live RDS master. Investigate first.
+
   All four must be non-empty. The chart **fails the render** on any empty one
-  rather than installing an empty client secret — deliberate.
+  rather than installing an empty client secret — deliberate. Two paired values
+  must also match, or the realm and the apps disagree:
+  `credentials.keycloakPassword` == `secrets.keycloakPostgresPassword`, and
+  `secrets.signalsApiSecret` == signals' `api.secrets.data.KEYCLOAK_API_CLIENT_SECRET`.
 
 ## 4. Environment values to set
 
@@ -94,6 +122,21 @@ Static check before touching the cluster:
 cd opentofu/aws/<env>
 bash install.sh lint        # realm assertions + helm lint all five charts
 ```
+
+> **`install.sh lint` currently cannot pass.** `scripts/assert-realm.sh` defaults
+> to a *relative* realm path but `install.sh` invokes it from the environment
+> directory, so it always exits with `realm file not found`. Worse, the function
+> runs under `set -e`, so it aborts there and the **aggregator chart is never
+> linted**. Until the script is passed an absolute path, run the two halves by
+> hand from the repo root:
+>
+> ```bash
+> cd <repo-root>
+> bash scripts/assert-realm.sh
+> for c in monitoring common-services signals keycloak aggregator; do
+>   helm lint helm/$c --set global.existingSecret=lint-only --set global.keycloakRealm=lint-only
+> done
+> ```
 
 ### 4.1 Object names
 
@@ -219,12 +262,45 @@ Tokens expire in ~60s — re-run `TOKEN=$(tok)` on any 401.
 
 This is the rollback for anything that goes wrong at the database level.
 
+**In-cluster Postgres:**
+
 ```bash
 kubectl -n common-services exec deploy/<postgres-deploy> -- \
   pg_dump -U postgres keycloak > keycloak-pre-unify-$(date +%F).sql
 ```
 
-Confirm the file is non-empty and mentions `user_entity` before continuing.
+**Managed Postgres (RDS)** — most environments. There is no Postgres deployment
+to `exec` into, and a local `pg_dump` older than the server refuses outright
+("aborting because of server version mismatch"), so run a throwaway client pod
+inside the VPC:
+
+```bash
+PGPW=$(kubectl -n common-services get secret data-postgres \
+        -o jsonpath='{.data.postgres-password}' | base64 -d)
+PGHOST=<rds-endpoint>            # global-cloud-values.yaml -> postgres.host
+
+kubectl -n common-services run pgdump --rm -i --restart=Never \
+  --image=postgres:17-alpine --quiet --env="PGPASSWORD=$PGPW" --command -- \
+  pg_dump -h "$PGHOST" -U postgres -d keycloak -Fc > keycloak-pre-unify-$(date +%F).dump
+```
+
+Match the image's major version to the server. Verify the dump rather than
+trusting its size — a custom-format dump starts with `PGDMP`, and `pg_restore -l`
+must list its contents (again from a matching-version client):
+
+```bash
+head -c 5 keycloak-pre-unify-*.dump          # PGDMP
+kubectl -n common-services run pgcheck --rm -i --restart=Never \
+  --image=postgres:17-alpine --quiet --command -- \
+  sh -c 'cat > /tmp/d && pg_restore -l /tmp/d | grep -c "^[0-9]"' \
+  < keycloak-pre-unify-*.dump
+```
+
+For a plain-SQL dump, confirm it is non-empty and mentions `user_entity`.
+
+**Store it outside the repo.** `.gitignore` matches `global-secrets.yaml`
+exactly, not `*.dump` or `*.bak-*`, so a dump left in `opentofu/aws/<env>/` is
+one `git add -A` away from being committed.
 
 ### 6.3 Record the baseline
 
@@ -448,8 +524,28 @@ kubectl -n aggregator get cm aggregator-global -o jsonpath='{.data.OIDC_ISSUER}'
 ```
 
 **Login theme.** Open an aggregator login page and a signals login page — they must
-render *different* brands. Both showing the aggregator brand means the Keycloak
-image predates the `signals` theme (§3).
+render *different* brands. The failure mode is **not** subtle: a theme image that
+ships only `otp` makes the signals page return **HTTP 500**, because Keycloak
+falls back to the built-in theme, which lacks the OTP SPI's templates (§3). The
+aggregator page keeps working throughout.
+
+```bash
+A="https://<kc-host>/auth/realms/$REALM/protocol/openid-connect/auth"
+for c in "signals-ui|https://<signals-host>/auth/callback" \
+         "aggregator-portal|https://<aggregator-host>/api/auth/callback"; do
+  printf '%-18s ' "${c%%|*}"
+  curl -s -o /tmp/p -w 'http=%{http_code}  ' --max-time 20 -G "$A" \
+    --data-urlencode "client_id=${c%%|*}" --data-urlencode "response_type=code" \
+    --data-urlencode "scope=openid" --data-urlencode "redirect_uri=${c##*|}"
+  grep -oE '/resources/[^/]+/login/[a-z-]+' /tmp/p | head -1
+done
+# expect: signals-ui -> 200 .../login/signals ; aggregator-portal -> 200 .../login/otp
+```
+
+**Redirect isolation.** One realm serves both DPGs, so confirm neither client can
+redirect into the other's hosts: `signals-ui` with a signals host → 302/200, with
+an aggregator or arbitrary host → 400 `invalid_redirect_uri`, and the reverse for
+`aggregator-portal`.
 
 **End-to-end login.** A real approved coordinator completes OTP login, reaches the
 portal, and `/profile` renders. `403 MISSING_AGGREGATOR_ID` means the
