@@ -254,10 +254,12 @@ ORG_ID=$(./get-signalstack-org-id.sh)        # prints the network_service org id
 echo "$ORG_ID"                               # e.g. org_59102d50-...
 
 # Works against in-cluster Postgres and RDS alike — it detects which one the
-# signals API is pointed at and picks the right route (exec into the StatefulSet,
-# or a throwaway psql pod for RDS, which is only reachable from inside the VPC).
-# It logs the host and backend it chose to stderr; stdout stays the bare id.
-# Override detection with PG_HOST=... if you need a different database.
+# signals API is pointed at and execs into the matching pod: the Postgres
+# StatefulSet in-cluster, or rds-relay's `psql` sidecar (ns `default`) for RDS,
+# which is only reachable from inside the VPC. With no relay deployed it falls
+# back to a throwaway psql pod.
+# It logs the host, backend and route it chose to stderr; stdout stays the bare
+# id. Override detection with PG_HOST=... if you need a different database.
 
 # 2. set it in global-values.yaml:
 #    global:
