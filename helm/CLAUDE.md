@@ -35,7 +35,7 @@ Resource requests/limits (Kong `replicaCount: 2`, cert-manager, Redis, `postgres
 
 ## actingOrgId — a manual step between signals and aggregator
 
-`aggregator` values' `global.signalstack.actingOrgId` only exists **after** the signals migrate-job seeds the `organization` table. After deploying signals, run `./get-signalstack-org-id.sh` (queries shared Postgres for the `network_service` org id), set it in the aggregator config, then deploy aggregator. Skip it and aggregator login fails with `SIGNALSTACK_ORG_NOT_REGISTERED`. This is why the deploy order (signals before aggregator) is strict, not just conventional.
+`aggregator` values' `global.signalstack.actingOrgId` only exists **after** the signals migrate-job seeds the `organization` table. After deploying signals, run `./get-signalstack-org-id.sh` (queries shared Postgres for the `network_service` org id), set it in the aggregator config, then deploy aggregator. The script handles **both backends**: it reads the host from the signals API's own ConfigMap, then either execs into the in-cluster Postgres StatefulSet or — when that host is RDS, where the Bitnami subchart is disabled and no such pod exists — runs psql in a throwaway pod on an EKS node (the same route the `postgresBootstrap` Job takes to reach RDS). It keys off the API's configured host rather than which Postgres happens to be deployed, so a half-migrated cluster can't silently return a stale id from the old database. Skip it and aggregator login fails with `SIGNALSTACK_ORG_NOT_REGISTERED`. This is why the deploy order (signals before aggregator) is strict, not just conventional.
 
 ## Signals schema — applied from the api image (no vendored `schema.sql`)
 
