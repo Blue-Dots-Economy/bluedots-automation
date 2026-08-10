@@ -65,6 +65,19 @@ ingress:
   tlsSecret: ""               # cert-manager secret, e.g. signals-ui-tls
   clusterIssuer: ""           # e.g. letsencrypt-prod
   plugin: ""                  # KongClusterPlugin tier, e.g. rl-signals-ui
+  # Kong route-level protocol restriction: only accept https, and 301-redirect
+  # a plain-http request to https instead of erroring (GITHUB-ISSUES #10).
+  # No-op unless className is "kong".
+  forceSSLRedirect: true
+  # HSTS via a per-chart KongPlugin (response-transformer), referenced
+  # alongside `plugin` above through the ingress's konghq.com/plugins
+  # annotation — see templates/kong-hsts-plugin.yaml. No-op unless
+  # className is "kong".
+  hsts:
+    enabled: true
+    maxAge: 31536000           # 1 year
+    includeSubDomains: true
+    preload: true
 
 # Host-routed served binding. Maps request Host -> VITE_SERVED_BINDINGS so a
 # single instance behaves as the matching per-domain portal. Empty -> static
