@@ -69,7 +69,8 @@ bash install.sh apply_tf_bastion         # bring up just the bastion (ignores ba
 ### Application Deployment (Helm)
 
 ```bash
-export GHCR_PAT=ghp_xxx                   # read:packages token; needed for image pulls
+# images are public by default; for private ones:
+export IMAGES_PUBLIC=false                # and export GHCR_PAT=ghp_xxx
 bash install.sh deploy_all_services       # preflight → ns+secrets → monitoring → common-services → signals → aggregator → fix_acme_issuer_uri
 bash install.sh create_namespaces_and_secrets   # namespaces + ghcr-pull secret in each
 bash install.sh deploy_monitoring
@@ -130,7 +131,7 @@ When you open a PR, include an **In Plain Terms** section in the description: a 
 | `helm` | Kubernetes deployments | v3.12+ |
 | `bash` | runs `install.sh` | 4.x+ |
 
-`yq` is **no longer required** (per-chart value slicing was removed). Also need: AWS creds with VPC/EKS/IAM/S3 rights; a GHCR `read:packages` token (`GHCR_PAT`); DNS control to point public hosts at the Kong proxy LoadBalancer (`kubectl -n common-services get svc common-services-kong-proxy`).
+`yq` is **no longer required** (per-chart value slicing was removed). Also need: AWS creds with VPC/EKS/IAM/S3 rights; a GHCR `read:packages` token (`GHCR_PAT`) only if an image is private, with `IMAGES_PUBLIC=false` (default `true` = no pull secret); DNS control to point public hosts at the Kong proxy LoadBalancer (`kubectl -n common-services get svc common-services-kong-proxy`).
 
 ---
 
