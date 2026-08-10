@@ -168,6 +168,25 @@ read_anchor() { # <file> <anchor-name>
 # Callers pass raw.githubusercontent.com URLs; when GH_TOKEN is set we transparently
 # rewrite each to the authenticated GitHub Contents API endpoint (raw content) so the
 # same call sites work against a private repo.
+#
+# Timeouts are not optional here. raw.githubusercontent.com resolves to several
+# IPs and any one of them can be black-holed from a given network; curl then
+# waits out the TCP SYN retransmission (10-15s) before trying the next. With five
+# sequential fetches per deploy that turns into minutes of a silent stall in the
+# middle of `deploy_signals`. --connect-timeout caps each attempt and --retry
+# moves on, so a dead IP costs seconds instead of minutes.
+# Overridable: FETCH_CONNECT_TIMEOUT, FETCH_MAX_TIME, FETCH_RETRIES.
+CURL_CONNECT_TIMEOUT="${FETCH_CONNECT_TIMEOUT:-5}"   # per-attempt TCP connect cap
+CURL_MAX_TIME="${FETCH_MAX_TIME:-60}"                # whole-request cap (colleges-ka.json is ~570KB)
+CURL_RETRIES="${FETCH_RETRIES:-3}"
+CURL_OPTS=(
+  --connect-timeout "$CURL_CONNECT_TIMEOUT"
+  --max-time "$CURL_MAX_TIME"
+  --retry "$CURL_RETRIES"
+  --retry-connrefused
+  --retry-delay 1
+)
+
 try_fetch() { # <dest> <url>...
   local dest="$1"; shift
   local url fetch_url ok
@@ -177,9 +196,9 @@ try_fetch() { # <dest> <url>...
       fetch_url="https://api.github.com/repos/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/contents/${BASH_REMATCH[4]}?ref=${BASH_REMATCH[3]}"
     fi
     if [ -n "$GH_TOKEN" ]; then
-      ok=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github.raw" "$fetch_url" -o "$dest" 2>/dev/null && echo y || echo n)
+      ok=$(curl -fsSL "${CURL_OPTS[@]}" -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github.raw" "$fetch_url" -o "$dest" 2>/dev/null && echo y || echo n)
     else
-      ok=$(curl -fsSL "$fetch_url" -o "$dest" 2>/dev/null && echo y || echo n)
+      ok=$(curl -fsSL "${CURL_OPTS[@]}" "$fetch_url" -o "$dest" 2>/dev/null && echo y || echo n)
     fi
     if [ "$ok" = y ] && [ -s "$dest" ]; then
       echo "  <- ${url}"
