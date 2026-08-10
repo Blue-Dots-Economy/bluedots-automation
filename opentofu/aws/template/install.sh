@@ -180,6 +180,9 @@ function destroy_tf_resources() {
     terragrunt run --all destroy
 }
 
+# sha256 of a file; empty string when the file is absent (static renders / CI).
+function _file_sha() { [ -f "$1" ] && sha256sum "$1" | cut -d" " -f1 || true; }
+
 # ═══ helm: namespaces + image-pull secret ═════════════════════════════════════
 # Create the 3 namespaces (common-services, signals, aggregator) if missing.
 function create_namespaces() {
@@ -314,6 +317,16 @@ function deploy_aggregator() {
     # networkSource repo/ref passed here rather than pinned in global-values.yaml, so
     # the aggregator's network.json URL is built from the same repo+ref
     # fetch-configs.sh used for signals — one pin covers both halves.
+    #
+    # The checksums make the api/worker/web pod templates change when the fetched
+    # config does, so helm rolls exactly those pods and nothing when it is
+    # unchanged. subPath mounts don't hot-update and the config is boot-cached, so
+    # something has to trigger the restart; a subchart cannot read the umbrella's
+    # .Files, hence computing it here. This replaces the blanket rollout restart
+    # that used to follow every deploy.
+    local net_ck consent_ck
+    net_ck=$(_file_sha "$AGG_DIR/files/network-config/aggregator.config.yaml")
+    consent_ck=$(_file_sha "$AGG_DIR/files/consent/consent.json")
     helm upgrade --install "$AGG_REL" "$AGG_DIR" \
         -n "$AGG_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
@@ -324,10 +337,9 @@ function deploy_aggregator() {
         $IMAGE_PULL_HELM_ARGS \
         --set "global.networkSource.repo=$SIGNALS_DPG_REPO" \
         --set "global.networkSource.ref=$SIGNALS_DPG_REF" \
+        --set "global.networkConfigChecksum=$net_ck" \
+        --set "global.consentChecksum=$consent_ck" \
         --wait --timeout 10m
-    # subPath mounts don't hot-update and the config is boot-cached in-process, so a
-    # config-only change leaves the Deployment spec untouched and helm rolls nothing.
-    restart_aggregator_config_consumers
 }
 
 # Roll the workloads that subPath-mount the {release}-network-config /
@@ -336,6 +348,10 @@ function deploy_aggregator() {
 # Non-fatal by design: this runs under `set -euo pipefail` as the last statement in
 # deploy_aggregator, so propagating a slow rollout would abort deploy_all_services
 # and skip the steps after it (fix_acme_issuer_uri). Failures warn and return 0.
+# Manual escape hatch. deploy_aggregator no longer calls this: the
+# checksum/network-config and checksum/consent annotations make helm roll the
+# affected pods itself. Use it after a plain `helm upgrade` that did not pass
+# the checksum globals, or to force a reload.
 function restart_aggregator_config_consumers() {
     local dep failed=""
     echo "Restarting aggregator config consumers (subPath mounts don't hot-update)"

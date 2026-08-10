@@ -28,6 +28,10 @@ spec:
         {{- include "worker.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # worker subPath-mounts the umbrella network-config ConfigMap only.
+        {{- with (.Values.global | default dict).networkConfigChecksum }}
+        checksum/network-config: {{ . }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "worker.serviceAccountName" . }}
       {{- include "worker.imagePullSecrets" . | nindent 6 }}

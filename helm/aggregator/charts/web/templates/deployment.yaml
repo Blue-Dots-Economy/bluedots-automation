@@ -26,6 +26,10 @@ spec:
         {{- include "web.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        # web subPath-mounts the umbrella consent ConfigMap only.
+        {{- with (.Values.global | default dict).consentChecksum }}
+        checksum/consent: {{ . }}
+        {{- end }}
     spec:
       {{- include "web.imagePullSecrets" . | nindent 6 }}
       {{- include "web.hostAliases" . | nindent 6 }}
