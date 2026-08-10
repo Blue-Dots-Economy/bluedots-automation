@@ -321,7 +321,13 @@ api:
     # ── Self-signup gate + login channels ──────────────
     SELF_SIGNUP_MODE: "gated"           # gated (default) = public self-signup OFF; allowed = on
     LOGIN_CHANNELS: "phone,email"       # allowed OTP channels; subset of: email, phone
-    PEER_AUTH_MODE: "permissive"
+    # enforced (recommended for production) requires a valid inter-instance
+    # HMAC token on every peer request; permissive only warns on a missing one.
+    # INSTANCE_SHARED_SECRET is already mandatory in Signals-DPG's own config
+    # schema, so every environment must have it set before switching this —
+    # the remaining risk when flipping to enforced is peer secret *mismatch*
+    # across instances in the same network, not a missing secret.
+    PEER_AUTH_MODE: "enforced"
     SUPPORT_EMAIL: *support_email          # contact-form emails go here (sender must be SPF/DMARC authorized)
     CONSENT_SUPPORT_EMAIL: "hello@bluedotseconomy.org"  # rendered into T&C/Privacy/Grievances consent copy at load
     PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
