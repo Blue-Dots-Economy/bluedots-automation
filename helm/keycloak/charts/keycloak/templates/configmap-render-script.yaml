@@ -91,6 +91,13 @@ data:
         command -v jq >/dev/null 2>&1 || apk add --no-cache jq >/dev/null
         origins=$(printf '%s' "$SIGNALS_ORIGINS" \
           | tr ',' '\n' | sed '/^[[:space:]]*$/d' | jq -R . | jq -s .)
+        # post.logout.redirect.uris is matched EXACTLY — no trailing-slash
+        # normalisation. `<origin>/*` covers `/`, `/auth/login` and any future
+        # path; the bare origin stays because the wildcard does not match it.
+        # Emitting only <origin> and <origin>/auth/login rejected the `<origin>/`
+        # the signals UI actually sends, which surfaces as a failed LOGIN even
+        # though the event log says LOGOUT_ERROR. Not a widening of trust:
+        # redirectUris is already <origin>/* and a logout carries no token.
         jq --argjson o "$origins" '
           .clients = [
             .clients[]
@@ -98,7 +105,7 @@ data:
                   .redirectUris = ($o | map(. + "/*"))
                 | .webOrigins   = $o
                 | .attributes."post.logout.redirect.uris" =
-                    ([ $o[] | ., (. + "/auth/login") ] | join("##"))
+                    ([ $o[] | ., (. + "/*") ] | join("##"))
               else . end
           ]' "$dst" > "$dst.tmp" && mv "$dst.tmp" "$dst"
         echo "signals-ui origins set to: $SIGNALS_ORIGINS"
