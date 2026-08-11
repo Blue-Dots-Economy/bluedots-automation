@@ -51,8 +51,9 @@ helm version --short
 
 - An **AWS account** with credentials that can create VPC/EKS/IAM/S3 and an S3
   bucket for tofu remote state.
-- A **GitHub PAT** with `read:packages` scope (`GHCR_PAT`) — the charts pull
-  images from `ghcr.io`.
+- A **GitHub PAT** with `read:packages` scope (`GHCR_PAT`) — only if any image
+  is private, in which case also set `IMAGES_PUBLIC=false`. The default is
+  `true`: no `ghcr-pull` Secret is created and the charts reference none.
 - **DNS control** for the public host names (set after the LoadBalancer is up —
   see step 7).
 

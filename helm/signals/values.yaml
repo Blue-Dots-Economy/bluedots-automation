@@ -8,6 +8,10 @@
 # Global — values Helm propagates to every subchart's .Values.global.
 # -----------------------------------------------------------------------------
 global:
+  # Pull secrets for every subchart. install.sh clears this unless
+  # IMAGES_PUBLIC=false.
+  imagePullSecrets:
+    - name: ghcr-pull
   # Public FQDN shared by /api (signals-api) and / (signals-ui). The api/ui
   # ingress templates read this. UPDATE per environment via the overlay.
   publicHost: dpg.example.com
@@ -36,12 +40,6 @@ images:
     repository: vinodbbhorge/notification-service
     tag: "latest"             # branch tag emitted by build-images.yaml; override per environment.
     pullPolicy: IfNotPresent
-
-# Pull secrets shared by api/ui.
-# Source: either pre-created Secret OR rendered via templates/ghcr-pull-secret.yaml
-# (toggle via `imagePullSecret.create=true` below).
-imagePullSecrets: &image_pull_secrets
-  - name: ghcr-pull
 
 # ─── Image pull Secret (optional, renders templates/ghcr-pull-secret.yaml) ──
 # Default: pre-create the Secret out-of-band; chart only references it.
@@ -137,7 +135,6 @@ credentials:
 
 api:
   image: *api_image
-  imagePullSecrets: *image_pull_secrets
   resources: *api_resources
   secrets: *api_secrets
 
@@ -230,7 +227,6 @@ api:
 
 ui:
   image: *ui_image
-  imagePullSecrets: *image_pull_secrets
   resources: *ui_resources
 
   # nginx in the UI pod reverse-proxies /api/* to this upstream.
@@ -289,7 +285,6 @@ ui:
 notification-service:
   enabled: true
   image: *notification_service_image
-  imagePullSecrets: *image_pull_secrets
   resources: *notification_service_resources
   secrets: *notification_service_secrets
 
@@ -348,7 +343,6 @@ notification-service:
 # (signals-values.yaml.tfpl) into the dpg-search-secrets Secret.
 search-embeddings:
   enabled: true
-  imagePullSecrets: *image_pull_secrets
   embeddings:
     # TEI warmup/inference batch ceiling. bge-m3 on CPU (fp32) OOMs at the TEI
     # default 16384 even at 8Gi; 4096 is safe for short search texts. Lower
@@ -358,7 +352,6 @@ search-embeddings:
 
 search:
   enabled: true
-  imagePullSecrets: *image_pull_secrets
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local
   redis:
@@ -397,7 +390,6 @@ search:
 # databaseUrl via --set at install time — never commit it.
 s3-export:
   enabled: false
-  imagePullSecrets: *image_pull_secrets
   s3:
     bucket: signals-export
     region: ap-south-1

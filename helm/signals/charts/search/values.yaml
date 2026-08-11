@@ -4,8 +4,7 @@ image:
   repository: ghcr.io/blue-dots-economy/signals-search
   tag: "sha-48a3c65"
   pullPolicy: Always
-imagePullSecrets:
-  - name: ghcr-pull
+imagePullSecrets: []
 worker:
   replicaCount: 1
   resources: { requests: { cpu: 100m, memory: 384Mi }, limits: { cpu: 1, memory: 1Gi } }
