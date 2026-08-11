@@ -17,6 +17,22 @@ _signals_host_bindings: &signals_host_bindings ""
 
 _aggregator_host: &aggregator_host "aggregator.domain.com"
 _grafana_host:    &grafana_host    "monitoring.domain.com"
+# ── Keycloak's own hostname ────────────────────────────────────────────────────
+# Keycloak's own neutral domain, so users from EITHER DPG log in here instead of
+# at the aggregator's address. Empty = keep serving Keycloak at
+# <aggregator_host>/auth (the legacy shared-host arrangement).
+#
+# THIS VALUE IS THE ISSUER: it becomes KC_HOSTNAME, the auth Ingress host and the
+# `iss` claim, so changing it invalidates every session and the three releases
+# (keycloak, aggregator, signals) must be deployed in the same window.
+#
+# Per-environment — one host cannot serve two clusters. Prefer the same zone and
+# shape as the product hosts; a login page on a visibly different domain reads as
+# a phishing smell. Prerequisites: DNS pointing at the Kong proxy LB, and
+# keycloak.ingress.tls enabled below (nothing else owns this SNI). See
+# docs/unified-keycloak-migration-runbook.md §10.2.
+_auth_host: &auth_host ""   # e.g. "<env>-auth.example.com"; empty = share <aggregator_host>/auth
+
 
 _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
 
@@ -237,6 +253,11 @@ global:
     serviceName: keycloak-keycloak
     servicePort: 8080
     internalUrl: ''
+    # Single source of truth for the issuer, read by all three charts: keycloak
+    # (KC_HOSTNAME + its three auth Ingresses), aggregator (OIDC_ISSUER,
+    # KEYCLOAK_URL) and signals (KEYCLOAK_BASE_URL). Unset -> all fall back to
+    # global.publicHost.
+    host: *auth_host
     # Realm name + the public issuer base, for the signals chart. publicBaseUrl is
     # the KEYCLOAK host (i.e. the aggregator host) — NOT a signals host, because
     # the issuer string inside a token is built from it.
@@ -317,13 +338,32 @@ postgres:
   username: keycloak
   database: keycloak
 
-# NOTE there is deliberately no `keycloak:` (subchart) block here for the login
-# rate limit. otp-ratelimit-ingress.yaml resolves it as
+# ── keycloak subchart ─────────────────────────────────────────────────────────
+# This root `keycloak:` key is the SUBCHART of the keycloak release (umbrella
+# `keycloak-platform`, subchart `keycloak`), so keys here land on the subchart's
+# own .Values — which is where `ingress` lives. Ignored by the other releases.
+#
+# STILL NO rate-limit keys here: otp-ratelimit-ingress.yaml resolves the limit as
 #   dig "otpRateLimit" "aggregatorMinute" .Values.loginRateLimit.minute .Values.global
-# so global.otpRateLimit.* above is the live knob and the subchart value is only
-# a fallback for when the global is absent. A duplicate block here would look
+# so global.otpRateLimit.* above is the live knob and a duplicate here would look
 # authoritative, never take effect while the global is set, and silently drift
 # from it. Tune the _otp_rate_limit_enabled / _aggregator_otp_per_minute anchors.
+#
+# TLS has no global equivalent (the subchart value is the only knob) and is
+# REQUIRED once Keycloak has its own hostname, because nothing else owns that
+# SNI. It must stay OFF while sharing <aggregator_host>: that cert belongs to the
+# aggregator's web Ingress in another namespace and tls.secretName is
+# namespace-local, so declaring it there names a missing Secret and Kong serves
+# self-signed for the whole host. See the runbook §10.2.
+keycloak:
+  ingress:
+    # Enable BOTH of these only together with a dedicated _auth_host above.
+    # annotations:
+    #   cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls:
+      enabled: false
+      # secretName omitted -> defaults to <host with dots as dashes>-tls, in the
+      # common-services namespace.
 
 prometheus:
   grafana:
