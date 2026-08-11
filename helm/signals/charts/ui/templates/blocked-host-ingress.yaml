@@ -1,0 +1,62 @@
+{{- $blocked := .Values.blockedHosts | default (list) -}}
+{{- if and .Values.ingress.enabled $blocked }}
+{{- /*
+  Retires a hostname from END USERS while keeping it fully functional for the
+  API. Kong `request-termination` answers the portal catch-all (path /) for each
+  host in ui.blockedHosts; the api subchart's ingress keeps serving /api on the
+  SAME host because Kong matches the more specific path first (the routing fact
+  the otp-ratelimit and keycloak admin-console-block ingresses also rely on).
+
+  Why /api must stay reachable on a retired host: existing rows carry it in
+  items.item_instance_url / item_schema_url, and network.json advertises it as
+  the instance_url for every served domain. On boot the api runs
+  cacheReferencedItemSchemas() -> getOrFetchSchemaByUrl() over each DISTINCT
+  item_schema_url; those URLs carry no `#` fragment, so resolveNetworkItemSchemaUrl
+  returns null and it falls through to a real outbound HTTPS fetch against this
+  host. Browsers on the other portals may also fetch those schema URLs
+  cross-origin (ALLOWED_ORIGINS already covers every public host). Blocking the
+  whole host would break both — silently, since SchemaFetchError is swallowed.
+
+  No `tls:` block here on purpose: the main ui ingress still lists this host in
+  its tls hosts, so the shared multi-SAN cert keeps covering it and Kong can
+  complete the handshake before terminating the request.
+*/ -}}
+{{- $fullName := include "dpg-ui.fullname" . -}}
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ $fullName }}-host-block
+  labels:
+    {{- include "dpg-ui.labels" . | nindent 4 }}
+plugin: request-termination
+config:
+  status_code: {{ .Values.blockedHostStatusCode | default 410 }}
+  message: {{ .Values.blockedHostMessage | default "This address is no longer in service. Please use your participant-specific address." | quote }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-host-block
+  labels:
+    {{- include "dpg-ui.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/plugins: {{ printf "%s-host-block" $fullName | quote }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    {{- range $blocked }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $.Values.service.port }}
+    {{- end }}
+{{- end }}

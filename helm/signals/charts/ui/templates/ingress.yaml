@@ -17,6 +17,30 @@
 */ -}}
 {{- $fullName := include "dpg-ui.fullname" . -}}
 {{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
+{{- /*
+  ui.blockedHosts: hosts that must keep serving /api but NOT the portal — e.g. a
+  legacy unified domain retired from end users while still being the identity
+  embedded in existing rows' item_instance_url / network.json instance_url (which
+  the api dereferences at boot in cacheReferencedItemSchemas). Such a host is
+  dropped from the RULES below and served instead by blocked-host-ingress.yaml,
+  which terminates it. It deliberately stays in the `tls` list so the shared cert
+  keeps its SAN and Kong can still complete the TLS handshake for that SNI.
+
+  Removing it from the rules (rather than layering a second Ingress on the same
+  host+path) is what keeps Kong's routing unambiguous: two routes for the same
+  host at path / have no defined precedence, unlike the more-specific-path
+  pattern the otp-ratelimit / admin-console-block ingresses rely on.
+*/ -}}
+{{- $blocked := .Values.blockedHosts | default (list) -}}
+{{- $ruleHosts := list -}}
+{{- range $hosts }}
+{{- if not (has . $blocked) }}
+{{- $ruleHosts = append $ruleHosts . }}
+{{- end }}
+{{- end }}
+{{- if not $ruleHosts }}
+{{- fail (printf "ui.blockedHosts blocks every host in global.publicHosts (%v) — the portal would be unreachable" $hosts) }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -43,7 +67,7 @@ spec:
       secretName: {{ .Values.ingress.tlsSecret }}
   {{- end }}
   rules:
-    {{- range $hosts }}
+    {{- range $ruleHosts }}
     - host: {{ . | quote }}
       http:
         paths:

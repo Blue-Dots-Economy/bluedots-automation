@@ -74,6 +74,23 @@ ingress:
 # ingresses route them).
 hostBindings: ""
 
+# Hosts retired from END USERS but still required by the API. Each host listed
+# here is dropped from the ui ingress rules and answered by a Kong
+# request-termination route instead (blocked-host-ingress.yaml), while the api
+# subchart keeps serving /api on that same host — Kong matches the more specific
+# path first. Must still appear in global.publicHosts so the api ingress and the
+# shared TLS cert continue to cover it.
+#
+# Use this to retire a legacy unified domain that existing rows still reference
+# in item_instance_url / item_schema_url (the api dereferences those at boot):
+#   blockedHosts:
+#     - dev-signals.example.com
+blockedHosts: []
+# Response Kong returns on a blocked host. 410 Gone states the address is
+# permanently retired; 404 also works if you'd rather not advertise that.
+blockedHostStatusCode: 410
+blockedHostMessage: ""
+
 resources: {}
   # limits:
   #   cpu: 200m

@@ -190,7 +190,9 @@ secrets:
 # DB schema migration Job. A migrate-ddl initContainer runs the api image's
 # db:migrate:deploy (drizzle migrations + raw item/action/event SQL, all shipped
 # in the image); a provision container then upserts the integrating-DPG apikey.
-# Idempotent. Runs as a Helm post-install / post-upgrade hook.
+# Idempotent. Runs as a Helm pre-install / pre-upgrade hook — it must complete
+# before any signals pod starts, because the api queries `items` during boot and
+# signals-search-embeddings fails fast if item_search is missing.
 migrate:
   enabled: true
   image: postgres:16-alpine
