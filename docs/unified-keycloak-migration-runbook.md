@@ -662,6 +662,153 @@ Verify:
 Rollback is setting `AUTH_PROVIDER` back to `betterauth` and redeploying, provided
 no user has been created Keycloak-only since the flip.
 
+### 10.1 Two traps in the user-provisioning prerequisite
+
+Both have been hit in a real migration and neither is fixed in code yet.
+**Read before running the provisioning tool.**
+
+**Trap 1 — the same human can already hold an identity in the shared realm, and
+the migration cannot create a second one.**
+
+The realm is shared, and Keycloak enforces one username/email per realm. If a
+person used both DPGs, the aggregator migration (§6.7) already created their user,
+and the signals tool then reports:
+
+```
+CONFLICT <signals-user-id>  identifiers already held by Keycloak user <aggregator-sub>
+```
+
+There is no automatic resolution. The resolution taken where this occurred was to
+merge the signals row onto the aggregator sub — the right end state (one human,
+one identity, and it satisfies `keycloak user.id == sub == signals user.id`) but a
+**real data migration, not an `UPDATE`**: every FK into signals' `"user"`
+declares only `ON DELETE` behaviour, none is `ON UPDATE CASCADE`, and
+`items_created_by_fk` is `ON DELETE RESTRICT`. So it is
+insert-new-row → repoint children → delete old row, inside one asserted
+transaction, having first freed `user_email_unique`. Note `consent_record.user_id`
+has **no FK at all** — enumerate reference columns from `information_schema`, not
+from the FK graph, or you will miss it.
+
+**Trap 2 — a user who already exists in the realm gets NO signals realm role, and
+`--reconcile` will not tell you.**
+
+`partialImport` skips an already-present user, and skipping means
+`user_to_keycloak.ts` never stamps `signals_participant` / `signals_admin` on
+them. But `KEYCLOAK_REQUIRED_REALM_ROLES` (default
+`signals_participant,signals_admin`) is checked on the human session path, so that
+user **cannot authenticate after the flip** — while the data looks perfectly
+correct.
+
+`--reconcile` does **not** catch this. It asserts id presence and the
+`phoneNumber` attribute only, so it reports
+`RESULT: reconciles 1:1, phone attributes intact. R4 gate is green.` even when the
+population contains such a user. A green gate is not evidence of role coverage.
+
+So after provisioning, and **in addition to** the tool's gate, assert role
+coverage yourself:
+
+```sql
+-- every signals user in the realm must carry a signals realm role
+SELECT count(*) AS missing_signals_role
+FROM user_entity u
+JOIN realm r ON r.id = u.realm_id
+WHERE r.name = '<realm>'
+  AND u.service_account_client_link IS NULL
+  AND u.id IN ( <the signals user ids> )
+  AND NOT EXISTS (
+    SELECT 1 FROM user_role_mapping m
+    JOIN keycloak_role kr ON kr.id = m.role_id
+    WHERE m.user_id = u.id
+      AND kr.name IN ('signals_participant','signals_admin'));
+-- must be 0
+```
+
+Repair with `kcadm.sh add-roles -r <realm> --uid <id> --rolename signals_participant`.
+
+**That repair is a manual, non-declarative grant.** It lives only in the live
+Keycloak database — not in the realm JSON, not in a chart, not in the tool — so it
+is lost on any realm recreate/re-import or Keycloak restore, and re-running the
+migration will not restore it (the user is skipped again). Until the tool grows a
+reconcile-and-repair pass, or `--reconcile` asserts role coverage, treat any
+environment where this was applied as carrying an undocumented-in-code grant and
+re-apply it after a restore.
+
+---
+
+### 10.2 Optional: give Keycloak its own hostname
+
+By default Keycloak is served at `<aggregator-host>/auth`, which means a signals
+user is redirected to the AGGREGATOR's domain to sign in. Setting
+**`global.keycloak.host`** moves it to a neutral domain both DPGs point at.
+Opt-in per environment; leave it unset to keep the shared-host arrangement.
+
+One value, three charts — they must agree or tokens are minted by one host and
+validated against another:
+
+| Chart | Consumes it as |
+|---|---|
+| keycloak | `KC_HOSTNAME` + **all three** auth Ingresses (`keycloak.authHost`) |
+| aggregator | `OIDC_ISSUER`, `KEYCLOAK_URL` (`aggregator.authBaseUrl`, `web.authBaseUrl`) |
+| signals | `KEYCLOAK_BASE_URL` (resolution chain in the api configmap) |
+
+Unset, every chart falls back to `global.publicHost` byte-for-byte, so existing
+environments are unaffected until they opt in.
+
+**Choosing the name.** It must be **per-environment** — each cluster has its own
+Kong LoadBalancer and its own certificate, so one shared `auth.<zone>` cannot
+serve two. Prefer the same zone and the same shape as that environment's product
+hosts (`<env>-auth.<zone>` alongside `<env>-aggregators.<zone>`): a login page on
+a visibly different domain from the app that sent you there reads as a phishing
+smell, even when the redirect is legitimate.
+
+**Four things that are easy to get wrong:**
+
+1. **`PUBLIC_BASE_URL` must NOT move.** All six `__PUBLIC_BASE_URL__` occurrences
+   in `realm.json` are client allow-list entries (redirect URI, web origin,
+   post-logout), never the issuer. Point them at the auth host and
+   `aggregator-portal`'s redirect becomes `https://<auth-host>/api/auth/callback`,
+   which nothing serves — every aggregator login fails `invalid_redirect_uri`.
+
+2. **TLS inverts.** `ingress.tls.enabled` must go from false to **true**, plus a
+   `cert-manager.io/cluster-issuer` annotation. On a SHARED host it must be off:
+   the cert is owned by the aggregator's web Ingress in another namespace, and
+   `tls.secretName` is namespace-local, so declaring it names a non-existent
+   Secret and Kong serves self-signed for the whole host. On a DEDICATED host
+   nothing else owns the SNI, so this release must own the cert — leave TLS off
+   and the new host gets Kong's self-signed default instead.
+
+3. **Three Ingresses pin the host**, not one: `ingress.yaml`,
+   `otp-ratelimit-ingress.yaml`, `admin-console-block-ingress.yaml`. Miss either
+   of the latter two and they fail **OPEN** silently — both are more-specific Kong
+   routes, so a host mismatch means the per-IP OTP limit and the admin-console 403
+   simply stop matching.
+
+4. **DNS first.** The record must resolve to the Kong proxy LoadBalancer before
+   deploying, or cert-manager's HTTP-01 challenge fails and burns Let's Encrypt
+   attempts. `kubectl -n common-services get svc common-services-kong-proxy`.
+
+Sequence — all three releases in one window, because the issuer changes:
+
+```bash
+# <env>/global-values.yaml:
+#   _auth_host: &auth_host "<env>-auth.<zone>"
+#   global.keycloak.host: *auth_host
+#   keycloak.ingress: { annotations: {cert-manager.io/cluster-issuer: letsencrypt-prod},
+#                       tls: {enabled: true} }
+bash install.sh deploy_keycloak
+kubectl -n common-services get certificate      # wait for READY=True
+bash install.sh deploy_aggregator
+bash install.sh deploy_signals
+```
+
+Between the first and the rest, Keycloak mints for the new issuer while the apps
+still expect the old — logins fail in that window, so keep it short.
+
+Afterwards: `https://<aggregator-host>/auth` returns **404** (no Ingress serves it
+any more; the app's own Ingresses are unaffected), and **every session is
+invalidated** because the `iss` string changed. Verify the `iss` claim in a real
+token moved, not just the discovery document — they can differ.
+
 ---
 
 ## 11. Four things that cost a window each
