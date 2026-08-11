@@ -74,17 +74,39 @@ SQL="SELECT id FROM organization WHERE type='${ORG_TYPE}' ORDER BY created_at LI
 if [[ -n "${PG_HOST:-}" ]]; then
   log "postgres host: $PG_HOST (from PG_HOST)"
 else
-  # Name-agnostic: find whichever ConfigMap in the signals ns carries the key,
-  # rather than depending on the api release's fullname.
-  PG_HOST="$(kubectl -n "$SIGNALS_NS" get configmap -o \
+  # Scoped to the API's OWN ConfigMaps by label. An unscoped search would also
+  # match signals-search, which pins the in-cluster host in its chart defaults —
+  # on an RDS deploy `head -n1` could then return the wrong database and the
+  # script would silently answer from it. jsonpath order is not guaranteed, so
+  # picking the first of several was a coin toss.
+  # Distinct values are an error, not something to choose between.
+  _hosts="$(kubectl -n "$SIGNALS_NS" get configmap \
+    -l app.kubernetes.io/name=api -o \
     jsonpath='{range .items[*]}{.data.POSTGRES_HOST}{"\n"}{end}' 2>/dev/null \
-    | grep -v '^$' | head -n1 || true)"
+    | grep -v '^$' | sort -u || true)"
+  if [[ "$(printf '%s' "$_hosts" | grep -c .)" -gt 1 ]]; then
+    log "ERROR: the api ConfigMaps in ns $SIGNALS_NS disagree on POSTGRES_HOST:"
+    log "$(printf '         %s\n' "$_hosts")"
+    log "       Refusing to guess — pass PG_HOST=<host> explicitly."
+    exit 1
+  fi
+  PG_HOST="$_hosts"
 
   if [[ -n "$PG_HOST" ]]; then
     log "postgres host: $PG_HOST (from the signals API ConfigMap)"
   else
-    PG_HOST="$(helm -n "$CS_NS" get values "$CS_REL" -a -o json 2>/dev/null \
-      | sed -n 's/.*"postgres":{[^}]*"host":"\([^"]*\)".*/\1/p' | head -n1 || true)"
+    # Best-effort fallback. Parsed with python3 because `helm get values -o json`
+    # gives no key-order guarantee — the previous sed regex assumed "host" came
+    # first inside "postgres" and would silently mis-parse or miss it otherwise.
+    # Skipped entirely when python3 is absent; the in-cluster default below then
+    # applies, and a wrong guess there fails loudly at connect time rather than
+    # returning an id from the wrong database.
+    if command -v python3 >/dev/null; then
+      PG_HOST="$(helm -n "$CS_NS" get values "$CS_REL" -a -o json 2>/dev/null \
+        | python3 -c 'import sys,json
+try: print((json.load(sys.stdin).get("postgres") or {}).get("host") or "")
+except Exception: print("")' 2>/dev/null || true)"
+    fi
     if [[ -n "$PG_HOST" ]]; then
       log "postgres host: $PG_HOST (from the $CS_REL release values)"
     else
@@ -103,6 +125,15 @@ if [[ "$PG_HOST" == "$PG_STS"* ]] \
 fi
 log "backend: $MODE"
 
+# Relay route requires the psql SIDECAR, not just the Deployment. Checked once
+# here so the branch below and the troubleshooting hint agree on the route.
+RELAY_PSQL_FOUND=""
+if [[ "$MODE" == "rds" ]] && kubectl -n "$RELAY_NS" get "deployment/$RELAY_DEPLOY" \
+     -o jsonpath="{.spec.template.spec.containers[*].name}" 2>/dev/null \
+     | tr ' ' '\n' | grep -qx "$RELAY_CONTAINER"; then
+  RELAY_PSQL_FOUND=yes
+fi
+
 if [[ "$MODE" == "in-cluster" ]]; then
   # Unchanged from the original: exec into the Postgres pod and use its local
   # socket. Kept byte-for-byte so a working in-cluster deploy cannot regress.
@@ -114,10 +145,13 @@ if [[ "$MODE" == "in-cluster" ]]; then
   ORG_ID="$(kubectl -n "$CS_NS" exec "statefulset/$PG_STS" -- \
     env PGPASSWORD="$PGPW" psql -U "$PG_USER" -d "$PG_DB" -tAc "$SQL" 2>/dev/null \
     | tr -d '[:space:]')"
-elif kubectl -n "$RELAY_NS" get "deployment/$RELAY_DEPLOY" >/dev/null 2>&1; then
-  # RDS, relay present: exec into the relay's psql sidecar. Same shape as the
+elif [[ -n "$RELAY_PSQL_FOUND" ]]; then
+  # RDS, relay present WITH the psql sidecar: exec into it. Same shape as the
   # in-cluster branch above — a long-lived pod that already has a psql client
   # and sits on an EKS node whose SG the RDS security group allows on 5432.
+  # Selected on the CONTAINER, not just the Deployment: a relay deployed before
+  # the sidecar existed has no `psql` container, and hard-failing there would be
+  # pointless when the throwaway-pod route below works with no cluster change.
   log "route: exec into $RELAY_NS/$RELAY_DEPLOY ($RELAY_CONTAINER container)"
 
   PGPW="$(kubectl -n "$SIGNALS_NS" get secret "$PG_SECRET" \
@@ -128,13 +162,17 @@ elif kubectl -n "$RELAY_NS" get "deployment/$RELAY_DEPLOY" >/dev/null 2>&1; then
   # relay lives in RELAY_NS while the secret lives in SIGNALS_NS, and Kubernetes
   # has no cross-namespace secret reference. Same exposure as the in-cluster
   # branch, which has always done this.
+  #
+  # stderr goes to a file, NOT into the capture: with `2>&1` any psql notice or
+  # warning would be concatenated into ORG_ID and returned on stdout as if it
+  # were the org id, which the operator then pastes into actingOrgId.
+  _err="$(mktemp)"; trap 'rm -f "$_err"' EXIT
   if ! ORG_ID="$(kubectl -n "$RELAY_NS" exec "deployment/$RELAY_DEPLOY" -c "$RELAY_CONTAINER" -- \
       env PGPASSWORD="$PGPW" PGCONNECT_TIMEOUT=10 \
-      psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -tAc "$SQL" 2>&1 \
+      psql -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" -d "$PG_DB" -tAc "$SQL" 2>"$_err" \
       | tr -d '[:space:]')"; then
-    log "ERROR: query failed via the relay: $ORG_ID"
-    log "       If the sidecar is missing, this relay predates it — redeploy"
-    log "       common-services, or set rdsRelay.psql.enabled=true."
+    log "ERROR: query failed via the relay ($RELAY_NS/$RELAY_DEPLOY):"
+    sed 's/^/         /' "$_err" >&2
     exit 1
   fi
 else
@@ -145,7 +183,12 @@ else
   # the password is therefore never placed in the pod spec, an argv, or this
   # shell. (Secrets cannot be referenced across namespaces, which is why this
   # does not run in CS_NS.)
-  log "route: throwaway pod in $SIGNALS_NS (no $RELAY_DEPLOY deployment in $RELAY_NS)"
+  if kubectl -n "$RELAY_NS" get "deployment/$RELAY_DEPLOY" >/dev/null 2>&1; then
+    log "route: throwaway pod in $SIGNALS_NS ($RELAY_NS/$RELAY_DEPLOY has no"
+    log "       '$RELAY_CONTAINER' container — it predates the sidecar)"
+  else
+    log "route: throwaway pod in $SIGNALS_NS (no $RELAY_DEPLOY deployment in $RELAY_NS)"
+  fi
 
   kubectl -n "$SIGNALS_NS" get secret "$PG_SECRET" >/dev/null 2>&1 \
     || { log "ERROR: secret $PG_SECRET not found in ns $SIGNALS_NS"; exit 1; }
@@ -170,12 +213,24 @@ else
 JSON
 )
   # --rm deletes the pod on exit; --quiet keeps stdout to the query result only.
-  ORG_ID="$(kubectl -n "$SIGNALS_NS" run "$POD" \
-    --rm --attach --restart=Never --quiet \
-    --pod-running-timeout=2m \
-    --image="$PSQL_IMAGE" \
-    --overrides="$OVERRIDES" 2>/dev/null \
-    | tr -d '[:space:]')"
+  #
+  # Guarded with `if !` and stderr kept in a file: as a bare assignment with
+  # 2>/dev/null, any failure here (SG not open, image not pullable,
+  # pod-running-timeout) aborted the whole script via `set -e` with no output at
+  # all, so the troubleshooting block below could never run.
+  _err="$(mktemp)"; trap 'rm -f "$_err"' EXIT
+  if ! ORG_ID="$(kubectl -n "$SIGNALS_NS" run "$POD" \
+      --rm --attach --restart=Never --quiet \
+      --pod-running-timeout=2m \
+      --image="$PSQL_IMAGE" \
+      --overrides="$OVERRIDES" 2>"$_err" \
+      | tr -d '[:space:]')"; then
+    log "ERROR: the throwaway psql pod failed in ns $SIGNALS_NS:"
+    sed 's/^/         /' "$_err" >&2
+    log "       The pod must be able to reach $PG_HOST:$PG_PORT (RDS SG must allow"
+    log "       the EKS nodes) and pull $PSQL_IMAGE."
+    exit 1
+  fi
 fi
 
 if [[ -z "$ORG_ID" ]]; then
@@ -186,7 +241,7 @@ if [[ -z "$ORG_ID" ]]; then
     log "       common-services postgresBootstrap Job creates them), and the pod"
     log "       must be able to reach $PG_HOST:$PG_PORT. To see the raw"
     log "       connection error, run psql by hand:"
-    if kubectl -n "$RELAY_NS" get "deployment/$RELAY_DEPLOY" >/dev/null 2>&1; then
+    if [[ -n "$RELAY_PSQL_FOUND" ]]; then
       log "         kubectl -n $RELAY_NS exec -it deployment/$RELAY_DEPLOY -c $RELAY_CONTAINER -- \\"
       log "           psql -h $PG_HOST -U $PG_USER -d $PG_DB"
     else

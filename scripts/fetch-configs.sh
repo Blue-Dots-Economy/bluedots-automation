@@ -175,36 +175,58 @@ read_anchor() { # <file> <anchor-name>
 # sequential fetches per deploy that turns into minutes of a silent stall in the
 # middle of `deploy_signals`. --connect-timeout caps each attempt and --retry
 # moves on, so a dead IP costs seconds instead of minutes.
-# Overridable: FETCH_CONNECT_TIMEOUT, FETCH_MAX_TIME, FETCH_RETRIES.
+#
+# --retry-max-time is what keeps the retries from making things WORSE: curl treats
+# a --max-time expiry as retryable, so on a genuinely slow link the retries would
+# otherwise multiply it (4 x 60s ≈ 4 min for one file — worse than the stall this
+# was written to fix). --retry-max-time bounds the whole attempt sequence.
+#
+# --speed-limit/--speed-time rather than a tight --max-time: they abort a transfer
+# that has STALLED (under 1 KB/s for 20s) while leaving a slow-but-progressing
+# download alone, so colleges-ka.json (~570KB) is never truncated just for being
+# slow. --max-time stays as a generous absolute backstop.
+# Overridable: FETCH_CONNECT_TIMEOUT, FETCH_MAX_TIME, FETCH_RETRIES,
+#              FETCH_RETRY_MAX_TIME.
 CURL_CONNECT_TIMEOUT="${FETCH_CONNECT_TIMEOUT:-5}"   # per-attempt TCP connect cap
-CURL_MAX_TIME="${FETCH_MAX_TIME:-60}"                # whole-request cap (colleges-ka.json is ~570KB)
+CURL_MAX_TIME="${FETCH_MAX_TIME:-120}"               # absolute backstop per attempt
 CURL_RETRIES="${FETCH_RETRIES:-3}"
+CURL_RETRY_MAX_TIME="${FETCH_RETRY_MAX_TIME:-90}"    # cap on ALL attempts combined
 CURL_OPTS=(
   --connect-timeout "$CURL_CONNECT_TIMEOUT"
   --max-time "$CURL_MAX_TIME"
+  --speed-limit 1024
+  --speed-time 20
   --retry "$CURL_RETRIES"
+  --retry-max-time "$CURL_RETRY_MAX_TIME"
   --retry-connrefused
   --retry-delay 1
 )
 
 try_fetch() { # <dest> <url>...
   local dest="$1"; shift
-  local url fetch_url ok
+  local url fetch_url ok tmp
+  # Download to a temp file and only move it into place on success. curl -o writes
+  # incrementally, so an aborted transfer (timeout, stalled link) would otherwise
+  # leave a TRUNCATED file at $dest that the `-s` non-empty check still accepts —
+  # and a half-written network.json is worse than a missing one.
+  tmp="$(mktemp "${dest}.XXXXXX")"
   for url in "$@"; do
     fetch_url="$url"
     if [ -n "$GH_TOKEN" ] && [[ "$url" =~ ^https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)$ ]]; then
       fetch_url="https://api.github.com/repos/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/contents/${BASH_REMATCH[4]}?ref=${BASH_REMATCH[3]}"
     fi
     if [ -n "$GH_TOKEN" ]; then
-      ok=$(curl -fsSL "${CURL_OPTS[@]}" -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github.raw" "$fetch_url" -o "$dest" 2>/dev/null && echo y || echo n)
+      ok=$(curl -fsSL "${CURL_OPTS[@]}" -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github.raw" "$fetch_url" -o "$tmp" 2>/dev/null && echo y || echo n)
     else
-      ok=$(curl -fsSL "${CURL_OPTS[@]}" "$fetch_url" -o "$dest" 2>/dev/null && echo y || echo n)
+      ok=$(curl -fsSL "${CURL_OPTS[@]}" "$fetch_url" -o "$tmp" 2>/dev/null && echo y || echo n)
     fi
-    if [ "$ok" = y ] && [ -s "$dest" ]; then
+    if [ "$ok" = y ] && [ -s "$tmp" ]; then
+      mv -f "$tmp" "$dest"
       echo "  <- ${url}"
       return 0
     fi
   done
+  rm -f "$tmp"
   echo "ERROR: no candidate URL returned content for ${dest}:" >&2
   printf '       %s\n' "$@" >&2
   return 1

@@ -36,16 +36,6 @@ spec:
         {{- include "api.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        # api subPath-mounts BOTH umbrella ConfigMaps, and subPath mounts never
-        # hot-update. The checksums come from install.sh (a subchart cannot read
-        # the umbrella's .Files), so a config change rolls this pod instead of
-        # needing an out-of-band `kubectl rollout restart`.
-        {{- with (.Values.global | default dict).networkConfigChecksum }}
-        checksum/network-config: {{ . }}
-        {{- end }}
-        {{- with (.Values.global | default dict).consentChecksum }}
-        checksum/consent: {{ . }}
-        {{- end }}
     spec:
       serviceAccountName: {{ include "api.serviceAccountName" . }}
       {{- include "api.imagePullSecrets" . | nindent 6 }}
