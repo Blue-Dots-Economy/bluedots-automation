@@ -1,34 +1,22 @@
 {{- if .Values.ingress.enabled -}}
 {{- /*
-  Template-driven ingress for Keycloak (auth). Routing STRUCTURE fixed here:
-  path /auth, strip-path "false" — Keycloak serves natively under /auth
-  (KC_HTTP_RELATIVE_PATH=/auth). Host comes from global.publicHost.
+  Keycloak's auth Ingress. Path /auth + strip-path "false" are fixed (Keycloak
+  serves natively under KC_HTTP_RELATIVE_PATH=/auth); host is keycloak.authHost.
 
-  TLS IS OFF BY DEFAULT, and that is load-bearing. Keycloak shares the
-  AGGREGATOR's public host, and the certificate for that SNI is owned by the
-  aggregator release's web Ingress — which now lives in a DIFFERENT namespace.
-  Ingress `tls.secretName` is namespace-local (there is no cross-namespace
-  Secret reference), so declaring it here names a Secret that does not exist in
-  common-services. Kong then has an unresolvable certificate for the SNI and
-  serves its DEFAULT SELF-SIGNED cert for the whole host — every browser and
-  every OIDC discovery call fails, including the aggregator's own, even though
-  the aggregator's Secret is present and valid in its namespace.
-
-  This Ingress does not need a `tls:` block at all: Kong's certificate store is
-  keyed by SNI globally, so once any Ingress supplies the cert for this host the
-  route is served over TLS. That is the same arrangement the sibling
-  `-login-ratelimit` Ingress already relies on.
-
-  Set ingress.tls.enabled=true ONLY when this release owns the certificate in
-  its own namespace (i.e. you also add a cert-manager issuer annotation via
-  ingress.annotations). Two Certificates for one hostname also burns the Let's
-  Encrypt duplicate-certificate allowance (5/week).
-
-  NOTE: this Ingress is named after the keycloak subchart (<release>-keycloak),
-  replacing the former parent-template name <release>-auth.
+  TLS depends on whether the host is shared, and the wrong choice breaks TLS for
+  the whole hostname:
+    - SHARED host (global.keycloak.host unset): keep tls.enabled=false. The cert
+      is owned by the aggregator's web Ingress in ANOTHER namespace, and
+      tls.secretName is namespace-local, so declaring it here names a
+      non-existent Secret and Kong serves self-signed for the entire host. Not
+      needed anyway — Kong's cert store is keyed by SNI globally.
+    - DEDICATED host (global.keycloak.host set): tls.enabled=true IS required,
+      plus a cert-manager issuer annotation via ingress.annotations — nothing
+      else owns this SNI.
+  Never let two Certificates target one hostname (LE allows 5 duplicates/week).
 */ -}}
 {{- $svc := include "keycloak.fullname" . -}}
-{{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
+{{- $host := include "keycloak.authHost" . -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

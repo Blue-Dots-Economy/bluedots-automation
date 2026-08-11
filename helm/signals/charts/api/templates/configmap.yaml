@@ -48,11 +48,15 @@ data:
   {{- $realm := $kc.realm | default $gkc.realm | default $g.keycloakRealm }}
   {{- $publicBase := $kc.publicBaseUrl | default $gkc.publicBaseUrl }}
   {{- /*
-    Derive the issuer base the same way keycloak-platform.publicBaseUrl does, so
-    the two cannot drift. NOTE global.publicHost (singular) is the AGGREGATOR /
-    Keycloak host in this repo's overlays; global.publicHosts (plural) is the
-    signals hosts. The issuer must be the former — see the comment above.
+    Issuer base, mirroring the keycloak chart's `keycloak.authHost`. Most
+    specific first: (1) keycloak.publicBaseUrl full-URL override, (2)
+    global.keycloak.host — Keycloak's own domain, (3) global.publicHost — legacy
+    shared host. NOTE publicHost (singular) is the AGGREGATOR host; publicHosts
+    (plural) is the signals hosts, and the issuer is never a signals host.
   */}}
+  {{- if and (not $publicBase) $gkc.host }}
+  {{- $publicBase = printf "%s://%s/auth" ($g.publicProtocol | default "https") $gkc.host }}
+  {{- end }}
   {{- if and (not $publicBase) $g.publicHost }}
   {{- $publicBase = printf "%s://%s/auth" ($g.publicProtocol | default "https") $g.publicHost }}
   {{- end }}
@@ -64,7 +68,7 @@ data:
   */}}
   {{- if eq (.Values.config.AUTH_PROVIDER | default "") "keycloak" }}
   {{- if not $realm }}{{ fail "AUTH_PROVIDER=keycloak but no realm resolved — set global.keycloakRealm (or api.keycloak.realm)" }}{{ end }}
-  {{- if not $publicBase }}{{ fail "AUTH_PROVIDER=keycloak but no issuer resolved — set global.publicHost (or api.keycloak.publicBaseUrl)" }}{{ end }}
+  {{- if not $publicBase }}{{ fail "AUTH_PROVIDER=keycloak but no issuer resolved — set global.keycloak.host (or global.publicHost, or api.keycloak.publicBaseUrl)" }}{{ end }}
   {{- if not $internalBase }}{{ fail "AUTH_PROVIDER=keycloak but no internal Keycloak URL resolved — set global.keycloak.internalBaseUrl" }}{{ end }}
   {{- end }}
   {{- if $realm }}

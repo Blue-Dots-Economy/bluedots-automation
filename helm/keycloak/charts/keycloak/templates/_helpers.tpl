@@ -107,6 +107,19 @@ allowed (signals not deployed) — render-realm.sh warns and keeps the fallback.
 {{- end -}}
 {{- end -}}
 
+{{- /* Keycloak's OWN host — KC_HOSTNAME, the auth Ingresses, and the `iss` claim.
+       Falls back to global.publicHost (the legacy shared-host arrangement).
+       Changing it changes the issuer: move the apps in the same window. */ -}}
+{{- define "keycloak.authHost" -}}
+{{- $kc := .Values.global.keycloak | default dict -}}
+{{- $h := $kc.host | default .Values.global.publicHost -}}
+{{- required "keycloak: no host — set global.keycloak.host (preferred) or global.publicHost" $h -}}
+{{- end -}}
+
+{{- /* The AGGREGATOR APP's base URL, not Keycloak's (name is historical). Feeds
+       __PUBLIC_BASE_URL__, whose every occurrence in realm.json is a client
+       allow-list entry — never the issuer. Point it at the auth host and
+       aggregator-portal's redirect URI breaks. Use keycloak.authHost instead. */ -}}
 {{- define "keycloak.publicBaseUrl" -}}
 {{ .Values.global.publicProtocol }}://{{ .Values.global.publicHost }}
 {{- end -}}

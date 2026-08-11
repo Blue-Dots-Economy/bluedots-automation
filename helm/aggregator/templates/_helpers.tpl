@@ -65,17 +65,28 @@ app.kubernetes.io/instance: {{ $top.Release.Name }}
 {{- end -}}
 
 {{/*
-  OIDC issuer URL (matches what the browser sees).
+  Keycloak's browser-facing base — no longer necessarily this app's own host.
+  Falls back to global.publicHost (the legacy shared-host arrangement). MUST
+  resolve to the same value as the keycloak chart's `keycloak.authHost`, or
+  discovery hits one host while tokens are minted by another.
 */}}
-{{- define "aggregator.oidcIssuer" -}}
-{{ include "aggregator.publicBaseUrl" . }}/auth/realms/{{ .Values.global.keycloakRealm }}
+{{- define "aggregator.authBaseUrl" -}}
+{{- $kc := .Values.global.keycloak | default dict -}}
+{{ .Values.global.publicProtocol }}://{{ $kc.host | default .Values.global.publicHost }}
 {{- end -}}
 
 {{/*
-  Public Keycloak base (e.g. https://portal.example.com/auth).
+  OIDC issuer URL (must match the `iss` claim Keycloak actually mints).
+*/}}
+{{- define "aggregator.oidcIssuer" -}}
+{{ include "aggregator.authBaseUrl" . }}/auth/realms/{{ .Values.global.keycloakRealm }}
+{{- end -}}
+
+{{/*
+  Public Keycloak base (e.g. https://auth.example.com/auth).
 */}}
 {{- define "aggregator.keycloakUrl" -}}
-{{ include "aggregator.publicBaseUrl" . }}/auth
+{{ include "aggregator.authBaseUrl" . }}/auth
 {{- end -}}
 
 {{/*
