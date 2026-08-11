@@ -95,8 +95,11 @@ postgresql:
     repository: blue-dots-economy/postgres-pgvector
     tag: "sha-5d4f334"
     pullPolicy: IfNotPresent
-    # Private GHCR package — attach the ghcr-pull secret or kubelet pulls
-    # anonymously and gets 401 (docker.io Bitnami images didn't need this).
+    # Bitnami reads its OWN pull-secret key here and MERGES it with
+    # global.imagePullSecrets rather than deferring to it — which is why
+    # IMAGES_PUBLIC=true clears both keys, not just the global. Kept for the
+    # private path (IMAGES_PUBLIC=false); the package is public today, so with
+    # the default the charts reference no secret and the pull is anonymous.
     pullSecrets:
       - ghcr-pull
 
