@@ -57,9 +57,14 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          # Guard: fail loudly on a postgres.enabled=false misconfig instead of
-          # migrate.mjs silently falling back to 127.0.0.1.
-          command: ["sh", "-ec", ': "${POSTGRES_HOST:?missing}"; exec node apps/api/scripts/migrate.mjs']
+          # No shell wrapper: the api image is a Docker Hardened Image and ships
+          # no shell, so `sh -ec` fails at container init with
+          # `exec: "sh": executable file not found in $PATH`.
+          # The POSTGRES_HOST guard that used to live here now runs inside
+          # migrate.mjs itself (signals-dpg apps/api/scripts/migrate.mjs) — it
+          # still fails loudly on a postgres.enabled=false misconfig rather than
+          # silently falling back to 127.0.0.1.
+          command: ["node", "apps/api/scripts/migrate.mjs"]
           envFrom:
             {{- include "dpg-api.migrateEnvFrom" . | nindent 12 }}
       containers:
