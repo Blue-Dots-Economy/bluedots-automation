@@ -79,3 +79,20 @@ imagePullSecrets:
 {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end -}}
+
+{{/*
+envFrom sources for the migrate Job's containers: the migrate-env ConfigMap
+plus the matching Secret — the release's own when secrets.create is true,
+otherwise the externally-provided one.
+*/}}
+{{- define "dpg-api.migrateEnvFrom" -}}
+- configMapRef:
+    name: {{ include "dpg-api.fullname" . }}-migrate-env
+{{- if .Values.secrets.create }}
+- secretRef:
+    name: {{ include "dpg-api.fullname" . }}-migrate-env
+{{- else }}
+- secretRef:
+    name: {{ include "dpg-api.secretName" . }}
+{{- end }}
+{{- end -}}
