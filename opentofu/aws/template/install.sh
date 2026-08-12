@@ -34,27 +34,6 @@ AGGREGATOR_DPG_REF="${AGGREGATOR_DPG_REF:-main}"
 # aggregator fetches network.json itself at boot rather than mounting it). Keeping
 # one variable for both is what stops the two halves resolving different schemas.
 SIGNALS_DPG_REPO="${SIGNALS_DPG_REPO:-Blue-Dots-Economy/bluedots-schemas}"
-
-# ── Image pull credentials ────────────────────────────────────────────────────
-# IMAGES_PUBLIC=true (default)  public images; no ghcr-pull Secret is created and
-#   the charts reference none. Two keys are cleared, not one: the Bitnami
-#   postgresql subchart merges its own image.pullSecrets with the global instead
-#   of deferring to it.
-# IMAGES_PUBLIC=false           private images; GHCR_PAT is required and the
-#   ghcr-pull Secret is written into each namespace.
-IMAGES_PUBLIC="${IMAGES_PUBLIC:-true}"
-IMAGE_PULL_HELM_ARGS=""
-if [[ "$IMAGES_PUBLIC" == "true" ]]; then
-    IMAGE_PULL_HELM_ARGS='--set-json global.imagePullSecrets=[] --set-json postgresql.image.pullSecrets=[]'
-    # Loud, because `true` is the DEFAULT and these --set-json flags beat any
-    # pull-secret value from a -f overlay: exporting GHCR_PAT and expecting private
-    # images to work would otherwise fail as ImagePullBackOff with no clue why.
-    if [[ -n "${GHCR_PAT:-}" ]]; then
-        echo "WARNING: GHCR_PAT is set but IMAGES_PUBLIC=true — the PAT is IGNORED." >&2
-        echo "         No ghcr-pull Secret is created and the charts reference none." >&2
-        echo "         For private images: export IMAGES_PUBLIC=false" >&2
-    fi
-fi
 # Source of aggregator.config.yaml — INDEPENDENT of the schemas repo above, because
 # canonical for that file is the aggregator-dpg config/ tree. All four parts are
 # configurable; override any of them to repoint (e.g. at bluedots-schemas once it
@@ -189,25 +168,18 @@ function destroy_tf_resources() {
 }
 
 # ═══ helm: namespaces + image-pull secret ═════════════════════════════════════
-# Create the 3 namespaces (common-services, signals, aggregator) if missing.
-function create_namespaces() {
+# 1) Create the 3 namespaces (common-services, signals, aggregator) if missing,
+#    then write/refresh the `ghcr-pull` docker-registry Secret in each via
+#    rotate-ghcr-pull.sh.
+#
+# Usage:
+#   GHCR_PAT=ghp_xxx bash install.sh create_namespaces_and_secrets   # PAT via env
+#   bash install.sh create_namespaces_and_secrets                    # interactive prompt
+function create_namespaces_and_secrets() {
     echo -e "\nCreating namespaces: $CS_NS $SIGNALS_NS $AGG_NS"
     for ns in "$CS_NS" "$SIGNALS_NS" "$AGG_NS"; do
         kubectl get ns "$ns" >/dev/null 2>&1 || kubectl create ns "$ns"
     done
-}
-
-# Write/refresh the `ghcr-pull` docker-registry Secret in each namespace.
-# No-op when IMAGES_PUBLIC=true. Never deletes an existing Secret.
-#
-# Usage:
-#   GHCR_PAT=ghp_xxx bash install.sh create_image_pull_secret   # PAT via env
-#   bash install.sh create_image_pull_secret                    # interactive prompt
-function create_image_pull_secret() {
-    if [[ "$IMAGES_PUBLIC" == "true" ]]; then
-        echo -e "\nIMAGES_PUBLIC=true — skipping the ghcr-pull secret (images are public)."
-        return 0
-    fi
 
     echo -e "\nCreating ghcr-pull secret in each namespace"
     test -f "$SCRIPT_DIR/rotate-ghcr-pull.sh" || {
@@ -215,12 +187,6 @@ function create_image_pull_secret() {
         exit 1
     }
     bash "$SCRIPT_DIR/rotate-ghcr-pull.sh" "${GHCR_PAT:-}" "$CS_NS" "$SIGNALS_NS" "$AGG_NS"
-}
-
-# Both, in order. Kept because deploy_all_services and the runbooks call it.
-function create_namespaces_and_secrets() {
-    create_namespaces
-    create_image_pull_secret
 }
 
 # ═══ helm: deploy individual services ═════════════════════════════════════════
@@ -236,7 +202,6 @@ function deploy_monitoring() {
         -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_SECRETS" \
-        $IMAGE_PULL_HELM_ARGS \
         --wait --timeout 10m
 }
 
@@ -254,7 +219,6 @@ function deploy_common_services() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
-        $IMAGE_PULL_HELM_ARGS \
         --wait --timeout 5m
 }
 
@@ -311,7 +275,6 @@ function deploy_signals() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
-        $IMAGE_PULL_HELM_ARGS \
         --wait --timeout 10m
 }
 
@@ -329,7 +292,6 @@ function deploy_aggregator() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
-        $IMAGE_PULL_HELM_ARGS \
         --set "global.networkSource.repo=$SIGNALS_DPG_REPO" \
         --set "global.networkSource.ref=$SIGNALS_DPG_REF" \
         --wait --timeout 10m
@@ -535,13 +497,13 @@ function dry_run() {
     fetch_signals_configs
     fetch_aggregator_configs
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
-        -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
 }
 
 # helm --dry-run ONLY signals, with the same -f layering as deploy_signals.
@@ -557,7 +519,7 @@ function dry_run_signals() {
     preflight
     fetch_signals_configs
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────

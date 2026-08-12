@@ -46,7 +46,10 @@ spec:
       # ("error looking up service account ... not found"). Nothing here needs an
       # identity — the Job only talks to Postgres, and image pulls come from the
       # imagePullSecrets declared above, not from the SA.
-      {{- include "dpg-api.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:

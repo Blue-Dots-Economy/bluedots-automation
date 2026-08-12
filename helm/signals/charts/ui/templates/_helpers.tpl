@@ -40,14 +40,3 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
-
-{{/*
-Image pull secrets: the component's own value if set, else
-global.imagePullSecrets. Emits nothing when both are empty.
-*/}}
-{{- define "dpg-ui.imagePullSecrets" -}}
-{{- with (.Values.imagePullSecrets | default (.Values.global | default dict).imagePullSecrets) -}}
-imagePullSecrets:
-{{- toYaml . | nindent 2 }}
-{{- end }}
-{{- end -}}

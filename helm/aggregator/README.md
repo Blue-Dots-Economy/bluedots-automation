@@ -49,7 +49,7 @@ own databases or ingress controller. SMTP is wired to an external relay.
 
 ```bash
 cd opentofu/aws/<env>
-ORG_ID=$(./get-signalstack-org-id.sh)     # reads the shared Postgres (in-cluster or RDS)
+ORG_ID=$(./get-signalstack-org-id.sh)     # reads the shared Postgres
 # set it in your env config (global.signalstack.actingOrgId):
 #   global:
 #     signalstack:
