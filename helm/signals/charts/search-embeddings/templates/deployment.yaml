@@ -20,9 +20,7 @@ spec:
       labels: {{- include "search-embeddings.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "search-embeddings.serviceAccountName" . }}
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets: {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "search-embeddings.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: tei-embeddings
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

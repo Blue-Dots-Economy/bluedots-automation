@@ -51,8 +51,9 @@ helm version --short
 
 - An **AWS account** with credentials that can create VPC/EKS/IAM/S3 and an S3
   bucket for tofu remote state.
-- A **GitHub PAT** with `read:packages` scope (`GHCR_PAT`) — the charts pull
-  images from `ghcr.io`.
+- A **GitHub PAT** with `read:packages` scope (`GHCR_PAT`) — only if any image
+  is private, in which case also set `IMAGES_PUBLIC=false`. The default is
+  `true`: no `ghcr-pull` Secret is created and the charts reference none.
 - **DNS control** for the public host names (set after the LoadBalancer is up —
   see step 7).
 
@@ -252,6 +253,14 @@ from the `_smtp_user` anchor in `global-values.yaml`, not from `secrets.yaml`.
 cd opentofu/aws/<env>
 ORG_ID=$(./get-signalstack-org-id.sh)        # prints the network_service org id
 echo "$ORG_ID"                               # e.g. org_59102d50-...
+
+# Works against in-cluster Postgres and RDS alike — it detects which one the
+# signals API is pointed at and execs into the matching pod: the Postgres
+# StatefulSet in-cluster, or rds-relay's `psql` sidecar (ns `default`) for RDS,
+# which is only reachable from inside the VPC. With no relay deployed it falls
+# back to a throwaway psql pod.
+# It logs the host, backend and route it chose to stderr; stdout stays the bare
+# id. Override detection with PG_HOST=... if you need a different database.
 
 # 2. set it in global-values.yaml:
 #    global:
