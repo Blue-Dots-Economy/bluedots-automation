@@ -35,10 +35,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ include "dpg-api.serviceAccountName" . }}
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{- include "dpg-api.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:
