@@ -162,3 +162,36 @@ resource "aws_s3_bucket_versioning" "this" {
     status = "Enabled"
   }
 }
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Lifecycle — expire campaign PII exports (campaign_export_prefix) after N days so decrypted CSVs are not retained at
+# rest longer than the short-lived download link. Applied to every bucket but scoped by the prefix filter, so it is a
+# no-op on buckets that hold no exports — no need to know which bucket the aggregator writes exports to. On versioned
+# buckets the current version is expired (delete marker) and noncurrent versions are removed a day later so the bytes
+# actually leave. Set campaign_export_expiry_days = 0 to disable.
+# ---------------------------------------------------------------------------------------------------------------------
+resource "aws_s3_bucket_lifecycle_configuration" "campaign_export_expiry" {
+  for_each = var.campaign_export_expiry_days > 0 ? var.buckets : {}
+
+  bucket = aws_s3_bucket.this[each.key].id
+
+  rule {
+    id     = "campaign-export-expiry"
+    status = "Enabled"
+
+    filter {
+      prefix = var.campaign_export_prefix
+    }
+
+    expiration {
+      days = var.campaign_export_expiry_days
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 1
+    }
+  }
+
+  # Versioning must settle before a lifecycle config that references noncurrent versions.
+  depends_on = [aws_s3_bucket_versioning.this]
+}
