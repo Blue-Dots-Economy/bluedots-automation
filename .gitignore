@@ -54,6 +54,7 @@ opentofu/aws/dev/*
 helm/signals/charts/api/files/networks/*.json
 helm/signals/charts/api/files/consent/*.json
 helm/signals/charts/api/files/messages/*.properties
+helm/signals/charts/ui/files/reference/*.json
 helm/aggregator/files/consent/consent.json
 helm/aggregator/files/network-config/aggregator.config.yaml
 
