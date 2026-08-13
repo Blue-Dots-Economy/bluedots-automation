@@ -140,6 +140,20 @@ Consent text/versions ship via ConfigMap so they change with a file edit + rollo
 
 **Support-email placeholder:** consent JSON ships `__SUPPORT_EMAIL__` in its T&C/Privacy/Grievances copy; both renders substitute it at deploy time via Helm `replace` — signals from `.Values.schemas.consentSupportEmail`, aggregator from `.Values.global.consentSupportEmail`, each defaulting to `hello@bluedotseconomy.org`. **Change the value, never the consent content**, so a brand/network switch keeps the right contact.
 
+## Email copy rides the signals consent ConfigMap (optional, per-key)
+
+Per-network email wording (signals-dpg#540) ships the same way consent does and on the **same** `-schemas` ConfigMap, because the api resolves both from `dirname(NETWORK_CONFIG_LOCAL_FILE)`: `/app/schemas/messages.properties` and `/app/schemas/<brand>/messages.properties`. Canonical is `bluedots-schemas` `<network>/messages.properties` (+ `<network>/<brand>/`), fetched by `scripts/fetch-configs.sh signals` into the gitignored `helm/signals/charts/api/files/messages/`.
+
+**It is optional, and that is the whole difference from consent.** The api bundles a complete set of email copy and merges these files **per key** (bundled defaults < `EMAIL_MESSAGES_PATH` < network < brand), so a network with no file — or a `--ref` predating the files — keeps the built-in wording. The fetch is therefore non-fatal (`try_fetch_optional`) and the render uses `with`, not `fail`. Consent has no in-app fallback, which is why it still fails hard.
+
+Three traps:
+
+- **It is keyed off `schemas.consentNetwork`/`consentBrand`, not its own value.** Deliberate: one served network must select consent *and* copy, or a pod could serve one network's consent beside another's emails. Setting `consentNetwork: ""` to fall back to image-baked consent drops the network email copy too.
+- **`items` entries are conditional on the source file, not on the brand value.** An `items` entry naming a ConfigMap key that doesn't exist leaves the volume unmountable and the pod stuck in `ContainerCreating` — so the deployment template gates each entry on the same `Files.Get` the ConfigMap does.
+- **The fetch clears the network's files before fetching.** Rendering keys off file *presence* (there is no values flag to switch copy off), so a leftover from an earlier deploy of a different brand would silently override copy on this one.
+
+No `__SUPPORT_EMAIL__`-style substitution happens here — the copy's own `{{likeThis}}` placeholders are filled by the api at send time, so Helm passes the file through byte-for-byte. The `checksum/schemas` annotation already covers it, so a copy change rolls the api pods. Brand copy is **inert today**: no email send resolves a brand yet, so the file loads and validates at boot but changes no wording.
+
 ## `aggregator.config.yaml` is ConfigMap-delivered — fetched, not vendored
 
 Same freshness model as consent and signals' network.json: `scripts/fetch-configs.sh aggregator` pulls it on every deploy into `helm/aggregator/files/network-config/aggregator.config.yaml` (gitignored), and `templates/network-config-configmap.yaml` renders it into `{release}-network-config`, subPath-mounted into api + worker **over the image-baked copy**. Net effect: update canonical, redeploy, config is live — **no image rebuild**.

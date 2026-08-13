@@ -12,6 +12,8 @@
 #   <network>/network.json
 #   <network>/consent.json
 #   <network>/<brand>/consent.json
+#   <network>/messages.properties
+#   <network>/<brand>/messages.properties
 # (network/brand dir names use underscores, e.g. blue_dot, orange_dot, upsdm).
 #
 # Subcommands:
@@ -20,6 +22,13 @@
 #                 -> helm/signals/charts/api/files/{networks,consent}/
 #               network.json's instance_url is normalized to __PUBLIC_API_URL__
 #               (the token schemas-configmap.yaml substitutes with the real host).
+#               PLUS messages.properties (+ <brand>/messages.properties) — the
+#               per-network email copy (signals-dpg#540)
+#                 -> helm/signals/charts/api/files/messages/
+#               OPTIONAL, unlike consent: the api ships complete bundled email
+#               copy and merges these PER KEY, so a network with no file (or a
+#               ref predating them) keeps the built-in wording instead of
+#               failing the deploy.
 #   aggregator  consent.json (a FULL document) from the aggregator-dpg config tree.
 #               The aggregator's loader requires a top-level {"audiences":…};
 #               bluedots-schemas' <network>/consent.json is the signals document
@@ -109,7 +118,7 @@ GH_TOKEN="${SCHEMAS_PAT:-${GHCR_PAT:-}}"
 # and this whole shim can be deleted.
 SUPPORT_EMAIL_LITERALS="${SUPPORT_EMAIL_LITERALS:-support@onest.network hello@bluedotseconomy.org}"
 
-usage() { sed -n '2,70p' "$0"; }
+usage() { sed -n '2,67p' "$0"; }
 
 # Rewrite any known literal support email in a fetched consent file to the
 # __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
@@ -191,6 +200,21 @@ try_fetch() { # <dest> <url>...
   return 1
 }
 
+# try_fetch for a genuinely OPTIONAL file — one the app has its own fallback for.
+# A miss is not an error: try_fetch's ERROR block is suppressed and we return 1
+# for the caller to report however it likes. The destination is removed on a miss
+# so a stale copy from an earlier deploy (different network/brand) can never be
+# rendered as if it were freshly fetched, and so the chart's Files.Get presence
+# check sees "absent" rather than an empty file.
+try_fetch_optional() { # <dest> <url>...
+  local dest="$1"
+  if try_fetch "$@" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$dest"
+  return 1
+}
+
 TARGET="${1:-}"; shift 2>/dev/null || true
 GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""; COLLEGE_DATASET=""
 CFG_REPO=""; CFG_REF=""; CFG_DIR=""; CFG_FILE=""; CFG_DIR_SET=0
@@ -256,6 +280,41 @@ case "$TARGET" in
       try_fetch "${CONSENT_DIR}/${NETWORK}.${BRAND}.json" "${RAW}/${NETWORK}/${BRAND}/consent.json"
       normalize_support_email "${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
       echo "  brand consent -> ${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
+    fi
+
+    # ── per-network email copy (signals-dpg#540) ──────────────────────────────
+    # <network>/messages.properties (+ <brand>/messages.properties) alongside
+    # consent.json in the schemas repo. Delivered on the SAME ConfigMap as
+    # consent, because the api resolves both from dirname(NETWORK_CONFIG_LOCAL_FILE)
+    # — /app/schemas/messages.properties and /app/schemas/<brand>/messages.properties.
+    #
+    # OPTIONAL, deliberately. The api bundles a COMPLETE set of email copy and
+    # merges these files PER KEY (defaults < EMAIL_MESSAGES_PATH < network <
+    # brand), so a network that ships no file, or a --ref that predates them,
+    # must keep deploying on the built-in wording. That is the opposite of
+    # consent, which has no in-app fallback and so fails the fetch hard.
+    #
+    # Every deploy starts by clearing this network's files: they are rendered on
+    # mere presence (no values flag to switch them off), so a leftover from an
+    # earlier deploy of a different brand would otherwise silently override copy.
+    MESSAGES_DIR="$REPO_ROOT/helm/signals/charts/api/files/messages"
+    mkdir -p "$MESSAGES_DIR"
+    rm -f "${MESSAGES_DIR}/${NETWORK}.properties" "${MESSAGES_DIR}/${NETWORK}."*".properties"
+
+    if try_fetch_optional "${MESSAGES_DIR}/${NETWORK}.properties" \
+      "${RAW}/${NETWORK}/messages.properties"; then
+      echo "  email copy -> ${MESSAGES_DIR}/${NETWORK}.properties"
+    else
+      echo "  email copy: no ${NETWORK}/messages.properties on ${REF} — api keeps its bundled defaults"
+    fi
+
+    if [ -n "$BRAND" ]; then
+      if try_fetch_optional "${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties" \
+        "${RAW}/${NETWORK}/${BRAND}/messages.properties"; then
+        echo "  brand email copy -> ${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties"
+      else
+        echo "  brand email copy: no ${NETWORK}/${BRAND}/messages.properties on ${REF} — network/bundled copy only"
+      fi
     fi
 
     # UI college/institute reference list for the selected region. Lives under
