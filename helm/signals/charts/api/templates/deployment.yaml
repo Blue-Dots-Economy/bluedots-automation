@@ -91,6 +91,22 @@ spec:
               - key: {{ .Values.schemas.consentBrand }}-consent.json
                 path: {{ .Values.schemas.consentBrand }}/consent.json
               {{- end }}
+              {{- /*
+                Per-network email copy, when fetch-configs.sh found one. Listed
+                conditionally on the SOURCE file because an `items` entry for a
+                key the ConfigMap doesn't carry leaves the volume unmountable
+                and the pod stuck in ContainerCreating.
+              */ -}}
+              {{- if .Files.Get (printf "files/messages/%s.properties" .Values.schemas.consentNetwork) }}
+              - key: messages.properties
+                path: messages.properties
+              {{- end }}
+              {{- if .Values.schemas.consentBrand }}
+              {{- if .Files.Get (printf "files/messages/%s.%s.properties" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
+              - key: {{ .Values.schemas.consentBrand }}-messages.properties
+                path: {{ .Values.schemas.consentBrand }}/messages.properties
+              {{- end }}
+              {{- end }}
             {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
