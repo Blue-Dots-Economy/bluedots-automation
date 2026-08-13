@@ -41,6 +41,13 @@
 {{- if not $ruleHosts }}
 {{- fail (printf "ui.blockedHosts blocks every host in global.publicHosts (%v) — the portal would be unreachable" $hosts) }}
 {{- end }}
+{{- $isKong := eq .Values.ingress.className "kong" -}}
+{{- /* konghq.com/plugins takes a comma-separated list — combine the existing
+   rate-limit-tier reference (if any) with this chart's own HSTS plugin (if
+   enabled), rather than clobbering one with the other. */ -}}
+{{- $plugins := list -}}
+{{- if .Values.ingress.plugin }}{{ $plugins = append $plugins .Values.ingress.plugin }}{{ end -}}
+{{- if and $isKong .Values.ingress.hsts.enabled }}{{ $plugins = append $plugins (printf "%s-hsts" $fullName) }}{{ end -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -51,8 +58,14 @@ metadata:
     {{- if .Values.ingress.clusterIssuer }}
     cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}
     {{- end }}
-    {{- if .Values.ingress.plugin }}
-    konghq.com/plugins: {{ .Values.ingress.plugin | quote }}
+    {{- if $plugins }}
+    konghq.com/plugins: {{ join "," $plugins | quote }}
+    {{- end }}
+    {{- if and $isKong .Values.ingress.forceSSLRedirect }}
+    {{- /* Route-level protocol restriction: only match https, and 301-redirect
+       a plain-http request instead of erroring (GITHUB-ISSUES #10). */}}
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: "301"
     {{- end }}
 spec:
   {{- with .Values.ingress.className }}
