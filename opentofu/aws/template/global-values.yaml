@@ -17,8 +17,30 @@ _signals_host_bindings: &signals_host_bindings ""
 
 _aggregator_host: &aggregator_host "aggregator.domain.com"
 _grafana_host:    &grafana_host    "monitoring.domain.com"
+# ── Keycloak's own hostname ────────────────────────────────────────────────────
+# Keycloak's own neutral domain, so users from EITHER DPG log in here instead of
+# at the aggregator's address. Empty = keep serving Keycloak at
+# <aggregator_host>/auth (the legacy shared-host arrangement).
+#
+# THIS VALUE IS THE ISSUER: it becomes KC_HOSTNAME, the auth Ingress host and the
+# `iss` claim, so changing it invalidates every session and the three releases
+# (keycloak, aggregator, signals) must be deployed in the same window.
+#
+# Per-environment — one host cannot serve two clusters. Prefer the same zone and
+# shape as the product hosts; a login page on a visibly different domain reads as
+# a phishing smell. Prerequisites: DNS pointing at the Kong proxy LB, and
+# keycloak.ingress.tls enabled below (nothing else owns this SNI). See
+# docs/unified-keycloak-migration-runbook.md §10.2.
+_auth_host: &auth_host ""   # e.g. "<env>-auth.example.com"; empty = share <aggregator_host>/auth
+
 
 _signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
+
+# Shared Keycloak realm — ONE realm per instance holding BOTH DPGs' clients.
+# Per-instance, derived from the network/domain. There is no literal default in
+# any chart, so this must be set. Changing it on a live instance is a user-visible
+# migration (every session/SSO cookie is invalidated), not a config tweak.
+_keycloak_realm: &keycloak_realm "bluedots"
 
 _network: &network "blue_dot"
 _brand: &brand ""
@@ -221,6 +243,27 @@ global:
   orgHierarchyEnabled: true
 
   publicHost:         *aggregator_host
+
+  # ── Shared Keycloak (the `keycloak` release, common-services namespace) ────
+  # The realm name is consumed by THREE charts — keycloak, aggregator and signals.
+  # They must agree or tokens are validated against the wrong issuer.
+  keycloakRealm: *keycloak_realm
+  keycloak:
+    namespace: common-services
+    serviceName: keycloak-keycloak
+    servicePort: 8080
+    internalUrl: ''
+    # Single source of truth for the issuer, read by all three charts: keycloak
+    # (KC_HOSTNAME + its three auth Ingresses), aggregator (OIDC_ISSUER,
+    # KEYCLOAK_URL) and signals (KEYCLOAK_BASE_URL). Unset -> all fall back to
+    # global.publicHost.
+    host: *auth_host
+    # Realm name + the public issuer base, for the signals chart. publicBaseUrl is
+    # the KEYCLOAK host (i.e. the aggregator host) — NOT a signals host, because
+    # the issuer string inside a token is built from it.
+    realm: *keycloak_realm
+    publicBaseUrl: ''   # leave empty to use https://<aggregator_host>/auth
+    internalBaseUrl: http://keycloak-keycloak.common-services.svc.cluster.local:8080/auth
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
   # Deliver aggregator.config.yaml (network binding, brand strings, domain labels,
@@ -257,6 +300,70 @@ global:
     enabled:          *otp_rate_limit_enabled
     signalsMinute:    *signals_otp_per_minute
     aggregatorMinute: *aggregator_otp_per_minute
+
+# ─── keycloak release (helm/keycloak) ────────────────────────────────────────
+# Shared identity for both DPGs. Deployed between common-services and signals.
+#
+# NESTING RULE, and it is a trap: the keycloak release's chart is the UMBRELLA
+# helm/keycloak, whose subchart is ALSO named `keycloak`. So in this file
+#   <root>.smtp / <root>.postgres  -> the UMBRELLA's own values
+#   keycloak.<key>                 -> the SUBCHART's values
+# Both blocks below used to sit under a single `keycloak:` key, which reads
+# naturally as "the keycloak release" but actually handed them to the SUBCHART,
+# which reads neither — so the umbrella silently kept its chart defaults.
+# Keycloak ran with SMTP_HOST=smtp.example.com and could not deliver a single
+# email OTP, and nothing failed or warned.
+
+# Umbrella-level. Safe as a root key: `.Values.smtp` is read only by
+# helm/keycloak (configmap-global.yaml + job-keycloak-init.yaml), by no other
+# chart this file is layered into.
+smtp:
+  SMTP_HOST: *smtp_host
+  SMTP_PORT: *smtp_port
+  SMTP_FROM: *smtp_user
+  SMTP_FROM_DISPLAY: *smtp_from_display
+  SMTP_SECURE: "false"
+  SMTP_STARTTLS: "true"
+  SMTP_AUTH: "true"
+
+# Umbrella-level. Postgres role Keycloak logs in as. NEW clusters: `keycloak`
+# (created by common-services' bootstrap). EXISTING clusters: set `aggregator` —
+# the keycloak database there is already owned by that role and re-owning a live
+# database is not worth the risk.
+#
+# Root `postgres:` is shared but the keys do not collide: this deep-merges with
+# the RDS `postgres.host` that global-cloud-values.yaml sets, and common-services
+# reads only host/port while the keycloak umbrella reads only these two.
+postgres:
+  username: keycloak
+  database: keycloak
+
+# ── keycloak subchart ─────────────────────────────────────────────────────────
+# This root `keycloak:` key is the SUBCHART of the keycloak release (umbrella
+# `keycloak-platform`, subchart `keycloak`), so keys here land on the subchart's
+# own .Values — which is where `ingress` lives. Ignored by the other releases.
+#
+# STILL NO rate-limit keys here: otp-ratelimit-ingress.yaml resolves the limit as
+#   dig "otpRateLimit" "aggregatorMinute" .Values.loginRateLimit.minute .Values.global
+# so global.otpRateLimit.* above is the live knob and a duplicate here would look
+# authoritative, never take effect while the global is set, and silently drift
+# from it. Tune the _otp_rate_limit_enabled / _aggregator_otp_per_minute anchors.
+#
+# TLS has no global equivalent (the subchart value is the only knob) and is
+# REQUIRED once Keycloak has its own hostname, because nothing else owns that
+# SNI. It must stay OFF while sharing <aggregator_host>: that cert belongs to the
+# aggregator's web Ingress in another namespace and tls.secretName is
+# namespace-local, so declaring it there names a missing Secret and Kong serves
+# self-signed for the whole host. See the runbook §10.2.
+keycloak:
+  ingress:
+    # Enable BOTH of these only together with a dedicated _auth_host above.
+    # annotations:
+    #   cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls:
+      enabled: false
+      # secretName omitted -> defaults to <host with dots as dashes>-tls, in the
+      # common-services namespace.
 
 prometheus:
   grafana:
@@ -320,6 +427,25 @@ api:
     NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
     NOTIFICATION_FROM_EMAIL: *smtp_user
     SERVED_DOMAINS: *signals_served_domains
+    # ── Auth provider ──────────────────────────────────
+    # `betterauth` or `keycloak` ONLY. `dual` was REMOVED in signals #456 and the
+    # api has a startup guard that rejects it with an actionable message.
+    #
+    # SET TO keycloak. There is no mixed mode, so this cuts every user over at
+    # once and fails closed if anything is wrong. Before deploying this value to
+    # an environment, confirm ALL of the following for that environment:
+    #   - the signals api + ui images contain the Keycloak migration (signals #456)
+    #   - the shared realm exists with the signals-ui and signals-api clients
+    #   - the signals-api client secret authenticates against the token endpoint
+    #   - signals-ui's redirect URIs resolve to the SIGNALS hosts, not the Keycloak
+    #     host, or every login fails invalid_redirect_uri
+    #   - EVERY existing better-auth user is already provisioned into the realm.
+    #     There is no just-in-time backfill during cutover (plan §12).
+    #
+    # Rollback is a one-line revert plus a redeploy: better-auth's code stays in
+    # the image and its passwordless OTP needs no `account` row, so a
+    # Keycloak-created user can still sign in after a flip back.
+    AUTH_PROVIDER: "keycloak"
     # ── Self-signup gate + login channels ──────────────
     SELF_SIGNUP_MODE: "gated"           # gated (default) = public self-signup OFF; allowed = on
     LOGIN_CHANNELS: "phone,email"       # allowed OTP channels; subset of: email, phone

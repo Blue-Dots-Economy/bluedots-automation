@@ -18,3 +18,65 @@ data:
   REDIS_HOST: {{ .Values.redis.host | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
   {{- end }}
+  {{- /*
+    ── Shared Keycloak coordinates ──────────────────────────────────────────
+    DERIVED, not free-form values, because they must match the `keycloak` release
+    exactly — one realm holds both DPGs' clients, so a mismatch here means signals
+    validates tokens against the wrong issuer and every login fails.
+
+    KEYCLOAK_BASE_URL is the PUBLIC issuer base and must be the host Keycloak is
+    served on (the aggregator/Keycloak host, global.keycloak.publicHost), NOT one
+    of signals' own hosts — the issuer string in a token is what signals compares
+    against. KEYCLOAK_INTERNAL_BASE_URL is the in-cluster address used for JWKS +
+    Admin REST so those calls do not egress through Kong.
+
+    Emitted unconditionally so the wiring is present and inert while
+    AUTH_PROVIDER=betterauth; signals only asserts these once the flag moves.
+
+    RESOLUTION ORDER — this used to read .Values.keycloak alone, which the
+    umbrella declares as empty strings and nothing ever populated: Helm exposes
+    globals to a subchart at .Values.global.*, it does NOT map global.keycloak.*
+    onto a subchart's own .Values.keycloak. So the realm and issuer silently
+    rendered as NOTHING while only the umbrella's hardcoded internalBaseUrl
+    landed. Harmless under betterauth, but it fails the AUTH_PROVIDER=keycloak
+    cutover — which has no `dual` mode, so it fails closed for every user at
+    once. Hence an explicit chain, most specific first.
+  */}}
+  {{- $kc := .Values.keycloak | default dict }}
+  {{- $g := .Values.global | default dict }}
+  {{- $gkc := $g.keycloak | default dict }}
+  {{- $realm := $kc.realm | default $gkc.realm | default $g.keycloakRealm }}
+  {{- $publicBase := $kc.publicBaseUrl | default $gkc.publicBaseUrl }}
+  {{- /*
+    Issuer base, mirroring the keycloak chart's `keycloak.authHost`. Most
+    specific first: (1) keycloak.publicBaseUrl full-URL override, (2)
+    global.keycloak.host — Keycloak's own domain, (3) global.publicHost — legacy
+    shared host. NOTE publicHost (singular) is the AGGREGATOR host; publicHosts
+    (plural) is the signals hosts, and the issuer is never a signals host.
+  */}}
+  {{- if and (not $publicBase) $gkc.host }}
+  {{- $publicBase = printf "%s://%s/auth" ($g.publicProtocol | default "https") $gkc.host }}
+  {{- end }}
+  {{- if and (not $publicBase) $g.publicHost }}
+  {{- $publicBase = printf "%s://%s/auth" ($g.publicProtocol | default "https") $g.publicHost }}
+  {{- end }}
+  {{- $internalBase := $kc.internalBaseUrl | default $gkc.internalBaseUrl }}
+  {{- /*
+    Fail the render rather than ship a half-configured cutover. Matches how the
+    realm renderer and aggregator.requireSecret behave: a missing value here is
+    invisible until every login breaks.
+  */}}
+  {{- if eq (.Values.config.AUTH_PROVIDER | default "") "keycloak" }}
+  {{- if not $realm }}{{ fail "AUTH_PROVIDER=keycloak but no realm resolved — set global.keycloakRealm (or api.keycloak.realm)" }}{{ end }}
+  {{- if not $publicBase }}{{ fail "AUTH_PROVIDER=keycloak but no issuer resolved — set global.keycloak.host (or global.publicHost, or api.keycloak.publicBaseUrl)" }}{{ end }}
+  {{- if not $internalBase }}{{ fail "AUTH_PROVIDER=keycloak but no internal Keycloak URL resolved — set global.keycloak.internalBaseUrl" }}{{ end }}
+  {{- end }}
+  {{- if $realm }}
+  KEYCLOAK_REALM: {{ $realm | quote }}
+  {{- end }}
+  {{- if $publicBase }}
+  KEYCLOAK_BASE_URL: {{ $publicBase | quote }}
+  {{- end }}
+  {{- if $internalBase }}
+  KEYCLOAK_INTERNAL_BASE_URL: {{ $internalBase | quote }}
+  {{- end }}

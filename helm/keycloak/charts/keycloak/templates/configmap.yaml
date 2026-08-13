@@ -7,7 +7,8 @@ metadata:
 data:
   KC_DB: "postgres"
   KC_DB_URL: "jdbc:postgresql://{{ if .Values.global.dataPlatform.postgresHost }}{{ .Values.global.dataPlatform.postgresHost }}{{ else }}{{ .Values.global.dataPlatform.postgresService }}.{{ .Values.global.dataPlatform.namespace }}.svc.cluster.local{{ end }}:5432/keycloak"
-  KC_HOSTNAME: "{{ .Values.global.publicHost }}"
+  # Keycloak's OWN host, not the aggregator app's. Drives the `iss` claim.
+  KC_HOSTNAME: "{{ include "keycloak.authHost" . }}"
   KC_HOSTNAME_STRICT: "false"
   KC_HTTP_ENABLED: "true"
   KC_HEALTH_ENABLED: "true"

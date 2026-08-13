@@ -19,13 +19,13 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-9b2a8cb"
+    tag: "sha-23d95eb"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-9b2a8cb"
+    tag: "sha-23d95eb"
     pullPolicy: Always
 
 notification-service:
@@ -76,13 +76,19 @@ worker:
     pullPolicy: Always
 
 keycloak:
+  # Server image: built from THIS repo (dockerfiles/keycloak/) by the manual
+  # "Build Keycloak image" workflow. Moved out of aggregator-dpg because Keycloak
+  # is a common service serving both DPGs.
   image:
-    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-server
-    tag: "develop"
+    repository: vinodbbhorge/keycloak-server
+    tag: "sha-52088a6"
     pullPolicy: IfNotPresent
+  # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
+  # because its brand strings come from that repo's config/<network>/keycloak.env.
+  # Tag is <network>[-<brand>]-<branch>.
   themesInit:
     image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
-    tag: blue_dot-develop
+    tag: sha-1e8c0a8
     pullPolicy: Always
 
 

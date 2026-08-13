@@ -2,14 +2,102 @@
 
 Guidance for the Helm half of the repo. Read the root `CLAUDE.md` first (the critical directory/chart/release/namespace table, the strict deploy order, the values-file architecture). Per-chart `README.md` files (`helm/README.md`, `helm/monitoring/README.md`, etc.) cover standalone-deploy detail; this file covers the Claude-specific gotchas that span or aren't obvious from the charts.
 
-## The four umbrella charts
+## The five umbrella charts
 
 - **`monitoring/`** (chart `monitoring`) — `kube-prometheus-stack` (Prometheus Operator + Prometheus + Alertmanager + node-exporter + kube-state-metrics, **and the monitoring CRDs** others depend on), `loki`, `alloy` (DaemonSet log shipper, replaced Promtail), `jaeger`, Grafana (`_grafana_host`). The stock kube-prometheus ruleset is **disabled** (`defaultRules.create: false`) — alerting is a curated `additionalPrometheusRulesMap`. See `helm/monitoring/README.md`.
 - **`common-services/`** (chart `platform`) — Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres`/`data-redis` Secrets in the `common-services` namespace. The Bitnami `postgresql` subchart runs the org **portable-pgvector** image (`ghcr.io/blue-dots-economy/postgres-pgvector`, #93) — a Postgres + pgvector + PostGIS build compiled without AVX-512 so it doesn't SIGILL on non-AVX-512 nodes; it needs the `image.*` override plus `allowInsecureImages`, since the Bitnami chart otherwise refuses a non-Bitnami image.
 - **`signals/`** (chart `dpg`) — api, ui, notification-service, search (+ search-embeddings), s3-export. Connects to the shared DBs in `common-services`. The `match-score` subchart (the external dpg-scoring service) was removed in #89 — match-score now calls signals-search `POST /v1/relevance`. The **`s3-export`** subchart (chart `dpg-s3-export`, #86) is a CronJob that dumps allowlisted **non-PII** Signals data to S3 for campaign analytics.
-- **`aggregator/`** (chart `aggregator-dpg`) — web (BFF), api, worker, keycloak. Vendored `ingress-nginx`/`cert-manager` subcharts are **disabled** (`platform` owns them). Keycloak init Job depends on Postgres readiness → longest rollout.
+- **`keycloak/`** (chart `keycloak-platform`) — the **shared** Keycloak. One instance, one realm, **both DPGs' clients**. Its own release in the `common-services` namespace (see the deadlock note below). Owns this repo's realm artefact (`charts/keycloak/files/realm.json`) plus the two realm-reconciliation scripts.
+- **`aggregator/`** (chart `aggregator-dpg`) — web (BFF), api, worker. Vendored `ingress-nginx`/`cert-manager` subcharts are **disabled** (`platform` owns them). Keycloak is no longer here.
 
 Resource requests/limits (Kong `replicaCount: 2`, cert-manager, Redis, `postgresBootstrap`, metrics-server, app replicas/HPA/PDB) live in the shared `helm/global-resources.yaml`, not per-chart values.
+
+## Shared Keycloak — the things that will bite you
+
+**It is a separate release on purpose.** The `keycloak` database is created by
+common-services' `postgres-bootstrap-job`, a **post-install hook** (weight 0), and
+`deploy_common_services` runs `helm upgrade --install … --wait`. Helm installs main
+resources, waits for Ready, and only *then* runs post-install hooks. A Keycloak
+Deployment inside that release would crash-loop on the missing database while the
+hook that would create it never runs → the release deadlocks and times out at 5m.
+Also note Helm renders **every** chart in a `charts/` directory, not just those
+listed as `dependencies` — so simply dropping the chart under
+`common-services/charts/` reintroduces the deadlock even without a dependency
+entry. Hence `helm/keycloak/` as a top-level chart, deployed by `deploy_keycloak`
+between common-services and signals.
+
+**The realm is this repo's artefact, not a mirror.** `infra/keycloak/` in
+aggregator-dpg and signals-dpg are independent **developer-local** setups. They are
+not upstream of this repo and are *supposed* to differ from what deploys. Build
+with `scripts/build-realm.sh <app-repo realm.json>` (applies the hardening
+transform) and gate with `scripts/assert-realm.sh` — which CI runs. Do **not** add
+a "drift from upstream" diff; it would fail on the intentional differences.
+
+**Two hardening steps that are invisible when they regress:**
+- The local realms carry `localhost` entries in `redirectUris`, `webOrigins` and —
+  easy to miss — the `##`-delimited `post.logout.redirect.uris` *attribute*. Those
+  widen a production OAuth client's allow-lists. `assert-realm.sh` fails on any of
+  them.
+- `sslRequired` is `external`, not `all`: Keycloak exempts **private** source
+  addresses, so the in-cluster init Job keeps working over plain HTTP while
+  external callers must use HTTPS. A `kubectl port-forward` session comes from a
+  non-private address and gets `403 HTTPS required` — expected, not a fault.
+
+**signals-ui lives on different hostnames to Keycloak.** `__PUBLIC_BASE_URL__` is
+the Keycloak/aggregator host; the signals UI is served from `global.publicHosts` (a
+**list**). Substituting the Keycloak host into signals-ui's allow-lists fails login
+with `invalid_redirect_uri` in any real deployment — and works fine locally, where
+both are localhost. `render-realm.sh` therefore rewrites signals-ui's
+redirect/origin/post-logout fields from `SIGNALS_ORIGINS` (built by Helm from
+`global.publicHosts`). If that is empty the script warns and leaves the
+single-host fallback.
+
+**The realm name has no literal default anywhere.** `global.keycloakRealm` is
+required and consumed by three charts (keycloak, aggregator, signals) — they must
+agree or tokens validate against the wrong issuer. It is also the realm segment of
+the Kong login-rate-limit route, which is now *derived*: it used to be a hardcoded
+`loginRateLimit.realm: aggregator`, so after any rename that route matched nothing
+and the per-IP login limit **failed open silently**.
+
+**Secrets are shared across namespaces by design.** The keycloak release RENDERS
+the realm that defines the clients; the aggregator and signals AUTHENTICATE against
+them. So the client secrets must be one value each — generated once in
+`global-secrets.yaml` and referenced from both. Watch two traps: the keycloak chart
+reads `secrets.keycloakPostgresPassword` (**not** `secrets.postgresPassword`, which
+is the aggregator database password in that same shared root block), and
+`secrets.signalsApiSecret` must equal signals' `KEYCLOAK_API_CLIENT_SECRET`.
+
+**The init Job reconciles realm CONTENTS in place — step order is load-bearing.**
+It runs four steps: render the realm (reusing the pod's own `render-realm.sh`, so
+the substitution cannot differ), then `apply-realm-config.py`, then
+`apply-user-profile.sh`, then `apply-portal-gate.py`.
+
+`apply-realm-config.py` must stay **first**. The two scripts after it reconcile but
+never CREATE a client — `ensure_acting_org_mapper` and `ensure_login_theme` both log
+`client '<id>' not found — skipping` and **return 0**. Run them first and a realm
+predating a realm.json change keeps its missing clients while the Job still exits 0:
+a silent no-op. Reconciling clients first is what makes the rest effective.
+
+It uses Keycloak's own `partialImport` with `ifResourceExists: SKIP`, never
+OVERWRITE — re-creating an existing client changes its service-account user id, and
+those ids are referenced from the aggregator database. It also grants the
+`realm-management` client roles each service account needs, because creating a
+client with `serviceAccountsEnabled` makes the SA user but grants it nothing.
+
+It strips `authenticationFlowBindingOverrides` before importing: a binding
+references a flow by id, and importing a client whose flow does not exist yet fails
+with an opaque HTTP 500. `apply-portal-gate.py` owns that binding and reconciles it
+every run anyway.
+
+**Scope: drift, not migration.** On a fresh realm import this step is a no-op —
+everything already exists. Its job is a realm that has *drifted* from `realm.json`
+after the fact, which is precisely what used to fail silently. Migrating an existing
+environment onto the unified realm is a separate procedure
+(`docs/unified-keycloak-migration-runbook.md` §6): the new realm is imported fresh
+and users are copied in with ids preserved. Verified on 26.5.5: 5 clients + 3 roles
+added to a deliberately stale realm, idempotent on re-run
+(`added=0 skipped=10`), existing client id, service-account user id and client
+secret all unchanged.
 
 ## Cluster Autoscaler (#1.6)
 
@@ -23,11 +111,11 @@ Resource requests/limits (Kong `replicaCount: 2`, cert-manager, Redis, `postgres
 
 **Correlation id (#2.4).** `kong.correlationId.enabled` (default **on**) renders `templates/kong-correlation-id.yaml` — a GLOBAL `KongClusterPlugin` (`global: "true"`, like `prometheus`) that stamps `X-Request-Id` on every inbound request lacking one (an inbound value is preserved) and echoes it downstream. Downstream services honour + log it as `x-request-id` and the aggregator forwards it to Signals, so a request traces across Kong → aggregator → Signals → search. `correlation-id` is a bundled Kong plugin, so no CRD change is needed (the `KongClusterPlugin` kind is already applied by `apply_kong_crds`).
 
-**Per-IP OTP-abuse rate limiting (#69).** `otpRateLimit.enabled` (default **on**, via `_otp_rate_limit_enabled`) renders `otp-ratelimit-ingress.yaml` in both the signals `api` and aggregator `keycloak` charts — a more-specific Kong Ingress on the OTP endpoints with a per-IP `rate-limiting` KongPlugin (counters in shared Redis). Limits: `_signals_otp_per_minute` (default 5) and `_aggregator_otp_per_minute` (default 20). Independent of the global per-API rate limit (`_api_rate_limit_*`, default off). Bundled Kong plugin — no CRD change. Tightening these too far can lock out legitimate logins.
+**Per-IP OTP-abuse rate limiting (#69).** `otpRateLimit.enabled` (default **on**, via `_otp_rate_limit_enabled`) renders `otp-ratelimit-ingress.yaml` in both the signals `api` and the shared `keycloak` charts — a more-specific Kong Ingress on the OTP endpoints with a per-IP `rate-limiting` KongPlugin (counters in shared Redis). Limits: `_signals_otp_per_minute` (default 5) and `_aggregator_otp_per_minute` (default 20). Independent of the global per-API rate limit (`_api_rate_limit_*`, default off). Bundled Kong plugin — no CRD change. Tightening these too far can lock out legitimate logins.
 
 **Kong CRD gotcha:** Helm installs CRDs only from the top-level chart's `crds/` dir, only on first install — never from a subchart, never on upgrade. So `deploy_common_services` runs `apply_kong_crds` (`kubectl apply --server-side -f helm/common-services/crds/`) **before every helm upgrade**, or the controller crash-watches missing `KongClusterPlugin`/`KongPlugin` kinds. Don't remove that step thinking Helm handles it.
 
-**Keycloak admin-console block (#1.7).** `keycloak.adminConsoleBlock.enabled` (chart default **off**; override via `global.adminConsoleBlock.enabled`) renders `helm/aggregator/charts/keycloak/templates/admin-console-block-ingress.yaml` — a more-specific Kong Ingress at `/auth/admin/master/console` with a `request-termination` (403) `KongPlugin`, mirroring the OTP-ratelimit ingress. It blocks the admin **console UI** from the public host while leaving `/auth/admin/realms/` (the admin **REST API**) reachable — aggregator-api's Keycloak admin client hits Keycloak through the public `KEYCLOAK_URL`, so blocking all of `/auth/admin` would break approval-time user provisioning. Reach the console via `kubectl port-forward` / VPN. Default off because it can only be validated by a live `install.sh dry_run`, not CI. A cleaner future step is to point aggregator-api's admin client at the in-cluster Keycloak service so all of `/auth/admin` can be blocked externally.
+**Keycloak admin-console block (#1.7).** `keycloak.adminConsoleBlock.enabled` (chart default **off**; override via `global.adminConsoleBlock.enabled`) renders `helm/keycloak/charts/keycloak/templates/admin-console-block-ingress.yaml` — a more-specific Kong Ingress at `/auth/admin/master/console` with a `request-termination` (403) `KongPlugin`, mirroring the OTP-ratelimit ingress. It blocks the admin **console UI** from the public host while leaving `/auth/admin/realms/` (the admin **REST API**) reachable — aggregator-api's Keycloak admin client hits Keycloak through the public `KEYCLOAK_URL`, so blocking all of `/auth/admin` would break approval-time user provisioning. Reach the console via `kubectl port-forward` / VPN. Default off because it can only be validated by a live `install.sh dry_run`, not CI. A cleaner future step is to point aggregator-api's admin client at the in-cluster Keycloak service so all of `/auth/admin` can be blocked externally.
 
 ## cert-manager ACME workaround
 

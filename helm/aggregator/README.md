@@ -106,7 +106,7 @@ kubectl get certificate -n aggregator      # READY=True once ACME completes
 - **Keycloak SPI**. The OTP SPI jar is baked into the custom Keycloak image
   (`kc.sh build`). Rebuild the image and bump `keycloak.image.tag` after editing
   the SPI.
-- **Realm rendering**. `charts/keycloak/files/aggregator-realm.json` carries
+- **Realm rendering**. MOVED: the realm now lives in the shared keycloak release at `helm/keycloak/charts/keycloak/files/realm.json` and carries
   `__PUBLIC_BASE_URL__` / `__SMTP_*__` placeholders; a `realm-renderer`
   initContainer substitutes them at pod startup into a shared `emptyDir`.
 - **OIDC back-channel**. Browsers and the BFF must see the **same** issuer URL.
@@ -152,4 +152,4 @@ bash install.sh destroy_aggregator      # helm uninstall + delete the aggregator
 | `templates/job-keycloak-init.yaml` | post-install/upgrade hook Job (idempotent admin REST) |
 | `templates/ingress.yaml` | Ingress objects (api strip-prefix + main catch-all), `ingressClassName: kong` |
 | `charts/{web,api,worker,keycloak}/` | First-party subcharts |
-| `charts/keycloak/files/aggregator-realm.json` | Realm JSON with `__PLACEHOLDER__` markers |
+| _(moved)_ `helm/keycloak/charts/keycloak/files/realm.json` | Shared realm JSON with `__PLACEHOLDER__` markers — now owned by the keycloak release |

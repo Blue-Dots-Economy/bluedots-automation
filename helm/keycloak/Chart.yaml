@@ -1,0 +1,26 @@
+apiVersion: v2
+name: keycloak-platform
+description: >-
+  Shared Keycloak identity service for the Blue Dots platform. One instance and
+  one realm per cluster, holding BOTH DPGs' clients (aggregator-portal/api/bff and
+  signals-ui/api plus the aggregator-dpg + voice-dpg service clients). Deployed as
+  its own release into the common-services namespace, after the common-services
+  release has created the `keycloak` database.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.24.0-0"
+keywords:
+  - keycloak
+  - identity
+  - oidc
+  - common-services
+  - bluedots
+maintainers:
+  - name: sanketika
+    email: ops@sanketika.in
+
+dependencies:
+  - name: keycloak
+    version: 0.1.0
+    repository: file://charts/keycloak

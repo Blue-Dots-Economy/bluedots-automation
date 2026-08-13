@@ -65,6 +65,26 @@ variable "aggregator_keycloak_admin_client_secret_bytes" {
   default = 32
 }
 
+variable "keycloak_postgres_password_bytes" {
+  type    = number
+  default = 24
+}
+
+variable "signals_api_client_secret_bytes" {
+  type    = number
+  default = 32
+}
+
+variable "signalstack_client_secret_bytes" {
+  type    = number
+  default = 32
+}
+
+variable "voice_dpg_signals_secret_bytes" {
+  type    = number
+  default = 32
+}
+
 variable "aggregator_approval_token_secret_bytes" {
   type    = number
   default = 32

@@ -17,7 +17,9 @@
   instead of the public host.
 */ -}}
 {{- $svc := include "keycloak.fullname" . -}}
-{{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
+{{- /* Must match ingress.yaml, or this more-specific 403 route matches nothing
+       and the admin console stays publicly reachable. */ -}}
+{{- $host := include "keycloak.authHost" . -}}
 ---
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
