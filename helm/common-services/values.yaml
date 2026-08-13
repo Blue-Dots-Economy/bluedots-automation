@@ -274,6 +274,10 @@ credentials:
   aggregatorPassword: ""  # AGGREGATOR_PG_PW
   dpgPassword: ""  # DPG_PG_PW
   signalsExportRoPassword: ""  # signals-s3-export read-only role (bootstrap-created)
+  # Login password for the shared Keycloak's own Postgres role. Consumed by the
+  # bootstrap Job (creates/syncs the role) AND by the keycloak release's Secret —
+  # generate it ONCE in global-secrets.yaml and reference it from both.
+  keycloakPassword: ""  # KEYCLOAK_PG_PW
   redisPassword: ""  # REDIS_PW
 
 # -----------------------------------------------------------------------------
@@ -330,9 +334,22 @@ postgresBootstrap:
     - name: dpg
       owner: dpg
       extensions: [pgcrypto, cube, earthdistance, postgis, vector]
+    # Keycloak is its own release in this namespace now (helm/keycloak), so it
+    # gets a dedicated role rather than logging in as `aggregator`.
+    #
+    # EXISTING CLUSTERS: this database already exists owned by `aggregator`, and
+    # the CREATE DATABASE guard in the bootstrap Job is a no-op, so the owner does
+    # NOT change on upgrade. Point the keycloak release at the `aggregator` role
+    # there (postgres.username=aggregator) — re-owning a live database is not worth
+    # the risk. See the plan's §11.4.
     - name: keycloak
-      owner: aggregator
+      owner: keycloak
       extensions: []
+  # Login role for the shared Keycloak (helm/keycloak release). Disable only if an
+  # environment deliberately keeps Keycloak on the `aggregator` role.
+  keycloakRole:
+    enabled: true
+    name: keycloak
   # Read-only role for the signals-s3-export CronJob — created here (privileged),
   # never the dpg app user. Table SELECTs are auto-granted as `owner` creates
   # tables (ALTER DEFAULT PRIVILEGES), so it stays read-only. Opt-in: set

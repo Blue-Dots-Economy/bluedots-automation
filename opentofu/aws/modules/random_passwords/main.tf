@@ -52,6 +52,32 @@ resource "random_id" "aggregator_keycloak_admin_client_secret" {
   byte_length = var.aggregator_keycloak_admin_client_secret_bytes
 }
 
+# ── Shared Keycloak (helm/keycloak release) ──────────────────────────────────
+# Postgres login for Keycloak's own `keycloak` DB role. Feeds BOTH
+# credentials.keycloakPassword (common-services creates/syncs the role) AND
+# secrets.keycloakPostgresPassword (Keycloak logs in) — one value, two consumers.
+resource "random_id" "keycloak_postgres_password" {
+  byte_length = var.keycloak_postgres_password_bytes
+}
+
+# `signals-api` confidential client. Feeds the realm render in the keycloak
+# release AND signals' KEYCLOAK_API_CLIENT_SECRET — must be one value.
+resource "random_id" "signals_api_client_secret" {
+  byte_length = var.signals_api_client_secret_bytes
+}
+
+# `aggregator-dpg` service client (Phase C service auth). Required even while
+# unused: the client exists in the shared realm and render-realm.sh refuses an
+# empty client secret.
+resource "random_id" "signalstack_client_secret" {
+  byte_length = var.signalstack_client_secret_bytes
+}
+
+# `voice-dpg` service client. Same reasoning as above.
+resource "random_id" "voice_dpg_signals_secret" {
+  byte_length = var.voice_dpg_signals_secret_bytes
+}
+
 resource "random_id" "aggregator_approval_token_secret" {
   byte_length = var.aggregator_approval_token_secret_bytes
 }

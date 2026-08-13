@@ -12,6 +12,8 @@
 #   <network>/network.json
 #   <network>/consent.json
 #   <network>/<brand>/consent.json
+#   <network>/messages.properties
+#   <network>/<brand>/messages.properties
 # (network/brand dir names use underscores, e.g. blue_dot, orange_dot, upsdm).
 #
 # Subcommands:
@@ -20,6 +22,13 @@
 #                 -> helm/signals/charts/api/files/{networks,consent}/
 #               network.json's instance_url is normalized to __PUBLIC_API_URL__
 #               (the token schemas-configmap.yaml substitutes with the real host).
+#               PLUS messages.properties (+ <brand>/messages.properties) — the
+#               per-network email copy (signals-dpg#540)
+#                 -> helm/signals/charts/api/files/messages/
+#               OPTIONAL, unlike consent: the api ships complete bundled email
+#               copy and merges these PER KEY, so a network with no file (or a
+#               ref predating them) keeps the built-in wording instead of
+#               failing the deploy.
 #   aggregator  consent.json (a FULL document) from the aggregator-dpg config tree.
 #               The aggregator's loader requires a top-level {"audiences":…};
 #               bluedots-schemas' <network>/consent.json is the signals document
@@ -109,11 +118,11 @@ GH_TOKEN="${SCHEMAS_PAT:-${GHCR_PAT:-}}"
 # and this whole shim can be deleted.
 SUPPORT_EMAIL_LITERALS="${SUPPORT_EMAIL_LITERALS:-support@onest.network hello@bluedotseconomy.org}"
 
-usage() { sed -n '2,70p' "$0"; }
+# Print the header comment block as help. Reads to the first non-comment line
+# rather than a hardcoded range, so growing the header can't silently truncate
+# usage (or start printing code).
+usage() { awk 'NR==1{next} /^#/{print; next} {exit}' "$0"; }
 
-# Rewrite any known literal support email in a fetched consent file to the
-# __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
-# file already carries the placeholder (canonical post-migration).
 # Validate the fetched aggregator consent. The app renders a generic fallback
 # rather than erroring on a document it cannot read, so the shape is checked here
 # where a wrong source can still fail the deploy.
@@ -138,6 +147,9 @@ assert_aggregator_consent() { # <file>
   return 1
 }
 
+# Rewrite any known literal support email in a fetched consent file to the
+# __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
+# file already carries the placeholder (canonical post-migration).
 normalize_support_email() { # <file>
   local lit esc
   for lit in $SUPPORT_EMAIL_LITERALS; do
@@ -189,6 +201,19 @@ try_fetch() { # <dest> <url>...
   echo "ERROR: no candidate URL returned content for ${dest}:" >&2
   printf '       %s\n' "$@" >&2
   return 1
+}
+
+# try_fetch for a genuinely OPTIONAL file — one the app has its own fallback for,
+# so a miss is reported and shrugged off instead of failing the deploy. Removes
+# the destination on a miss, so the chart's Files.Get presence check sees
+# "absent" rather than an empty file.
+fetch_optional() { # <dest> <url> <label> <fallback-note>
+  if try_fetch "$1" "$2" 2>/dev/null; then
+    echo "  $3 -> $1"
+  else
+    rm -f "$1"
+    echo "  $3: absent on ${REF} — $4"
+  fi
 }
 
 TARGET="${1:-}"; shift 2>/dev/null || true
@@ -256,6 +281,27 @@ case "$TARGET" in
       try_fetch "${CONSENT_DIR}/${NETWORK}.${BRAND}.json" "${RAW}/${NETWORK}/${BRAND}/consent.json"
       normalize_support_email "${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
       echo "  brand consent -> ${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
+    fi
+
+    # ── per-network email copy (signals-dpg#540) ──────────────────────────────
+    # Rides the consent ConfigMap: the api resolves both from
+    # dirname(NETWORK_CONFIG_LOCAL_FILE). Optional per key, so a missing file
+    # just keeps the api's bundled wording. Cleared first because the chart
+    # renders on file presence alone — a leftover from an earlier deploy of a
+    # different network/brand would otherwise override this one's copy.
+    # Full rationale: helm/CLAUDE.md, "Email copy rides the signals consent ConfigMap".
+    MESSAGES_DIR="$REPO_ROOT/helm/signals/charts/api/files/messages"
+    mkdir -p "$MESSAGES_DIR"
+    rm -f "$MESSAGES_DIR"/*.properties
+
+    fetch_optional "${MESSAGES_DIR}/${NETWORK}.properties" \
+      "${RAW}/${NETWORK}/messages.properties" \
+      "email copy" "api keeps its bundled defaults"
+
+    if [ -n "$BRAND" ]; then
+      fetch_optional "${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties" \
+        "${RAW}/${NETWORK}/${BRAND}/messages.properties" \
+        "brand email copy" "network/bundled copy only"
     fi
 
     # UI college/institute reference list for the selected region. Lives under

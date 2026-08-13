@@ -28,8 +28,9 @@ Release name and namespace **match the directory name**. Only the Helm **chart n
 |------------------------|------------------|-------------------|-------------------|---------|
 | `helm/monitoring/`     | `monitoring`     | `monitoring`      | `monitoring`      | Prometheus + Alertmanager + Loki + Alloy + Jaeger + Grafana |
 | `helm/common-services/`| `platform`       | `common-services` | `common-services` | Cluster-wide: **Kong** ingress, cert-manager, shared Postgres (org **portable-pgvector** image, #93), Redis, metrics-server |
+| `helm/keycloak/`       | `keycloak-platform` | `keycloak`     | **`common-services`** | **Shared Keycloak — one realm holding BOTH DPGs' clients.** The one place release name ≠ namespace: it is a common service, so it lives in the common-services namespace. |
 | `helm/signals/`        | `dpg`            | `signals`         | `signals`         | Signals stack (api, ui, notification-service, search, **s3-export** non-PII export CronJob) |
-| `helm/aggregator/`     | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal (web/BFF, api, worker, keycloak) |
+| `helm/aggregator/`     | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal (web/BFF, api, worker) — Keycloak moved to its own release |
 
 Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`, `SIGNALS_NS`, `CS_REL`, `GLOBAL_VALUES`, …) — see the function reference in DEPLOYMENT.md.
 
@@ -37,12 +38,13 @@ Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`,
 
 ## Deploy Order (STRICT)
 
-`deploy_all_services` runs charts in this order; **common-services → signals → aggregator** is mandatory:
+`deploy_all_services` runs charts in this order; **common-services → keycloak → signals → aggregator** is mandatory:
 
 1. **`monitoring`** — first so metrics/alerts are live from the start (its `kube-prometheus-stack` also ships the ServiceMonitor/PodMonitor/PrometheusRule CRDs others rely on). Functionally optional but deployed first by default.
 2. **`common-services`** — owns the Kong ingress controller, cert-manager + `letsencrypt-prod` ClusterIssuer, and shared Postgres/Redis. Without it, other Ingresses sit Pending and ACME challenges fail.
-3. **`signals`** — connects to the shared DBs in `common-services`.
-4. **`aggregator`** — same shared DBs; longest rollout (Keycloak init Job runs after Postgres is Ready). Needs the `actingOrgId` manual step after signals — see `helm/CLAUDE.md`.
+3. **`keycloak`** — the shared realm for both DPGs. **Must be its own release, not a subchart of `common-services`.** The `keycloak` database is created by common-services' `postgres-bootstrap-job`, a **post-install hook**; Helm with `--wait` waits for main resources to be Ready *before* running post-install hooks, so a Keycloak Deployment inside that release would crash-loop on the missing database while the hook that creates it never runs — the release deadlocks and times out. Keeping it a later release means the database already exists. Do not "simplify" this back in.
+4. **`signals`** — connects to the shared DBs in `common-services`. Its api asserts Keycloak config at boot once `AUTH_PROVIDER=keycloak`, hence keycloak first.
+5. **`aggregator`** — same shared DBs; needs the `actingOrgId` manual step after signals — see `helm/CLAUDE.md`.
 
 Each `deploy_*` runs `helm upgrade --install … --wait`, so it blocks on its own pods but does **not** verify cross-namespace deps — confirm common-services Postgres/Redis are Ready before deploying signals/aggregator.
 
@@ -71,17 +73,18 @@ bash install.sh apply_tf_bastion         # bring up just the bastion (ignores ba
 ```bash
 # images are public by default; for private ones:
 export IMAGES_PUBLIC=false                # and export GHCR_PAT=ghp_xxx
-bash install.sh deploy_all_services       # preflight → ns+secrets → monitoring → common-services → signals → aggregator → fix_acme_issuer_uri
+bash install.sh deploy_all_services       # preflight → ns+secrets → monitoring → common-services → keycloak → signals → aggregator → fix_acme_issuer_uri
 bash install.sh create_namespaces_and_secrets   # namespaces + ghcr-pull secret in each
 bash install.sh deploy_monitoring
 bash install.sh deploy_common_services    # applies gp3 + Kong CRDs first, then helm --wait
+bash install.sh deploy_keycloak           # shared realm, into the common-services ns
 bash install.sh deploy_signals
 bash install.sh deploy_aggregator
 bash install.sh cleanup_all_services      # DESTRUCTIVE: deletes namespaces incl. Postgres/Redis PVCs
 
 # Static checks (no cluster needed for lint)
-bash install.sh lint                      # helm lint all 4 charts
-bash install.sh dry_run                   # helm --dry-run all 4 against current cluster (runs preflight first)
+bash install.sh lint                      # realm assertions + helm lint all 5 charts
+bash install.sh dry_run                   # helm --dry-run all 5 against current cluster (runs preflight first)
 bash install.sh preflight                 # verify helm + kubectl + cluster + generated values files exist
 ```
 
@@ -139,7 +142,7 @@ When you open a PR, include an **In Plain Terms** section in the description: a 
 
 `.github/workflows/ci.yml` runs static checks on PRs (and develop/main pushes) that touch `helm/**` or `opentofu/**` — no cluster or cloud creds:
 
-- **helm job** — `helm lint` on all four charts, plus `helm template` render smoke-test on monitoring/common-services/aggregator. `signals` is lint-only in CI because its `helm template` needs the network schema files `install.sh` fetches at deploy time (`fetch_signals_configs`), which aren't committed.
+- **helm job** — `scripts/assert-realm.sh` (shared-realm invariants), `helm lint` on all five charts, plus `helm template` render smoke-test on monitoring/common-services/keycloak/aggregator. `signals` is lint-only in CI because its `helm template` needs the network schema files `install.sh` fetches at deploy time (`fetch_signals_configs`), which aren't committed.
 - **tofu job** — a blocking `tofu fmt -check -recursive` plus `tofu validate` (with `-backend=false`, provider plugins cached) on every module in `opentofu/aws/modules/*`. Keep the tree `tofu fmt`-clean or the job fails.
 
 This mirrors `bash install.sh lint` but gates it per-PR. Separately, `.github/workflows/develop-pr-gate.yml` enforces the Release-Notes + doc-update PR gate (see `.claude/rules/pr-gate.md`).
@@ -181,5 +184,10 @@ For a full new-instance / new-network launch (network.json, brand assets, terms 
 - `opentofu/aws/<env>/install.sh` — single entrypoint for infra **and** Helm deploy (function dispatcher).
 - `opentofu/aws/<env>/global-values.yaml` — single source of truth for cluster + app config (edit anchors only).
 - `helm/global-resources.yaml` — shared replica/HPA/PDB/resource overrides across all envs.
+- `scripts/build-realm.sh` — builds the shared deployment realm from an app repo's local-dev realm (applies the production-hardening transform). `scripts/assert-realm.sh` — the invariants CI enforces on it.
+- `dockerfiles/` — the **shared base images** this repo builds, one directory each, both **manual `workflow_dispatch` only** (never on push/PR: rarely-rebuilt base images, deliberately outside app CI/CD). Rationale lives in each `Dockerfile` header; pin the resulting tag in `<env>/global-images.yaml`.
+  - `dockerfiles/postgres/` → `ghcr.io/<owner>/postgres-pgvector` — Bitnami PG 17 + portable pgvector (the AVX-512 `SIGILL` fix). Workflow: *Build Postgres pgvector image*.
+  - `dockerfiles/keycloak/` → `ghcr.io/<owner>/keycloak-server` — upstream Keycloak + the **OTP authenticator SPI**, `kc.sh build`-indexed at image build time so pods boot `start --optimized`. Workflow: *Build Keycloak image*. **Do not drop the jar:** the shared realm's browser flows bind to provider ids that exist only when it loads (`otp-identifier-form`, `otp-channel-choice-form`), so realm import *and* the entitlement-gate Job fail on unknown provider ids rather than quietly degrading to password login. Jar provenance + bump steps: `dockerfiles/keycloak/providers/README.md`.
+- **Keycloak image ownership:** the *server* image is built here (it is network-agnostic and serves both DPGs). The *theme* init image stays in `aggregator-dpg` (`infra/keycloak/build-theme-image.sh`, `keycloak-theme-build.yaml`) because its brand strings come from that repo's `config/<network>[/<brand>]/keycloak.env`. Both are wired in `<env>/global-images.yaml` under `keycloak:`. The app repos still keep their own `infra/keycloak/providers/` jar copy for **local dev only** (stock image + bind-mount + `start-dev`) — those trees are developer-local and not upstream of `dockerfiles/keycloak/`, the same relationship `scripts/build-realm.sh` documents for the realm JSON.
 - `opentofu/CLAUDE.md`, `helm/CLAUDE.md` — subsystem detail for the two halves.
 - `README.md` / `helm/README.md` / per-chart `helm/*/README.md` — overview + per-chart standalone deploy instructions.

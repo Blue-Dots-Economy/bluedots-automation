@@ -1,0 +1,33 @@
+{{- /*
+Release-level ConfigMap the keycloak subchart consumes as `{release}-global`
+(its `keycloak.globalConfigMap` helper). Deliberately lean: the subchart pulls
+this in via `envFrom`, so every key here lands in the Keycloak container's
+environment. It previously pointed at the aggregator umbrella's global
+ConfigMap, which meant Keycloak inherited the whole aggregator app environment.
+
+Only two things are actually needed: the DB role for KC_DB_USERNAME, and the
+SMTP block that the realm-renderer initContainer substitutes into the realm
+(and that apply-user-profile.sh re-applies over the Admin REST API).
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "keycloak-platform.fullname" . }}-global
+  labels:
+    {{- include "keycloak-platform.labels" . | nindent 4 }}
+data:
+  # ─── Public URL ──────────────────────────────────────────────────────────
+  PUBLIC_HOST: {{ .Values.global.publicHost | quote }}
+  PUBLIC_PROTOCOL: {{ .Values.global.publicProtocol | quote }}
+
+  # ─── Postgres role Keycloak logs in as ───────────────────────────────────
+  # New environments: the dedicated `keycloak` role. Existing environments where
+  # the DB is still owned by `aggregator` should override this to `aggregator`
+  # (changing a live database's owner is not worth the risk — see plan §11.4).
+  POSTGRES_USER: {{ .Values.postgres.username | quote }}
+  POSTGRES_DB: {{ .Values.postgres.database | quote }}
+
+  # ─── SMTP (realm import + apply-user-profile.sh both use these) ──────────
+  {{- range $k, $v := .Values.smtp }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

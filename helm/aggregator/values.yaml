@@ -29,7 +29,20 @@ global:
   # Cluster storage class for PVCs. Empty = cluster default.
   storageClass: ''
 
+  # Shared realm name. MUST match the keycloak release's global.keycloakRealm and
+  # signals' KEYCLOAK_REALM — one realm holds both DPGs' clients. Per-instance,
+  # derived from the network/domain; set it in global-values.yaml.
   keycloakRealm: aggregator
+
+  # Where the shared Keycloak lives. The PUBLIC issuer is still
+  # <publicProtocol>://<publicHost>/auth (Kong serves it), so this only covers
+  # server-to-server calls that should not egress via the ingress.
+  keycloak:
+    namespace: common-services
+    serviceName: keycloak-keycloak   # <release>-<subchart> of the keycloak release
+    servicePort: 8080
+    # Full-URL override, e.g. while an environment still runs a local Keycloak.
+    internalUrl: ''
 
   # Active signalstack network. Drives the api/worker/web config-folder
   # selection and the keycloak themes-init image tag. Set per environment
@@ -304,37 +317,13 @@ worker:
     annotations:
       eks.amazonaws.com/role-arn: ""
 
-keycloak:
-  replicaCount: 1
-  image:
-    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-server
-    tag: 'develop'
-    pullPolicy: IfNotPresent
-  # Set true when the image was built with `kc.sh build` matching all
-  # build-time SPI options (faster cold start). Current v1.0.0 image lacks
-  # KC_SPI_SMS_PROVIDER baked in → keep false until image is rebuilt.
-  optimized: false
-  bootstrapAdminUsername: admin
-  smsProvider: msg91 # log | twilio | sns | msg91
-  msg91TemplateId: '' # REQUIRED if smsProvider=msg91
-  msg91OtpVarName: 'var'
-  awsRegion: ap-south-1
-  service:
-    port: 8080
-    mgmtPort: 9000
-  # Template-driven ingress (charts/keycloak/templates/ingress.yaml): path /auth
-  # is fixed in the template (Keycloak serves natively under /auth). No issuer
-  # (web owns the shared cert). Object name: <release>-keycloak (was -auth).
-  ingress:
-    enabled: true
-    className: kong
-    plugin: rl-agg-auth
-    annotations:
-      konghq.com/read-timeout: "300000"
-      konghq.com/write-timeout: "300000"
-  resources:
-    requests: { cpu: 250m, memory: 768Mi }
-    limits: { cpu: 1, memory: 1500Mi }
+# ─── Shared Keycloak ────────────────────────────────────────────────────────
+# Keycloak MOVED OUT of this chart. It is now the shared `keycloak` release in the
+# common-services namespace (helm/keycloak), serving BOTH DPGs from one realm.
+# Its image, replicas, ingress, SMS provider and resources are configured there.
+# This chart keeps only what it needs to TALK to it: the realm name
+# (global.keycloakRealm), the public issuer (derived from global.publicHost) and
+# the cross-namespace coordinates in global.keycloak below.
 
 # ─── Shared Postgres (common-services release) ─────────────────────────────
 # The Postgres subchart was removed; api/worker/keycloak connect to the shared

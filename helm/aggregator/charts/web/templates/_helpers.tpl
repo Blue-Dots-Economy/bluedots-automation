@@ -52,8 +52,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{ .Values.global.publicProtocol }}://{{ .Values.global.publicHost }}
 {{- end -}}
 
+{{- /* Mirrors `aggregator.authBaseUrl`; duplicated because a subchart cannot
+       include a parent template. Keep the two in step or the BFF and the api
+       disagree on the issuer. */ -}}
+{{- define "web.authBaseUrl" -}}
+{{- $kc := .Values.global.keycloak | default dict -}}
+{{ .Values.global.publicProtocol }}://{{ $kc.host | default .Values.global.publicHost }}
+{{- end -}}
+
 {{- define "web.oidcIssuer" -}}
-{{ include "web.publicBaseUrl" . }}/auth/realms/{{ .Values.global.keycloakRealm }}
+{{ include "web.authBaseUrl" . }}/auth/realms/{{ .Values.global.keycloakRealm }}
 {{- end -}}
 
 {{- define "web.hostAliases" -}}

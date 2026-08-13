@@ -1,0 +1,42 @@
+# Dependabot (Sec-Audit A2 — Blue-Dots-Economy/signals-dpg#300)
+#
+# This repo had no Dependabot config. There is no application dependency manifest
+# here — no package.json, no pyproject.toml — so the two things worth watching are
+# the ones this repo actually pins:
+#
+#   * github-actions — the actions used by this repo's own workflows, INCLUDING
+#     security-scan.yml, which the other five repos call. A stale or compromised
+#     action here would execute in all six.
+#   * docker — the base images in dockerfiles/postgres and dockerfiles/keycloak.
+#     Both are deliberately rarely rebuilt (manual workflow_dispatch only), which
+#     is exactly why they need something watching them: nothing else will notice
+#     the base image ageing.
+#
+# Note on SHA-pinned actions: where a workflow pins an action by commit SHA with a
+# trailing `# vX.Y.Z` comment, Dependabot reads that comment and still offers
+# upgrades, bumping both the SHA and the comment together. Pinning does not opt
+# out of updates.
+#
+# Branch model here is feature -> develop -> main, and `feature` is where work
+# integrates, so PRs target it rather than the default branch.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "feature"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/dockerfiles/postgres"
+      - "/dockerfiles/keycloak"
+    target-branch: "feature"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3

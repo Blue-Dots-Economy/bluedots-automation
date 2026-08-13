@@ -1,0 +1,67 @@
+# Security scanning (Sec-Audit A2 — Blue-Dots-Economy/signals-dpg#300)
+#
+# The IaC track. This repo hosts the reusable security-scan workflow the other five
+# repos call; this file is it finally scanning itself.
+#
+# Note the `uses:` below is a LOCAL path, not a cross-repo reference. Two reasons:
+#   * it always runs the copy from this very commit, so a PR that changes
+#     security-scan.yml is validated by the version it proposes, not by whatever
+#     `feature` happens to point at; and
+#   * it avoids depending on a moving branch ref, which is what SonarCloud flags in
+#     the other repos' callers (`@feature` can be repointed at any time).
+#
+# language: iac — skips the pnpm/uv dependency audit, which would find nothing.
+# There is no application code here: this repo is Helm charts, Kubernetes
+# manifests, OpenTofu and shell. Trivy `fs` misconfig is the workhorse instead,
+# and it covers all four of those plus the two Dockerfiles.
+#
+# run-gitleaks: true — enabled here and nowhere else, because this repo already
+# carries a reviewed `.gitleaksignore`, so the historical findings are triaged and
+# only NEW leaks will surface. It scans full git history, which native GitHub
+# secret scanning complements rather than duplicates.
+#
+# What runs:
+#   * trivy-fs   — Helm + K8s + OpenTofu + Dockerfile misconfig, plus filesystem
+#                  secret detection -> SARIF. Findings feed B-Cfg (#304).
+#   * gitleaks   — full-history secret scan -> SARIF.
+#   * deps-audit — skipped (language: iac).
+#   * image-scan — skipped: no image-refs. The postgres-pgvector and keycloak-server
+#                  images are scanned in their own build workflows, against the
+#                  freshly-built artifact rather than a registry pull.
+#
+# Report-only (`block: false`): findings land in Security > Code scanning and the
+# job still passes. Green means "the scan ran", NOT "nothing found". This repo
+# defines the cluster's security posture — RBAC, secrets wiring, ingress, network
+# policy — so its misconfig findings are the most consequential of the six, and
+# they want triaging rather than silently gating merges on day one.
+
+name: security
+
+on:
+  pull_request:
+    branches: [feature, develop, main]
+  push:
+    branches: [develop, main]
+  # Weekly sweep: new CVEs and new Trivy misconfig rules land against unchanged code.
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    # Declared here as well as in the reusable workflow: a called workflow cannot
+    # escalate beyond what the caller grants, so without security-events: write
+    # the SARIF upload fails with a 403 on repos whose default token is read-only.
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    uses: ./.github/workflows/security-scan.yml
+    with:
+      language: iac
+      run-gitleaks: true
+      block: false

@@ -25,6 +25,7 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write   # Trivy image scan uploads SARIF to code-scanning
 
 jobs:
   build:
@@ -37,6 +38,9 @@ jobs:
         run: |
           owner_lc=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "image=ghcr.io/${owner_lc}/postgres-pgvector:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          # Untagged name too, so the Trivy step below can address the image by
+          # digest (name@sha256:...) rather than by the mutable tag.
+          echo "repo=ghcr.io/${owner_lc}/postgres-pgvector" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -53,6 +57,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: dockerfiles/postgres
@@ -61,3 +66,32 @@ jobs:
           push: ${{ inputs.push }}
           tags: ${{ steps.ref.outputs.image }}
           provenance: false
+
+      # Image scanning (Sec-Audit A2 — Blue-Dots-Economy/signals-dpg#300).
+      # This is a Bitnami PostgreSQL base with pgvector compiled in, so essentially
+      # none of its contents are described by anything in this repo — the image scan
+      # is the only thing that inventories it. It is also rebuilt manually and
+      # rarely, which means its base layers age quietly between rebuilds.
+      #
+      # Gated on `inputs.push`, the same condition that drives the build's `push:`.
+      # A `digest != ''` guard would look equivalent but is not reliable: with some
+      # buildx drivers the digest output is populated even for a build-only run, and
+      # Trivy would then try to pull an image that was never published
+      # (MANIFEST_UNKNOWN). Build-only runs therefore skip the scan cleanly.
+      - name: Trivy image scan
+        if: ${{ inputs.push }}
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.ref.outputs.repo }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"   # Phase A: report-only, never fails the build
+
+      - name: Upload Trivy image SARIF
+        if: ${{ always() && inputs.push }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-postgres-pgvector

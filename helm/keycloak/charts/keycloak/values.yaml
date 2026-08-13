@@ -1,0 +1,123 @@
+# Shared host for the ingress; overridden by the umbrella chart's global
+# (Helm propagates parent global to subcharts).
+global:
+  publicHost: aggregator.example.com
+
+# Template-driven ingress (templates/ingress.yaml): path /auth is fixed in the
+# template (Keycloak serves natively under /auth). Host = global.publicHost.
+ingress:
+  enabled: false
+  className: ""        # e.g. kong
+  plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-auth
+  annotations: {}
+  # OFF by default — see the long note in templates/ingress.yaml. Keycloak shares
+  # the aggregator's public host, whose certificate is owned by the aggregator
+  # release's web Ingress in ANOTHER namespace; tls.secretName cannot cross
+  # namespaces, so declaring it here makes Kong serve its default self-signed
+  # cert for the entire host. Enable only if this release issues its own cert.
+  tls:
+    enabled: false
+    secretName: ""     # empty -> <host with dots as dashes>-tls
+
+# Realm name. Empty = inherit global.keycloakRealm (the normal case); set only as
+# a per-release escape hatch. There is deliberately NO literal default: the realm
+# name is per-instance, and a hardcoded one is what silently broke the
+# login-rate-limit route below once the realm stopped being called `aggregator`.
+realm: ""
+
+# Substituted into the realm's display name (__BRAND_LONG_NAME__).
+brandLongName: Blue Dots
+
+# Explicit signals-UI origins for the shared realm's signals-ui allow-lists.
+# Empty = derive from global.publicHosts (the normal case). Set only to override.
+# These are the SIGNALS hostnames, NOT the Keycloak/aggregator host — see
+# keycloak.signalsOrigins in _helpers.tpl.
+signalsOrigins: []
+
+loginRateLimit:
+  enabled: true
+  minute: 20           # per-IP login-flow submits/min (~6 full logins/min per IP)
+  # NOTE: no `realm` key here on purpose — the template derives it via
+  # keycloak.realm so this route cannot drift from the realm Keycloak serves.
+  redis:               # shared common-services Redis (counters)
+    host: common-services-redis-master.common-services.svc.cluster.local
+    port: 6379
+
+# Block the Keycloak admin CONSOLE (web UI) from the public ingress (#1.7).
+# When enabled, Kong request-termination (403) is attached to
+# /auth/admin/master/console only, so the admin REST API under
+# /auth/admin/realms/ — which aggregator-api's Keycloak admin client reaches
+# via the PUBLIC KEYCLOAK_URL — keeps working. Reach the console via
+# `kubectl port-forward` / VPN instead. Default OFF: enabling is a deliberate
+# per-environment opt-in (this ingress cannot be validated by CI, only by a
+# live `install.sh dry_run`). Override via global.adminConsoleBlock.enabled.
+adminConsoleBlock:
+  enabled: false
+
+replicaCount: 1
+# Built from this repo: dockerfiles/keycloak/ (upstream Keycloak + the OTP
+# authenticator SPI baked in and pre-indexed), published by
+# .github/workflows/build-keycloak-image.yml. Real deploys override the tag from
+# the per-env opentofu/aws/<env>/global-images.yaml — prefer an immutable
+# `sha-xxxxxxx` there over a branch tag.
+image:
+  repository: ghcr.io/blue-dots-economy/keycloak-server
+  tag: develop
+  pullPolicy: IfNotPresent
+bootstrapAdminUsername: admin
+# When true, container starts with `--optimized` (skips build at runtime).
+# Set to false if a build-time SPI option (e.g. KC_SPI_SMS_PROVIDER) is supplied
+# at runtime — `--optimized` rejects build-time mismatches and exits.
+#
+# FALSE, and it must stay false until the server image bakes the SPI in. The
+# org's keycloak-server images do NOT carry kc.spi-sms-provider in their
+# persisted build, so `--optimized` aborts on the mismatch with exit code 2 and
+# a single "build time options ... differ from what is persisted" line — the
+# realm renders fine and both initContainers pass, so it reads as a healthy
+# deploy right up to the CrashLoopBackOff. This was the aggregator chart's
+# long-standing setting and was inverted when the subchart moved here; flipping
+# it back. Only set true once `kc.sh build` in aggregator-dpg bakes the option.
+optimized: false
+smsProvider: log
+msg91TemplateId: ''
+msg91OtpVarName: ''
+awsRegion: ap-south-1
+service:
+  port: 8080
+  mgmtPort: 9000
+resources:
+  requests: { cpu: 250m, memory: 768Mi }
+  limits: { cpu: 1, memory: 1500Mi }
+realmRenderer:
+  image: alpine:3.20
+
+# Theme initContainer — produced per network by aggregator-dpg's
+# `infra/keycloak/build-theme-image.sh` (that repo still owns the theme image:
+# its brand strings come from config/<network>/keycloak.env there, unlike the
+# network-agnostic server image above, which is built from dockerfiles/keycloak/
+# in THIS repo). Set `tag` to the network's release tag (e.g.
+# `blue_dot-v1`, `purple_dot-v1`); leave `themesInit: null` in values
+# (or omit the block) to fall back to the JAR-baked theme.
+themesInit:
+  image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
+  tag: blue_dot-develop
+  pullPolicy: Always
+
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPU: 70
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Container hardening for the main keycloak container (#1.12). Pod-level
+# fsGroup:0 stays in the deployment template (Keycloak writes to group-0 dirs);
+# here we only drop caps + block privilege escalation, which Keycloak never needs.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
