@@ -291,6 +291,24 @@ postgres:
 
 rdsRelay:
   enabled: false
+  # Sidecar carrying a psql client. With RDS the Bitnami StatefulSet is gone, so
+  # there is no pod to `kubectl exec` into for one-off queries — operator tooling
+  # (get-signalstack-org-id.sh, manual checks) would otherwise have to spawn a
+  # throwaway pod each time. This makes the relay the single, predictable place
+  # to run psql from, mirroring how the in-cluster Postgres pod is used.
+  #
+  # It only sleeps; it opens no port and does not participate in the relay path,
+  # so it cannot affect socat. Set enabled=false to drop it and keep the relay
+  # to socat alone.
+  psql:
+    enabled: true
+    image:
+      repository: postgres
+      tag: "17-alpine"   # matches postgresBootstrap.image — same image, one pull
+      pullPolicy: IfNotPresent
+    resources:
+      requests: { cpu: 10m, memory: 16Mi }
+      limits:   { cpu: 250m, memory: 128Mi }
 
 # Bootstrap Job — runs as a post-install/post-upgrade hook, connects to RDS as
 # the master (`postgres`) user and creates the per-tenant roles, databases and

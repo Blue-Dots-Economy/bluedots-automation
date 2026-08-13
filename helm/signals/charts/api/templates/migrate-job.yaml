@@ -45,11 +45,8 @@ spec:
       # time it doesn't exist yet and the API server refuses to create the pod
       # ("error looking up service account ... not found"). Nothing here needs an
       # identity — the Job only talks to Postgres, and image pulls come from the
-      # imagePullSecrets declared above, not from the SA.
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      # imagePullSecrets below, not from the SA.
+      {{- include "dpg-api.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:

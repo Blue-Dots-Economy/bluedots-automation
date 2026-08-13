@@ -7,11 +7,20 @@
 # on the DB SG) relays localhost:5432 -> RDS:5432. It is DB-agnostic — pick the
 # database/user at connect time (dpg, aggregator, keycloak all live on this RDS).
 #
-# Usage:
-#   kubectl apply -f rds-relay.deployment.yaml
+# Usage — from a laptop (socat + port-forward):
 #   kubectl -n default port-forward svc/rds-relay 5432:5432   # keep open
 #   # DBeaver/psql -> localhost:5432, database+user of your choice
-#   kubectl delete -f rds-relay.deployment.yaml               # tear down when done
+#
+# Usage — one-off queries in-cluster (the `psql` sidecar):
+#   kubectl -n default exec deploy/rds-relay -c psql -- \
+#     env PGPASSWORD=... psql -h <rds-host> -U dpg -d dpg -tAc 'SELECT 1;'
+#
+# The sidecar exists because with RDS the Bitnami Postgres StatefulSet is
+# disabled, so there is no database pod to exec into. Operator tooling
+# (get-signalstack-org-id.sh) would otherwise have to spawn a throwaway pod per
+# query; this makes the relay the one predictable place to run psql, mirroring
+# how the in-cluster Postgres pod has always been used. It only sleeps — it
+# opens no port and is not in the relay path, so it cannot affect socat.
 #
 # Retarget a different RDS: edit DB_HOST below (and DB_PORT if needed).
 #
@@ -78,6 +87,31 @@ spec:
           resources:
             requests: { cpu: 10m, memory: 16Mi }
             limits:   { cpu: 100m, memory: 64Mi }
+        {{- if .Values.rdsRelay.psql.enabled }}
+        # psql client for one-off in-cluster queries. Sleeps forever; the only
+        # way anything runs here is `kubectl exec`. No port, no probes — it must
+        # never gate the relay's readiness, since socat is the actual service.
+        - name: psql
+          image: "{{ .Values.rdsRelay.psql.image.repository }}:{{ .Values.rdsRelay.psql.image.tag }}"
+          imagePullPolicy: {{ .Values.rdsRelay.psql.image.pullPolicy }}
+          command: ["sleep", "infinity"]
+          env:
+            # The pod runs as uid 65532, which owns no home directory in this
+            # image. Without HOME pointing somewhere writable, psql fails to
+            # write .psql_history and warns on every interactive session.
+            # Non-interactive `-tAc` calls are unaffected either way.
+            - name: HOME
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            # Not readOnlyRootFilesystem: psql writes a history file and temp
+            # files under $HOME, and the postgres image's entrypoint expects a
+            # writable /tmp. socat above keeps its read-only root regardless.
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.rdsRelay.psql.resources | nindent 12 }}
+        {{- end }}
 {{- end }}
 ---
 {{- if and .Values.rdsRelay.enabled .Values.postgres.host }}

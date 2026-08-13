@@ -65,3 +65,14 @@ Instance ids must be usable inside k8s resource names.
 {{- define "dpg-s3-export.instanceSlug" -}}
 {{- . | replace "_" "-" | lower | trunc 40 | trimSuffix "-" }}
 {{- end }}
+
+{{/*
+Image pull secrets: the component's own value if set, else
+global.imagePullSecrets. Emits nothing when both are empty.
+*/}}
+{{- define "dpg-s3-export.imagePullSecrets" -}}
+{{- with (.Values.imagePullSecrets | default (.Values.global | default dict).imagePullSecrets) -}}
+imagePullSecrets:
+{{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
