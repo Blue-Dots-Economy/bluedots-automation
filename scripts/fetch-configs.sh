@@ -118,11 +118,11 @@ GH_TOKEN="${SCHEMAS_PAT:-${GHCR_PAT:-}}"
 # and this whole shim can be deleted.
 SUPPORT_EMAIL_LITERALS="${SUPPORT_EMAIL_LITERALS:-support@onest.network hello@bluedotseconomy.org}"
 
-usage() { sed -n '2,67p' "$0"; }
+# Print the header comment block as help. Reads to the first non-comment line
+# rather than a hardcoded range, so growing the header can't silently truncate
+# usage (or start printing code).
+usage() { awk 'NR==1{next} /^#/{print; next} {exit}' "$0"; }
 
-# Rewrite any known literal support email in a fetched consent file to the
-# __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
-# file already carries the placeholder (canonical post-migration).
 # Validate the fetched aggregator consent. The app renders a generic fallback
 # rather than erroring on a document it cannot read, so the shape is checked here
 # where a wrong source can still fail the deploy.
@@ -147,6 +147,9 @@ assert_aggregator_consent() { # <file>
   return 1
 }
 
+# Rewrite any known literal support email in a fetched consent file to the
+# __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
+# file already carries the placeholder (canonical post-migration).
 normalize_support_email() { # <file>
   local lit esc
   for lit in $SUPPORT_EMAIL_LITERALS; do
@@ -200,19 +203,17 @@ try_fetch() { # <dest> <url>...
   return 1
 }
 
-# try_fetch for a genuinely OPTIONAL file — one the app has its own fallback for.
-# A miss is not an error: try_fetch's ERROR block is suppressed and we return 1
-# for the caller to report however it likes. The destination is removed on a miss
-# so a stale copy from an earlier deploy (different network/brand) can never be
-# rendered as if it were freshly fetched, and so the chart's Files.Get presence
-# check sees "absent" rather than an empty file.
-try_fetch_optional() { # <dest> <url>...
-  local dest="$1"
-  if try_fetch "$@" 2>/dev/null; then
-    return 0
+# try_fetch for a genuinely OPTIONAL file — one the app has its own fallback for,
+# so a miss is reported and shrugged off instead of failing the deploy. Removes
+# the destination on a miss, so the chart's Files.Get presence check sees
+# "absent" rather than an empty file.
+fetch_optional() { # <dest> <url> <label> <fallback-note>
+  if try_fetch "$1" "$2" 2>/dev/null; then
+    echo "  $3 -> $1"
+  else
+    rm -f "$1"
+    echo "  $3: absent on ${REF} — $4"
   fi
-  rm -f "$dest"
-  return 1
 }
 
 TARGET="${1:-}"; shift 2>/dev/null || true
@@ -283,38 +284,24 @@ case "$TARGET" in
     fi
 
     # ── per-network email copy (signals-dpg#540) ──────────────────────────────
-    # <network>/messages.properties (+ <brand>/messages.properties) alongside
-    # consent.json in the schemas repo. Delivered on the SAME ConfigMap as
-    # consent, because the api resolves both from dirname(NETWORK_CONFIG_LOCAL_FILE)
-    # — /app/schemas/messages.properties and /app/schemas/<brand>/messages.properties.
-    #
-    # OPTIONAL, deliberately. The api bundles a COMPLETE set of email copy and
-    # merges these files PER KEY (defaults < EMAIL_MESSAGES_PATH < network <
-    # brand), so a network that ships no file, or a --ref that predates them,
-    # must keep deploying on the built-in wording. That is the opposite of
-    # consent, which has no in-app fallback and so fails the fetch hard.
-    #
-    # Every deploy starts by clearing this network's files: they are rendered on
-    # mere presence (no values flag to switch them off), so a leftover from an
-    # earlier deploy of a different brand would otherwise silently override copy.
+    # Rides the consent ConfigMap: the api resolves both from
+    # dirname(NETWORK_CONFIG_LOCAL_FILE). Optional per key, so a missing file
+    # just keeps the api's bundled wording. Cleared first because the chart
+    # renders on file presence alone — a leftover from an earlier deploy of a
+    # different network/brand would otherwise override this one's copy.
+    # Full rationale: helm/CLAUDE.md, "Email copy rides the signals consent ConfigMap".
     MESSAGES_DIR="$REPO_ROOT/helm/signals/charts/api/files/messages"
     mkdir -p "$MESSAGES_DIR"
-    rm -f "${MESSAGES_DIR}/${NETWORK}.properties" "${MESSAGES_DIR}/${NETWORK}."*".properties"
+    rm -f "$MESSAGES_DIR"/*.properties
 
-    if try_fetch_optional "${MESSAGES_DIR}/${NETWORK}.properties" \
-      "${RAW}/${NETWORK}/messages.properties"; then
-      echo "  email copy -> ${MESSAGES_DIR}/${NETWORK}.properties"
-    else
-      echo "  email copy: no ${NETWORK}/messages.properties on ${REF} — api keeps its bundled defaults"
-    fi
+    fetch_optional "${MESSAGES_DIR}/${NETWORK}.properties" \
+      "${RAW}/${NETWORK}/messages.properties" \
+      "email copy" "api keeps its bundled defaults"
 
     if [ -n "$BRAND" ]; then
-      if try_fetch_optional "${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties" \
-        "${RAW}/${NETWORK}/${BRAND}/messages.properties"; then
-        echo "  brand email copy -> ${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties"
-      else
-        echo "  brand email copy: no ${NETWORK}/${BRAND}/messages.properties on ${REF} — network/bundled copy only"
-      fi
+      fetch_optional "${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties" \
+        "${RAW}/${NETWORK}/${BRAND}/messages.properties" \
+        "brand email copy" "network/bundled copy only"
     fi
 
     # UI college/institute reference list for the selected region. Lives under
