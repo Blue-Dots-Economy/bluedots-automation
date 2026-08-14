@@ -206,6 +206,12 @@ global:
 
   cors_max_age_seconds: 3000
 
+  # Campaign PII export retention (#579). ONE knob for both:
+  #  - opentofu: deletes campaign-exports/ objects from S3 after this many days.
+  #  - helm (aggregator): sets EXPORT_URL_TTL_SECONDS = this × 86400 (download-link TTL),
+  #    so the file and its link expire together. Default 1 day.
+  campaignExportExpiryDays: 1
+
   service_account_subjects:
     - "system:serviceaccount:aggregator:aggregator-api"
     - "system:serviceaccount:aggregator:aggregator-worker"

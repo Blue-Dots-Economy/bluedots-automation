@@ -103,3 +103,26 @@ variable "buckets" {
     error_message = "Each bucket entry must have a unique key."
   }
 }
+
+variable "campaign_export_expiry_days" {
+  description = <<-EOT
+    Days after which campaign PII export objects (under campaign_export_prefix) are deleted
+    from every bucket via a lifecycle rule, so decrypted CSVs are not retained at rest longer
+    than the short-lived download link. Should match the aggregator's EXPORT_URL_TTL_SECONDS
+    (which is this value × 86400) — both are driven by global.campaignExportExpiryDays. 0
+    disables the rule.
+  EOT
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.campaign_export_expiry_days >= 0
+    error_message = "campaign_export_expiry_days must be >= 0 (0 disables the rule)."
+  }
+}
+
+variable "campaign_export_prefix" {
+  description = "Object key prefix for campaign PII exports subject to the expiry lifecycle rule."
+  type        = string
+  default     = "campaign-exports/"
+}

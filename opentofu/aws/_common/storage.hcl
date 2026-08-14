@@ -27,6 +27,11 @@ inputs = {
   cors_allowed_origins = local.cors_allowed_origins
   allowed_referers     = local.allowed_referers
 
+  # Campaign PII export retention: delete campaign-exports/ objects after N days. Same
+  # global.campaignExportExpiryDays knob drives the aggregator's EXPORT_URL_TTL_SECONDS
+  # (× 86400) in helm, so the S3 file expiry and the download-link expiry stay in lockstep.
+  campaign_export_expiry_days = lookup(local.global_vars.global, "campaignExportExpiryDays", 1)
+
   # Bucket definitions — override in global-values.yaml under global.buckets
   # Each entry: { type = "public"|"private", versioning_enabled = bool, cors_enabled = bool }
   buckets = lookup(local.global_vars.global, "buckets", {
