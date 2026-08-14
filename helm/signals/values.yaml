@@ -314,22 +314,27 @@ ui:
   # picks the binding per request from the Host header. Hosts here MUST also be
   # in global.publicHosts (above) so the ui + api ingresses route them.
   # hostBindings: "bluedotssignals.provider.org=purple_dot/provider;bluedotssignals.seeker.org=purple_dot/seeker"
-  # nginx:alpine entrypoint chowns /var/cache/nginx/client_temp on startup,
-  # so the pod must run as root and the container keeps CHOWN/SETGID/SETUID.
+  # The ui image is a Docker Hardened Image, which needs none of the privileges
+  # the old nginx:alpine exception granted: it pre-chowns /etc/nginx,
+  # /var/lib/nginx, /run/nginx and /var/log/nginx to 65532 at BUILD time (so no
+  # startup chown, hence no CHOWN/SETGID/SETUID), and nginx listens on 8080 (so
+  # no NET_BIND_SERVICE). Running it as root would discard the main benefit of
+  # the hardened base.
+  #
+  # readOnlyRootFilesystem MUST stay false: the image's entrypoint generates
+  # /etc/nginx/conf.d/default.conf at boot from UI_VARIANT / UI_HOST_BINDINGS.
+  # /etc/nginx is chowned to 65532 with g+w in the base image, so that write
+  # succeeds unprivileged.
   podSecurityContext:
-    runAsNonRoot: false
-    runAsUser: 0
-    fsGroup: 0
+    runAsNonRoot: true
+    runAsUser: 65532        # nginx user in the DHI nginx image (101 was nginx:alpine)
+    fsGroup: 65532
   securityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: false
     capabilities:
-      drop: []
-      add:
-        - CHOWN
-        - SETGID
-        - SETUID
-        - NET_BIND_SERVICE
+      drop:
+        - ALL
   # UI nginx proxies /api/* to the in-cluster dpg-api service, so the browser
   # only needs to reach the UI pod (single port-forward, API never exposed).
   runtimeConfig:

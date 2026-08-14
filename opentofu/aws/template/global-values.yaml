@@ -500,8 +500,15 @@ ui:
   reference:
     enabled: true
   service:
+    # targetPort must stay 8080: the ui image is a Docker Hardened Image running
+    # as uid 65532, which cannot bind a privileged port, so nginx listens on
+    # 8080. The chart derives BOTH the Service targetPort and the Deployment's
+    # containerPort (and hence the liveness/readiness httpGet target) from this
+    # one value — setting it to 80 makes the probes hit a dead port, so the pod
+    # never goes Ready and the kubelet restarts it in a loop.
+    # `port` is the Service port Kong talks to and stays 80.
     port: 80
-    targetPort: 80
+    targetPort: 8080
 
 notification-service:
   secrets:

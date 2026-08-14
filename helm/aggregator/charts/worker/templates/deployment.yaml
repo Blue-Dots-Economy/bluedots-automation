@@ -82,16 +82,19 @@ spec:
                   name: {{ include "worker.secretName" . }}
                   key: SIGNALSTACK_ADMIN_KEY
                   optional: true
-          livenessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - pgrep -f "node" >/dev/null || exit 1
-            initialDelaySeconds: 30
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
+          # No livenessProbe. The previous one was
+          #   exec: [sh, -c, 'pgrep -f "node" >/dev/null || exit 1']
+          # which cannot run against the worker image now that it is a Docker
+          # Hardened Image — that image ships neither `sh` nor `pgrep`, so the
+          # probe fails, the kubelet kills the container, and the pod restarts in
+          # a loop.
+          #
+          # Dropping it loses almost nothing: `pgrep -f node` succeeded exactly
+          # when PID 1 was node, i.e. whenever the container was alive — and if
+          # node exits, the container exits and the kubelet restarts it anyway.
+          # A probe that can detect a *wedged* worker needs something the process
+          # actually answers (an HTTP health endpoint, or a queue-heartbeat
+          # freshness check); that is app work, tracked separately.
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
