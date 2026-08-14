@@ -670,18 +670,35 @@ Why this is the better path when credentials allow it: the deployed realm ends u
 **byte-equivalent to the chart's `realm.json`**. That is the entire point of this
 repo owning the artefact — otherwise every environment carries a hand-reconciled
 realm that differs from the file, and the P5.1 assertions guarantee nothing about
-what is actually running. It also needs **no net-new reconciler**, and it leaves
-the legacy realm intact beside the new one as an instant rollback.
+what is actually running. It also needs **no net-new reconciler**.
+
+> **CORRECTION (after a live run on test-dev-cluster).** This section previously
+> claimed Path A "leaves the legacy realm intact beside the new one as an instant
+> rollback." **It does not, and it cannot.** `USER_ENTITY.ID` is the primary key of
+> the whole table (`PRIMARY KEY (id)`), not a per-realm key, so one Keycloak
+> database cannot hold the same user id in two realms. Preserving `sub` and
+> retaining the legacy realm are mutually exclusive; the legacy realm **must be
+> deleted before the import**, and rollback is a `keycloak` database restore.
+> The import otherwise fails with a bare `Duplicate resource error`, and
+> `ifResourceExists: SKIP` does not help — the conflict is a table-wide PK
+> violation, not a resource-exists-in-this-realm condition.
+> Procedure: runbook §6.5b.
 
 Constraints to respect:
+- **User ids are globally unique across realms.** The legacy realm must be gone
+  before the import (above). Take and *verify* the `keycloak` dump first — it is
+  the only rollback.
 - `POST /users` ignores a supplied id; **`partialImport` honours it**. Use
   `partialImport` — preserving `sub` is non-negotiable, because it is persisted in
   the aggregator DB (`aggregator_orgs.owner_kc_sub`, `bulk_uploads.uploaded_by`,
   `registration_links.created_by`, `aggregators.created_by`/`updated_by`).
 - Carry over the user **attributes** too — `aggregator_id`, `decision_made`,
   `signalstack_org_id` — or approved coordinators are refused at the portal gate.
-- Two realms coexist briefly, so the pinned portal-gate flow id must not collide
-  with anything in the legacy realm. Verify per environment before starting.
+- The two realms coexist only between `deploy_keycloak` and the legacy realm's
+  deletion — and per the correction above, the deletion comes **first** in the
+  corrected order, so in practice they do not coexist at all. Either way the
+  pinned portal-gate flow id must not collide with anything in the legacy realm;
+  verify per environment before starting.
 - Verify a `partialImport` round-trip on a **copy** of the database first. Do not
   trust it on a live realm untested.
 
@@ -711,7 +728,7 @@ of the window so users get a clean re-login rather than an opaque failure.
 Realm import applies only to an empty realm. So if `global.keycloakRealm` names a
 realm that does **not** exist, Keycloak creates a new empty one and the Deployment
 comes up **healthy with zero users**. Nothing fails at boot; the apps simply reject
-every login while the old realm sits untouched beside it.
+every login. (Note: on the corrected Path A the legacy realm is already deleted by this point, so there is no old realm to fall back to — see the CORRECTION above.)
 
 Guard explicitly, because no existing check catches it:
 
@@ -726,7 +743,7 @@ Guard explicitly, because no existing check catches it:
 *empty* realm. If `global.keycloakRealm` is set to a name that does not exist in
 the database, Keycloak creates a **new, empty realm** and the new Deployment comes
 up healthy with zero users. Nothing fails at boot — the apps just reject every
-login, and the old realm sits untouched beside the new one. Guard against it:
+login. (On the corrected Path A the legacy realm is already deleted by this point — see the CORRECTION above.) Guard against it:
 
 - Assert the configured realm name matches a row in `realm` *before* deploying.
 - Add a preflight check to `deploy_keycloak` that fails when the configured realm
@@ -751,8 +768,13 @@ login, and the old realm sits untouched beside the new one. Guard against it:
 5. **Set `global.keycloakRealm`** to the target common realm name.
 6. **Deploy `common-services`** (adds the new secrets and the `keycloak` role;
    Keycloak itself not yet running there).
-7. **Scale the aggregator Keycloak to zero** — do not delete it. Keeping it as a
-   scaled-down rollback target is far cheaper than a database restore.
+7. **Scale the aggregator Keycloak to zero** — do not delete the workload (a
+   Deployment is trivial to scale back up, and nothing should serve from the
+   legacy realm while it is removed). **But it is not a rollback target.** On
+   Path A the legacy *realm* is deleted at this point to free the user ids, so a
+   scaled-up old Keycloak would start against a database that no longer holds its
+   realm. **The rollback is the verified `keycloak` dump from step 1**, and it must
+   be confirmed readable (`pg_restore -l`) before the realm is deleted.
 8. **Execute the chosen path** (11.2.1) — rename-out + fresh import + user
    `partialImport`, or rename-in-place + reconciler.
 9. **`deploy_keycloak`.** On Path A confirm the import **ran** against the empty
@@ -778,12 +800,67 @@ login, and the old realm sits untouched beside the new one. Guard against it:
 16. **Delete the legacy realm and the old aggregator Keycloak** once both DPGs are
     verified and you are past the rollback window.
 
-### 11.4 Ownership loose end
+### 11.4 Database ownership — migrate it, do not work around it
 
 Existing environments have the `keycloak` database owned by the `aggregator` role
-(P1.7). Leave it. Changing the owner of a live database is not worth the risk for
-a cosmetic gain; the new owner applies to new environments only. Note the
-divergence in the deployment branch's README so it is not mistaken for drift.
+(P1.7). **Migrate the ownership to the `keycloak` role as part of the cutover.**
+
+> **REVISED 2026-08-14, after rehearsing both paths on test-dev-cluster.**
+> This section previously said "Leave it. Changing the owner of a live database is
+> not worth the risk for a cosmetic gain." That was wrong on both counts: the gain
+> is not cosmetic, and leaving it is the more expensive option.
+
+**Leaving it is not free — it costs a permanent trunk divergence.** Keeping
+`aggregator` as the owner forces `postgres.username: aggregator`, and because the
+chart reads its password from `secrets.keycloakPostgresPassword` *regardless of
+the configured username*, it also forces that key to be repointed at the
+aggregator role in `modules/output-file/global-secrets.yaml.tfpl`. That file is a
+**shared module tracked on trunk**. So the workaround means an environment-specific
+edit sitting uncommitted in a shared file, which every operator must re-apply after
+a fresh checkout and must never accidentally commit. A README note does not make
+that safe — it is a standing footgun on every future deploy of every environment.
+
+**Flipping `postgres.username` alone does NOT work.** Verified: the `keycloak`
+role can CONNECT and has schema USAGE, but has no `SELECT` on `user_entity` and no
+`CREATE`. Keycloak starts cleanly and then fails on its first query — which reads
+like an application bug, not a permissions gap. The ownership has to move.
+
+**The migration is safe and cheap.** Ownership is catalogue metadata: no row is
+read, written or moved. On test-dev-cluster it moved the database plus **90**
+public objects (indexes follow their tables automatically) in a single
+transaction, with the content fingerprint — users/clients/groups/attributes/role
+mappings/realms — **identical before and after**, and Keycloak reconnecting as the
+`keycloak` role with zero auth failures.
+
+Procedure, with dry-run default and a `CONFIRM=yes` gate:
+`test-dev-keycloak-migration/scripts/06-reassign-keycloak-db-owner.sh`. In outline:
+
+1. Verify the `keycloak` role's password actually authenticates *before* changing
+   anything — log in as that role and do a read and a write. The role is created
+   by common-services' bootstrap from `credentials.keycloakPassword`; if that has
+   drifted, the switch fails after the cutover instead of before it.
+2. Scale Keycloak to 0. Each `ALTER TABLE ... OWNER TO` takes an ACCESS EXCLUSIVE
+   lock, and a live JDBC pool will block it.
+3. `ALTER DATABASE keycloak OWNER TO keycloak`, then alter every table, sequence,
+   view and matview in `public` owned by `aggregator`. On PG15+ the `public`
+   schema is owned by `pg_database_owner`, so it follows the database
+   automatically — no `ALTER SCHEMA` needed.
+4. Assert: 0 objects left owned by `aggregator`, database owner is `keycloak`,
+   the `keycloak` role now has SELECT/INSERT on `user_entity` and CREATE on
+   `public`, the content fingerprint is unchanged, and — importantly — **the
+   `aggregator` database's own owner is untouched**.
+5. Revert the tfpl to trunk, `apply_tf_output_file`, set
+   `postgres.username: keycloak`, `deploy_keycloak`.
+
+**Do not use `REASSIGN OWNED BY`.** It also reassigns *shared* objects, including
+databases owned by the source role — run against `aggregator` it can hand the
+**aggregator database itself** to `keycloak`. Alter the objects in the target
+database by name instead: more code, but it cannot overreach. Step 4's
+aggregator-DB-owner assertion exists to catch exactly this if anyone substitutes
+the shortcut.
+
+After this, existing and new environments share one wiring and there is nothing to
+note in the deployment branch's README.
 
 ## 12. Dependencies outside this repo
 

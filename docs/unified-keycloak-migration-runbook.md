@@ -8,8 +8,37 @@ Section numbers below refer to *this* document unless the plan is named.
 
 **An existing environment moves to the new unified realm.** The new realm is
 created fresh from the chart's `realm.json`, and existing Keycloak users are
-exported and re-imported into it with their ids (`sub`) preserved. The old realm is
-left untouched beside it as the rollback.
+exported and re-imported into it with their ids (`sub`) preserved.
+
+> ### ⚠ The old realm CANNOT be kept beside the new one
+>
+> `USER_ENTITY.ID` is the primary key of the **whole table**, not a per-realm key:
+>
+> ```sql
+> SELECT pg_get_constraintdef(oid) FROM pg_constraint
+>  WHERE conrelid='user_entity'::regclass AND contype='p';
+> -- PRIMARY KEY (id)
+> ```
+>
+> One Keycloak database therefore cannot hold the same user id in two realms, so
+> these two goals are **mutually exclusive**:
+>
+> - **(a)** every migrated user keeps its `sub` — non-negotiable, the aggregator
+>   database stores subs as plain columns; and
+> - **(b)** the old realm stays in place as a rollback needing no DB restore.
+>
+> **(a) wins.** The old realm must be **deleted before the import** (§6.5b).
+> Attempting the import with it still present fails with a bare
+> `Duplicate resource error` — and `ifResourceExists: SKIP` does **not** help,
+> because the conflict is a table-wide PK violation, not a
+> resource-already-in-this-realm condition.
+>
+> **Rollback is therefore a `keycloak` database restore (§8), not a realm switch.**
+> That is why §6.2's dump must be verified readable *before* the window opens.
+>
+> Earlier revisions of this runbook said the old realm was an untouched rollback.
+> That was wrong; it was corrected after a live run on test-dev-cluster, where the
+> import failed exactly as described.
 
 **No realm is renamed.** The unified realm name differs from the existing one, so
 the fresh import simply creates it alongside — there is nothing to rename out of
@@ -48,12 +77,15 @@ carrying users means §6.
 | Realm | `aggregator` (2 clients, no realm roles) | new unified realm, created fresh: 7 clients (both DPGs), 3 realm roles, both service accounts, portal gate |
 | Issuer URL | `.../realms/aggregator` | `.../realms/<new realm>` — **changes** |
 | Serves | aggregator only | aggregator **and** signals |
-| `keycloak` database | shared Postgres | **same database** — both realms live in it |
-| Users | in the old realm | **copied** into the new realm, `sub` preserved |
+| `keycloak` database | shared Postgres | **same database** — the new realm replaces the old one in it |
+| Users | in the old realm | **moved** into the new realm, `sub` preserved |
+| Old realm | present | **deleted before the import** (§6.5b) — see the warning above |
 | Sessions | — | invalidated; coordinators re-login |
 
-The database is not moved and the old realm is not modified. The new realm is
-created next to it and users are copied across.
+The database is not moved. The new realm is created alongside, then the old realm
+is deleted to free its user ids, and only then are the users imported with those
+same ids. "Copied" is the wrong mental model — it is a **move**, and the only
+copy of the pre-migration state is the §6.2 dump.
 
 ## 3. Preconditions
 
@@ -109,10 +141,10 @@ Edit `opentofu/aws/<env>/global-values.yaml`.
 
 | Value | Set to | Why |
 |---|---|---|
-| `global.keycloakRealm` | the **new unified** realm name (e.g. `bluedots`), for both new and existing environments | Consumed by three charts — keycloak, aggregator, signals. They must agree or tokens validate against the wrong issuer. No chart has a literal default. On an existing environment this deliberately names a realm that does not exist yet, so `--import-realm` creates it complete; §6 then copies users in. Getting it wrong in the *other* direction — naming a realm that exists but is empty — is the dangerous case (§11). |
+| `global.keycloakRealm` | the **new unified** realm name (e.g. `bluedots`), for both new and existing environments | Consumed by three charts — keycloak, aggregator, signals. They must agree or tokens validate against the wrong issuer. No chart has a literal default. On an existing environment this deliberately names a realm that does not exist yet, so `--import-realm` creates it complete; §6 then moves users in (§6.5b deletes the old realm first — the ids cannot exist twice). Getting it wrong in the *other* direction — naming a realm that exists but is empty — is the dangerous case (§11). |
 | `global.keycloak.realm` | same value | The signals chart's copy. |
 | `global.keycloak.publicBaseUrl` | `https://<aggregator-host>/auth` | The **Keycloak** host, not a signals host — the issuer string in a token is built from it. |
-| `keycloak.postgres.username` | existing: **`aggregator`** · new: leave `keycloak` | An existing `keycloak` database is already owned by the `aggregator` role and the bootstrap Job's `CREATE DATABASE` guard is a no-op, so the owner does not change. Leaving the default on an existing cluster gives Keycloak a role with no access to its own database. |
+| `keycloak.postgres.username` | **`keycloak`** everywhere — the stock value | On an existing cluster the `keycloak` database starts out owned by the `aggregator` role (the bootstrap Job's `CREATE DATABASE` guard is a no-op, so it never changes by itself). **Migrate the ownership in §6.5c rather than pinning this to `aggregator`** — that workaround also forces an edit to a shared, trunk-tracked module and is the more expensive path. Plan §11.4. |
 | `global.publicHosts` | the signals hostnames | Builds signals-ui's redirect / origin / post-logout allow-lists. Wrong or empty fails signals login with `invalid_redirect_uri` — and it looks fine locally, where everything is localhost. |
 | `api.config.AUTH_PROVIDER` | leave at **`betterauth`** | Do not flip signals in this window. §10. |
 
@@ -230,8 +262,10 @@ provision.
 
 ## 6. Existing-environment upgrade
 
-The new unified realm is created fresh; existing users are copied into it with
-their ids preserved. The old realm is never modified — it stays as the rollback.
+The new unified realm is created fresh; existing users are **moved** into it with
+their ids preserved. The old realm is **deleted** in §6.5b to free those ids — it
+cannot serve as a rollback (see the warning in §1). The rollback is the §6.2
+database dump.
 
 §6.1–6.4 are preparation and safe to run in advance. §6.5 onwards is the window.
 
@@ -394,13 +428,105 @@ this environment; do not trust it live first.
 
 ### 6.5 Stop the aggregator apps and the old Keycloak
 
-The old Keycloak is scaled down, not deleted — it is the fast rollback. Its realm
-data stays in the database either way.
+Scale down, do not delete the workload — a Deployment is trivial to scale back up,
+and nothing should be serving from the old realm while it is being removed.
 
 ```bash
 kubectl -n aggregator scale deploy/aggregator-api deploy/aggregator-web deploy/aggregator-worker --replicas=0
 kubectl -n aggregator scale deploy/aggregator-keycloak --replicas=0
 ```
+
+### 6.5b Delete the old realm — required before the import
+
+The user ids in the old realm are the ids the new realm must claim, and
+`USER_ENTITY.ID` is a table-wide primary key (see the warning in §1). The import
+in §6.7 fails with `Duplicate resource error` until this is done.
+
+**Do not run this until all four are true.** Once the realm is gone, the §6.2 dump
+is the only copy of it.
+
+1. `pg_restore -l` reads the §6.2 `keycloak` dump and reports a sane TOC count.
+2. The realm export JSON is non-empty **and** carries clients, groups and roles —
+   assert it, do not eyeball it:
+   ```bash
+   jq '{clients:[.clients[]?]|length, groups:[.groups[]?]|length, roles:[.roles.realm[]?]|length}' realm-<old>.json
+   ```
+   All three must be `> 0`. A `partial-export` whose flags were passed with `-s`
+   instead of `-q` returns HTTP 200 with all three **empty** — a backup that looks
+   fine and restores nothing.
+3. The user payload for §6.7 is built and every entry has an `id`.
+4. Every aggregator workload is at `replicas=0`.
+
+```bash
+TOKEN=$(tok)
+curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$KC/admin/realms/$OLD" \
+  -H "Authorization: Bearer $TOKEN"        # expect 204
+
+# The ids must now be free, or the import will fail again.
+# Expect 0. Substitute the ids from your payload.
+psql -c "SELECT count(*) FROM user_entity WHERE id IN ('<id1>','<id2>',...);"
+```
+
+A scripted implementation of this step, with all four guards and a `CONFIRM=yes`
+gate, is in `test-dev-keycloak-migration/scripts/02b-drop-old-realm.sh` from the
+test-dev run.
+
+### 6.5c Migrate the `keycloak` database ownership
+
+Only on an **existing** environment, where the `keycloak` database is owned by the
+`aggregator` role. Skip on a clean deploy — there the `keycloak` role already owns
+it.
+
+Do it here: after §6.5 scaled Keycloak to 0 (each `ALTER TABLE ... OWNER TO` takes
+an ACCESS EXCLUSIVE lock that a live JDBC pool would block) and before §6.6
+deploys with `postgres.username: keycloak`.
+
+**Why migrate rather than pin `postgres.username: aggregator`** — plan §11.4. The
+pin looks cheaper but also forces `secrets.keycloakPostgresPassword` to be
+repointed in `modules/output-file/global-secrets.yaml.tfpl`, a **shared module
+tracked on trunk**: an uncommittable edit every operator must re-apply forever.
+Migrating once removes that permanently. And flipping the username *alone* does
+not work — the `keycloak` role can connect but has no `SELECT` on `user_entity`
+and no `CREATE`, so Keycloak starts and then fails on its first query.
+
+Ownership is catalogue metadata: **no row is read, written or moved.**
+
+```bash
+# Confirm the keycloak role's password actually works BEFORE changing anything —
+# it is created by common-services' bootstrap from credentials.keycloakPassword,
+# and if that has drifted you want to know now, not after the cutover.
+PGPASSWORD=<credentials.keycloakPassword> psql -h <host> -U keycloak -d keycloak \
+  -c 'SELECT count(*) FROM user_entity;'
+
+# Dry run first; then execute. Both are in the script.
+CONFIRM=yes bash scripts/06-reassign-keycloak-db-owner.sh
+```
+
+The script alters the database plus every table/sequence/view/matview in `public`
+owned by `aggregator` (indexes follow their tables; on PG15+ `public` is owned by
+`pg_database_owner` and follows the database). It then asserts: nothing left owned
+by `aggregator`, the database owner is `keycloak`, the role has SELECT/INSERT on
+`user_entity` and CREATE on `public`, the content fingerprint is unchanged, and
+**the `aggregator` database's own owner is untouched**.
+
+> **Do not substitute `REASSIGN OWNED BY`.** It also reassigns *shared* objects,
+> including databases owned by the source role — run against `aggregator` it can
+> hand the **aggregator database itself** to `keycloak`. That is precisely what
+> the aggregator-DB-owner assertion above is there to catch.
+
+Then put the config back to stock before §6.6:
+
+```bash
+git checkout -- opentofu/aws/modules/output-file/global-secrets.yaml.tfpl
+bash install.sh apply_tf_output_file        # keycloakPostgresPassword -> the keycloak role's own
+# <env>/global-values.yaml: postgres.username -> keycloak
+```
+
+Verify the pairing inverted — `secrets.keycloakPostgresPassword` must now equal
+`credentials.keycloakPassword` and **not** `secrets.postgresPassword`.
+
+Rehearsed on test-dev-cluster 2026-08-14: 90 objects, one transaction, fingerprint
+identical, Keycloak reconnected as `keycloak` with zero auth failures.
 
 ### 6.6 Deploy the shared Keycloak
 
@@ -576,26 +702,58 @@ account).
 
 ## 8. Rollback
 
-**The old realm was never modified.** Rollback is reverting the realm name and
-scaling the old Keycloak back up — the new realm can simply be abandoned or deleted.
+**Rollback requires restoring the `keycloak` database from the §6.2 dump.** The old
+realm was deleted in §6.5b to free its user ids (§1), so there is no realm to
+switch back to. Scaling the old Keycloak up on its own would start it against a
+database that no longer contains its realm.
+
+This is the single most important consequence of the PK constraint: **the dump is
+the rollback.** If §6.2 was skipped or its dump was never verified readable, there
+is no way back — which is why §6.5b gates on exactly that.
 
 ```bash
-# 1. Revert global.keycloakRealm (and global.keycloak.realm) to `aggregator`
-#    in <env>/global-values.yaml.
-
-# 2. Bring the old Keycloak back and take the new one down.
+# 1. Take the new Keycloak down and stop the apps.
+kubectl -n aggregator      scale deploy/aggregator-api deploy/aggregator-web \
+                                 deploy/aggregator-worker --replicas=0
 kubectl -n common-services scale deploy/keycloak-keycloak --replicas=0
-kubectl -n aggregator      scale deploy/aggregator-keycloak --replicas=1
 
-# 3. Flush sessions again (the issuer is reverting) and redeploy the apps.
+# 2. Restore the keycloak database from the §6.2 dump.
+#    --clean --if-exists drops the new realm's objects on the way in.
+pg_restore -U postgres -d keycloak --clean --if-exists <§6.2 dump>
+
+# 3. Revert global.keycloakRealm (and global.keycloak.realm) to the OLD realm
+#    name in <env>/global-values.yaml.
+
+# 4. Bring the old Keycloak back up.
+kubectl -n aggregator scale deploy/aggregator-keycloak --replicas=1
+
+# 5. Flush sessions again (the issuer is reverting) and redeploy the apps.
 cd opentofu/aws/<env>
 bash install.sh deploy_aggregator
 ```
 
+Only the `keycloak` database needs restoring. The aggregator and signals databases
+are not modified by this migration, so leave them alone.
+
+**Decide the rollback window before the window opens.** Restoring the dump
+discards every Keycloak-side change made since it was taken — including any user
+who signed up, or any org approved, after the cutover.
+
 **If the user import was partial**, do not re-run it expecting the gaps to fill:
 `ifResourceExists: SKIP` skips ids that already exist, so you cannot tell repaired
-from stale. Delete the new realm and redo §6.6–6.7 cleanly. This is safe — the new
-realm holds nothing but copies.
+from stale. Delete the new realm and redo §6.6–6.7 cleanly.
+
+This is recoverable **only because the §6.3 payload file still holds every user
+with its id** — the old realm is already gone, so the new realm is the only live
+copy. Confirm the payload is intact and complete *before* deleting:
+
+```bash
+jq '.users | length, (map(select(.id == null)) | length)' payload-users.json
+# expect: <your user count>, then 0
+```
+
+If the payload is missing or short, restore from the §6.2 dump instead (§8 above)
+rather than deleting the only realm that has the users.
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$KC/admin/realms/$NEW" \
@@ -613,25 +771,25 @@ created during the window.
 
 Once verified and past your rollback window:
 
-```bash
-# Remove the old realm (it still holds the original copies of every user).
-TOKEN=$(tok)
-curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$KC/admin/realms/$OLD" \
-  -H "Authorization: Bearer $TOKEN"
+The old realm is **already gone** — it was deleted in §6.5b, before the import.
+Nothing to remove here; only the orphaned workload is left.
 
-# Remove the old Keycloak. It is no longer in the aggregator chart, so
+```bash
+# Remove the old Keycloak workload. It is no longer in the aggregator chart, so
 # `helm upgrade` leaves these orphaned — delete them explicitly.
 kubectl -n aggregator delete deploy/aggregator-keycloak
 kubectl -n aggregator delete svc/aggregator-keycloak
 kubectl -n aggregator delete ingress -l app.kubernetes.io/component=keycloak
 ```
 
-Deleting the old realm is irreversible except from the §6.2 dump. Leave it in place
-until at least one full business cycle has passed with real logins.
+**Retain the §6.2 dump for as long as you would have kept the old realm** — at
+least one full business cycle of real logins. It is the rollback (§8), and once
+you delete it there is no way back to the pre-migration state.
 
-Record in the environment's deployment branch: the realm name, and that
-`keycloak.postgres.username` is pinned to `aggregator` (§4), so the next operator
-does not "fix" it to the default.
+Record in the environment's deployment branch: the realm name, and the auth host
+if one was set. Nothing needs recording about `keycloak.postgres.username` — §6.5c
+migrates the database ownership so the stock `keycloak` value is correct, and
+there is no divergence for a later operator to mistake for drift.
 
 ---
 
