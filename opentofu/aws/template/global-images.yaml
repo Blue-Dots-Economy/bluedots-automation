@@ -19,26 +19,26 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-d2079ff"
+    tag: "202608-s1-rc1"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-d2079ff"
+    tag: "202608-s1-rc1"
     pullPolicy: Always
 
 notification-service:
   image:
     repository: ghcr.io/blue-dots-economy/notification-service
-    tag: "sha-5cf31e4"
+    tag: "202608-s1-rc1"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
 search:
   image:
     repository: ghcr.io/blue-dots-economy/signals-search
-    tag: "sha-b7acda7"
+    tag: "202608-s1-rc1"
     pullPolicy: Always
 
 # search-embeddings: TEI model image with BAAI/bge-m3 baked in
@@ -60,19 +60,19 @@ s3-export:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "sha-75a9f08"
+    tag: "202608-s1-rc1"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "sha-75a9f08"
+    tag: "202608-s1-rc1"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "sha-75a9f08"
+    tag: "202608-s1-rc1"
     pullPolicy: Always
 
 keycloak:
