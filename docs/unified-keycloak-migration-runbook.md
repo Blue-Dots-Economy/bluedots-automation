@@ -1,0 +1,991 @@
+# Runbook: deploying the unified Keycloak
+
+**Applies to:** standing up a new environment, or moving an existing one from the
+aggregator-owned Keycloak to the shared `keycloak` release.
+
+**Design reference:** `docs/superpowers/plans/2026-08-04-keycloak-common-service.md`.
+Section numbers below refer to *this* document unless the plan is named.
+
+**An existing environment moves to the new unified realm.** The new realm is
+created fresh from the chart's `realm.json`, and existing Keycloak users are
+exported and re-imported into it with their ids (`sub`) preserved.
+
+> ### ⚠ The old realm CANNOT be kept beside the new one
+>
+> `USER_ENTITY.ID` is the primary key of the **whole table**, not a per-realm key:
+>
+> ```sql
+> SELECT pg_get_constraintdef(oid) FROM pg_constraint
+>  WHERE conrelid='user_entity'::regclass AND contype='p';
+> -- PRIMARY KEY (id)
+> ```
+>
+> One Keycloak database therefore cannot hold the same user id in two realms, so
+> these two goals are **mutually exclusive**:
+>
+> - **(a)** every migrated user keeps its `sub` — non-negotiable, the aggregator
+>   database stores subs as plain columns; and
+> - **(b)** the old realm stays in place as a rollback needing no DB restore.
+>
+> **(a) wins.** The old realm must be **deleted before the import** (§6.5b).
+> Attempting the import with it still present fails with a bare
+> `Duplicate resource error` — and `ifResourceExists: SKIP` does **not** help,
+> because the conflict is a table-wide PK violation, not a
+> resource-already-in-this-realm condition.
+>
+> **Rollback is therefore a `keycloak` database restore (§8), not a realm switch.**
+> That is why §6.2's dump must be verified readable *before* the window opens.
+>
+> Earlier revisions of this runbook said the old realm was an untouched rollback.
+> That was wrong; it was corrected after a live run on test-dev-cluster, where the
+> import failed exactly as described.
+
+**No realm is renamed.** The unified realm name differs from the existing one, so
+the fresh import simply creates it alongside — there is nothing to rename out of
+the way. Verified: the previously-deployed realm pins no authentication-flow ids,
+so the new realm's pinned entitlement-gate flow cannot collide with it.
+
+**User impact:** the realm name changes, so the issuer URL changes and every
+session and SSO cookie is invalidated. All coordinators log in again. Plan a
+maintenance window. Users are OTP-only, so nothing is lost in the round-trip —
+there are no password credentials to carry.
+
+---
+
+## 1. Which path applies to you
+
+| Situation | Path | Involves |
+|---|---|---|
+| **New environment** — no Keycloak deployed, no users | **§5** | Deploy in order. ~30 min. |
+| **Existing environment** — Keycloak in the `aggregator` release with real coordinators | **§6** | Deploy the shared Keycloak, migrate users into the new unified realm. Maintenance window; coordinators re-login. |
+
+§3 and §4 apply to both. If unsure which you are:
+
+```bash
+kubectl -n common-services exec deploy/<postgres-deploy> -- \
+  psql -U postgres -d keycloak -c "select name from realm;"
+```
+
+No `keycloak` database, or only `master`, means new environment. Any realm
+carrying users means §6.
+
+## 2. What changes
+
+| | Before | After |
+|---|---|---|
+| Keycloak owner | `aggregator` release, `aggregator` namespace | `keycloak` release, `common-services` namespace |
+| Realm | `aggregator` (2 clients, no realm roles) | new unified realm, created fresh: 7 clients (both DPGs), 3 realm roles, both service accounts, portal gate |
+| Issuer URL | `.../realms/aggregator` | `.../realms/<new realm>` — **changes** |
+| Serves | aggregator only | aggregator **and** signals |
+| `keycloak` database | shared Postgres | **same database** — the new realm replaces the old one in it |
+| Users | in the old realm | **moved** into the new realm, `sub` preserved |
+| Old realm | present | **deleted before the import** (§6.5b) — see the warning above |
+| Sessions | — | invalidated; coordinators re-login |
+
+The database is not moved. The new realm is created alongside, then the old realm
+is deleted to free its user ids, and only then are the users imported with those
+same ids. "Copied" is the wrong mental model — it is a **move**, and the only
+copy of the pre-migration state is the §6.2 dump.
+
+## 3. Preconditions
+
+- The `unified-keycloak` changes are deployed from this branch.
+- `kubectl` context points at the target cluster. **Confirm before every step:**
+  `kubectl config current-context`.
+- The **theme** image tag in `<env>/global-images.yaml` ships **both** the `otp`
+  and `signals` themes. This is a hard gate, not a cosmetic one: the shared realm
+  points `signals-ui` at `login_theme: signals`, and if that theme is absent
+  Keycloak falls back to its **built-in** theme — *not* to `otp`. The built-in
+  theme has no `login-otp-identifier.ftl` (it ships with the OTP SPI), so the
+  render throws `TemplateNotFoundException` and **every signals login returns
+  HTTP 500**. The aggregator is unaffected, because it uses the realm default, so
+  the failure looks signals-specific rather than like a Keycloak problem.
+
+  Confirm on the running pod before you rely on it — the image tag alone does not
+  tell you, since older images staged only `otp`:
+
+  ```bash
+  kubectl -n common-services exec <keycloak-pod> -c keycloak -- ls /opt/keycloak/themes
+  # must list BOTH: otp  signals
+  ```
+
+  Current images log `themes staged at /shared: otp, signals` from the
+  `themes-init` initContainer and fail loudly if either is missing.
+- Four new secrets exist in the generated `global-secrets.yaml`:
+
+  ```bash
+  cd opentofu/aws/<env>
+  # ORDER MATTERS. output-file reads random_passwords' outputs; if the four new
+  # random_ids do not exist yet, terragrunt falls back to the mock_outputs in
+  # _common/output-file.hcl and writes literal 0000... strings into
+  # global-secrets.yaml as real client secrets.
+  bash install.sh plan_tf_random_passwords     # GATE: "4 to add, 0 to change, 0 to destroy"
+  AUTO_APPROVE=1 bash install.sh apply_tf_random_passwords
+  AUTO_APPROVE=1 bash install.sh apply_tf_output_file
+  grep -E "signalsApiSecret|signalstackClientSecret|voiceDpgSignalsSecret|keycloakPostgresPassword" global-secrets.yaml
+  ```
+
+  Treat the plan output as a stop condition. Anything other than `0 to change`
+  means the tfstate is not what you think it is, and applying would regenerate
+  **every** password in it — including the live RDS master. Investigate first.
+
+  All four must be non-empty. The chart **fails the render** on any empty one
+  rather than installing an empty client secret — deliberate. Two paired values
+  must also match, or the realm and the apps disagree:
+  `credentials.keycloakPassword` == `secrets.keycloakPostgresPassword`, and
+  `secrets.signalsApiSecret` == signals' `api.secrets.data.KEYCLOAK_API_CLIENT_SECRET`.
+
+## 4. Environment values to set
+
+Edit `opentofu/aws/<env>/global-values.yaml`.
+
+| Value | Set to | Why |
+|---|---|---|
+| `global.keycloakRealm` | the **new unified** realm name (e.g. `bluedots`), for both new and existing environments | Consumed by three charts — keycloak, aggregator, signals. They must agree or tokens validate against the wrong issuer. No chart has a literal default. On an existing environment this deliberately names a realm that does not exist yet, so `--import-realm` creates it complete; §6 then moves users in (§6.5b deletes the old realm first — the ids cannot exist twice). Getting it wrong in the *other* direction — naming a realm that exists but is empty — is the dangerous case (§11). |
+| `global.keycloak.realm` | same value | The signals chart's copy. |
+| `global.keycloak.publicBaseUrl` | `https://<aggregator-host>/auth` | The **Keycloak** host, not a signals host — the issuer string in a token is built from it. |
+| `keycloak.postgres.username` | **`keycloak`** everywhere — the stock value | On an existing cluster the `keycloak` database starts out owned by the `aggregator` role (the bootstrap Job's `CREATE DATABASE` guard is a no-op, so it never changes by itself). **Migrate the ownership in §6.5c rather than pinning this to `aggregator`** — that workaround also forces an edit to a shared, trunk-tracked module and is the more expensive path. Plan §11.4. |
+| `global.publicHosts` | the signals hostnames | Builds signals-ui's redirect / origin / post-logout allow-lists. Wrong or empty fails signals login with `invalid_redirect_uri` — and it looks fine locally, where everything is localhost. |
+| `api.config.AUTH_PROVIDER` | leave at **`betterauth`** | Do not flip signals in this window. §10. |
+
+Static check before touching the cluster:
+
+```bash
+cd opentofu/aws/<env>
+bash install.sh lint        # realm assertions + helm lint all five charts
+```
+
+> **`install.sh lint` currently cannot pass.** `scripts/assert-realm.sh` defaults
+> to a *relative* realm path but `install.sh` invokes it from the environment
+> directory, so it always exits with `realm file not found`. Worse, the function
+> runs under `set -e`, so it aborts there and the **aggregator chart is never
+> linted**. Until the script is passed an absolute path, run the two halves by
+> hand from the repo root:
+>
+> ```bash
+> cd <repo-root>
+> bash scripts/assert-realm.sh
+> for c in monitoring common-services signals keycloak aggregator; do
+>   helm lint helm/$c --set global.existingSecret=lint-only --set global.keycloakRealm=lint-only
+> done
+> ```
+
+### 4.1 Object names
+
+Confirmed against a `helm template` render of this branch.
+
+| Thing | Name | Namespace |
+|---|---|---|
+| Old Keycloak Deployment / Service | `aggregator-keycloak` | `aggregator` |
+| New Keycloak Deployment / Service | `keycloak-keycloak` | `common-services` |
+| New Keycloak Secret | `keycloak-secrets` | `common-services` |
+| Realm-reconciliation Job | `keycloak-init` | `common-services` |
+| Aggregator app Deployments | `aggregator-api`, `aggregator-web`, `aggregator-worker` | `aggregator` |
+| Aggregator Secret / global ConfigMap | `aggregator-secrets` / `aggregator-global` | `aggregator` |
+| Keycloak initContainers | `themes-init`, `realm-renderer` | — |
+
+---
+
+## 5. Clean deployment — new environment
+
+Nothing to migrate: `--import-realm` creates the realm from the chart's
+`realm.json` on first boot, which is the one case where the deployed realm is
+byte-equivalent to the file this repo owns.
+
+### 5.1 Set the values
+
+Per §4, taking the **new environment** column: leave
+`keycloak.postgres.username` at `keycloak` (the bootstrap Job creates both role
+and database), and choose `global.keycloakRealm` before the first deploy.
+
+### 5.2 Deploy in order
+
+```bash
+cd opentofu/aws/<env>
+bash install.sh lint
+bash install.sh deploy_all_services   # monitoring → common-services → keycloak → signals → aggregator
+```
+
+Deploying piecemeal, the order is **mandatory**:
+
+```bash
+bash install.sh deploy_monitoring
+bash install.sh deploy_common_services   # creates the `keycloak` role + database
+bash install.sh deploy_keycloak          # imports the shared realm
+bash install.sh deploy_signals
+bash install.sh deploy_aggregator
+bash install.sh fix_acme_issuer_uri
+```
+
+`keycloak` **must** follow `common-services` — its database is created by a
+post-install hook of that release — and precede `signals`, whose api asserts
+Keycloak config at boot once `AUTH_PROVIDER=keycloak`.
+
+### 5.3 The manual step between signals and aggregator
+
+Unchanged by this work and easy to miss on a first install.
+`global.signalstack.actingOrgId` only exists after the signals migrate-job seeds
+the `organization` table. After `deploy_signals`, run
+`./get-signalstack-org-id.sh`, set the value, then `deploy_aggregator`. Skip it
+and aggregator login fails with `SIGNALSTACK_ORG_NOT_REGISTERED`.
+
+### 5.4 Confirm
+
+```bash
+kubectl -n common-services logs -l app.kubernetes.io/name=keycloak --tail=200 | grep -i import
+kubectl -n common-services logs deploy/keycloak-keycloak -c realm-renderer
+kubectl -n common-services logs job/keycloak-init
+```
+
+Expect the realm **imported**, the renderer printing `rendered realm.json` plus
+the signals-ui origins it applied, and the init Job completing all four steps. A
+running pod already proves every placeholder was substituted — the renderer fails
+the pod otherwise.
+
+**No manual protocol-mapper step.** The aggregator repo's `SETUP.md` says two
+mappers must be added by hand after a fresh import; that does not apply here. The
+shared realm declares all six on `aggregator-portal` (`aggregator_id`,
+`decision_made`, `aggregator_type`, `phone_number`, `signalstack_org_id`,
+`aggregator-api-audience`) and the init Job reconciles them idempotently.
+
+### 5.5 Verify
+
+From §7 run everything except *users preserved* — there is no prior state to
+compare. Then create your first coordinator through the normal registration +
+approval flow and confirm `/profile` renders.
+
+§8 and §9 do not apply (no old Keycloak, no legacy state). §10 applies as written,
+and a new environment can flip immediately since it has no signals users to
+provision.
+
+---
+
+## 6. Existing-environment upgrade
+
+The new unified realm is created fresh; existing users are **moved** into it with
+their ids preserved. The old realm is **deleted** in §6.5b to free those ids — it
+cannot serve as a rollback (see the warning in §1). The rollback is the §6.2
+database dump.
+
+§6.1–6.4 are preparation and safe to run in advance. §6.5 onwards is the window.
+
+### 6.1 Shell access to Keycloak
+
+Keep this shell for the whole procedure.
+
+```bash
+kubectl -n aggregator port-forward svc/aggregator-keycloak 8080:8080 &
+KC=http://localhost:8080/auth
+OLD=aggregator                    # the existing realm
+NEW=<global.keycloakRealm>        # the new unified realm, e.g. bluedots
+
+ADMIN_PW=$(kubectl -n aggregator get secret aggregator-secrets \
+  -o jsonpath='{.data.KC_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d)
+
+tok() {
+  curl -sS -X POST "$KC/realms/master/protocol/openid-connect/token" \
+    -d grant_type=password -d client_id=admin-cli \
+    -d username=admin -d "password=$ADMIN_PW" | jq -r .access_token
+}
+TOKEN=$(tok); [ -n "$TOKEN" ] && [ "$TOKEN" != null ] && echo "admin token OK"
+```
+
+Tokens expire in ~60s — re-run `TOKEN=$(tok)` on any 401.
+
+### 6.2 Back up
+
+This is the rollback for anything that goes wrong at the database level.
+
+**In-cluster Postgres:**
+
+```bash
+kubectl -n common-services exec deploy/<postgres-deploy> -- \
+  pg_dump -U postgres keycloak > keycloak-pre-unify-$(date +%F).sql
+```
+
+**Managed Postgres (RDS)** — most environments. There is no Postgres deployment
+to `exec` into, and a local `pg_dump` older than the server refuses outright
+("aborting because of server version mismatch"), so run a throwaway client pod
+inside the VPC:
+
+```bash
+PGPW=$(kubectl -n common-services get secret data-postgres \
+        -o jsonpath='{.data.postgres-password}' | base64 -d)
+PGHOST=<rds-endpoint>            # global-cloud-values.yaml -> postgres.host
+
+kubectl -n common-services run pgdump --rm -i --restart=Never \
+  --image=postgres:17-alpine --quiet --env="PGPASSWORD=$PGPW" --command -- \
+  pg_dump -h "$PGHOST" -U postgres -d keycloak -Fc > keycloak-pre-unify-$(date +%F).dump
+```
+
+Match the image's major version to the server. Verify the dump rather than
+trusting its size — a custom-format dump starts with `PGDMP`, and `pg_restore -l`
+must list its contents (again from a matching-version client):
+
+```bash
+head -c 5 keycloak-pre-unify-*.dump          # PGDMP
+kubectl -n common-services run pgcheck --rm -i --restart=Never \
+  --image=postgres:17-alpine --quiet --command -- \
+  sh -c 'cat > /tmp/d && pg_restore -l /tmp/d | grep -c "^[0-9]"' \
+  < keycloak-pre-unify-*.dump
+```
+
+For a plain-SQL dump, confirm it is non-empty and mentions `user_entity`.
+
+**Store it outside the repo.** `.gitignore` matches `global-secrets.yaml`
+exactly, not `*.dump` or `*.bak-*`, so a dump left in `opentofu/aws/<env>/` is
+one `git add -A` away from being committed.
+
+### 6.3 Record the baseline
+
+§7 compares against this. **`realm.id` is a UUID, not the realm name** — a query
+keyed on `realm_id = 'aggregator'` returns zero rows and "passes" vacuously.
+Resolve by **name**:
+
+```sql
+select count(*) from user_entity
+  where realm_id = (select id from realm where name = 'aggregator');
+
+select ua.name, count(*) from user_attribute ua
+  join user_entity u on u.id = ua.user_id
+  where u.realm_id = (select id from realm where name = 'aggregator')
+    and ua.name in ('aggregator_id','decision_made','signalstack_org_id')
+  group by ua.name;
+
+select ua.value, count(*) from user_attribute ua
+  join user_entity u on u.id = ua.user_id
+  where u.realm_id = (select id from realm where name = 'aggregator')
+    and ua.name = 'decision_made'
+  group by ua.value;
+```
+
+Confirm the realm is OTP-only — the whole copy approach rests on it:
+
+```sql
+select c.type, count(*) from credential c
+  join user_entity u on u.id = c.user_id
+  where u.realm_id = (select id from realm where name = 'aggregator')
+  group by c.type;
+```
+
+**Expected: zero rows.** Any `password` rows mean those credentials would be lost
+in the copy — stop and raise it.
+
+### 6.4 Export the users
+
+Captures ids, attributes, required actions **and realm-role mappings**. That last
+one matters: role mappings are not included in a plain user fetch, so org owners
+would silently lose `org_owner`.
+
+```bash
+mkdir -p kc-export && cd kc-export
+
+# Page through all users (default page size is 100).
+: > users-raw.json
+first=0
+while :; do
+  TOKEN=$(tok)
+  page=$(curl -sS "$KC/admin/realms/$OLD/users?first=$first&max=100&briefRepresentation=false" \
+    -H "Authorization: Bearer $TOKEN")
+  n=$(echo "$page" | jq 'length'); [ "$n" -eq 0 ] && break
+  echo "$page" | jq -c '.[]' >> users-raw.json
+  first=$((first + n)); echo "exported $first so far"
+done
+
+# Attach each user's realm-role mappings.
+: > users-with-roles.json
+while read -r u; do
+  id=$(echo "$u" | jq -r .id); TOKEN=$(tok)
+  roles=$(curl -sS "$KC/admin/realms/$OLD/users/$id/role-mappings/realm" \
+    -H "Authorization: Bearer $TOKEN" | jq '[.[].name]')
+  echo "$u" | jq --argjson r "$roles" '. + {realmRoles: $r}' >> users-with-roles.json
+done < users-raw.json
+
+# Build the partialImport payload. `id` is what preserves the sub.
+jq -s '{
+  ifResourceExists: "SKIP",
+  users: [ .[] | {
+    id, username, email, firstName, lastName,
+    enabled, emailVerified, createdTimestamp,
+    attributes, requiredActions, realmRoles
+  } ]
+}' users-with-roles.json > partial-import.json
+
+echo "users to import: $(jq '.users | length' partial-import.json)"
+jq '[.users[] | select(.attributes.aggregator_id != null)] | length' partial-import.json
+cd ..
+```
+
+`users to import` must equal the §6.3 count, and the `aggregator_id` count must be
+non-zero.
+
+**Dry-run it once against a copy.** Restore the §6.2 dump into a scratch database,
+point a throwaway Keycloak at it, and run §6.7 there. Confirm ids and
+`aggregator_id` survive. `partialImport` is untested on this Keycloak version in
+this environment; do not trust it live first.
+
+> **The window starts here.** §6.5 onwards takes logins down.
+
+### 6.5 Stop the aggregator apps and the old Keycloak
+
+Scale down, do not delete the workload — a Deployment is trivial to scale back up,
+and nothing should be serving from the old realm while it is being removed.
+
+```bash
+kubectl -n aggregator scale deploy/aggregator-api deploy/aggregator-web deploy/aggregator-worker --replicas=0
+kubectl -n aggregator scale deploy/aggregator-keycloak --replicas=0
+```
+
+### 6.5b Delete the old realm — required before the import
+
+The user ids in the old realm are the ids the new realm must claim, and
+`USER_ENTITY.ID` is a table-wide primary key (see the warning in §1). The import
+in §6.7 fails with `Duplicate resource error` until this is done.
+
+**Do not run this until all four are true.** Once the realm is gone, the §6.2 dump
+is the only copy of it.
+
+1. `pg_restore -l` reads the §6.2 `keycloak` dump and reports a sane TOC count.
+2. The realm export JSON is non-empty **and** carries clients, groups and roles —
+   assert it, do not eyeball it:
+   ```bash
+   jq '{clients:[.clients[]?]|length, groups:[.groups[]?]|length, roles:[.roles.realm[]?]|length}' realm-<old>.json
+   ```
+   All three must be `> 0`. A `partial-export` whose flags were passed with `-s`
+   instead of `-q` returns HTTP 200 with all three **empty** — a backup that looks
+   fine and restores nothing.
+3. The user payload for §6.7 is built and every entry has an `id`.
+4. Every aggregator workload is at `replicas=0`.
+
+```bash
+TOKEN=$(tok)
+curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$KC/admin/realms/$OLD" \
+  -H "Authorization: Bearer $TOKEN"        # expect 204
+
+# The ids must now be free, or the import will fail again.
+# Expect 0. Substitute the ids from your payload.
+psql -c "SELECT count(*) FROM user_entity WHERE id IN ('<id1>','<id2>',...);"
+```
+
+A scripted implementation of this step, with all four guards and a `CONFIRM=yes`
+gate, is in `test-dev-keycloak-migration/scripts/02b-drop-old-realm.sh` from the
+test-dev run.
+
+### 6.5c Migrate the `keycloak` database ownership
+
+Only on an **existing** environment, where the `keycloak` database is owned by the
+`aggregator` role. Skip on a clean deploy — there the `keycloak` role already owns
+it.
+
+Do it here: after §6.5 scaled Keycloak to 0 (each `ALTER TABLE ... OWNER TO` takes
+an ACCESS EXCLUSIVE lock that a live JDBC pool would block) and before §6.6
+deploys with `postgres.username: keycloak`.
+
+**Why migrate rather than pin `postgres.username: aggregator`** — plan §11.4. The
+pin looks cheaper but also forces `secrets.keycloakPostgresPassword` to be
+repointed in `modules/output-file/global-secrets.yaml.tfpl`, a **shared module
+tracked on trunk**: an uncommittable edit every operator must re-apply forever.
+Migrating once removes that permanently. And flipping the username *alone* does
+not work — the `keycloak` role can connect but has no `SELECT` on `user_entity`
+and no `CREATE`, so Keycloak starts and then fails on its first query.
+
+Ownership is catalogue metadata: **no row is read, written or moved.**
+
+```bash
+# Confirm the keycloak role's password actually works BEFORE changing anything —
+# it is created by common-services' bootstrap from credentials.keycloakPassword,
+# and if that has drifted you want to know now, not after the cutover.
+PGPASSWORD=<credentials.keycloakPassword> psql -h <host> -U keycloak -d keycloak \
+  -c 'SELECT count(*) FROM user_entity;'
+
+# Dry run first; then execute. Both are in the script.
+CONFIRM=yes bash scripts/06-reassign-keycloak-db-owner.sh
+```
+
+The script alters the database plus every table/sequence/view/matview in `public`
+owned by `aggregator` (indexes follow their tables; on PG15+ `public` is owned by
+`pg_database_owner` and follows the database). It then asserts: nothing left owned
+by `aggregator`, the database owner is `keycloak`, the role has SELECT/INSERT on
+`user_entity` and CREATE on `public`, the content fingerprint is unchanged, and
+**the `aggregator` database's own owner is untouched**.
+
+> **Do not substitute `REASSIGN OWNED BY`.** It also reassigns *shared* objects,
+> including databases owned by the source role — run against `aggregator` it can
+> hand the **aggregator database itself** to `keycloak`. That is precisely what
+> the aggregator-DB-owner assertion above is there to catch.
+
+Then put the config back to stock before §6.6:
+
+```bash
+git checkout -- opentofu/aws/modules/output-file/global-secrets.yaml.tfpl
+bash install.sh apply_tf_output_file        # keycloakPostgresPassword -> the keycloak role's own
+# <env>/global-values.yaml: postgres.username -> keycloak
+```
+
+Verify the pairing inverted — `secrets.keycloakPostgresPassword` must now equal
+`credentials.keycloakPassword` and **not** `secrets.postgresPassword`.
+
+Rehearsed on test-dev-cluster 2026-08-14: 90 objects, one transaction, fingerprint
+identical, Keycloak reconnected as `keycloak` with zero auth failures.
+
+### 6.6 Deploy the shared Keycloak
+
+`global.keycloakRealm` names a realm that does not exist yet, so `--import-realm`
+creates it complete — all 7 clients, 3 realm roles, both service accounts and the
+entitlement-gate flow.
+
+```bash
+cd opentofu/aws/<env>
+bash install.sh deploy_keycloak
+```
+
+Confirm the import **ran** (on a brand-new realm it must):
+
+```bash
+kubectl -n common-services logs deploy/keycloak-keycloak | grep -i import
+kubectl -n common-services logs deploy/keycloak-keycloak -c realm-renderer
+kubectl -n common-services logs job/keycloak-init
+```
+
+The renderer prints `rendered realm.json` plus the signals-ui origins it applied,
+and fails the pod if any placeholder survived — a running pod proves substitution
+completed. The init Job runs four steps; `apply-realm-config.py` is a no-op here
+because the fresh import already created everything, and that is expected:
+
+```
+[realm-config] partialImport: added=0 skipped=10
+```
+
+It exists as the safety net for a realm that has *drifted* from `realm.json` —
+which is what used to fail silently, since the older scripts log
+`client '<id>' not found — skipping` and return 0 rather than creating anything.
+
+If the import was **skipped**, the realm already existed. Stop: you are about to
+import users into the wrong realm, possibly an empty one (§11).
+
+### 6.7 Copy the users in
+
+Re-point the port-forward at the new Keycloak.
+
+```bash
+kill %1 2>/dev/null
+kubectl -n common-services port-forward svc/keycloak-keycloak 8080:8080 &
+KC=http://localhost:8080/auth
+ADMIN_PW=$(kubectl -n common-services get secret keycloak-secrets \
+  -o jsonpath='{.data.KC_BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d)
+TOKEN=$(tok)
+
+curl -sS -o /tmp/import-result.json -w 'HTTP %{http_code}\n' \
+  -X POST "$KC/admin/realms/$NEW/partialImport" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  --data @kc-export/partial-import.json
+
+jq '{added, skipped, overwritten}' /tmp/import-result.json
+```
+
+Expect HTTP 200 and `added` equal to the §6.3 user count. `POST /users` would
+ignore the supplied ids; `partialImport` honours them. Preserving the `sub` is
+non-negotiable — it is referenced by `aggregator_orgs.owner_kc_sub`,
+`bulk_uploads.uploaded_by`, `registration_links.created_by` and
+`aggregators.created_by`/`updated_by`.
+
+### 6.8 Flush the aggregator session store
+
+The issuer changed, so existing sessions hold tokens that will not re-validate.
+Clearing them turns an opaque failure into a clean re-login.
+
+```bash
+kubectl -n aggregator exec deploy/<redis> -- \
+  sh -c "redis-cli --scan --pattern 'session:*' | xargs -r redis-cli del"
+```
+
+### 6.9 Bring the apps back
+
+```bash
+cd opentofu/aws/<env>
+bash install.sh deploy_signals      # AUTH_PROVIDER still betterauth — wiring lands inert
+bash install.sh deploy_aggregator
+bash install.sh fix_acme_issuer_uri
+```
+
+---
+
+## 7. Verification
+
+**Users copied.** Run the §6.3 counts again, but against the **new** realm name.
+Each must match the value recorded from the old realm:
+
+```sql
+select count(*) from user_entity
+  where realm_id = (select id from realm where name = '<new realm>');
+```
+
+A lower count means the import was partial; zero against a healthy pod means the
+users went somewhere else (or the realm is empty). Either way, §8.
+
+**Realm contents.** This is the check that catches what the older scripts tolerated
+silently:
+
+```bash
+kubectl -n common-services exec deploy/keycloak-keycloak -- true   # confirm pod is up
+```
+
+Then, from a shell with an admin token against the realm:
+
+```bash
+echo "clients:"; curl -fsS "$KC/admin/realms/$REALM/clients" -H "Authorization: Bearer $TOKEN" \
+  | jq -r '[.[].clientId] | map(select(test("aggregator|signals|voice"))) | sort | join(", ")'
+echo "roles:";   curl -fsS "$KC/admin/realms/$REALM/roles" -H "Authorization: Bearer $TOKEN" \
+  | jq -r '[.[].name] | map(select(test("org_owner|signals_"))) | sort | join(", ")'
+```
+
+Expect all 7 clients (`aggregator-api`, `aggregator-bff`, `aggregator-dpg`,
+`aggregator-portal`, `signals-api`, `signals-ui`, `voice-dpg`) and all 3 roles
+(`org_owner`, `signals_participant`, `signals_admin`).
+
+**Issuer.** Must now name the *new* realm, and match what the apps derive:
+
+```bash
+kubectl -n aggregator get cm aggregator-global -o jsonpath='{.data.OIDC_ISSUER}'; echo
+```
+
+**Login theme.** Open an aggregator login page and a signals login page — they must
+render *different* brands. The failure mode is **not** subtle: a theme image that
+ships only `otp` makes the signals page return **HTTP 500**, because Keycloak
+falls back to the built-in theme, which lacks the OTP SPI's templates (§3). The
+aggregator page keeps working throughout.
+
+```bash
+A="https://<kc-host>/auth/realms/$REALM/protocol/openid-connect/auth"
+for c in "signals-ui|https://<signals-host>/auth/callback" \
+         "aggregator-portal|https://<aggregator-host>/api/auth/callback"; do
+  printf '%-18s ' "${c%%|*}"
+  curl -s -o /tmp/p -w 'http=%{http_code}  ' --max-time 20 -G "$A" \
+    --data-urlencode "client_id=${c%%|*}" --data-urlencode "response_type=code" \
+    --data-urlencode "scope=openid" --data-urlencode "redirect_uri=${c##*|}"
+  grep -oE '/resources/[^/]+/login/[a-z-]+' /tmp/p | head -1
+done
+# expect: signals-ui -> 200 .../login/signals ; aggregator-portal -> 200 .../login/otp
+```
+
+**Redirect isolation.** One realm serves both DPGs, so confirm neither client can
+redirect into the other's hosts: `signals-ui` with a signals host → 302/200, with
+an aggregator or arbitrary host → 400 `invalid_redirect_uri`, and the reverse for
+`aggregator-portal`.
+
+**End-to-end login.** A real approved coordinator completes OTP login, reaches the
+portal, and `/profile` renders. `403 MISSING_AGGREGATOR_ID` means the
+`aggregator_id` attribute or its mapper is missing — check the init Job log.
+
+**Negative path.** A `decision_made=pending` account is refused at the gate with
+the entitlement message, not an OTP prompt. This is the first time
+`apply-portal-gate.py` has ever run in a deployed environment, so verify it
+explicitly.
+
+**Login rate limit.** It used to fail *open* silently whenever the realm was not
+literally named `aggregator`:
+
+```bash
+for i in $(seq 1 25); do
+  curl -s -o /dev/null -w '%{http_code} ' \
+    -X POST "https://<host>/auth/realms/$REALM/login-actions/authenticate"
+done; echo
+```
+
+Expect `429`s past the configured per-minute limit.
+
+**Service paths.** `/health/ready` is 200 on the aggregator api; the worker picks
+up a job; one bulk upload completes (exercises the `aggregator-api` service
+account).
+
+---
+
+## 8. Rollback
+
+**Rollback requires restoring the `keycloak` database from the §6.2 dump.** The old
+realm was deleted in §6.5b to free its user ids (§1), so there is no realm to
+switch back to. Scaling the old Keycloak up on its own would start it against a
+database that no longer contains its realm.
+
+This is the single most important consequence of the PK constraint: **the dump is
+the rollback.** If §6.2 was skipped or its dump was never verified readable, there
+is no way back — which is why §6.5b gates on exactly that.
+
+```bash
+# 1. Take the new Keycloak down and stop the apps.
+kubectl -n aggregator      scale deploy/aggregator-api deploy/aggregator-web \
+                                 deploy/aggregator-worker --replicas=0
+kubectl -n common-services scale deploy/keycloak-keycloak --replicas=0
+
+# 2. Restore the keycloak database from the §6.2 dump.
+#    --clean --if-exists drops the new realm's objects on the way in.
+pg_restore -U postgres -d keycloak --clean --if-exists <§6.2 dump>
+
+# 3. Revert global.keycloakRealm (and global.keycloak.realm) to the OLD realm
+#    name in <env>/global-values.yaml.
+
+# 4. Bring the old Keycloak back up.
+kubectl -n aggregator scale deploy/aggregator-keycloak --replicas=1
+
+# 5. Flush sessions again (the issuer is reverting) and redeploy the apps.
+cd opentofu/aws/<env>
+bash install.sh deploy_aggregator
+```
+
+Only the `keycloak` database needs restoring. The aggregator and signals databases
+are not modified by this migration, so leave them alone.
+
+**Decide the rollback window before the window opens.** Restoring the dump
+discards every Keycloak-side change made since it was taken — including any user
+who signed up, or any org approved, after the cutover.
+
+**If the user import was partial**, do not re-run it expecting the gaps to fill:
+`ifResourceExists: SKIP` skips ids that already exist, so you cannot tell repaired
+from stale. Delete the new realm and redo §6.6–6.7 cleanly.
+
+This is recoverable **only because the §6.3 payload file still holds every user
+with its id** — the old realm is already gone, so the new realm is the only live
+copy. Confirm the payload is intact and complete *before* deleting:
+
+```bash
+jq '.users | length, (map(select(.id == null)) | length)' payload-users.json
+# expect: <your user count>, then 0
+```
+
+If the payload is missing or short, restore from the §6.2 dump instead (§8 above)
+rather than deleting the only realm that has the users.
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$KC/admin/realms/$NEW" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Last resort.** Restore the `keycloak` database from the §6.2 dump, revert
+`global-values.yaml`, redeploy. Anything written to Keycloak after the backup —
+new registrations, approvals — is lost; reconcile against `aggregators` rows
+created during the window.
+
+---
+
+## 9. Closing out
+
+Once verified and past your rollback window:
+
+The old realm is **already gone** — it was deleted in §6.5b, before the import.
+Nothing to remove here; only the orphaned workload is left.
+
+```bash
+# Remove the old Keycloak workload. It is no longer in the aggregator chart, so
+# `helm upgrade` leaves these orphaned — delete them explicitly.
+kubectl -n aggregator delete deploy/aggregator-keycloak
+kubectl -n aggregator delete svc/aggregator-keycloak
+kubectl -n aggregator delete ingress -l app.kubernetes.io/component=keycloak
+```
+
+**Retain the §6.2 dump for as long as you would have kept the old realm** — at
+least one full business cycle of real logins. It is the rollback (§8), and once
+you delete it there is no way back to the pre-migration state.
+
+Record in the environment's deployment branch: the realm name, and the auth host
+if one was set. Nothing needs recording about `keycloak.postgres.username` — §6.5c
+migrates the database ownership so the stock `keycloak` value is correct, and
+there is no divergence for a later operator to mistake for drift.
+
+---
+
+## 10. Deferred: flipping signals to Keycloak
+
+**A separate window. Do not bundle it with §6.**
+
+`AUTH_PROVIDER` accepts only `betterauth` or `keycloak` — `dual` was removed
+upstream, so there is no mode that accepts both. The cutover is a **hard flip**,
+and every existing signals user must already exist in the shared realm.
+
+Prerequisite, owned by signals-dpg and **not** satisfied by this runbook: provision
+every existing signals user into the realm. There is no just-in-time backfill.
+
+```bash
+# <env>/global-values.yaml → api.config.AUTH_PROVIDER: keycloak
+cd opentofu/aws/<env>
+bash install.sh deploy_signals
+```
+
+Verify:
+- A signals participant completes OIDC login and reaches the UI.
+- An `aggregator-portal` token is **rejected** on signals' human session path.
+  That is what `KEYCLOAK_ACCEPTED_CLIENT_IDS: signals-ui` enforces; the realm is
+  shared, so without it an aggregator token would be honoured by signals.
+- The signals login page renders the **signals** brand.
+
+Rollback is setting `AUTH_PROVIDER` back to `betterauth` and redeploying, provided
+no user has been created Keycloak-only since the flip.
+
+### 10.1 Two traps in the user-provisioning prerequisite
+
+Both have been hit in a real migration and neither is fixed in code yet.
+**Read before running the provisioning tool.**
+
+**Trap 1 — the same human can already hold an identity in the shared realm, and
+the migration cannot create a second one.**
+
+The realm is shared, and Keycloak enforces one username/email per realm. If a
+person used both DPGs, the aggregator migration (§6.7) already created their user,
+and the signals tool then reports:
+
+```
+CONFLICT <signals-user-id>  identifiers already held by Keycloak user <aggregator-sub>
+```
+
+There is no automatic resolution. The resolution taken where this occurred was to
+merge the signals row onto the aggregator sub — the right end state (one human,
+one identity, and it satisfies `keycloak user.id == sub == signals user.id`) but a
+**real data migration, not an `UPDATE`**: every FK into signals' `"user"`
+declares only `ON DELETE` behaviour, none is `ON UPDATE CASCADE`, and
+`items_created_by_fk` is `ON DELETE RESTRICT`. So it is
+insert-new-row → repoint children → delete old row, inside one asserted
+transaction, having first freed `user_email_unique`. Note `consent_record.user_id`
+has **no FK at all** — enumerate reference columns from `information_schema`, not
+from the FK graph, or you will miss it.
+
+**Trap 2 — a user who already exists in the realm gets NO signals realm role, and
+`--reconcile` will not tell you.**
+
+`partialImport` skips an already-present user, and skipping means
+`user_to_keycloak.ts` never stamps `signals_participant` / `signals_admin` on
+them. But `KEYCLOAK_REQUIRED_REALM_ROLES` (default
+`signals_participant,signals_admin`) is checked on the human session path, so that
+user **cannot authenticate after the flip** — while the data looks perfectly
+correct.
+
+`--reconcile` does **not** catch this. It asserts id presence and the
+`phoneNumber` attribute only, so it reports
+`RESULT: reconciles 1:1, phone attributes intact. R4 gate is green.` even when the
+population contains such a user. A green gate is not evidence of role coverage.
+
+So after provisioning, and **in addition to** the tool's gate, assert role
+coverage yourself:
+
+```sql
+-- every signals user in the realm must carry a signals realm role
+SELECT count(*) AS missing_signals_role
+FROM user_entity u
+JOIN realm r ON r.id = u.realm_id
+WHERE r.name = '<realm>'
+  AND u.service_account_client_link IS NULL
+  AND u.id IN ( <the signals user ids> )
+  AND NOT EXISTS (
+    SELECT 1 FROM user_role_mapping m
+    JOIN keycloak_role kr ON kr.id = m.role_id
+    WHERE m.user_id = u.id
+      AND kr.name IN ('signals_participant','signals_admin'));
+-- must be 0
+```
+
+Repair with `kcadm.sh add-roles -r <realm> --uid <id> --rolename signals_participant`.
+
+**That repair is a manual, non-declarative grant.** It lives only in the live
+Keycloak database — not in the realm JSON, not in a chart, not in the tool — so it
+is lost on any realm recreate/re-import or Keycloak restore, and re-running the
+migration will not restore it (the user is skipped again). Until the tool grows a
+reconcile-and-repair pass, or `--reconcile` asserts role coverage, treat any
+environment where this was applied as carrying an undocumented-in-code grant and
+re-apply it after a restore.
+
+---
+
+### 10.2 Optional: give Keycloak its own hostname
+
+By default Keycloak is served at `<aggregator-host>/auth`, which means a signals
+user is redirected to the AGGREGATOR's domain to sign in. Setting
+**`global.keycloak.host`** moves it to a neutral domain both DPGs point at.
+Opt-in per environment; leave it unset to keep the shared-host arrangement.
+
+One value, three charts — they must agree or tokens are minted by one host and
+validated against another:
+
+| Chart | Consumes it as |
+|---|---|
+| keycloak | `KC_HOSTNAME` + **all three** auth Ingresses (`keycloak.authHost`) |
+| aggregator | `OIDC_ISSUER`, `KEYCLOAK_URL` (`aggregator.authBaseUrl`, `web.authBaseUrl`) |
+| signals | `KEYCLOAK_BASE_URL` (resolution chain in the api configmap) |
+
+Unset, every chart falls back to `global.publicHost` byte-for-byte, so existing
+environments are unaffected until they opt in.
+
+**Choosing the name.** It must be **per-environment** — each cluster has its own
+Kong LoadBalancer and its own certificate, so one shared `auth.<zone>` cannot
+serve two. Prefer the same zone and the same shape as that environment's product
+hosts (`<env>-auth.<zone>` alongside `<env>-aggregators.<zone>`): a login page on
+a visibly different domain from the app that sent you there reads as a phishing
+smell, even when the redirect is legitimate.
+
+**Four things that are easy to get wrong:**
+
+1. **`PUBLIC_BASE_URL` must NOT move.** All six `__PUBLIC_BASE_URL__` occurrences
+   in `realm.json` are client allow-list entries (redirect URI, web origin,
+   post-logout), never the issuer. Point them at the auth host and
+   `aggregator-portal`'s redirect becomes `https://<auth-host>/api/auth/callback`,
+   which nothing serves — every aggregator login fails `invalid_redirect_uri`.
+
+2. **TLS inverts.** `ingress.tls.enabled` must go from false to **true**, plus a
+   `cert-manager.io/cluster-issuer` annotation. On a SHARED host it must be off:
+   the cert is owned by the aggregator's web Ingress in another namespace, and
+   `tls.secretName` is namespace-local, so declaring it names a non-existent
+   Secret and Kong serves self-signed for the whole host. On a DEDICATED host
+   nothing else owns the SNI, so this release must own the cert — leave TLS off
+   and the new host gets Kong's self-signed default instead.
+
+3. **Three Ingresses pin the host**, not one: `ingress.yaml`,
+   `otp-ratelimit-ingress.yaml`, `admin-console-block-ingress.yaml`. Miss either
+   of the latter two and they fail **OPEN** silently — both are more-specific Kong
+   routes, so a host mismatch means the per-IP OTP limit and the admin-console 403
+   simply stop matching.
+
+4. **DNS first.** The record must resolve to the Kong proxy LoadBalancer before
+   deploying, or cert-manager's HTTP-01 challenge fails and burns Let's Encrypt
+   attempts. `kubectl -n common-services get svc common-services-kong-proxy`.
+
+Sequence — all three releases in one window, because the issuer changes:
+
+```bash
+# <env>/global-values.yaml:
+#   _auth_host: &auth_host "<env>-auth.<zone>"
+#   global.keycloak.host: *auth_host
+#   keycloak.ingress: { annotations: {cert-manager.io/cluster-issuer: letsencrypt-prod},
+#                       tls: {enabled: true} }
+bash install.sh deploy_keycloak
+kubectl -n common-services get certificate      # wait for READY=True
+bash install.sh deploy_aggregator
+bash install.sh deploy_signals
+```
+
+Between the first and the rest, Keycloak mints for the new issuer while the apps
+still expect the old — logins fail in that window, so keep it short.
+
+Afterwards: `https://<aggregator-host>/auth` returns **404** (no Ingress serves it
+any more; the app's own Ingresses are unaffected), and **every session is
+invalidated** because the `iss` string changed. Verify the `iss` claim in a real
+token moved, not just the discovery document — they can differ.
+
+---
+
+## 11. Four things that cost a window each
+
+1. **A healthy Keycloak pod does not mean a populated realm.** Import applies only
+   to an empty realm. On this migration that is exactly what you want at §6.6 — but
+   it also means a typo'd realm name gives you a green pod serving a realm with no
+   users, and every login fails while nothing looks broken. The import-ran check in
+   §6.6 and the count comparison in §7 exist to catch it.
+2. **`realm.id` is a UUID, not the realm name.** Baseline queries keyed on
+   `realm_id = '<name>'` return zero rows and "pass", including in case 1.
+3. **The older init scripts reconcile but never create clients.**
+   `ensure_acting_org_mapper` and `ensure_login_theme` log
+   `client '<id>' not found — skipping` and return 0. `apply-realm-config.py` was
+   added to close that gap and runs before them so they find the clients. It is a
+   no-op on this migration (the fresh import already created everything) — its job
+   is any realm that later drifts from `realm.json`. If that step is removed or
+   reordered, missing clients become a silent no-op again.
+4. **`sslRequired` is `external` on a freshly imported realm.** In-cluster callers
+   (private source addresses) are exempt, so the init Job works over plain HTTP. A
+   `kubectl port-forward` is *not* exempt and gets `403 "HTTPS required"` —
+   expected, not a fault. Existing realms keep whatever they had.

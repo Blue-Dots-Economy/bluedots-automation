@@ -6,8 +6,8 @@ metadata:
   labels:
     {{- include "dpg-api.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-2"
     "helm.sh/hook-delete-policy": before-hook-creation
 data:
   # Only service-user provisioning SQL is vendored; schema DDL ships in the api image.
@@ -21,8 +21,14 @@ metadata:
   labels:
     {{- include "dpg-api.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "0"
+    # pre-install/pre-upgrade, NOT post-*: with `helm upgrade --wait` Helm blocks
+    # until every release resource is Ready *before* it runs post-install hooks.
+    # The api queries `items` during boot, so against a schema-less database it
+    # crashloops, --wait never clears, and a post-install migrate hook is never
+    # even created — a deadlock that only surfaces on a from-scratch install
+    # (any DB that already had the tables masked it).
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-1"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: {{ .Values.migrate.backoffLimit | default 3 }}
@@ -34,7 +40,12 @@ spec:
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: OnFailure
-      serviceAccountName: {{ include "dpg-api.serviceAccountName" . }}
+      # No serviceAccountName on purpose → the namespace `default` SA. The api's
+      # own SA can't be used: it's a plain release resource, so at pre-install
+      # time it doesn't exist yet and the API server refuses to create the pod
+      # ("error looking up service account ... not found"). Nothing here needs an
+      # identity — the Job only talks to Postgres, and image pulls come from the
+      # imagePullSecrets below, not from the SA.
       {{- include "dpg-api.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -50,10 +61,7 @@ spec:
           # migrate.mjs silently falling back to 127.0.0.1.
           command: ["sh", "-ec", ': "${POSTGRES_HOST:?missing}"; exec node apps/api/scripts/migrate.mjs']
           envFrom:
-            - configMapRef:
-                name: {{ include "dpg-api.fullname" . }}
-            - secretRef:
-                name: {{ include "dpg-api.secretName" . }}
+            {{- include "dpg-api.migrateEnvFrom" . | nindent 12 }}
       containers:
         # Upserts the aggregator-dpg service org/user/apikey after migrate-ddl; idempotent.
         - name: provision
@@ -62,10 +70,7 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           envFrom:
-            - configMapRef:
-                name: {{ include "dpg-api.fullname" . }}
-            - secretRef:
-                name: {{ include "dpg-api.secretName" . }}
+            {{- include "dpg-api.migrateEnvFrom" . | nindent 12 }}
           command:
             - sh
             - -ec

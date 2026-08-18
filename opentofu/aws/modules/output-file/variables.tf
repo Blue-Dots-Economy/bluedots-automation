@@ -222,6 +222,26 @@ variable "aggregator_postgres_password" {
   sensitive = true
 }
 
+variable "keycloak_postgres_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "signals_api_client_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "signalstack_client_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "voice_dpg_signals_secret" {
+  type      = string
+  sensitive = true
+}
+
 variable "aggregator_kc_bootstrap_admin_password" {
   type      = string
   sensitive = true

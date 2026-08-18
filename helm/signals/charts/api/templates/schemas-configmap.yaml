@@ -59,5 +59,40 @@ data:
   {{ .Values.schemas.consentBrand }}-consent.json: |
 {{ $braw | replace "__SUPPORT_EMAIL__" $supportEmail | indent 4 }}
 {{- end }}
+{{- /*
+  Per-network email copy (signals-dpg#540). Same delivery as consent above and
+  keyed off the same consentNetwork/consentBrand values — the api resolves BOTH
+  from dirname(NETWORK_CONFIG_LOCAL_FILE), so one served network must select
+  both or the pod would render one network's consent beside another's emails.
+
+  OPTIONAL, unlike consent: the api bundles a complete set of email copy and
+  merges these PER KEY, so an absent file means "keep the bundled wording", not
+  a broken deploy. Hence `with` on the file contents rather than `fail`.
+
+  Not templated. Unlike consent there is no __SUPPORT_EMAIL__ substitution here:
+  the copy's own placeholders are {{`{{likeThis}}`}} and are filled by the api at
+  send time, so Helm must pass the file through byte-for-byte.
+
+  Source: files/messages/<net>.properties, fetched by scripts/fetch-configs.sh.
+  The search subchart reuses this ConfigMap and dir-scans /app/schemas for
+  *.json, so a .properties file is invisible to it.
+*/ -}}
+{{- with $.Files.Get (printf "files/messages/%s.properties" .Values.schemas.consentNetwork) }}
+  messages.properties: |
+{{ . | indent 4 }}
+{{- end }}
+{{- if .Values.schemas.consentBrand }}
+{{- /*
+  Brand copy is a PARTIAL override merged over the network file, so — exactly
+  like brand consent — both must be delivered. Placed at
+  /app/schemas/<brand>/messages.properties by the deployment's volume `items`.
+  NOTE: brand email copy has no effect yet (no send resolves a brand at send
+  time); it loads and validates at boot. See bluedots-schemas#14.
+*/ -}}
+{{- with $.Files.Get (printf "files/messages/%s.%s.properties" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
+  {{ $.Values.schemas.consentBrand }}-messages.properties: |
+{{ . | indent 4 }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

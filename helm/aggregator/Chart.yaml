@@ -1,6 +1,6 @@
 apiVersion: v2
 name: aggregator-dpg
-description: Blue Dots Aggregator Portal — full stack umbrella chart (web BFF, api, worker, Keycloak). Postgres + Redis are provided by the shared common-services release.
+description: Blue Dots Aggregator Portal — full stack umbrella chart (web BFF, api, worker). Postgres, Redis and Keycloak are provided by shared releases in the common-services namespace.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
@@ -10,7 +10,6 @@ keywords:
   - bluedots
   - onest
   - dpg
-  - keycloak
   - bff
 home: https://github.com/sanketika-labs/aggregator-dpg
 maintainers:
@@ -30,7 +29,3 @@ dependencies:
   - name: worker
     version: 0.1.0
     repository: file://charts/worker
-
-  - name: keycloak
-    version: 0.1.0
-    repository: file://charts/keycloak

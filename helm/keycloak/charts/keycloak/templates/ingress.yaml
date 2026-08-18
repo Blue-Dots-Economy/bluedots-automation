@@ -1,0 +1,55 @@
+{{- if .Values.ingress.enabled -}}
+{{- /*
+  Keycloak's auth Ingress. Path /auth + strip-path "false" are fixed (Keycloak
+  serves natively under KC_HTTP_RELATIVE_PATH=/auth); host is keycloak.authHost.
+
+  TLS depends on whether the host is shared, and the wrong choice breaks TLS for
+  the whole hostname:
+    - SHARED host (global.keycloak.host unset): keep tls.enabled=false. The cert
+      is owned by the aggregator's web Ingress in ANOTHER namespace, and
+      tls.secretName is namespace-local, so declaring it here names a
+      non-existent Secret and Kong serves self-signed for the entire host. Not
+      needed anyway — Kong's cert store is keyed by SNI globally.
+    - DEDICATED host (global.keycloak.host set): tls.enabled=true IS required,
+      plus a cert-manager issuer annotation via ingress.annotations — nothing
+      else owns this SNI.
+  Never let two Certificates target one hostname (LE allows 5 duplicates/week).
+*/ -}}
+{{- $svc := include "keycloak.fullname" . -}}
+{{- $host := include "keycloak.authHost" . -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $svc }}
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "false"
+    {{- if .Values.ingress.plugin }}
+    konghq.com/plugins: {{ .Values.ingress.plugin | quote }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if (.Values.ingress.tls).enabled }}
+  tls:
+    - hosts:
+        - {{ $host }}
+      secretName: {{ (.Values.ingress.tls).secretName | default (printf "%s-tls" ($host | replace "." "-")) }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $svc }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

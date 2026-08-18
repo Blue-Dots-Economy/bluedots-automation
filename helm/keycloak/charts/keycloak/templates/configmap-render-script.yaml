@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "keycloak.renderScriptConfigMap" . }}
+  labels:
+    {{- include "keycloak.labels" . | nindent 4 }}
+data:
+  # K8s-tuned port of the app repo's infra/keycloak/render-realm.sh. The compose
+  # variant exec's into kc.sh at the end; here we render and exit so the
+  # initContainer hands off to the main container via a shared emptyDir.
+  #
+  # Substitutes all 18 placeholders in files/realm.json. It FAILS HARD on any
+  # unset required value rather than rendering an empty string — an empty secret
+  # on a confidential client, or an empty realm name, is worse than a failed
+  # deploy. scripts/assert-realm.sh keeps this list and the realm in step.
+  render-realm.sh: |-
+    #!/bin/sh
+    set -eu
+
+    # Overridable so the keycloak-init Job can reuse this exact script to render
+    # the realm for its reconcile step, instead of duplicating the substitution
+    # logic. Defaults are the paths the Keycloak pod's initContainer uses.
+    SRC_DIR="${SRC_DIR:-/opt/keycloak/data/import-template}"
+    DST_DIR="${DST_DIR:-/opt/keycloak/data/import}"
+
+    # ── Required: no defaults, deploy fails if missing ─────────────────────
+    : "${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set}"
+    : "${KEYCLOAK_REALM:?KEYCLOAK_REALM must be set (per-instance realm name)}"
+    : "${AGGREGATOR_PORTAL_SECRET:?AGGREGATOR_PORTAL_SECRET must be set}"
+    : "${AGGREGATOR_API_SECRET:?AGGREGATOR_API_SECRET must be set}"
+    : "${AGGREGATOR_BFF_SECRET:?AGGREGATOR_BFF_SECRET must be set}"
+    : "${SIGNALS_API_SECRET:?SIGNALS_API_SECRET must be set}"
+    : "${SIGNALSTACK_CLIENT_SECRET:?SIGNALSTACK_CLIENT_SECRET must be set}"
+    : "${VOICE_DPG_SIGNALS_SECRET:?VOICE_DPG_SIGNALS_SECRET must be set}"
+
+    # ── Optional: safe defaults ────────────────────────────────────────────
+    : "${BRAND_LONG_NAME:=Blue Dots}"
+    : "${SMTP_HOST:=mailhog}"
+    : "${SMTP_PORT:=1025}"
+    : "${SMTP_FROM:=no-reply@bluedots.local}"
+    : "${SMTP_FROM_DISPLAY:=Blue Dots}"
+    : "${SMTP_SSL:=false}"
+    : "${SMTP_STARTTLS:=false}"
+    : "${SMTP_AUTH:=false}"
+    : "${SMTP_USER:=}"
+    : "${SMTP_PASSWORD:=}"
+
+    mkdir -p "$DST_DIR"
+
+    escape() {
+      printf '%s' "$1" | sed -e 's/[&|]/\\&/g'
+    }
+
+    for src in "$SRC_DIR"/*.json; do
+      [ -f "$src" ] || continue
+      dst="$DST_DIR/$(basename "$src")"
+      sed \
+        -e "s|__PUBLIC_BASE_URL__|$(escape "$PUBLIC_BASE_URL")|g" \
+        -e "s|__KEYCLOAK_REALM__|$(escape "$KEYCLOAK_REALM")|g" \
+        -e "s|__BRAND_LONG_NAME__|$(escape "$BRAND_LONG_NAME")|g" \
+        -e "s|__AGGREGATOR_PORTAL_SECRET__|$(escape "$AGGREGATOR_PORTAL_SECRET")|g" \
+        -e "s|__AGGREGATOR_API_SECRET__|$(escape "$AGGREGATOR_API_SECRET")|g" \
+        -e "s|__AGGREGATOR_BFF_SECRET__|$(escape "$AGGREGATOR_BFF_SECRET")|g" \
+        -e "s|__SIGNALS_API_SECRET__|$(escape "$SIGNALS_API_SECRET")|g" \
+        -e "s|__SIGNALSTACK_CLIENT_SECRET__|$(escape "$SIGNALSTACK_CLIENT_SECRET")|g" \
+        -e "s|__VOICE_DPG_SIGNALS_SECRET__|$(escape "$VOICE_DPG_SIGNALS_SECRET")|g" \
+        -e "s|__SMTP_HOST__|$(escape "$SMTP_HOST")|g" \
+        -e "s|__SMTP_PORT__|$(escape "$SMTP_PORT")|g" \
+        -e "s|__SMTP_FROM__|$(escape "$SMTP_FROM")|g" \
+        -e "s|__SMTP_FROM_DISPLAY__|$(escape "$SMTP_FROM_DISPLAY")|g" \
+        -e "s|__SMTP_SSL__|$(escape "$SMTP_SSL")|g" \
+        -e "s|__SMTP_STARTTLS__|$(escape "$SMTP_STARTTLS")|g" \
+        -e "s|__SMTP_AUTH__|$(escape "$SMTP_AUTH")|g" \
+        -e "s|__SMTP_USER__|$(escape "$SMTP_USER")|g" \
+        -e "s|__SMTP_PASSWORD__|$(escape "$SMTP_PASSWORD")|g" \
+        "$src" > "$dst"
+      echo "rendered $(basename "$src") -> $dst"
+
+      # ── signals-ui lives on DIFFERENT hostnames to Keycloak ──────────────
+      # __PUBLIC_BASE_URL__ is the Keycloak/aggregator host. signals-ui is served
+      # from its own host(s) (global.publicHosts — a LIST), so substituting
+      # __PUBLIC_BASE_URL__ into its redirect/origin/post-logout allow-lists is
+      # wrong in any real deployment: the OIDC redirect back to the signals UI
+      # would not match and login fails with invalid_redirect_uri. It only
+      # "works" locally because everything is localhost.
+      #
+      # So when SIGNALS_ORIGINS is supplied (comma-separated, built by Helm from
+      # global.publicHosts), replace those three fields on signals-ui outright.
+      # Empty = leave the single-host fallback alone (e.g. signals not deployed).
+      if [ -n "${SIGNALS_ORIGINS:-}" ]; then
+        command -v jq >/dev/null 2>&1 || apk add --no-cache jq >/dev/null
+        origins=$(printf '%s' "$SIGNALS_ORIGINS" \
+          | tr ',' '\n' | sed '/^[[:space:]]*$/d' | jq -R . | jq -s .)
+        # post.logout.redirect.uris is matched EXACTLY — no trailing-slash
+        # normalisation. `<origin>/*` covers `/`, `/auth/login` and any future
+        # path; the bare origin stays because the wildcard does not match it.
+        # Emitting only <origin> and <origin>/auth/login rejected the `<origin>/`
+        # the signals UI actually sends, which surfaces as a failed LOGIN even
+        # though the event log says LOGOUT_ERROR. Not a widening of trust:
+        # redirectUris is already <origin>/* and a logout carries no token.
+        jq --argjson o "$origins" '
+          .clients = [
+            .clients[]
+            | if .clientId == "signals-ui" then
+                  .redirectUris = ($o | map(. + "/*"))
+                | .webOrigins   = $o
+                | .attributes."post.logout.redirect.uris" =
+                    ([ $o[] | ., (. + "/*") ] | join("##"))
+              else . end
+          ]' "$dst" > "$dst.tmp" && mv "$dst.tmp" "$dst"
+        echo "signals-ui origins set to: $SIGNALS_ORIGINS"
+      else
+        echo "WARNING: SIGNALS_ORIGINS unset — signals-ui keeps the Keycloak-host" >&2
+        echo "         fallback, which is WRONG if signals runs on its own host." >&2
+      fi
+
+      # Fail loudly if any placeholder survived — a leftover __X__ in the realm
+      # means Keycloak imports a literal placeholder as a live client secret.
+      if grep -q '__[A-Z0-9_]*__' "$dst"; then
+        echo "ERROR: unsubstituted placeholder(s) remain in $dst:" >&2
+        grep -o '__[A-Z0-9_]*__' "$dst" | sort -u >&2
+        exit 1
+      fi
+    done

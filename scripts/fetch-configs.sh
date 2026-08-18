@@ -12,6 +12,8 @@
 #   <network>/network.json
 #   <network>/consent.json
 #   <network>/<brand>/consent.json
+#   <network>/messages.properties
+#   <network>/<brand>/messages.properties
 # (network/brand dir names use underscores, e.g. blue_dot, orange_dot, upsdm).
 #
 # Subcommands:
@@ -20,6 +22,13 @@
 #                 -> helm/signals/charts/api/files/{networks,consent}/
 #               network.json's instance_url is normalized to __PUBLIC_API_URL__
 #               (the token schemas-configmap.yaml substitutes with the real host).
+#               PLUS messages.properties (+ <brand>/messages.properties) — the
+#               per-network email copy (signals-dpg#540)
+#                 -> helm/signals/charts/api/files/messages/
+#               OPTIONAL, unlike consent: the api ships complete bundled email
+#               copy and merges these PER KEY, so a network with no file (or a
+#               ref predating them) keeps the built-in wording instead of
+#               failing the deploy.
 #   aggregator  consent.json (a FULL document) from the aggregator-dpg config tree.
 #               The aggregator's loader requires a top-level {"audiences":…};
 #               bluedots-schemas' <network>/consent.json is the signals document
@@ -109,11 +118,11 @@ GH_TOKEN="${SCHEMAS_PAT:-${GHCR_PAT:-}}"
 # and this whole shim can be deleted.
 SUPPORT_EMAIL_LITERALS="${SUPPORT_EMAIL_LITERALS:-support@onest.network hello@bluedotseconomy.org}"
 
-usage() { sed -n '2,70p' "$0"; }
+# Print the header comment block as help. Reads to the first non-comment line
+# rather than a hardcoded range, so growing the header can't silently truncate
+# usage (or start printing code).
+usage() { awk 'NR==1{next} /^#/{print; next} {exit}' "$0"; }
 
-# Rewrite any known literal support email in a fetched consent file to the
-# __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
-# file already carries the placeholder (canonical post-migration).
 # Validate the fetched aggregator consent. The app renders a generic fallback
 # rather than erroring on a document it cannot read, so the shape is checked here
 # where a wrong source can still fail the deploy.
@@ -138,6 +147,9 @@ assert_aggregator_consent() { # <file>
   return 1
 }
 
+# Rewrite any known literal support email in a fetched consent file to the
+# __SUPPORT_EMAIL__ placeholder the chart templates substitute. No-op if the
+# file already carries the placeholder (canonical post-migration).
 normalize_support_email() { # <file>
   local lit esc
   for lit in $SUPPORT_EMAIL_LITERALS; do
@@ -168,27 +180,81 @@ read_anchor() { # <file> <anchor-name>
 # Callers pass raw.githubusercontent.com URLs; when GH_TOKEN is set we transparently
 # rewrite each to the authenticated GitHub Contents API endpoint (raw content) so the
 # same call sites work against a private repo.
+#
+# Timeouts are not optional here. raw.githubusercontent.com resolves to several
+# IPs and any one of them can be black-holed from a given network; curl then
+# waits out the TCP SYN retransmission (10-15s) before trying the next. With five
+# sequential fetches per deploy that turns into minutes of a silent stall in the
+# middle of `deploy_signals`. --connect-timeout caps each attempt and --retry
+# moves on, so a dead IP costs seconds instead of minutes.
+#
+# --retry-max-time is what keeps the retries from making things WORSE: curl treats
+# a --max-time expiry as retryable, so on a genuinely slow link the retries would
+# otherwise multiply it (4 x 60s ≈ 4 min for one file — worse than the stall this
+# was written to fix). --retry-max-time bounds the whole attempt sequence.
+#
+# --speed-limit/--speed-time rather than a tight --max-time: they abort a transfer
+# that has STALLED (under 1 KB/s for 20s) while leaving a slow-but-progressing
+# download alone, so colleges-ka.json (~570KB) is never truncated just for being
+# slow. --max-time stays as a generous absolute backstop.
+# Overridable: FETCH_CONNECT_TIMEOUT, FETCH_MAX_TIME, FETCH_RETRIES,
+#              FETCH_RETRY_MAX_TIME.
+CURL_CONNECT_TIMEOUT="${FETCH_CONNECT_TIMEOUT:-5}"   # per-attempt TCP connect cap
+CURL_MAX_TIME="${FETCH_MAX_TIME:-120}"               # absolute backstop per attempt
+CURL_RETRIES="${FETCH_RETRIES:-3}"
+CURL_RETRY_MAX_TIME="${FETCH_RETRY_MAX_TIME:-90}"    # cap on ALL attempts combined
+CURL_OPTS=(
+  --connect-timeout "$CURL_CONNECT_TIMEOUT"
+  --max-time "$CURL_MAX_TIME"
+  --speed-limit 1024
+  --speed-time 20
+  --retry "$CURL_RETRIES"
+  --retry-max-time "$CURL_RETRY_MAX_TIME"
+  --retry-connrefused
+  --retry-delay 1
+)
+
 try_fetch() { # <dest> <url>...
   local dest="$1"; shift
-  local url fetch_url ok
+  local url fetch_url ok tmp
+  # Download to a temp file and only move it into place on success. curl -o writes
+  # incrementally, so an aborted transfer (timeout, stalled link) would otherwise
+  # leave a TRUNCATED file at $dest that the `-s` non-empty check still accepts —
+  # and a half-written network.json is worse than a missing one.
+  tmp="$(mktemp "${dest}.XXXXXX")"
   for url in "$@"; do
     fetch_url="$url"
     if [ -n "$GH_TOKEN" ] && [[ "$url" =~ ^https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)$ ]]; then
       fetch_url="https://api.github.com/repos/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/contents/${BASH_REMATCH[4]}?ref=${BASH_REMATCH[3]}"
     fi
     if [ -n "$GH_TOKEN" ]; then
-      ok=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github.raw" "$fetch_url" -o "$dest" 2>/dev/null && echo y || echo n)
+      ok=$(curl -fsSL "${CURL_OPTS[@]}" -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github.raw" "$fetch_url" -o "$tmp" 2>/dev/null && echo y || echo n)
     else
-      ok=$(curl -fsSL "$fetch_url" -o "$dest" 2>/dev/null && echo y || echo n)
+      ok=$(curl -fsSL "${CURL_OPTS[@]}" "$fetch_url" -o "$tmp" 2>/dev/null && echo y || echo n)
     fi
-    if [ "$ok" = y ] && [ -s "$dest" ]; then
+    if [ "$ok" = y ] && [ -s "$tmp" ]; then
+      mv -f "$tmp" "$dest"
       echo "  <- ${url}"
       return 0
     fi
   done
+  rm -f "$tmp"
   echo "ERROR: no candidate URL returned content for ${dest}:" >&2
   printf '       %s\n' "$@" >&2
   return 1
+}
+
+# try_fetch for a genuinely OPTIONAL file — one the app has its own fallback for,
+# so a miss is reported and shrugged off instead of failing the deploy. Removes
+# the destination on a miss, so the chart's Files.Get presence check sees
+# "absent" rather than an empty file.
+fetch_optional() { # <dest> <url> <label> <fallback-note>
+  if try_fetch "$1" "$2" 2>/dev/null; then
+    echo "  $3 -> $1"
+  else
+    rm -f "$1"
+    echo "  $3: absent on ${REF} — $4"
+  fi
 }
 
 TARGET="${1:-}"; shift 2>/dev/null || true
@@ -258,6 +324,27 @@ case "$TARGET" in
       echo "  brand consent -> ${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
     fi
 
+    # ── per-network email copy (signals-dpg#540) ──────────────────────────────
+    # Rides the consent ConfigMap: the api resolves both from
+    # dirname(NETWORK_CONFIG_LOCAL_FILE). Optional per key, so a missing file
+    # just keeps the api's bundled wording. Cleared first because the chart
+    # renders on file presence alone — a leftover from an earlier deploy of a
+    # different network/brand would otherwise override this one's copy.
+    # Full rationale: helm/CLAUDE.md, "Email copy rides the signals consent ConfigMap".
+    MESSAGES_DIR="$REPO_ROOT/helm/signals/charts/api/files/messages"
+    mkdir -p "$MESSAGES_DIR"
+    rm -f "$MESSAGES_DIR"/*.properties
+
+    fetch_optional "${MESSAGES_DIR}/${NETWORK}.properties" \
+      "${RAW}/${NETWORK}/messages.properties" \
+      "email copy" "api keeps its bundled defaults"
+
+    if [ -n "$BRAND" ]; then
+      fetch_optional "${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties" \
+        "${RAW}/${NETWORK}/${BRAND}/messages.properties" \
+        "brand email copy" "network/bundled copy only"
+    fi
+
     # UI college/institute reference list for the selected region. Lives under
     # apps/ui/public/ (not examples/schemas/), hence its own RAW base. Only the one
     # region in _college_dataset is fetched: the ui reference ConfigMap ships
@@ -312,6 +399,32 @@ case "$TARGET" in
     assert_aggregator_consent "$OUT"
     normalize_support_email "$OUT"
     echo "  aggregator consent -> ${OUT}"
+
+    # ── aggregator.config.yaml ────────────────────────────────────────────────
+    # Network binding, brand strings, domain labels, registration modes. Its own
+    # repo/ref/dir/file knobs so it can be pinned independently of the consent doc.
+    # templates/network-config-configmap.yaml requires this file, so a missing
+    # fetch here fails the helm render rather than degrading.
+    CFG_REPO="${CFG_REPO:-${AGGREGATOR_CONFIG_REPO:-$AGGREGATOR_CONFIG_REPO_DEFAULT}}"
+    CFG_REF="${CFG_REF:-${AGGREGATOR_CONFIG_REF:-$AGGREGATOR_CONFIG_REF_DEFAULT}}"
+    if [ "$CFG_DIR_SET" -eq 0 ]; then
+      CFG_DIR="${AGGREGATOR_CONFIG_DIR-$AGGREGATOR_CONFIG_DIR_DEFAULT}"
+    fi
+    CFG_FILE="${CFG_FILE:-${AGGREGATOR_CONFIG_FILE:-$AGGREGATOR_CONFIG_FILE_DEFAULT}}"
+    CFG_BASE="https://raw.githubusercontent.com/${CFG_REPO}/${CFG_REF}"
+    [ -n "$CFG_DIR" ] && CFG_BASE="${CFG_BASE}/${CFG_DIR}"
+    CFG_OUT="$REPO_ROOT/helm/aggregator/files/network-config/aggregator.config.yaml"
+    mkdir -p "$(dirname "$CFG_OUT")"
+    echo "  aggregator.config source: repo=${CFG_REPO} ref=${CFG_REF} dir=${CFG_DIR:-<root>} file=${CFG_FILE}"
+    warn_if_moving_ref "$CFG_REF"
+
+    # Brand copy first — a brand folder is a full copy of its network folder, not a
+    # partial override. Fetched verbatim; the chart mounts it over the image copy.
+    cands=()
+    [ -n "$BRAND" ] && cands+=("${CFG_BASE}/${NETWORK}/${BRAND}/${CFG_FILE}")
+    cands+=("${CFG_BASE}/${NETWORK}/${CFG_FILE}")
+    try_fetch "$CFG_OUT" "${cands[@]}"
+    echo "  aggregator config -> ${CFG_OUT}"
     ;;
 
   *)

@@ -17,6 +17,37 @@
 */ -}}
 {{- $fullName := include "dpg-ui.fullname" . -}}
 {{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
+{{- /*
+  ui.blockedHosts: hosts that must keep serving /api but NOT the portal — e.g. a
+  legacy unified domain retired from end users while still being the identity
+  embedded in existing rows' item_instance_url / network.json instance_url (which
+  the api dereferences at boot in cacheReferencedItemSchemas). Such a host is
+  dropped from the RULES below and served instead by blocked-host-ingress.yaml,
+  which terminates it. It deliberately stays in the `tls` list so the shared cert
+  keeps its SAN and Kong can still complete the TLS handshake for that SNI.
+
+  Removing it from the rules (rather than layering a second Ingress on the same
+  host+path) is what keeps Kong's routing unambiguous: two routes for the same
+  host at path / have no defined precedence, unlike the more-specific-path
+  pattern the otp-ratelimit / admin-console-block ingresses rely on.
+*/ -}}
+{{- $blocked := .Values.blockedHosts | default (list) -}}
+{{- $ruleHosts := list -}}
+{{- range $hosts }}
+{{- if not (has . $blocked) }}
+{{- $ruleHosts = append $ruleHosts . }}
+{{- end }}
+{{- end }}
+{{- if not $ruleHosts }}
+{{- fail (printf "ui.blockedHosts blocks every host in global.publicHosts (%v) — the portal would be unreachable" $hosts) }}
+{{- end }}
+{{- $isKong := eq .Values.ingress.className "kong" -}}
+{{- /* konghq.com/plugins takes a comma-separated list — combine the existing
+   rate-limit-tier reference (if any) with this chart's own HSTS plugin (if
+   enabled), rather than clobbering one with the other. */ -}}
+{{- $plugins := list -}}
+{{- if .Values.ingress.plugin }}{{ $plugins = append $plugins .Values.ingress.plugin }}{{ end -}}
+{{- if and $isKong .Values.ingress.hsts.enabled }}{{ $plugins = append $plugins (printf "%s-hsts" $fullName) }}{{ end -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -27,8 +58,14 @@ metadata:
     {{- if .Values.ingress.clusterIssuer }}
     cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}
     {{- end }}
-    {{- if .Values.ingress.plugin }}
-    konghq.com/plugins: {{ .Values.ingress.plugin | quote }}
+    {{- if $plugins }}
+    konghq.com/plugins: {{ join "," $plugins | quote }}
+    {{- end }}
+    {{- if and $isKong .Values.ingress.forceSSLRedirect }}
+    {{- /* Route-level protocol restriction: only match https, and 301-redirect
+       a plain-http request instead of erroring (GITHUB-ISSUES #10). */}}
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: "301"
     {{- end }}
 spec:
   {{- with .Values.ingress.className }}
@@ -43,7 +80,7 @@ spec:
       secretName: {{ .Values.ingress.tlsSecret }}
   {{- end }}
   rules:
-    {{- range $hosts }}
+    {{- range $ruleHosts }}
     - host: {{ . | quote }}
       http:
         paths:

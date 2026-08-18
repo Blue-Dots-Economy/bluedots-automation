@@ -190,7 +190,9 @@ secrets:
 # DB schema migration Job. A migrate-ddl initContainer runs the api image's
 # db:migrate:deploy (drizzle migrations + raw item/action/event SQL, all shipped
 # in the image); a provision container then upserts the integrating-DPG apikey.
-# Idempotent. Runs as a Helm post-install / post-upgrade hook.
+# Idempotent. Runs as a Helm pre-install / pre-upgrade hook — it must complete
+# before any signals pod starts, because the api queries `items` during boot and
+# signals-search-embeddings fails fast if item_search is missing.
 migrate:
   enabled: true
   image: postgres:16-alpine
@@ -227,3 +229,23 @@ schemas:
   # cross-network fetch, the value must parse as a URL.
   crossNetworkUrl: "http://dpg-api:2742"
   networks: []
+
+# ─── Shared Keycloak coordinates ─────────────────────────────────────────────
+# PER-SUBCHART OVERRIDE ONLY — leave empty and configure globals instead.
+#
+# These are NOT populated from global.keycloak.* by the umbrella (an earlier
+# comment here claimed they were; nothing did it, so the realm and issuer
+# rendered as nothing). templates/configmap.yaml now resolves them itself:
+#
+#   realm           api.keycloak.realm > global.keycloak.realm > global.keycloakRealm
+#   publicBaseUrl   api.keycloak.publicBaseUrl > global.keycloak.publicBaseUrl
+#                   > <global.publicProtocol|https>://<global.publicHost>/auth
+#   internalBaseUrl api.keycloak.internalBaseUrl > global.keycloak.internalBaseUrl
+#
+# They must match the `keycloak` release exactly. Empty resolves to nothing in
+# the ConfigMap while AUTH_PROVIDER=betterauth; once it is `keycloak` the render
+# FAILS instead, rather than shipping a silently broken cutover.
+keycloak:
+  realm: ""
+  publicBaseUrl: ""
+  internalBaseUrl: ""

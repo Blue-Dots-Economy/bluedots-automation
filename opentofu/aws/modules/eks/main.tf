@@ -112,6 +112,26 @@ resource "aws_iam_role_policy_attachment" "node_AmazonEKS_CNI_Policy" {
 }
 
 # -------------------------------
+# Control-plane CloudWatch log group
+# -------------------------------
+
+# EKS auto-creates /aws/eks/<cluster>/cluster the first time control-plane logging
+# is enabled, and that implicit group has no retention (logs never expire → unbounded
+# CloudWatch cost). Declaring it here lets Terraform own the group and set a retention,
+# and the cluster's depends_on ensures it exists before EKS would create its own.
+# Skipped entirely when no log types are enabled (EKS then creates no group at all).
+#
+# NOTE for existing clusters: if EKS already created this group, import it once
+# (`terragrunt import aws_cloudwatch_log_group.eks /aws/eks/<cluster>/cluster`) before
+# the first apply, otherwise creation fails with "log group already exists".
+resource "aws_cloudwatch_log_group" "eks" {
+  count             = length(coalesce(var.cloudwatch_enabled_log_types, [])) > 0 ? 1 : 0
+  name              = "/aws/eks/${local.cluster_name}/cluster"
+  retention_in_days = var.cloudwatch_log_retention_in_days
+  tags              = merge(local.common_tags, { Name = "${local.cluster_name}-control-plane-logs" })
+}
+
+# -------------------------------
 # EKS Cluster
 # -------------------------------
 
@@ -148,7 +168,8 @@ resource "aws_eks_cluster" "cluster" {
   depends_on = [
     aws_iam_role_policy_attachment.eks_cluster_AmazonEKSClusterPolicy,
     aws_iam_role_policy_attachment.eks_cluster_AmazonEKSServicePolicy,
-    aws_iam_role_policy.eks_cluster_kms
+    aws_iam_role_policy.eks_cluster_kms,
+    aws_cloudwatch_log_group.eks
   ]
 }
 

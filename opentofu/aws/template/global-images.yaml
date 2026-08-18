@@ -4,7 +4,7 @@
 #
 # Keys map directly to subchart names/aliases in the umbrella charts:
 #   helm/common-services/ → postgresql, redis, ingress-nginx, cert-manager
-#   helm/signals/         → api, ui, notification-service, search, search-embeddings
+#   helm/signals/         → api, ui, notification-service, match-score, search, search-embeddings
 #   helm/aggregator/      → aggregator-api, web, worker, keycloak
 #
 # Note: aggregator's api subchart carries the alias "aggregator-api" (Chart.yaml)
@@ -19,26 +19,26 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-1965ad6"
+    tag: "sha-d2079ff"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-1965ad6"
+    tag: "sha-d2079ff"
     pullPolicy: Always
 
 notification-service:
   image:
     repository: ghcr.io/blue-dots-economy/notification-service
-    tag: "sha-ae5b45c"
+    tag: "sha-5cf31e4"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
 search:
   image:
     repository: ghcr.io/blue-dots-economy/signals-search
-    tag: "sha-c0e8fd7"
+    tag: "sha-b7acda7"
     pullPolicy: Always
 
 # search-embeddings: TEI model image with BAAI/bge-m3 baked in
@@ -60,29 +60,35 @@ s3-export:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "sha-ab6be25"
+    tag: "sha-75a9f08"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "sha-ab6be25"
+    tag: "sha-75a9f08"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "sha-ab6be25"
+    tag: "sha-75a9f08"
     pullPolicy: Always
 
 keycloak:
+  # Server image: built from THIS repo (dockerfiles/keycloak/) by the manual
+  # "Build Keycloak image" workflow. Moved out of aggregator-dpg because Keycloak
+  # is a common service serving both DPGs.
   image:
-    repository: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-server
-    tag: "develop"
+    repository: vinodbbhorge/keycloak-server
+    tag: "sha-52088a6"
     pullPolicy: IfNotPresent
+  # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
+  # because its brand strings come from that repo's config/<network>/keycloak.env.
+  # Tag is <network>[-<brand>]-<branch>.
   themesInit:
     image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
-    tag: blue_dot-develop
+    tag: sha-1e8c0a8
     pullPolicy: Always
 
 

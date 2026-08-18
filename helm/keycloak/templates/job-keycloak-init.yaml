@@ -1,0 +1,202 @@
+{{- /*
+Realm reconciliation Job.
+
+WHY IT EXISTS: `--import-realm` applies ONLY to an empty realm. Every subsequent
+boot skips the import entirely, so this Job is the only thing that reconciles
+realm state on an existing realm — user-profile (unmanaged attributes +
+phoneNumber), SMTP, the org_owner role, the manage-realm grant, the acting-org
+claim mappers, the per-client login theme, and the aggregator-portal entitlement
+gate. Both scripts are idempotent and safe to re-run on every upgrade.
+
+ORDERING: hook-weight 10, deliberately above the common-services
+postgres-extensions-job (5) and postgres-bootstrap-job (0). Helm orders equal
+weights by name, which is meaningless — keep realm reconciliation unambiguously
+last. This is a separate release from common-services so those weights do not
+actually interleave, but the value documents the intent if it is ever merged.
+
+STEP ORDER IS LOAD-BEARING. apply-realm-config.py runs FIRST because the two
+scripts after it reconcile but never CREATE a client: `ensure_acting_org_mapper`
+and `ensure_login_theme` both log "client '<id>' not found — skipping" and return
+0. Run them first and a realm predating a realm.json change keeps its missing
+clients while this Job still exits 0 — a silent no-op. Reconciling clients first
+means everything downstream finds them.
+
+This is also what removes the need to rename+re-import a realm to pick up new
+clients: renaming changes the issuer URL and forces every user to re-login, which
+reconciling in place does not.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "keycloak-platform.fullname" . }}-init
+  labels:
+    {{- include "keycloak-platform.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "keycloak-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: keycloak-init
+    spec:
+      restartPolicy: OnFailure
+      {{- include "keycloak-platform.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: kc-init
+          image: {{ .Values.init.image | quote }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              apk add --no-cache curl jq python3 >/dev/null
+
+              # Render the realm with the SAME script the Keycloak pod uses, so
+              # the reconciler cannot import a differently-substituted realm than
+              # the one that was originally imported.
+              echo "[kc-init] 1/4 render realm"
+              SRC_DIR=/realm-template DST_DIR=/rendered sh /scripts/render-realm.sh
+
+              echo "[kc-init] 2/4 apply-realm-config.py (clients + roles + SA grants)"
+              python3 /init/apply-realm-config.py
+
+              echo "[kc-init] 3/4 apply-user-profile.sh"
+              sh /init/apply-user-profile.sh
+
+              echo "[kc-init] 4/4 apply-portal-gate.py"
+              python3 /init/apply-portal-gate.py
+
+              echo "[kc-init] realm reconciliation complete"
+          env:
+            - name: KC_URL
+              value: {{ include "keycloak-platform.internalUrl" . | quote }}
+            - name: KC_REALM
+              value: {{ include "keycloak-platform.realm" . | quote }}
+            # apply-user-profile.sh reads KC_BOOTSTRAP_ADMIN_*; apply-portal-gate.py
+            # reads KC_ADMIN_*. Same credential, both names supplied.
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: {{ .Values.keycloak.bootstrapAdminUsername | quote }}
+            - name: KC_ADMIN_USERNAME
+              value: {{ .Values.keycloak.bootstrapAdminUsername | quote }}
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            - name: KC_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            - name: UNMANAGED_POLICY
+              value: ENABLED
+            # ── render-realm.sh inputs (same values the Keycloak pod renders
+            # with) + the reconciler's realm path ─────────────────────────────
+            - name: RENDERED_REALM
+              value: /rendered/realm.json
+            - name: KEYCLOAK_REALM
+              value: {{ include "keycloak-platform.realm" . | quote }}
+            - name: PUBLIC_BASE_URL
+              value: {{ include "keycloak-platform.publicBaseUrl" . | quote }}
+            - name: BRAND_LONG_NAME
+              value: {{ .Values.keycloak.brandLongName | default "Blue Dots" | quote }}
+            - name: SIGNALS_ORIGINS
+              value: {{ include "keycloak-platform.signalsOrigins" . | quote }}
+            - name: AGGREGATOR_PORTAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: OIDC_CLIENT_SECRET
+            - name: AGGREGATOR_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
+            - name: AGGREGATOR_BFF_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: BFF_SERVICE_CLIENT_SECRET
+            - name: SIGNALS_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: SIGNALS_API_SECRET
+            - name: SIGNALSTACK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: SIGNALSTACK_CLIENT_SECRET
+            - name: VOICE_DPG_SIGNALS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: VOICE_DPG_SIGNALS_SECRET
+            # render-realm.sh reads SMTP_SSL; the ConfigMap key is SMTP_SECURE.
+            - name: SMTP_SSL
+              value: {{ index .Values.smtp "SMTP_SECURE" | default "false" | quote }}
+            - name: PORTAL_CLIENT_ID
+              value: {{ .Values.clients.portalClientId | quote }}
+            - name: SERVICE_CLIENT_ID
+              value: {{ .Values.clients.apiClientId | quote }}
+            - name: API_CLIENT_ID
+              value: {{ .Values.clients.apiClientId | quote }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: OIDC_CLIENT_SECRET
+            - name: BFF_SERVICE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: BFF_SERVICE_CLIENT_SECRET
+            {{- range $k, $v := .Values.smtp }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+          volumeMounts:
+            - name: init-scripts
+              mountPath: /init
+              readOnly: true
+            - name: render-script
+              mountPath: /scripts
+              readOnly: true
+            - name: realm-template
+              mountPath: /realm-template
+              readOnly: true
+            - name: rendered
+              mountPath: /rendered
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: {{ include "keycloak-platform.fullname" . }}-init
+            defaultMode: 0755
+        # Same two ConfigMaps the Keycloak pod's realm-renderer initContainer
+        # uses, so this Job renders a byte-identical realm.
+        - name: render-script
+          configMap:
+            name: {{ include "keycloak-platform.renderScriptConfigMap" . }}
+            defaultMode: 0755
+        - name: realm-template
+          configMap:
+            name: {{ include "keycloak-platform.realmConfigMap" . }}
+        - name: rendered
+          emptyDir: {}
