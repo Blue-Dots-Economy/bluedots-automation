@@ -58,16 +58,19 @@ fi
 # Source of aggregator.config.yaml — INDEPENDENT of the schemas repo above, because
 # canonical for that file is the aggregator-dpg config/ tree. All four parts are
 # configurable; override any of them to repoint (e.g. at bluedots-schemas once it
-# carries the file) with no chart change. Pin AGGREGATOR_CONFIG_REF for prod.
+# carries the file) with no chart change. Defaults to main, matching SIGNALS_DPG_REF
+# and AGGREGATOR_DPG_REF above — the images are cut from main, so the config tree
+# has to come from main too or config and code skew. Pin to a tag/SHA for prod.
 AGGREGATOR_CONFIG_REPO="${AGGREGATOR_CONFIG_REPO:-Blue-Dots-Economy/aggregator-dpg}"
-AGGREGATOR_CONFIG_REF="${AGGREGATOR_CONFIG_REF:-develop}"
+AGGREGATOR_CONFIG_REF="${AGGREGATOR_CONFIG_REF:-main}"
 AGGREGATOR_CONFIG_DIR="${AGGREGATOR_CONFIG_DIR-config}"
 AGGREGATOR_CONFIG_FILE="${AGGREGATOR_CONFIG_FILE:-aggregator.config.yaml}"
 # Source of the aggregator consent doc. Also aggregator-dpg, and separate from the
 # config knobs above so the two can be pinned independently: the aggregator consent
 # is an {"audiences":…} document, distinct from the schemas repo's signals consent.
+# Also defaults to main, for the same no-skew reason as the config ref.
 AGGREGATOR_CONSENT_REPO="${AGGREGATOR_CONSENT_REPO:-Blue-Dots-Economy/aggregator-dpg}"
-AGGREGATOR_CONSENT_REF="${AGGREGATOR_CONSENT_REF:-develop}"
+AGGREGATOR_CONSENT_REF="${AGGREGATOR_CONSENT_REF:-main}"
 AGGREGATOR_CONSENT_DIR="${AGGREGATOR_CONSENT_DIR-config}"
 
 # Namespaces.

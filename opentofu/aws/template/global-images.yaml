@@ -19,13 +19,13 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "202608-s1-rc2"
+    tag: "202608-s1-rc4"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "202608-s1-rc2"
+    tag: "202608-s1-rc4"
     pullPolicy: Always
 
 notification-service:
@@ -60,19 +60,19 @@ s3-export:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "202608-s1-rc2"
+    tag: "202608-s1-rc3"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "202608-s1-rc2"
+    tag: "202608-s1-rc3"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "202608-s1-rc2"
+    tag: "202608-s1-rc3"
     pullPolicy: Always
 
 keycloak:
@@ -87,7 +87,7 @@ keycloak:
   # this repo publishes.
   image:
     repository: ghcr.io/blue-dots-economy/keycloak-server
-    tag: "sha-d6d5afb"
+    tag: "202608-s1-rc2"
     pullPolicy: IfNotPresent
   # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
   # because its brand strings come from that repo's config/<network>/keycloak.env.
