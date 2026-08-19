@@ -8,7 +8,9 @@
 {{- $ns := .Values.global.networkSource | default dict -}}
 {{- $networkSource := $ns.url | default "" -}}
 {{- if and (not $networkSource) $ns.repo $ns.ref -}}
-{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork ($ns.file | default "network.json") -}}
+{{- $netPath := .Values.global.aggregatorNetwork -}}
+{{- if $ns.brand -}}{{- $netPath = printf "%s/%s" $netPath $ns.brand -}}{{- end -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref $netPath ($ns.file | default "network.json") -}}
 {{- end -}}
 apiVersion: v1
 kind: ConfigMap

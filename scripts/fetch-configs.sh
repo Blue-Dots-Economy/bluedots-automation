@@ -309,7 +309,16 @@ case "$TARGET" in
     warn_if_moving_ref "$REF"
 
     tmp="$(mktemp)"
-    try_fetch "$tmp" "${RAW}/${NETWORK}/network.json"
+    # Brand copy first — a brand folder is a FULL copy of its network folder, not
+    # a partial override (same convention as the aggregator's config/consent
+    # below). Unlike consent, a network schema is a whole document, so there is
+    # nothing to deep-merge: the brand file simply wins. The DESTINATION filename
+    # is unchanged, so the ConfigMap key, the `items` mapping and
+    # NETWORK_CONFIG_LOCAL_FILE all stay exactly as they are.
+    cands=()
+    [ -n "$BRAND" ] && cands+=("${RAW}/${NETWORK}/${BRAND}/network.json")
+    cands+=("${RAW}/${NETWORK}/network.json")
+    try_fetch "$tmp" "${cands[@]}"
     sed -E 's/("instance_url"[[:space:]]*:[[:space:]]*)"[^"]*"/\1"__PUBLIC_API_URL__"/' "$tmp" > "${NET_DIR}/${NETWORK}.json"
     rm -f "$tmp"
     echo "  network -> ${NET_DIR}/${NETWORK}.json"

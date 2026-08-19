@@ -86,7 +86,19 @@ global:
     ref: main
     # Filename inside the per-network directory.
     file: network.json
+    # Brand sub-directory, when the brand ships its OWN network.json (a full copy,
+    # not a partial) — mirrors scripts/fetch-configs.sh, which prefers
+    # <network>/<brand>/network.json and falls back to <network>/network.json.
+    #
+    # EMPTY BY DEFAULT and NOT derived from global.aggregatorBrand on purpose. A
+    # templated URL cannot fall back on a 404 the way try_fetch does, so coupling
+    # this to aggregatorBrand would point every brand-ed deployment at a file that
+    # may not exist and break the loader at boot. Set it only where the brand
+    # folder really carries network.json.
+    brand: ''
     # Full-URL override, for a mirror / internal host / S3 instead of the derivation.
+    # Prefer `brand` over hardcoding a URL here: `url` also freezes repo/ref, which
+    # breaks the lockstep with $SIGNALS_DPG_REF that keeps both halves on one schema.
     url: ''
 
   # Support/grievance email injected into the aggregator consent T&C / Privacy /
