@@ -87,7 +87,7 @@ keycloak:
   # this repo publishes.
   image:
     repository: ghcr.io/blue-dots-economy/keycloak-server
-    tag: "sha-d6d5afb"
+    tag: "202608-s1-rc2"
     pullPolicy: IfNotPresent
   # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
   # because its brand strings come from that repo's config/<network>/keycloak.env.
