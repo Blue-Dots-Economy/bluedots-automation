@@ -356,6 +356,12 @@ postgres:
 # namespace-local, so declaring it there names a missing Secret and Kong serves
 # self-signed for the whole host. See the runbook §10.2.
 keycloak:
+  # OTP delivery. The subchart defaults to `log`, which writes the code to the
+  # pod log and sends nothing — Keycloak stays healthy and no OTP ever arrives.
+  # Credentials come from secrets.msg91AuthKey + keycloak.msg91TemplateId.
+  # Values: msg91 | twilio | log.
+  smsProvider: msg91
+
   ingress:
     # Enable BOTH of these only together with a dedicated _auth_host above.
     # annotations:
