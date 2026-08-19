@@ -1,15 +1,27 @@
 # Build & push the custom PostgreSQL image (Bitnami base + portable pgvector).
 #
-# MANUAL TRIGGER ONLY (workflow_dispatch) — this is a rarely-rebuilt base image,
-# not part of the app CI/CD, so it never runs on push/PR. Dockerfile + rationale:
-# dockerfiles/postgres/Dockerfile.
+# Triggered manually (workflow_dispatch) for ad-hoc rebuilds, and on release tags
+# so a release cut produces a postgres image carrying the release tag. Still never
+# runs on branch pushes or PRs — this is a rarely-rebuilt base image, not part of
+# app CI/CD. Dockerfile + rationale: dockerfiles/postgres/Dockerfile.
 #
 # Pushes to GHCR using the built-in GITHUB_TOKEN (no extra secrets needed). The
 # image is ghcr.io/<repo-owner>/postgres-pgvector, tagged with the commit SHA it
-# was built from.
+# was built from and, on a release tag, with the release tag verbatim.
 name: Build Postgres pgvector image
 
 on:
+  # Release tags — a release cut rebuilds this image and tags it with the release
+  # tag, so opentofu/aws/<env>/global-images.yaml can name the release instead of
+  # a commit SHA (Blue-Dots-Economy/bluedots-automation#146). Two schemes:
+  #   v*.*.*      semver releases   e.g. v1.2.0
+  #   20*-s*-rc*  sprint release    e.g. 202608-s1-rc1
+  # GitHub reads this workflow FROM THE TAGGED COMMIT, so a tag cut from a commit
+  # predating this change will not pick the patterns up.
+  #
+  # Still NOT run on branch pushes or PRs — this stays out of app CI/CD.
+  push:
+    tags: ['v*.*.*', '20*-s*-rc*']
   workflow_dispatch:
     inputs:
       platforms:
@@ -33,13 +45,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve image ref (ghcr.io/<owner>/postgres-pgvector:sha-<commit-sha>)
+      - name: Resolve image name (ghcr.io/<owner>/postgres-pgvector)
         id: ref
         run: |
           owner_lc=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "image=ghcr.io/${owner_lc}/postgres-pgvector:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          # Untagged name too, so the Trivy step below can address the image by
-          # digest (name@sha256:...) rather than by the mutable tag.
+          # Untagged name: metadata-action below owns the tags, and the Trivy step
+          # addresses the image by digest (name@sha256:...) rather than by tag.
           echo "repo=ghcr.io/${owner_lc}/postgres-pgvector" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
@@ -49,12 +60,25 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: ${{ inputs.push }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `type=sha,format=short` reproduces exactly the tag this workflow used to
+      # build by hand (sha-<7 chars>), so existing pins keep resolving.
+      # `type=ref,event=tag` emits a release tag VERBATIM and nothing on a manual
+      # run, which is what makes the image tag equal the release tag.
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.ref.outputs.repo }}
+          tags: |
+            type=sha,format=short
+            type=ref,event=tag
 
       - name: Build and push
         id: build
@@ -62,9 +86,12 @@ jobs:
         with:
           context: dockerfiles/postgres
           file: dockerfiles/postgres/Dockerfile
-          platforms: ${{ inputs.platforms }}
-          push: ${{ inputs.push }}
-          tags: ${{ steps.ref.outputs.image }}
+          # `inputs.*` exist only on workflow_dispatch. On a release tag they are
+          # empty, so both are defaulted: an ungated `inputs.push` would be falsy
+          # and the release build would silently BUILD WITHOUT PUSHING.
+          platforms: ${{ inputs.platforms || 'linux/amd64' }}
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
           provenance: false
 
       # Image scanning (Sec-Audit A2 — Blue-Dots-Economy/signals-dpg#300).
@@ -73,13 +100,14 @@ jobs:
       # is the only thing that inventories it. It is also rebuilt manually and
       # rarely, which means its base layers age quietly between rebuilds.
       #
-      # Gated on `inputs.push`, the same condition that drives the build's `push:`.
+      # Gated on the same condition that drives the build's `push:` (true for a
+      # release tag, `inputs.push` for a manual run).
       # A `digest != ''` guard would look equivalent but is not reliable: with some
       # buildx drivers the digest output is populated even for a build-only run, and
       # Trivy would then try to pull an image that was never published
       # (MANIFEST_UNKNOWN). Build-only runs therefore skip the scan cleanly.
       - name: Trivy image scan
-        if: ${{ inputs.push }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: image
@@ -90,7 +118,7 @@ jobs:
           exit-code: "0"   # Phase A: report-only, never fails the build
 
       - name: Upload Trivy image SARIF
-        if: ${{ always() && inputs.push }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.push) }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image.sarif

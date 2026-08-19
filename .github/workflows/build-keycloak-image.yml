@@ -1,9 +1,11 @@
 # Build & push the custom Keycloak image (upstream base + OTP authenticator SPI).
 #
-# MANUAL TRIGGER ONLY (workflow_dispatch) — like the Postgres image, this is a
-# rarely-rebuilt base image, not part of app CI/CD, so it never runs on push/PR.
-# Rebuild when the OTP jar is bumped or the Keycloak minor changes. Dockerfile +
-# rationale: dockerfiles/keycloak/Dockerfile.
+# Triggered manually (workflow_dispatch) for ad-hoc rebuilds, and on release tags
+# so a release cut produces a Keycloak image carrying the release tag. Still never
+# runs on branch pushes or PRs — like the Postgres image next to it, this is a
+# rarely-rebuilt base image, not part of app CI/CD. Rebuild manually when the OTP
+# jar is bumped or the Keycloak minor changes. Dockerfile + rationale:
+# dockerfiles/keycloak/Dockerfile.
 #
 # Pushes to GHCR using the built-in GITHUB_TOKEN (no extra secrets needed). The
 # image is ghcr.io/<repo-owner>/keycloak-server — same owner-level naming as the
@@ -16,6 +18,8 @@
 #   <branch>            e.g. develop, unified-keycloak
 #   sha-<7-char-sha>    immutable, prefer this for production pins
 #   latest              default branch only
+#   <release tag>       release-tag runs only, e.g. 202608-s1-rc1 — equals the
+#                       git tag verbatim, so a release can be pinned by name
 #
 # Moved here from aggregator-dpg/.github/workflows/keycloak-image-build.yaml:
 # Keycloak is a common service serving BOTH DPGs, so its image is released from
@@ -23,6 +27,17 @@
 name: Build Keycloak image
 
 on:
+  # Release tags — a release cut rebuilds this image and tags it with the release
+  # tag, so opentofu/aws/<env>/global-images.yaml can name the release instead of
+  # a commit SHA (Blue-Dots-Economy/bluedots-automation#146). Two schemes:
+  #   v*.*.*      semver releases   e.g. v1.2.0
+  #   20*-s*-rc*  sprint release    e.g. 202608-s1-rc1
+  # GitHub reads this workflow FROM THE TAGGED COMMIT, so a tag cut from a commit
+  # predating this change will not pick the patterns up.
+  #
+  # Still NOT run on branch pushes or PRs — this stays out of app CI/CD.
+  push:
+    tags: ['v*.*.*', '20*-s*-rc*']
   workflow_dispatch:
     inputs:
       platforms:
@@ -66,7 +81,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: ${{ inputs.push }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -80,6 +95,7 @@ jobs:
           images: ${{ steps.ref.outputs.image }}
           tags: |
             type=ref,event=branch
+            type=ref,event=tag
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
@@ -94,8 +110,11 @@ jobs:
         with:
           context: dockerfiles/keycloak
           file: dockerfiles/keycloak/Dockerfile
-          platforms: ${{ inputs.platforms }}
-          push: ${{ inputs.push }}
+          # `inputs.*` exist only on workflow_dispatch. On a release tag they are
+          # empty, so both are defaulted: an ungated `inputs.push` would be falsy
+          # and the release build would silently BUILD WITHOUT PUSHING.
+          platforms: ${{ inputs.platforms || 'linux/amd64' }}
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=keycloak-server
@@ -108,7 +127,8 @@ jobs:
       # inventory of its contents. Keycloak fronts authentication for both DPGs,
       # which makes this the highest-consequence image in the estate.
       #
-      # Gated on `inputs.push`, the same condition that drives the build's `push:`.
+      # Gated on the same condition that drives the build's `push:` (true for a
+      # release tag, `inputs.push` for a manual run).
       # A `digest != ''` guard would look equivalent but is not reliable: with some
       # buildx drivers the digest output is populated even for a build-only run, and
       # Trivy would then try to pull an image that was never published
@@ -118,7 +138,7 @@ jobs:
       # (see the header note), so `:develop` is deliberately mutable — the digest
       # ties each result to the exact artifact that run produced.
       - name: Trivy image scan
-        if: ${{ inputs.push }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: image
@@ -129,7 +149,7 @@ jobs:
           exit-code: "0"   # Phase A: report-only, never fails the build
 
       - name: Upload Trivy image SARIF
-        if: ${{ always() && inputs.push }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.push) }}
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-image.sarif
