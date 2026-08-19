@@ -19,13 +19,13 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "202608-s1-rc1"
+    tag: "202608-s1-rc2"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "202608-s1-rc1"
+    tag: "202608-s1-rc2"
     pullPolicy: Always
 
 notification-service:
@@ -60,35 +60,42 @@ s3-export:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "202608-s1-rc1"
+    tag: "202608-s1-rc2"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "202608-s1-rc1"
+    tag: "202608-s1-rc2"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "202608-s1-rc1"
+    tag: "202608-s1-rc2"
     pullPolicy: Always
 
 keycloak:
   # Server image: built from THIS repo (dockerfiles/keycloak/) by the manual
   # "Build Keycloak image" workflow. Moved out of aggregator-dpg because Keycloak
   # is a common service serving both DPGs.
+  #
+  # `repository` carries the registry: the chart renders this as
+  # `{{ .Values.image.repository }}:{{ tag }}` (charts/keycloak/_helpers.tpl) and
+  # `global.imageRegistry` is empty, so there is nothing to prefix it. This used
+  # to point at a Docker Hub account, which did not match what the workflow in
+  # this repo publishes.
   image:
-    repository: vinodbbhorge/keycloak-server
-    tag: "sha-52088a6"
+    repository: ghcr.io/blue-dots-economy/keycloak-server
+    tag: "sha-d6d5afb"
     pullPolicy: IfNotPresent
   # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
   # because its brand strings come from that repo's config/<network>/keycloak.env.
-  # Tag is <network>[-<brand>]-<branch>.
+  # Tagged per branch/brand (<network>[-<brand>]-<branch>) and by commit
+  # (sha-xxxxxxx); the sha- form is pinned here because it is immutable per build.
   themesInit:
     image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
-    tag: sha-1e8c0a8
+    tag: sha-a4cc90b
     pullPolicy: Always
 
 
