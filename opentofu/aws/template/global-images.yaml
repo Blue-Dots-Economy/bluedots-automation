@@ -131,6 +131,9 @@ ingress-nginx:
       tag: "v1.15.1"                     # chart default (chart v4.15.1)
       pullPolicy: IfNotPresent
 
-# cert-manager resolves its image internally from appVersion (v1.20.2 →
-# quay.io/jetstack/cert-manager-controller:v1.20.2); no override needed here
-# unless pinning to a different version.
+# cert-manager and metrics-server images are NOT set here. They are pinned in
+# helm/common-services/values.yaml at ghcr.io/blue-dots-economy/dhi/* — our
+# mirror of the Docker Hardened Images (bluedots-automation#136) — because those
+# refs must stay in lockstep with .github/dhi-mirror-images.txt, which is what
+# CI checks and what the mirror workflow actually copies. A per-env override
+# here would silently escape that check and deploy an unmirrored ref.

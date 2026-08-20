@@ -3,6 +3,21 @@
 # Install ONCE per cluster, before aggregator-dpg or signal-stack.
 # =============================================================================
 
+# =============================================================================
+# `ghcr.io/blue-dots-economy/dhi/*` image refs below are Docker Hardened Images
+# (bluedots-automation#136) MIRRORED into this repo's own GHCR packages — the
+# bytes and digests are upstream's, unchanged. They do not point at dhi.io
+# because that registry refuses anonymous pulls, and these are third-party
+# charts: the kubelet does the pull itself, so a direct reference would need a
+# dhi.io credential in every namespace (and install.sh's IMAGES_PUBLIC=true
+# default actively CLEARS pull secrets). The mirror is public, so the pull stays
+# anonymous and the credential count stays at zero.
+#
+# Mirrored by .github/workflows/mirror-dhi-images.yml from the list in
+# .github/dhi-mirror-images.txt. Adding a ref here without adding it there is
+# an ImagePullBackOff at deploy time; CI fails the PR instead.
+# =============================================================================
+
 # ─── ClusterIssuer (consumed by Ingress objects in other namespaces) ─────────
 issuer:
   enabled: true
@@ -223,6 +238,19 @@ kong:
 # See: https://artifacthub.io/packages/helm/cert-manager/cert-manager
 cert-manager:
   enabled: true
+  # Docker Hardened Images (bluedots-automation#136). cert-manager is stateless —
+  # all its state lives in CRDs and Secrets in etcd — so this is a plain pod
+  # restart with nothing to migrate. Each component is a separate DHI image;
+  # `repository` wins over the chart's imageRegistry/imageNamespace default, and
+  # `tag` overrides .Chart.AppVersion.
+  #
+  # NOTE this is also a patch bump: the vendored chart pins v1.20.2, DHI publishes
+  # 1.20.3. Same minor, but if something misbehaves after this, that is the other
+  # variable in play besides the base image.
+  #
+  image:
+    repository: ghcr.io/blue-dots-economy/dhi/cert-manager-controller
+    tag: "1.20.3"
   # Install all cert-manager CRDs (Certificate, Issuer, Order, Challenge, ...)
   # via the subchart. Subchart default is `false`, which leaves
   # `challenges.acme.cert-manager.io` missing and breaks ACME HTTP-01 flow.
@@ -242,6 +270,12 @@ cert-manager:
       cpu: 200m
       memory: 256Mi
   webhook:
+    # DHI image — merged into this existing block on purpose. A second top-level
+    # `webhook:` key would be a duplicate and YAML keeps only the last one, so the
+    # override would be silently dropped (caught by `helm template`, not by lint).
+    image:
+      repository: ghcr.io/blue-dots-economy/dhi/cert-manager-webhook
+      tag: "1.20.3"
     resources:
       requests:
         cpu: 50m
@@ -250,6 +284,9 @@ cert-manager:
         cpu: 200m
         memory: 128Mi
   cainjector:
+    image:
+      repository: ghcr.io/blue-dots-economy/dhi/cert-manager-cainjector
+      tag: "1.20.3"
     resources:
       requests:
         cpu: 50m
@@ -257,6 +294,16 @@ cert-manager:
       limits:
         cpu: 200m
         memory: 256Mi
+  acmesolver:
+    # Not visible in `helm template` — cert-manager creates acmesolver pods
+    # dynamically at ACME challenge time, not from a chart template.
+    image:
+      repository: ghcr.io/blue-dots-economy/dhi/cert-manager-acmesolver
+      tag: "1.20.3"
+  startupapicheck:
+    image:
+      repository: ghcr.io/blue-dots-economy/dhi/cert-manager-startupapicheck
+      tag: "1.20.3"
 
 # =============================================================================
 # Shared data layer — Postgres + Redis for the aggregator and signals stacks.
@@ -507,6 +554,12 @@ networkPolicy:
 # needed or the metrics-server pods will fail with x509 errors.
 metrics-server:
   enabled: true
+  # Docker Hardened Images (bluedots-automation#136). Stateless — holds no data,
+  # serves the metrics API from memory — so this is a plain pod restart.
+  # Also a minor bump: chart pins 0.7.1, DHI publishes 0.9.0.
+  image:
+    repository: ghcr.io/blue-dots-economy/dhi/metrics-server
+    tag: "0.9-alpine3.23"
   args:
     - --kubelet-insecure-tls          # required on EKS (self-signed kubelet cert)
     - --kubelet-preferred-address-types=InternalIP

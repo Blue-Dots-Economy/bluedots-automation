@@ -1,0 +1,70 @@
+# Docker Hardened Images to mirror into this repo's GHCR packages.
+# Consumed by .github/workflows/mirror-dhi-images.yml and by the drift check in
+# .github/workflows/ci.yml.
+#
+# Each line is a bare `name:tag` relative to dhi.io. The workflow derives both
+# ends of the copy from it, so a line can never name a source and a destination
+# that disagree:
+#
+#   dhi.io/<name>:<tag>  ->  ghcr.io/<repo-owner>/dhi/<name>:<tag>
+#
+# WHY MIRROR AT ALL
+# -----------------
+# dhi.io refuses anonymous pulls even for the free Apache-2.0 catalog, and the
+# third-party charts point the KUBELET straight at the registry — unlike our own
+# service images, which are built FROM a DHI base in CI and pushed to GHCR, so
+# the cluster never contacts dhi.io for those. Without a mirror every namespace
+# running a DHI-based third-party pod needs a dhi.io credential, and the
+# monitoring namespace is not even covered by the existing ghcr-pull rotation
+# (install.sh passes only common-services/signals/aggregator). Mirroring to a
+# PUBLIC GHCR package keeps IMAGES_PUBLIC=true working and leaves the number of
+# registry credentials in the cluster at zero.
+#
+# Licensing: the DHI catalog is Apache-2.0, which explicitly grants
+# redistribution (https://www.docker.com/press-release/docker-makes-hardened-images-free-open-and-transparent-for-everyone/).
+# The software inside each image keeps its own upstream licence, exactly as it
+# does for the Docker Hub bases we already mirror through GHCR today.
+#
+# ADDING AN IMAGE
+# ---------------
+# Add the line here AND point the corresponding helm value at
+# ghcr.io/blue-dots-economy/dhi/<name>. CI fails if a chart renders a
+# .../dhi/<name>:<tag> reference that is not listed here, because that
+# combination is an ImagePullBackOff waiting to happen.
+#
+# Tracking: Blue-Dots-Economy/bluedots-automation#136
+
+# ── helm/common-services — cert-manager ──────────────────────────────────────
+# All five are covered by the CI drift check, but acmesolver only just: its pods
+# are created by the controller at ACME challenge time, not from a template, so
+# it never appears as an `image:` key — it renders as the controller's
+# `--acme-http01-solver-image` flag. That is why the check greps the whole
+# rendered manifest rather than image keys. If it ever stops being covered, a
+# missing acmesolver shows up as a certificate that silently never issues.
+cert-manager-controller:1.20.3
+cert-manager-webhook:1.20.3
+cert-manager-cainjector:1.20.3
+cert-manager-acmesolver:1.20.3
+cert-manager-startupapicheck:1.20.3
+
+# ── helm/common-services — metrics-server ────────────────────────────────────
+metrics-server:0.9-alpine3.23
+
+# ── helm/monitoring — kube-prometheus-stack ──────────────────────────────────
+prometheus:3.5.5
+alertmanager:0.34.0-alpine3.23
+grafana:13.2.0
+k8s-sidecar:2.10.1-alpine3.22
+node-exporter:1.12.1-alpine3.23
+kube-state-metrics:2.20.0
+prometheus-operator:0.93.1
+kube-webhook-certgen:1.8.5-alpine3.23
+
+# Used TWICE at the same ref: as the prometheus-operator's injected sidecar
+# (kube-prometheus-stack) and as alloy's own configReloader sidecar. Listed once
+# — the copy is by ref, not by consumer.
+prometheus-config-reloader:0.93.1-alpine3.23
+
+# ── helm/monitoring — loki + alloy ───────────────────────────────────────────
+loki:3.6.15
+alloy:1.18.1
