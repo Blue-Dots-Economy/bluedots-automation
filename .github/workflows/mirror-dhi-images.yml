@@ -169,12 +169,41 @@ jobs:
             # --digest-tags: cosign's sha256-<digest>.sig|.att sidecar tags
             # Both are no-ops when upstream has none, so this is safe for every
             # image in the list regardless of what it carries.
-            if ! regctl image copy --referrers --digest-tags "$src" "$dst"; then
-              echo "FAILED to copy $src -> $dst"
-              echo "| \`$ref\` | \`${src_digest:0:19}\` | — | ❌ copy failed |" >> "$GITHUB_STEP_SUMMARY"
+            #
+            # Retried, because GHCR throttles sustained writes and reports it as
+            # `403 permission_denied: write_package` rather than a 429. Mirroring
+            # 17 new packages in one run reliably trips it: the first attempt of
+            # this workflow copied 9 and left 8 with their blobs and attestation
+            # manifests pushed but the version tag missing, which reads exactly
+            # like a token-permission failure and is not one.
+            #
+            # Retrying is cheap and safe: regctl skips blobs and manifests that
+            # already exist at the target, so attempt 2 only pushes what attempt 1
+            # was refused. Backoff is 15s, 30s, 60s — the throttle is short-lived.
+            copy_attempt=1
+            copy_ok=0
+            copy_delay=15
+            while [ "$copy_attempt" -le 4 ]; do
+              if regctl image copy --referrers --digest-tags "$src" "$dst"; then
+                copy_ok=1
+                break
+              fi
+              if [ "$copy_attempt" -lt 4 ]; then
+                echo "attempt ${copy_attempt}/4 failed (GHCR throttling returns 403 here); retrying in ${copy_delay}s"
+                sleep "$copy_delay"
+                copy_delay=$((copy_delay * 2))
+              fi
+              copy_attempt=$((copy_attempt + 1))
+            done
+            if [ "$copy_ok" -ne 1 ]; then
+              echo "FAILED to copy $src -> $dst after 4 attempts"
+              echo "| \`$ref\` | \`${src_digest:0:19}\` | — | ❌ copy failed (4 attempts) |" >> "$GITHUB_STEP_SUMMARY"
               failed=1
               echo "::endgroup::"
               continue
+            fi
+            if [ "$copy_attempt" -gt 1 ]; then
+              echo "copied on attempt ${copy_attempt}"
             fi
 
             # A digest mismatch means the copy was not verbatim — the manifest
