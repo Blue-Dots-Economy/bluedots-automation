@@ -37,7 +37,7 @@
 # Source of the portable pgvector build. Pinned by digest (this digest is
 # pgvector 0.8.5 on pg17) so a later rebuild can't silently pull a different
 # pgvector than the one documented/validated for this shared base image.
-FROM pgvector/pgvector:pg17@sha256:d2ef61f42ef767baa5a1475393303cc235bcd92febd9d7014eddb48b41f3bad0 AS pgv
+FROM pgvector/pgvector:pg17@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f AS pgv
 
 FROM bitnamilegacy/postgresql:17.6.0
 
