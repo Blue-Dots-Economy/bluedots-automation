@@ -1,0 +1,96 @@
+# List the tags dhi.io publishes for each image we mirror.
+#
+# Exists because choosing a DHI tag is not a free choice: the vendored Helm
+# charts expect a specific upstream version (kube-prometheus-stack 65.1.1 wants
+# Prometheus v2.54.1, kube-state-metrics 2.13.0, and so on), and taking DHI's
+# newest tag instead silently ships a version jump. That is not theoretical —
+# kube-state-metrics 2.20.0 moved /readyz from the metrics port to the telemetry
+# port, and the chart hardcodes the probe path and port, so the pod never became
+# Ready; Grafana 13 moved to installing its datasource plugins at runtime, which
+# fails on a read-only /tmp. Both were version jumps, not hardening problems.
+#
+# dhi.io refuses anonymous access, so this cannot be answered from a laptop
+# without the Docker Hub credentials. Hence a workflow: it reads the names from
+# .github/dhi-mirror-images.txt and prints every tag dhi.io has for each, so the
+# tag choice can be made against what actually exists.
+#
+# Read-only. Pushes nothing, changes nothing.
+name: List DHI tags
+
+on:
+  push:
+    paths:
+      - '.github/workflows/dhi-list-tags.yml'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Only list images whose name matches this substring (blank = all)"
+        required: false
+        default: ""
+      grep:
+        description: "Only show tags matching this substring (e.g. '2.13' or '1.20')"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install regctl
+        env:
+          REGCTL_VERSION: v0.11.5
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /usr/local/bin/regctl \
+            "https://github.com/regclient/regclient/releases/download/${REGCTL_VERSION}/regctl-linux-amd64"
+          chmod 755 /usr/local/bin/regctl
+
+      - name: Log in to dhi.io
+        env:
+          DHI_USER: ${{ vars.DOCKERHUB_USERNAME }}
+          DHI_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${DHI_TOKEN}" | regctl registry login dhi.io -u "${DHI_USER}" --pass-stdin
+
+      - name: List tags
+        env:
+          ONLY: ${{ inputs.only }}
+          GREP: ${{ inputs.grep }}
+        run: |
+          set -uo pipefail
+          while IFS= read -r line; do
+            case "$line" in ''|'#'*) continue ;; esac
+            name=$(echo "${line%%:*}" | tr -d '[:space:]')
+            [ -n "$name" ] || continue
+            if [ -n "${ONLY}" ] && [ "${name#*"${ONLY}"}" = "$name" ]; then continue; fi
+
+            echo "::group::${name}"
+            if ! tags=$(regctl tag ls "dhi.io/${name}" 2>&1); then
+              echo "  could not list: $tags"
+              echo "::endgroup::"
+              continue
+            fi
+            if [ -n "${GREP}" ]; then
+              shown=$(echo "$tags" | grep -F "${GREP}" || true)
+            else
+              shown=$tags
+            fi
+            echo "  $(echo "$tags" | grep -c . ) tag(s) total"
+            echo "$shown" | sed 's/^/    /'
+            echo "::endgroup::"
+
+            {
+              echo "<details><summary><code>${name}</code></summary>"
+              echo
+              echo '```'
+              echo "$shown"
+              echo '```'
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done < .github/dhi-mirror-images.txt
