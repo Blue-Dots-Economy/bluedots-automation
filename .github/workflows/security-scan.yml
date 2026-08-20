@@ -1,4 +1,4 @@
-﻿# Reusable security-scan workflow (Sec-Audit A2 / signals-dpg#300)
+# Reusable security-scan workflow (Sec-Audit A2 / signals-dpg#300)
 #
 # Home: commit this to the org `.github` repo at
 #   .github/workflows/security-scan.yml
@@ -138,7 +138,7 @@ jobs:
         image: ${{ fromJSON(inputs.image-refs) }}
     steps:
       - name: Log in to registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
