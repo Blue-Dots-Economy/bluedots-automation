@@ -21,6 +21,7 @@ on:
   push:
     paths:
       - '.github/workflows/dhi-list-tags.yml'
+      - '.github/dhi-candidate-images.txt'
   workflow_dispatch:
     inputs:
       only:
@@ -64,6 +65,13 @@ jobs:
           GREP: ${{ inputs.grep }}
         run: |
           set -uo pipefail
+          # Mirror list (name:tag) plus the candidate list (names only). Tags are
+          # stripped below, so both formats feed the same loop.
+          cat .github/dhi-mirror-images.txt > /tmp/dhi-names.txt
+          if [ -f .github/dhi-candidate-images.txt ]; then
+            echo "" >> /tmp/dhi-names.txt
+            cat .github/dhi-candidate-images.txt >> /tmp/dhi-names.txt
+          fi
           while IFS= read -r line; do
             case "$line" in ''|'#'*) continue ;; esac
             name=$(echo "${line%%:*}" | tr -d '[:space:]')
@@ -93,4 +101,4 @@ jobs:
               echo '```'
               echo "</details>"
             } >> "$GITHUB_STEP_SUMMARY"
-          done < .github/dhi-mirror-images.txt
+          done < /tmp/dhi-names.txt
