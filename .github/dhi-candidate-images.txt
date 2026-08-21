@@ -1,0 +1,52 @@
+# Images we are EVALUATING for the DHI mirror but have not adopted.
+#
+# Read by .github/workflows/dhi-list-tags.yml alongside the mirror list, so the
+# tags dhi.io actually publishes for a candidate can be checked before anyone
+# commits to a version. dhi.io refuses anonymous access, so this cannot be
+# answered from a laptop — hence a workflow.
+#
+# Names only, no tags — the point is to discover what tags exist.
+# Nothing here is mirrored or deployed. Move a line to dhi-mirror-images.txt
+# (with a tag) to adopt it.
+
+# Highest priority. The deployed image, docker.io/bitnamilegacy/redis:7.2.5, was
+# BUILT 2024-08-20 and the whole bitnamilegacy namespace was frozen 2025-07-18
+# when Broadcom moved Bitnami's free catalog there. It will never receive another
+# patch, and Redis 7.2 is EOL upstream.
+redis
+
+# Kong. The gateway is likely available; the ingress controller is the open
+# question, and without it the pair splits across two provenance chains. Both
+# upstream images are actively maintained and currently fresh (built within the
+# last three weeks), so this is a consistency question, not a security one.
+kong
+kong-ingress-controller
+kubernetes-ingress-controller
+
+# The keycloak chart's realm-renderer and kc-init containers. They `apk add` at
+# runtime, so a hardened runtime variant cannot work as a drop-in — probing to
+# see what base variants exist for a purpose-built replacement image.
+alpine
+
+# ── Specific tags to inspect ─────────────────────────────────────────────────
+# Written as name:tag, these get their entrypoint/cmd/user printed as well. That
+# is what decides whether a variant can drop into a chart that starts its
+# container with a shell — DHI's `-compat` variants exist for exactly this, and
+# the Bitnami redis chart needs only bash, cp and redis-server from the image
+# (every /opt/bitnami path it touches is a volume mount, not image content).
+redis:7.4.11
+redis:7.4.11-compat
+redis:7.4.11-debian-compat
+kong:3.9.3
+
+# ── Keycloak ─────────────────────────────────────────────────────────────────
+# dockerfiles/keycloak/Dockerfile builds FROM quay.io/keycloak/keycloak — upstream,
+# not hardened — while DHI publishes a keycloak image. The open question is
+# whether it can work at all: our Dockerfile's ENTRYPOINT is
+# /opt/keycloak/bin/kc.sh, which is a SHELL SCRIPT, and it also needs `RUN kc.sh
+# build` to index the OTP authenticator SPI jar. A DHI runtime variant has no
+# shell, so both the build step and the entrypoint need checking before this is
+# worth attempting.
+keycloak
+keycloak:26.5.5
+keycloak:26.5

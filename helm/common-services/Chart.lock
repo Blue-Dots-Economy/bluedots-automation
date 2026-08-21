@@ -16,6 +16,6 @@ dependencies:
   version: 19.6.4
 - name: metrics-server
   repository: file://charts/metrics-server
-  version: 3.12.1
-digest: sha256:53352280a45ef8f65b8799d171cb8a561bf028548ba47fa29ba03b7e10f8c620
-generated: "2026-06-18T16:33:49.896241275+05:30"
+  version: 3.14.0
+digest: sha256:4119a1f226891f1719e453f9dc0df8a642fa86d5975f540bc5353d77ecd47e93
+generated: '2026-08-21T10:45:00.000000000+05:30'

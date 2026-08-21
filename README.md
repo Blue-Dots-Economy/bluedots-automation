@@ -448,12 +448,23 @@ environment there):
 | Component             | Image                                                  | Built by |
 |-----------------------|--------------------------------------------------------|----------|
 | Signals — api         | `ghcr.io/blue-dots-economy/signals-dpg/api`            | signals-dpg |
-| Signals — ui          | `vinodbbhorge/signalstack-ui`                          | signals-dpg |
-| Signals — notification | `ghcr.io/blue-dots-economy/notification-service`      | signals-dpg |
+| Signals — ui          | `ghcr.io/blue-dots-economy/signals-dpg/ui`             | signals-dpg |
+| Signals — search      | `ghcr.io/blue-dots-economy/signals-search`             | signals-search |
+| Signals — notification | `ghcr.io/blue-dots-economy/notification-service`      | notification-service |
 | Aggregator — web / api / worker | `ghcr.io/blue-dots-economy/aggregator-dpg/{web,api,worker}` | aggregator-dpg |
 | Keycloak — server     | `ghcr.io/blue-dots-economy/keycloak-server`            | **this repo** (`dockerfiles/keycloak/`) |
 | Keycloak — theme init | `ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme` | aggregator-dpg (per network/brand) |
 | Postgres (shared)     | `ghcr.io/blue-dots-economy/postgres-pgvector`          | **this repo** (`dockerfiles/postgres/`) |
+| Third-party hardened  | `ghcr.io/blue-dots-economy/dhi/*`                      | **this repo** (mirrored, see below) |
+
+The `dhi/*` entries are Docker Hardened Images copied byte-for-byte from
+`dhi.io` into our own packages by `.github/workflows/mirror-dhi-images.yml` —
+cert-manager, metrics-server and the whole monitoring stack. They are mirrored
+rather than referenced directly because `dhi.io` refuses anonymous pulls and
+those are third-party charts, so the *kubelet* does the pull: a direct reference
+would need a registry credential in every namespace. The list of what is
+mirrored lives in `.github/dhi-mirror-images.txt`, and anything deliberately
+left unhardened is recorded with a reason in `.github/dhi-exempt-images.txt`.
 
 ### Base images built here
 
