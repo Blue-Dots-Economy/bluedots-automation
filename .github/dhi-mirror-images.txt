@@ -89,4 +89,3 @@ busybox:1.38-alpine
 # a failed deploy — alpine images normally carry busybox `sh` and NOT bash, and
 # the chart's script is bash-only (`[[ ]]`, arrays, `$(< file)`).
 redis:7.4.11-compat
-redis:7.4.11-debian-compat

@@ -20,9 +20,6 @@
 kong:3.9
 kong/kubernetes-ingress-controller:3.5
 
-# ── Redis ────────────────────────────────────────────────────────────────────
-# NOT blocked — DHI does publish Redis. This is simply unassessed: the chart is
-# Bitnami's, which wires its own entrypoint, user and TLS handling around the
-# image, so a swap needs verifying rather than assuming. Candidate for the next
-# pass.
-docker.io/bitnamilegacy/redis:7.2.5
+# Redis was here. It is now on the mirror (dhi/redis:7.4.11-compat) — the
+# Bitnami chart only needed bash, cp and redis-server from the image, and the
+# -compat variant supplies all three.

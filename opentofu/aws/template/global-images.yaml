@@ -117,10 +117,14 @@ postgresql:
       - ghcr-pull
 
 redis:
+  # DHI mirror (bluedots-automation#136). MUST stay in step with
+  # helm/common-services/values.yaml: this overlay is layered after the chart
+  # defaults, so whatever is here wins — leaving bitnamilegacy here would have
+  # silently undone the swap.
   image:
-    registry: docker.io
-    repository: bitnamilegacy/redis
-    tag: "7.2.5"
+    registry: ghcr.io
+    repository: blue-dots-economy/dhi/redis
+    tag: "7.4.11-compat"
     pullPolicy: IfNotPresent
 
 ingress-nginx:

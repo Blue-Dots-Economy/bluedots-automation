@@ -498,9 +498,26 @@ postgresql:
 redis:
   enabled: true
   image:
-    registry: docker.io
-    repository: bitnamilegacy/redis
-    tag: 7.2.5
+    # Docker Hardened Images (bluedots-automation#136). Replaces
+    # docker.io/bitnamilegacy/redis:7.2.5, which was BUILT 2024-08-20 and lives
+    # in the namespace Broadcom froze on 2025-07-18 — it will never be patched
+    # again, and Redis 7.2 is EOL upstream. Also a version move, 7.2.5 -> 7.4.11.
+    #
+    # The `-compat` variant specifically. The Bitnami chart starts the container
+    # with `/bin/bash -c .../start-master.sh`, which OVERRIDES the image
+    # ENTRYPOINT, so the image only has to supply bash, cp and redis-server on
+    # PATH — every /opt/bitnami path the script touches is a volume mount, not
+    # image content. Plain `redis:7.4.11` ships no shell at all and would fail
+    # instantly. Verified by running the chart's real start script against this
+    # image under the pod's actual constraints (uid 1001, readOnlyRootFilesystem,
+    # all caps dropped): Redis reached "Ready to accept connections", auth was
+    # enforced from the mounted password file, and set/get worked.
+    #
+    # `7.4.11-compat` and `7.4.11-debian-compat` resolve to the SAME digest, so
+    # the default compat flavour is the debian one — which is why bash is present.
+    registry: ghcr.io
+    repository: blue-dots-economy/dhi/redis
+    tag: 7.4.11-compat
     pullPolicy: IfNotPresent
   architecture: standalone
   auth:
