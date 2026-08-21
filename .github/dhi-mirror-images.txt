@@ -51,7 +51,7 @@ cert-manager-startupapicheck:1.20.3
 metrics-server:0.9-alpine3.23
 
 # ── helm/monitoring — kube-prometheus-stack ──────────────────────────────────
-prometheus:3.5.5
+prometheus:3.14.0
 alertmanager:0.34.0-alpine3.23
 grafana:13.2.0
 k8s-sidecar:2.10.1-alpine3.22

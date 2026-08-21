@@ -22,21 +22,78 @@ export KUBECONFIG='/home/sanketika7420/workspace/dot/blue-dots-economy/test-dev-
 | cert-manager startupapicheck | v1.20.2 | `ghcr.io/blue-dots-economy/dhi/cert-manager-startupapicheck:1.20.3` |
 | metrics-server | registry.k8s.io/…:0.7.1 | `ghcr.io/blue-dots-economy/dhi/metrics-server:0.9-alpine3.23` |
 
-### `helm/monitoring/values.yaml`
-| Component | Was | Now | Jump |
+### `helm/monitoring/values.yaml` + chart bumps
+
+The images could not be matched to the old charts — DHI publishes **only current
+versions** (no Prometheus 2.x, no Grafana 11, no kube-state-metrics 2.13 exist in
+the catalog at all), so the charts were moved forward to the images instead. The
+result is that every image is now the version its chart actually expects:
+
+| Component | Chart wants | DHI image pinned | |
 |---|---|---|---|
-| **Prometheus** | v2.54.1 | `ghcr.io/blue-dots-economy/dhi/prometheus:3.5.5` | **MAJOR 2→3** |
-| **Grafana** | 11.2.1 | `ghcr.io/blue-dots-economy/dhi/grafana:13.2.0` | **TWO MAJORS 11→13** |
-| prometheus-operator | v0.77.1 | `ghcr.io/blue-dots-economy/dhi/prometheus-operator:0.93.1` | 16 minors |
-| prometheus-config-reloader | v0.77.1 | `ghcr.io/blue-dots-economy/dhi/prometheus-config-reloader:0.93.1-alpine3.23` | 16 minors |
-| alertmanager | v0.27.0 | `ghcr.io/blue-dots-economy/dhi/alertmanager:0.34.0-alpine3.23` | 7 minors |
-| node-exporter | v1.8.2 | `ghcr.io/blue-dots-economy/dhi/node-exporter:1.12.1-alpine3.23` | 4 minors |
-| kube-state-metrics | v2.13.0 | `ghcr.io/blue-dots-economy/dhi/kube-state-metrics:2.20.0` | 7 minors |
-| loki | 3.1.0 | `ghcr.io/blue-dots-economy/dhi/loki:3.6.15` | 5 minors |
-| alloy | v1.16.1 | `ghcr.io/blue-dots-economy/dhi/alloy:1.18.1` | 2 minors |
-| alloy config-reloader | v0.91.0 | `ghcr.io/blue-dots-economy/dhi/prometheus-config-reloader:0.93.1-alpine3.23` | — |
-| k8s-sidecar (grafana) | 1.27.4 | `ghcr.io/blue-dots-economy/dhi/k8s-sidecar:2.10.1-alpine3.22` | major |
-| kube-webhook-certgen | v20221220 | `ghcr.io/blue-dots-economy/dhi/kube-webhook-certgen:1.8.5-alpine3.23` | — |
+| Prometheus | v3.14.0 | `dhi/prometheus:3.14.0` | exact |
+| Alertmanager | v0.34.0 | `dhi/alertmanager:0.34.0-alpine3.23` | exact |
+| prometheus-operator | v0.93.1 | `dhi/prometheus-operator:0.93.1` | exact |
+| prometheus-config-reloader | v0.93.1 | `dhi/prometheus-config-reloader:0.93.1-alpine3.23` | exact |
+| kube-webhook-certgen | 1.8.5 | `dhi/kube-webhook-certgen:1.8.5-alpine3.23` | exact |
+| Grafana | 13.2.0 | `dhi/grafana:13.2.0` | exact |
+| k8s-sidecar | 2.10.1 | `dhi/k8s-sidecar:2.10.1-alpine3.22` | exact |
+| node-exporter | 1.12.1 | `dhi/node-exporter:1.12.1-alpine3.23` | exact |
+| kube-state-metrics | 2.20.0 | `dhi/kube-state-metrics:2.20.0` | exact |
+| Loki | 3.6.12 | `dhi/loki:3.6.15` | same minor |
+| Alloy | v1.18.1 | `dhi/alloy:1.18.1` | exact |
+| metrics-server | 0.9.0 | `dhi/metrics-server:0.9-alpine3.23` | exact |
+| cert-manager ×5 | v1.20.2 | `dhi/cert-manager-*:1.20.3` | same minor |
+
+Chart versions bumped to get there:
+
+| Chart | Was | Now |
+|---|---|---|
+| kube-prometheus-stack | 65.1.1 (Oct 2024, operator v0.77.1) | **88.5.2** (operator v0.93.1) |
+| loki | 6.7.1 (app 3.1.0) | **7.3.0** (app 3.6.12) |
+| alloy | 1.8.2 (app v1.16.1) | **1.11.1** (app v1.18.1) |
+| metrics-server | 3.12.1 (app 0.7.1) | **3.14.0** (app 0.9.0) |
+
+`jaeger` and `opentelemetry-collector` are left alone — both `enabled: false`.
+
+#### Two bugs this fixed, and one it did not
+
+- **kube-state-metrics never went Ready.** 2.20.0 moved `/readyz` off the metrics
+  port onto the telemetry port (measured: `:8080/readyz` → 404, `:8081/readyz` →
+  200; on 2.13.0 both ports served it). Chart 5.25.1 hardcoded the probe path
+  *and* port, so there was no values-level fix. Subchart 8.4.0 declares the
+  telemetry port and probes `/readyz` there. **Fixed by the bump.**
+- **node-exporter got an invalid tag.** kube-prometheus-stack 88.5.2 defaults
+  `prometheus-node-exporter.image.distroless: true` (65.1.1 had no such key), and
+  the subchart *appends* it to the tag — rendering
+  `node-exporter:1.12.1-alpine3.23-distroless`, which DHI does not publish.
+  Pinned back to `distroless: false`. **Introduced by the bump, caught by the CI
+  drift check.**
+- **Grafana had no datasource plugins.** Grafana 13 installs them at runtime via
+  a temp file, and the DHI image's `/tmp` is not writable by uid 472, so every
+  install failed and Prometheus/Loki had no plugin — pods Ready, database fine,
+  dashboards blank. **NOT fixed by the bump** (no grafana subchart mounts `/tmp`);
+  fixed by an `extraEmptyDirMounts` entry for `/tmp`. It is a property of the
+  hardened image, not of the chart.
+
+#### What the upgrade does NOT disturb
+
+Verified by diffing the rendered manifests:
+
+- `monitoring-loki` StatefulSet keeps volumeClaimTemplate `storage`; the
+  `monitoring-grafana` PVC keeps its name → **no PVC is orphaned**.
+- Prometheus and Alertmanager CR `storage.volumeClaimTemplate` specs are
+  byte-identical → their operator-managed PVCs are untouched.
+- Loki's schema is unchanged (`v13` / `tsdb` / from `2024-01-01`) → **existing
+  logs stay readable**.
+- Our three dashboard ConfigMaps, the `monitoring-alertmanager-config`
+  configSecret, and the all-namespaces ServiceMonitor/PodMonitor/rule selectors
+  all render identically.
+- Resource count 84 → 81. Removals are a grafana `Role`/`RoleBinding` whose rules
+  were an **empty list**, the `helm test` bats Pod (which also removes the last
+  non-DHI image), and two loki objects renamed with the release prefix
+  (`loki` → `monitoring-loki`). One `List` of rules became a proper
+  `PrometheusRule`.
 
 **Deliberately NOT swapped:** `bats` (runs only on `helm test`) and `busybox`
 (grafana's `init-chown-data`, which the chart pins to `runAsUser: 0` — a hardened
@@ -108,11 +165,13 @@ kubectl -n monitoring get pods -o jsonpath='{range .items[*]}{.metadata.name}{" 
 
 **The two risky ones, in order:**
 
-- [ ] **Prometheus (2→3)** — pod Ready; `kubectl -n monitoring logs sts/prometheus-mon-prometheus-prometheus -c prometheus | grep -iE "error|deprecated|unknown flag"`.
+- [ ] **Prometheus (v2.54.1 → 3.14.0, chart-matched)** — pod Ready; `kubectl -n monitoring logs sts/prometheus-mon-prometheus-prometheus -c prometheus | grep -iE "error|deprecated|unknown flag"`.
       v3 removed deprecated flags and the **operator generates the config**, so an
       operator/Prometheus mismatch shows up here first. Then check targets are UP
       via the Prometheus UI or `/api/v1/targets`.
-- [ ] **Grafana (11→13)** — pod Ready; **the SQLite migration is ONE-WAY**, so if
+- [ ] **Grafana (11.2.1 → 13.2.0)** — check `kubectl -n monitoring logs deploy/monitoring-grafana -c grafana | grep -i 'failed to install plugin'` is EMPTY, and that
+      `/api/plugins?type=datasource` lists `prometheus` and `loki`. Blank dashboards with a healthy pod is the /tmp bug, not a Grafana fault.
+      Also: pod Ready; **the SQLite migration is ONE-WAY**, so if
       this fails a tag revert alone will not fix it. Check it serves, log in, and
       confirm the ConfigMap-loaded dashboards (Kong service, Kong API, infra,
       k8s-health) still render — the `k8s-sidecar` bump (1.x→2.x) is what loads them.

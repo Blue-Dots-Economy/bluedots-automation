@@ -59,6 +59,25 @@ prometheus:
       registry: ghcr.io
       repository: blue-dots-economy/dhi/grafana
       tag: "13.2.0"
+    # Grafana 13 installs its datasource plugins AT RUNTIME instead of shipping
+    # them in the image, unpacking each one through a temp file. The DHI image's
+    # /tmp is not writable by uid 472 (the uid the chart pins), so every install
+    # failed with `permission denied` and Grafana came up with NO prometheus and
+    # NO loki plugin — pods Ready, database fine, every dashboard blank, and the
+    # only clue a `Failed to install plugin` line in the log.
+    #
+    # An emptyDir is the whole fix: plugins land on the PVC at
+    # /var/lib/grafana/plugins, /tmp is only the unpack scratch space. It is
+    # mounted at /tmp and NOT at a subpath because the failure is Grafana's own
+    # choice of temp file name. /tmp/dashboards keeps working — the kubelet
+    # mounts parent paths before nested ones, so the sidecar's dashboard volume
+    # still lands inside this one.
+    #
+    # This is NOT fixed by the chart bump: neither grafana subchart 11.x nor
+    # 12.11.1 mounts /tmp. It is a property of the hardened image.
+    extraEmptyDirMounts:
+      - name: grafana-tmp
+        mountPath: /tmp
     sidecar:
       image:
         registry: ghcr.io
@@ -155,6 +174,16 @@ prometheus:
       registry: ghcr.io
       repository: blue-dots-economy/dhi/node-exporter
       tag: "1.12.1-alpine3.23"
+      # MUST stay false. kube-prometheus-stack 88.5.2 defaults this to TRUE
+      # (65.1.1 had no such key), and the subchart appends the flag to the tag
+      # rather than switching repository — so it rendered
+      # `node-exporter:1.12.1-alpine3.23-distroless`, a tag DHI does not publish
+      # and the mirror therefore does not carry. It selects UPSTREAM's distroless
+      # variant, which is meaningless here: the DHI image is already minimal, and
+      # `-alpine3.23` already names the variant we want. Caught by the mirror
+      # drift check in ci.yml, which is exactly the class of silent breakage it
+      # exists for.
+      distroless: false
 
   kube-state-metrics:
     image:
@@ -165,20 +194,23 @@ prometheus:
   prometheus:
     prometheusSpec:
       # ── Docker Hardened Images (bluedots-automation#136) ────────────────────
-      # MAJOR upgrade: DHI publishes no Prometheus 2.x, so v2.54.1 -> 3.5.5
-      # (their LTS line, chosen over 3-stable/3.14 for a smaller jump).
-      # The TSDB format is forward-compatible so existing metrics are readable,
-      # but v3 dropped deprecated flags and changed some config semantics — and
-      # the OPERATOR generates that config, so prometheusOperator below is bumped
-      # to 0.93.1 in the same change. An old operator driving a v3 Prometheus is
-      # the combination most likely to misbehave.
+      # 3.14.0 is the version kube-prometheus-stack 88.5.2 itself defaults to
+      # (v3.14.0-distroless), so image and chart agree. That agreement is the
+      # whole point of the 65.1.1 -> 88.5.2 chart bump: DHI publishes no
+      # Prometheus 2.x at all, so the old chart could only ever be paired with a
+      # v3 image it was never tested against — and it was the operator, pinned to
+      # 0.77.1 by that chart, that generated v3's config.
+      #
+      # An earlier revision pinned 3.5.5 (DHI's LTS line) against the OLD chart.
+      # That is the pairing to avoid: a chart built for one major driving a
+      # binary from another.
       #
       # runAsUser: 1000 / fsGroup: 2000 stay pinned by the chart and override the
       # image's own user, so PVC ownership is unchanged.
       image:
         registry: ghcr.io
         repository: blue-dots-economy/dhi/prometheus
-        tag: "3.5.5"
+        tag: "3.14.0"
       scrapeInterval: 30s
       evaluationInterval: 30s
 
