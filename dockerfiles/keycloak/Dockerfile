@@ -61,11 +61,29 @@
 # floating tag. Keep in step with the app repos' local-dev compose so local and
 # deployed behaviour match.
 ARG KEYCLOAK_VERSION=26.5.5
-FROM quay.io/keycloak/keycloak:${KEYCLOAK_VERSION}
+# Docker Hardened Image (bluedots-automation#136). This was
+# quay.io/keycloak/keycloak — upstream, unhardened — which made it the last image
+# that was OURS and still on an upstream base.
+#
+# DHI's keycloak is shaped the same as upstream, which is why the swap is this
+# small: same /opt/keycloak/bin/kc.sh entrypoint path, and its own CMD is
+# `start --optimized`, so it expects exactly the pre-built boot we already use.
+# It ships a shell too — it must, since its own ENTRYPOINT is a shell script —
+# which is what makes `RUN kc.sh build` below possible at all. A DHI runtime
+# variant normally has none.
+#
+# dhi.io refuses anonymous pulls, so the build workflow logs in first.
+FROM dhi.io/keycloak:${KEYCLOAK_VERSION}
 
-# Root only for the provider copy: the upstream image runs as uid 1000 and
-# /opt/keycloak is not group-writable, so the COPY needs privilege. a+r because
-# the runtime uid must read the jar, and Docker preserves the host's mode bits.
+# Root for the provider copy AND the build. /opt/keycloak is not group-writable,
+# so the COPY needs privilege; the build then needs to write Quarkus augmentation
+# output into /opt/keycloak/lib, and DHI ships that tree owned by root because it
+# has already run a build of its own (hence its `start --optimized` CMD).
+#
+# Doing the build as root and then widening read bits is deliberate: it does not
+# depend on guessing which uid owns which subdirectory of the base image, which
+# would break silently on a base image bump. Root here is BUILD time only — the
+# runtime USER below is unprivileged, and the chart drops all capabilities.
 #
 # Globbed to `*.jar` rather than the whole directory so providers/README.md does
 # not end up in the runtime provider path. It also fails the build loudly if the
@@ -74,8 +92,6 @@ FROM quay.io/keycloak/keycloak:${KEYCLOAK_VERSION}
 USER 0
 COPY providers/*.jar /opt/keycloak/providers/
 RUN chmod -R a+r /opt/keycloak/providers
-
-USER 1000
 # KC_DB is a BUILD-TIME option: `kc.sh build` below precompiles the persistence
 # layer for exactly this backend, and `start --optimized` refuses to run if a
 # build-time option is changed at runtime. Another database would need its own
@@ -87,7 +103,18 @@ ENV KC_DB=postgres \
 
 # Index the SPI providers + persistence layer now, so the pod does not pay for
 # Quarkus augmentation on every cold start.
-RUN /opt/keycloak/bin/kc.sh build
+#
+# a+rX afterwards so the unprivileged runtime user can read what root just wrote.
+# X (capital) sets +x on directories only, never on regular files — a plain +x
+# would make every jar and config executable.
+RUN /opt/keycloak/bin/kc.sh build \
+ && chmod -R a+rX /opt/keycloak/lib /opt/keycloak/providers /opt/keycloak/conf
+
+# Unprivileged for runtime. `nonroot` is the user DHI's own image declares, used
+# by name rather than by number so a base-image uid change cannot silently leave
+# this pointing at the wrong account. The chart does NOT set runAsUser, so this
+# is what the pod actually runs as.
+USER nonroot
 
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 # Overridden by the chart's `args:`; kept so `docker run` on this image behaves.
