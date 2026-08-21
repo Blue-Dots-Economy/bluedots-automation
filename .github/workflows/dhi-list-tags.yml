@@ -102,3 +102,34 @@ jobs:
               echo "</details>"
             } >> "$GITHUB_STEP_SUMMARY"
           done < /tmp/dhi-names.txt
+
+      # A tag list says a variant EXISTS; it does not say whether it can actually
+      # replace what we run. A chart that starts its container with
+      # `/bin/bash -c some-script.sh` needs the image to ship a shell — and a DHI
+      # runtime variant does not, which is why the tag alone is never the answer.
+      # So for any candidate written as name:tag, also print the image's
+      # entrypoint, cmd and user. That is the part that decides drop-in-ability.
+      - name: Inspect specific candidate tags
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          [ -f .github/dhi-candidate-images.txt ] || exit 0
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Candidate image configs" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ref | user | entrypoint | cmd |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^[a-z0-9-]+:' .github/dhi-candidate-images.txt | tr -d '[:blank:]' | while read -r ref; do
+            [ -n "$ref" ] || continue
+            echo "::group::config ${ref}"
+            if cfg=$(regctl image config "dhi.io/${ref}" 2>&1); then
+              u=$(echo "$cfg" | python3 -c 'import sys,json;print(json.load(sys.stdin)["config"].get("User"))' 2>/dev/null || echo '?')
+              e=$(echo "$cfg" | python3 -c 'import sys,json;print(json.load(sys.stdin)["config"].get("Entrypoint"))' 2>/dev/null || echo '?')
+              c=$(echo "$cfg" | python3 -c 'import sys,json;print(json.load(sys.stdin)["config"].get("Cmd"))' 2>/dev/null || echo '?')
+              echo "  user=$u entrypoint=$e cmd=$c"
+              echo "| \`$ref\` | $u | $e | $c |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "  could not read: $cfg"
+              echo "| \`$ref\` | — | — | unreadable |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "::endgroup::"
+          done

@@ -27,3 +27,14 @@ kubernetes-ingress-controller
 # runtime, so a hardened runtime variant cannot work as a drop-in — probing to
 # see what base variants exist for a purpose-built replacement image.
 alpine
+
+# ── Specific tags to inspect ─────────────────────────────────────────────────
+# Written as name:tag, these get their entrypoint/cmd/user printed as well. That
+# is what decides whether a variant can drop into a chart that starts its
+# container with a shell — DHI's `-compat` variants exist for exactly this, and
+# the Bitnami redis chart needs only bash, cp and redis-server from the image
+# (every /opt/bitnami path it touches is a volume mount, not image content).
+redis:7.4.11
+redis:7.4.11-compat
+redis:7.4.11-debian-compat
+kong:3.9.3
