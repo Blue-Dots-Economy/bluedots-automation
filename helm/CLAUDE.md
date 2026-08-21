@@ -204,7 +204,9 @@ The single shared Redis (`common-services/values.yaml`, `redis.commonConfigurati
 
 ## Image pull secrets
 
-Private images at `ghcr.io/blue-dots-economy/*` need a `ghcr-pull` secret per namespace. `create_namespaces_and_secrets` creates it in each via `rotate-ghcr-pull.sh` using `$GHCR_PAT` (a `read:packages` token). Some images also live under `vinodbbhorge/*` (Docker Hub). **Never commit a PAT.**
+Private images at `ghcr.io/blue-dots-economy/*` need a `ghcr-pull` secret per namespace. `create_namespaces_and_secrets` creates it in each via `rotate-ghcr-pull.sh` using `$GHCR_PAT` (a `read:packages` token). **Never commit a PAT.**
+
+Every image the charts reference now lives under `ghcr.io/blue-dots-economy/*` — including `dhi/*`, our byte-identical mirror of the third-party Docker Hardened Images. Some defaults used to point at a personal Docker Hub namespace (`vinodbbhorge/*`), which meant a fresh environment could deploy an artifact built outside the org; those are gone. CI now fails any chart that renders an image which is neither on the mirror nor exempted in `.github/dhi-exempt-images.txt`.
 
 ## Pod securityContexts + NetworkPolicies (#1.12)
 
