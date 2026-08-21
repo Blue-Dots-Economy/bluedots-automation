@@ -38,3 +38,15 @@ redis:7.4.11
 redis:7.4.11-compat
 redis:7.4.11-debian-compat
 kong:3.9.3
+
+# ── Keycloak ─────────────────────────────────────────────────────────────────
+# dockerfiles/keycloak/Dockerfile builds FROM quay.io/keycloak/keycloak — upstream,
+# not hardened — while DHI publishes a keycloak image. The open question is
+# whether it can work at all: our Dockerfile's ENTRYPOINT is
+# /opt/keycloak/bin/kc.sh, which is a SHELL SCRIPT, and it also needs `RUN kc.sh
+# build` to index the OTP authenticator SPI jar. A DHI runtime variant has no
+# shell, so both the build step and the entrypoint need checking before this is
+# worth attempting.
+keycloak
+keycloak:26.5.5
+keycloak:26.5
