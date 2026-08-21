@@ -74,3 +74,19 @@ alloy:1.18.1
 # namespace's last direct docker.io pull. Same tag the aggregator-dpg keycloak
 # theme image is built FROM, so it is known good.
 busybox:1.38-alpine
+
+# ── helm/common-services — Redis ─────────────────────────────────────────────
+# Replaces docker.io/bitnamilegacy/redis:7.2.5, which was BUILT 2024-08-20 and
+# sits in a namespace Broadcom froze on 2025-07-18 — it will never be patched
+# again, and Redis 7.2 is EOL upstream. That made it the most security-relevant
+# image left in the platform.
+#
+# The `-compat` variant, not the plain one: the Bitnami chart starts the
+# container with `/bin/bash -c .../start-master.sh`, which overrides the image's
+# ENTRYPOINT, so all the image must supply is bash, cp and redis-server on PATH.
+# Plain `redis:7.4.11` has no shell entrypoint at all. Both compat flavours are
+# mirrored so the bash-vs-sh question can be settled by inspection rather than by
+# a failed deploy — alpine images normally carry busybox `sh` and NOT bash, and
+# the chart's script is bash-only (`[[ ]]`, arrays, `$(< file)`).
+redis:7.4.11-compat
+redis:7.4.11-debian-compat
