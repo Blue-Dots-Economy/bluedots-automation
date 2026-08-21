@@ -15,6 +15,7 @@ on:
       - 'scripts/**'
       - '.github/workflows/ci.yml'
       - '.github/dhi-mirror-images.txt'
+      - '.github/dhi-exempt-images.txt'
   push:
     branches: [develop, main]
     paths:
@@ -23,6 +24,7 @@ on:
       - 'scripts/**'
       - '.github/workflows/ci.yml'
       - '.github/dhi-mirror-images.txt'
+      - '.github/dhi-exempt-images.txt'
 
 permissions:
   contents: read
@@ -141,6 +143,43 @@ jobs:
             exit 1
           fi
           echo "OK — every rendered DHI ref is in the mirror list."
+
+      # The other direction, and the one that was missing. The check above only
+      # asks "is every dhi/* ref mirrored?" — it is blind to a NEW NON-DHI image
+      # appearing, which is exactly how the loki 6.7.1 -> 7.3.0 bump slipped
+      # `docker.io/kiwigrid/k8s-sidecar:2.5.0` into a stack we had just finished
+      # hardening. A chart bump is precisely when this happens, because a
+      # subchart can add a container that no value of ours mentions.
+      #
+      # So: every rendered image must be either on the mirror or explicitly
+      # exempted with a reason in .github/dhi-exempt-images.txt.
+      - name: no unhardened image sneaks in
+        run: |
+          set -euo pipefail
+          for chart in monitoring common-services; do
+            helm template "$chart" "helm/$chart" -f helm/global-resources.yaml
+          done \
+            | grep -ohE 'image: +"?[^"[:space:]]+' \
+            | sed -E 's/image: *"?//' \
+            | sort -u > /tmp/all-images.txt
+
+          grep -vE '^[[:space:]]*(#|$)' .github/dhi-exempt-images.txt \
+            | tr -d '[:blank:]' | sort -u > /tmp/exempt.txt
+
+          # Anything neither mirrored nor exempted.
+          unexpected=$(grep -v '^ghcr\.io/blue-dots-economy/dhi/' /tmp/all-images.txt \
+                        | grep -vxF -f /tmp/exempt.txt || true)
+
+          total=$(wc -l < /tmp/all-images.txt)
+          dhi=$(grep -c '^ghcr\.io/blue-dots-economy/dhi/' /tmp/all-images.txt || true)
+          echo "$dhi of $total rendered images are on the DHI mirror; $(wc -l < /tmp/exempt.txt) exempted"
+
+          if [ -n "$unexpected" ]; then
+            echo "::error::these images are neither on the DHI mirror nor exempted. Either mirror them (add to .github/dhi-mirror-images.txt and point the chart at ghcr.io/blue-dots-economy/dhi/...) or add them to .github/dhi-exempt-images.txt WITH A REASON:"
+            echo "$unexpected"
+            exit 1
+          fi
+          echo "OK — no unhardened image outside the exemption list."
 
   tofu:
     runs-on: ubuntu-latest

@@ -51,7 +51,11 @@ images:
     tag: "sha-56aad4d"
     pullPolicy: Always
   notificationService: &notification_service_image
-    repository: vinodbbhorge/notification-service
+    # Was a PERSONAL Docker Hub namespace, which is what a fresh environment got
+    # if it did not override this. The org package is what CI actually publishes
+    # (notification-service's own build-images.yaml pushes here), and the
+    # `latest` tag exists on it — verified, not assumed.
+    repository: ghcr.io/blue-dots-economy/notification-service
     tag: "latest"             # branch tag emitted by build-images.yaml; override per environment.
     pullPolicy: IfNotPresent
 

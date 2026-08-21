@@ -95,9 +95,21 @@ Verified by diffing the rendered manifests:
   (`loki` → `monitoring-loki`). One `List` of rules became a proper
   `PrometheusRule`.
 
-**Deliberately NOT swapped:** `bats` (runs only on `helm test`) and `busybox`
-(grafana's `init-chown-data`, which the chart pins to `runAsUser: 0` — a hardened
-nonroot image forced to root buys nothing and adds a failure mode).
+**Nothing in this namespace is left unhardened.** Two stragglers were closed out
+after the first deploy:
+
+- `docker.io/kiwigrid/k8s-sidecar:2.5.0` (`loki-sc-rules`) — a container the loki
+  7.x chart added and 6.7.1 did not have, so the bump introduced it silently.
+  Repointed at the mirrored `dhi/k8s-sidecar:2.10.1-alpine3.22` that the Grafana
+  sidecars already use.
+- `docker.io/library/busybox:1.38.0` (grafana `init-chown-data`) — repointed at
+  `dhi/busybox:1.38-alpine`. This one is **not** a privilege win: the container
+  must run as root to chown the PVC (the chart pins `runAsUser: 0` plus
+  `CHOWN`/`DAC_OVERRIDE`), so a hardened nonroot image forced to root changes
+  nothing about its capabilities. It removes the namespace's last direct
+  `docker.io` pull, which is the actual reason.
+
+The `bats` helm-test Pod is gone entirely — chart 88.5.2 no longer renders it.
 
 ### Images come from OUR GHCR mirror, not from dhi.io
 
@@ -161,7 +173,8 @@ kubectl -n monitoring get pods
 kubectl -n monitoring get pods -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{.spec.containers[*].image}{"\n"}{end}'
 ```
 - [ ] every pod `Running`, restarts 0
-- [ ] all images show `ghcr.io/blue-dots-economy/dhi/…` except the two exceptions above
+- [ ] **every** image shows `ghcr.io/blue-dots-economy/dhi/…` — there are no exceptions
+      left in this namespace, and CI now fails a PR that reintroduces one
 
 **The two risky ones, in order:**
 

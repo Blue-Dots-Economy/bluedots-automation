@@ -68,3 +68,9 @@ prometheus-config-reloader:0.93.1-alpine3.23
 # ── helm/monitoring — loki + alloy ───────────────────────────────────────────
 loki:3.6.15
 alloy:1.18.1
+
+# Grafana's init-chown-data initContainer. Runs as root by design (it chowns the
+# PVC for uid 472), so this is not a privilege win — it removes the monitoring
+# namespace's last direct docker.io pull. Same tag the aggregator-dpg keycloak
+# theme image is built FROM, so it is known good.
+busybox:1.38-alpine

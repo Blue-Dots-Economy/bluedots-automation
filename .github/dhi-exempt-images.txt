@@ -1,0 +1,28 @@
+# Images the platform charts render that are deliberately NOT Docker Hardened.
+#
+# The mirror drift check in .github/workflows/ci.yml fails if a chart renders an
+# image that is neither on our DHI mirror nor listed here. That is the check that
+# was MISSING when the loki 6.7.1 -> 7.3.0 bump silently introduced
+# `docker.io/kiwigrid/k8s-sidecar:2.5.0`: the old check only verified that dhi/*
+# refs were mirrored, so a brand-new non-DHI image was invisible to it.
+#
+# Adding a line here is a deliberate decision, not a formality — say WHY, so the
+# next person can tell "no DHI equivalent exists" apart from "nobody looked yet".
+#
+# Format: one image reference (registry/repo:tag), exactly as rendered.
+# Tracking: Blue-Dots-Economy/bluedots-automation#136
+
+# ── Kong ─────────────────────────────────────────────────────────────────────
+# DHI publishes the Kong GATEWAY but no kubernetes-ingress-controller. Swapping
+# only the gateway while the controller beside it stays upstream buys little and
+# splits the pair across two provenance chains, so both stay upstream until the
+# controller has an equivalent.
+kong:3.9
+kong/kubernetes-ingress-controller:3.5
+
+# ── Redis ────────────────────────────────────────────────────────────────────
+# NOT blocked — DHI does publish Redis. This is simply unassessed: the chart is
+# Bitnami's, which wires its own entrypoint, user and TLS handling around the
+# image, so a swap needs verifying rather than assuming. Candidate for the next
+# pass.
+docker.io/bitnamilegacy/redis:7.2.5

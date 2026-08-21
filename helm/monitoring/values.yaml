@@ -78,6 +78,18 @@ prometheus:
     extraEmptyDirMounts:
       - name: grafana-tmp
         mountPath: /tmp
+    # init-chown-data chowns the Grafana PVC so uid 472 can write it, which means
+    # it MUST run as root — the chart pins runAsUser 0 plus CHOWN/DAC_OVERRIDE.
+    # So this swap buys no privilege reduction, and that is not why it is here:
+    # it removes the last direct docker.io dependency from the monitoring stack,
+    # so every image in the namespace comes from one registry we control. The
+    # hardened busybox carries the same chown/BusyBox binaries the chart's
+    # command needs.
+    initChownData:
+      image:
+        registry: ghcr.io
+        repository: blue-dots-economy/dhi/busybox
+        tag: "1.38-alpine"
     sidecar:
       image:
         registry: ghcr.io
@@ -663,6 +675,22 @@ loki:
   enabled: true
 
   deploymentMode: SingleBinary
+
+  # The rules sidecar. NEW in loki chart 7.x — 6.7.1 shipped no such container,
+  # so the chart bump quietly added `docker.io/kiwigrid/k8s-sidecar:2.5.0` to a
+  # stack we had just finished hardening, and it went unnoticed because the CI
+  # drift check only verifies that dhi/* refs are mirrored: it is blind to a NEW
+  # non-DHI image appearing.
+  #
+  # Pointed at the same mirrored k8s-sidecar the Grafana sidecars already use
+  # (2.10.1 vs the chart's 2.5.0 — k8s-sidecar's job is to watch ConfigMaps and
+  # write files, and we have been running 2.10.1 for Grafana's dashboards and
+  # datasources without issue).
+  sidecar:
+    image:
+      registry: ghcr.io
+      repository: blue-dots-economy/dhi/k8s-sidecar
+      tag: "2.10.1-alpine3.22"
 
   loki:
     # DHI (bluedots-automation#136): 3.1.0 -> 3.6.15. Staying inside v3 (DHI also
