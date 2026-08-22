@@ -184,6 +184,13 @@ Surface it in `opentofu/aws/template/global-values.yaml` as
 `global.signed_url_ttl_seconds: 600`, passed through `_common/output-file.hcl` into the generated
 overlay, so a deployer sets it in one committed place.
 
+**No infra work is needed for the app-side change that makes 600s safe.** The `aggregator-dpg` doc
+moves QR downloads behind a `GET /v1/links/:id/qr` redirect that mints on click instead of presigning
+every row of every list response. That is an API change only — no chart, bucket, or IAM implication —
+but it is what stops a shortened TTL from turning into stale-link support tickets, so the two should
+deploy together. Signing is a local HMAC with no S3 API call, so neither the old nor the new shape has
+any bucket-side cost or rate-limit exposure.
+
 ### 3.6 `global-values.yaml` template
 
 Replace the `buckets` block (`:192`–`:206`) with a single private aggregator bucket carrying
@@ -198,6 +205,7 @@ from `public` to `aggregator` **creates a new bucket**. Objects must be copied b
 
 | # | Step | Where | Reversible? |
 |---|---|---|---|
+| 0 | Run the stored-URL audit query (`aggregator-dpg` doc §3.5) against the environment's DB. Non-zero rows on query 1 invalidate the "no backfill" premise and this sequence needs a backfill step added. | operator | n/a |
 | 1 | Merge this PR + the `aggregator-dpg` PR. No environment changes yet. | both repos | yes |
 | 2 | Add the new private bucket **alongside** the existing public one, apply. Two buckets exist. | infra-deployments | yes |
 | 3 | `aws s3 sync s3://<public> s3://<private>` — objects, not ACLs. | operator | yes |
