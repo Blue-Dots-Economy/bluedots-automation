@@ -65,6 +65,15 @@ variable "signed_url_ttl_seconds" {
   description = "Lifetime of every pre-signed object-storage URL, in seconds. Ten minutes by default; a pre-signed URL cannot be revoked, so the application refuses anything above 3600 at boot."
   type        = number
   default     = 600
+
+  # Enforced here as well as in the app. Without it an over-ceiling typo in
+  # global-values.yaml passes plan, passes apply, passes helm upgrade, and only
+  # surfaces as a crashlooping api — a slow, confusing failure for a value a
+  # human typed. The bound matches SIGNED_URL_TTL_MAX_SECONDS in the app.
+  validation {
+    condition     = var.signed_url_ttl_seconds > 0 && var.signed_url_ttl_seconds <= 3600 && floor(var.signed_url_ttl_seconds) == var.signed_url_ttl_seconds
+    error_message = "signed_url_ttl_seconds must be a whole number of seconds in 1..3600. A pre-signed URL cannot be revoked before it expires, so a longer window is indistinguishable from publishing a durable public URL."
+  }
 }
 
 # Dedicated Signals s3-export bucket name (empty when not provisioned).

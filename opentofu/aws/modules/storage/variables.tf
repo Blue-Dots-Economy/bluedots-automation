@@ -125,7 +125,7 @@ variable "buckets" {
   validation {
     condition = alltrue(flatten([
       for k, v in var.buckets : [
-        for days in values(v.lifecycle_rules == null ? {} : v.lifecycle_rules) :
+        for days in values(v.lifecycle_rules) :
         days == null || (days >= 0 && floor(days) == days)
       ]
     ]))

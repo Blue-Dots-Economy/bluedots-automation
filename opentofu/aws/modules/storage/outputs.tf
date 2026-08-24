@@ -16,22 +16,11 @@ output "buckets" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Convenience outputs for the conventional aggregator bucket (key = "private").
-# Return null if that key is not present in var.buckets so callers can use try().
-# The former storage_bucket_public* outputs were removed with the public bucket type:
+# The former storage_bucket_public*/storage_bucket_private* convenience outputs are gone.
+# They keyed on a hardcoded logical name, which is exactly what app_bucket_key replaced;
 # leaving them as null-returning aliases would let a stale consumer wire the application
 # to an empty string and fail at runtime instead of at plan time.
 # ---------------------------------------------------------------------------------------------------------------------
-
-output "storage_bucket_private" {
-  description = "Name of the bucket whose logical key is 'private' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["private"].id, null)
-}
-
-output "storage_bucket_private_arn" {
-  description = "ARN of the bucket whose logical key is 'private' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["private"].arn, null)
-}
 
 # ---------------------------------------------------------------------------------------------------------------------
 # The application bucket, resolved through var.app_bucket_key. Consumers (iam, output-file) use

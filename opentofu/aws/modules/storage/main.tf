@@ -168,10 +168,14 @@ resource "aws_s3_bucket_versioning" "this" {
 # Retention is a deployment-time value (see var.buckets.lifecycle_rules); 0/unset renders no rule
 # for that prefix. Two things here are load-bearing and easy to omit:
 #
-#   1. noncurrent_version_expiration alongside every expiration. These buckets have versioning on,
-#      so an expiration-only rule writes a delete marker and keeps the object body — and therefore
-#      the participant PII — as a noncurrent version FOREVER. The rule would look configured and
-#      delete nothing.
+#   1. noncurrent_version_expiration alongside every expiration. On an UNVERSIONED bucket (which is
+#      how the aggregator bucket is deployed today) a plain expiration permanently deletes and the
+#      noncurrent rule is an accepted no-op. The moment versioning is enabled, though, an
+#      expiration-only rule merely writes a delete marker and keeps the object body — and therefore
+#      the participant PII — as a noncurrent version FOREVER: configured-looking, deleting nothing.
+#      Both are rendered unconditionally so enabling versioning later cannot silently reintroduce
+#      that. Do not "simplify" by dropping the noncurrent rule because the current bucket is
+#      unversioned.
 #   2. abort_incomplete_multipart_upload. An abandoned browser PUT leaves parts that are billable
 #      and invisible to ListObjects.
 #

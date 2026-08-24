@@ -23,7 +23,7 @@ dependency "storage" {
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
     buckets = {
-      public  = { id = "dummy-public-bucket",  arn = "arn:aws:s3:::dummy-public-bucket",  domain = "dummy-public-bucket.s3.amazonaws.com",  type = "public" }
+      public  = { id = "dummy-public-bucket",  arn = "arn:aws:s3:::dummy-public-bucket",  domain = "dummy-public-bucket.s3.amazonaws.com",  type = "private" }
       private = { id = "dummy-private-bucket", arn = "arn:aws:s3:::dummy-private-bucket", domain = "dummy-private-bucket.s3.amazonaws.com", type = "private" }
     }
     storage_bucket_app = "dummy-app-bucket"
