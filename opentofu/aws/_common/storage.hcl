@@ -4,13 +4,13 @@ locals {
   building_block  = local.global_vars.global.building_block
   aws_region      = local.global_vars.global.cloud_storage_region
 
-  # Domain buckets should be reachable from. Drives both the CORS allow-list and the
-  # public-read aws:Referer scope so buckets are NOT open to "*".
+  # Domain the browser talks to the bucket from. SOLE source of the CORS allow-list
+  # now that the public-read aws:Referer scope is gone. Must be set: without it the
+  # bucket gets no CORS rule and every pre-signed upload fails at preflight (the
+  # storage module raises a precondition rather than shipping that silently).
   aggregator_host = lookup(local.global_vars.global, "aggregator_host", "")
 
-  # https origin for CORS; referer pattern (host + path glob) for the bucket policy.
   cors_allowed_origins = local.aggregator_host != "" ? ["https://${local.aggregator_host}"] : []
-  allowed_referers     = local.aggregator_host != "" ? ["https://${local.aggregator_host}/*"] : []
 }
 
 terraform {
@@ -23,20 +23,17 @@ inputs = {
   aws_region           = local.aws_region
   cors_max_age_seconds = lookup(local.global_vars.global, "cors_max_age_seconds", 3000)
 
-  # Restrict cross-origin + public-read access to the aggregator domain only (never "*").
+  # Restrict cross-origin access to the aggregator domain only (never "*").
   cors_allowed_origins = local.cors_allowed_origins
-  allowed_referers     = local.allowed_referers
 
-  # Bucket definitions — override in global-values.yaml under global.buckets
-  # Each entry: { type = "public"|"private", versioning_enabled = bool, cors_enabled = bool }
+  # Bucket definitions — override in global-values.yaml under global.buckets.
+  # Each entry: { type = "private", versioning_enabled = bool, cors_enabled = bool,
+  #               lifecycle_rules = { ...retention days... } }
   buckets = lookup(local.global_vars.global, "buckets", {
-    public = {
-      type         = "public"
-      cors_enabled = true
-    }
     private = {
       type               = "private"
       versioning_enabled = true
+      cors_enabled       = true
     }
   })
 }

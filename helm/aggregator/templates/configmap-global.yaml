@@ -28,6 +28,9 @@ data:
   S3_BUCKET: {{ .Values.global.s3.bucket | quote }}
   S3_FORCE_PATH_STYLE: {{ .Values.global.s3.forcePathStyle | quote }}
   AWS_REGION: {{ .Values.global.s3.region | quote }}
+  # Canonical pre-signed URL lifetime. api and worker both inherit it from this
+  # shared ConfigMap rather than each templating their own copy.
+  SIGNED_URL_TTL_SECONDS: {{ .Values.global.signedUrl.ttlSeconds | quote }}
 
   # ─── Mail (shared SMTP wiring) ───────────────────────────────────────
   MAIL_PROVIDER: {{ .Values.mail.provider | quote }}

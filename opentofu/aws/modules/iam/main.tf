@@ -58,8 +58,8 @@ resource "aws_iam_role_policy" "app_s3" {
           "s3:ListBucket"
         ]
         Resource = [
-          "arn:aws:s3:::${var.storage_bucket_public}/*",
-          "arn:aws:s3:::${var.storage_bucket_public}"
+          "arn:aws:s3:::${var.storage_bucket_private}/*",
+          "arn:aws:s3:::${var.storage_bucket_private}"
         ]
       }
     ]

@@ -23,13 +23,8 @@ variable "oidc_provider" {
   type        = string
 }
 
-variable "storage_bucket_public" {
-  description = "Public S3 bucket name"
-  type        = string
-}
-
 variable "storage_bucket_private" {
-  description = "Private S3 bucket name"
+  description = "Private S3 bucket name. The only aggregator object bucket — reads and writes are authorised per-object by a pre-signed URL the API mints."
   type        = string
 }
 

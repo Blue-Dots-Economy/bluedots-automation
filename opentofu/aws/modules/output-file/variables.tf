@@ -54,9 +54,17 @@ variable "signals_export_role_arn" {
 # -----------------------------------------------------------------------------
 # Storage (S3)
 # -----------------------------------------------------------------------------
-variable "storage_bucket_public" {
-  type    = string
-  default = ""
+variable "storage_bucket_private" {
+  description = "Private aggregator object bucket. Rendered into global.s3.bucket — the application never receives a publicly readable bucket name."
+  type        = string
+  default     = ""
+}
+
+# Canonical TTL (seconds) for every pre-signed URL the aggregator mints.
+variable "signed_url_ttl_seconds" {
+  description = "Lifetime of every pre-signed object-storage URL, in seconds. Ten minutes by default; a pre-signed URL cannot be revoked, so the application refuses anything above 3600 at boot."
+  type        = number
+  default     = 600
 }
 
 # Dedicated Signals s3-export bucket name (empty when not provisioned).

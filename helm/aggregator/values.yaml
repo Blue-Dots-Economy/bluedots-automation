@@ -123,10 +123,18 @@ global:
     scope: 'openid profile email'
 
   # UPDATE: S3 wiring for bulk uploads, QR PNGs, error CSVs.
+  # The bucket is PRIVATE: nothing in it is reachable without a pre-signed URL
+  # minted by aggregator-api after it has authorised the caller.
   s3:
     region: ap-south-1
     bucket: aggregator-bulk-uploads
     forcePathStyle: false
+
+  # Canonical lifetime of every pre-signed URL the api mints, in seconds.
+  # Ten minutes. A pre-signed URL cannot be revoked before it expires, so the
+  # api refuses anything above 3600 at boot rather than clamping it.
+  signedUrl:
+    ttlSeconds: 600
 
   # If set, subcharts reference this Secret name instead of the umbrella's
   # templated `{release}-secrets`. The named Secret MUST exist before
@@ -292,9 +300,13 @@ aggregator-api:
     limits: { cpu: 2, memory: 1Gi }
   runMigrationsOnBoot: true
   bulk:
-    uploadUrlTtlSeconds: 900
+    # Per-class TTL overrides. Leave empty to inherit global.signedUrl.ttlSeconds
+    # — set one only for an environment that genuinely needs it (e.g. a slow link
+    # where a 10 MiB CSV will not finish inside the canonical window).
+    uploadUrlTtlSeconds: ''
     uploadMaxBytes: 10485760
-    qrDownloadUrlTtlSeconds: 900
+    qrDownloadUrlTtlSeconds: ''
+    errorsCsvDownloadUrlTtlSeconds: ''
   adminEmails: ''
   publicLinkBaseUrl: '' # empty => derived from global.publicProtocol+publicHost
   serviceAccount:

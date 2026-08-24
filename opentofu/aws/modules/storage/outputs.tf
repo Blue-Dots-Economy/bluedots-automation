@@ -16,25 +16,12 @@ output "buckets" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Convenience outputs for the two conventional buckets (key = "public" / "private").
-# Return null if those keys are not present in var.buckets so callers can use try().
-# These preserve backward compatibility with storage-user, iam, and output-file modules.
+# Convenience outputs for the conventional aggregator bucket (key = "private").
+# Return null if that key is not present in var.buckets so callers can use try().
+# The former storage_bucket_public* outputs were removed with the public bucket type:
+# leaving them as null-returning aliases would let a stale consumer wire the application
+# to an empty string and fail at runtime instead of at plan time.
 # ---------------------------------------------------------------------------------------------------------------------
-
-output "storage_bucket_public" {
-  description = "Name of the bucket whose logical key is 'public' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["public"].id, null)
-}
-
-output "storage_bucket_public_arn" {
-  description = "ARN of the bucket whose logical key is 'public' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["public"].arn, null)
-}
-
-output "storage_bucket_public_domain" {
-  description = "Regional domain of the bucket whose logical key is 'public' (null if not provisioned)"
-  value       = try(aws_s3_bucket.this["public"].bucket_regional_domain_name, null)
-}
 
 output "storage_bucket_private" {
   description = "Name of the bucket whose logical key is 'private' (null if not provisioned)"
