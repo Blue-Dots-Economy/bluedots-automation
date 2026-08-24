@@ -13,6 +13,27 @@ _eks_node_count_max:     &eks_node_count_max     6
 _signals_public_hosts: &signals_public_hosts
   - "example.domain.com"
   - "example.domain.com"
+# Which public host serves which domain, when ONE release fronts several
+# per-domain portals (e.g. a seeker portal and a provider portal). Drives BOTH:
+#   - ui.hostBindings           -> the UI picks VITE_SERVED_BINDINGS per request
+#                                  from the Host header
+#   - api.config.UI_HOST_BINDINGS -> the API inverts it (domain -> host) so an
+#                                  email CTA links the recipient to THEIR OWN
+#                                  portal instead of one shared front-door (#569)
+# One value feeds both, so the site routing and the email routing cannot drift.
+#
+# Format: "<host>=<network>/<domain>" per entry, entries separated by ";".
+#   - bare hostname only: no scheme, no port, no trailing path or slash
+#   - every host here MUST also appear in _signals_public_hosts above (that list
+#     is what the ingress actually serves and what the TLS cert covers)
+#   - every <domain> MUST appear in _signals_served_domains below, or the API
+#     logs an unknown-domain warning at boot and those emails fall back
+#   - if two hosts map to the same domain, the FIRST wins for email links
+#
+# e.g. "providers-signals.example.org=blue_dot/provider;seekers-signals.example.org=blue_dot/seeker"
+#
+# Leave EMPTY for a single-host release: ui.hostBindings is then omitted
+# entirely and every email link falls back to FRONTEND_BASE_URL, unchanged.
 _signals_host_bindings: &signals_host_bindings ""
 
 _aggregator_host: &aggregator_host "aggregator.domain.com"
