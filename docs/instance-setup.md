@@ -277,6 +277,7 @@ config all set.
 | Domains / TLS | `global-values.yaml` | `_signals_public_hosts`, `_aggregator_host`, `_grafana_host` |
 | Auth channels | `global-values.yaml` | `_msg91_*`, `_smtp_*` |
 | Limits / rate | `global-values.yaml` / `api.config` | `ALLOW_EXTRA_SCHEMA_DATA`, `_api_rate_limit_*` (`BULK_MAX_ITEMS` = optional api env override) |
+| Peer auth (inter-instance) | `global-values.yaml` / `api.config` | `PEER_AUTH_MODE` — `enforced` (template default) requires a valid `INSTANCE_SHARED_SECRET`-signed token on every peer request; confirm the secret matches across all peer instances in the network before deploying. Existing deployment branches cut before this default changed (`blue-dots-prod`, `orange-dot-prod`, `private-cluster`) carry their own already-diverged `global-values.yaml` and must backport this manually. |
 | Image tags | `global-images.yaml` | per-service `repository`/`tag` |
 | Secrets | generated → `global-secrets.yaml` | `AUTH_SECRET`, DB/Redis passwords |
 | actingOrgId | `global-values.yaml` (post-deploy) | `global.signalstack.actingOrgId` |
