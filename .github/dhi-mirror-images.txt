@@ -84,8 +84,8 @@ busybox:1.38-alpine
 # The `-compat` variant, not the plain one: the Bitnami chart starts the
 # container with `/bin/bash -c .../start-master.sh`, which overrides the image's
 # ENTRYPOINT, so all the image must supply is bash, cp and redis-server on PATH.
-# Plain `redis:7.4.11` has no shell entrypoint at all. Both compat flavours are
-# mirrored so the bash-vs-sh question can be settled by inspection rather than by
-# a failed deploy — alpine images normally carry busybox `sh` and NOT bash, and
-# the chart's script is bash-only (`[[ ]]`, arrays, `$(< file)`).
+# Plain `redis:7.4.11` has no shell entrypoint at all. Only one tag is mirrored
+# here — `7.4.11-debian-compat` resolves to the SAME digest as `7.4.11-compat`
+# (verified: identical image id), so there is no second image to copy, only a
+# second name for this one.
 redis:7.4.11-compat

@@ -1,16 +1,18 @@
 # DHI migration — verification checklist
 
-Scratch/working notes for verifying the Docker Hardened Images swap after a deploy.
-Tracked in bluedots-automation#136. Delete this file before the PR merges, or move
-it into `docs/` properly if it turns out to be worth keeping.
+The manifest-diff analysis behind the monitoring chart bump (kube-prometheus-stack
+65.1.1→88.5.2, loki 6.7.1→7.3.0, alloy 1.8.2→1.11.1, metrics-server 3.12.1→3.14.0):
+what changed, what it fixed, what it broke, and what it deliberately does not
+disturb. This is the only upgrade-safety record for that jump — keep it, don't
+delete it. Tracked in bluedots-automation#136.
 
 ```bash
-export KUBECONFIG='/home/sanketika7420/workspace/dot/blue-dots-economy/test-dev-cluster.yaml'
+export KUBECONFIG='<path to your cluster kubeconfig>'
 ```
 
 ---
 
-## What changed on this branch (`chore/dhi-hardened-images`)
+## What changed on this branch (`chore/dhi-hardened-charts`)
 
 ### `helm/common-services/values.yaml`
 | Component | Was | Now |
@@ -95,6 +97,14 @@ Verified by diffing the rendered manifests:
   (`loki` → `monitoring-loki`). One `List` of rules became a proper
   `PrometheusRule`.
 
+Under that heading, silence would read as "nothing was added" — worth being
+explicit that one thing was: the loki 7.x rules sidecar brings its own
+`ClusterRole`/`ClusterRoleBinding` (`monitoring-loki-clusterrole`), granting
+`get`/`watch`/`list` on **configmaps and secrets cluster-wide**. Verified via
+`helm template`. A new cluster-wide secrets read is worth knowing about even
+though it's how the sidecar discovers rule ConfigMaps by label, same pattern
+Grafana's own sidecar already uses.
+
 **Nothing in this namespace is left unhardened.** Two stragglers were closed out
 after the first deploy:
 
@@ -173,12 +183,15 @@ kubectl -n monitoring get pods
 kubectl -n monitoring get pods -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{.spec.containers[*].image}{"\n"}{end}'
 ```
 - [ ] every pod `Running`, restarts 0
-- [ ] **every** image shows `ghcr.io/blue-dots-economy/dhi/…` — there are no exceptions
-      left in this namespace, and CI now fails a PR that reintroduces one
+- [ ] **every** image shows `ghcr.io/blue-dots-economy/dhi/…` — CI's drift checks
+      (`.github/workflows/ci.yml`) render all 5 charts and require every image to
+      be mirrored, exempted with a reason, or one of our own app images; still
+      worth eyeballing the live namespace since the checks render with synthetic
+      flag values, not this exact deploy
 
 **The two risky ones, in order:**
 
-- [ ] **Prometheus (v2.54.1 → 3.14.0, chart-matched)** — pod Ready; `kubectl -n monitoring logs sts/prometheus-mon-prometheus-prometheus -c prometheus | grep -iE "error|deprecated|unknown flag"`.
+- [ ] **Prometheus (v2.54.1 → 3.14.0, chart-matched)** — pod Ready; `kubectl -n monitoring logs sts/prometheus-monitoring-prometheus-prometheus -c prometheus | grep -iE "error|deprecated|unknown flag"`.
       v3 removed deprecated flags and the **operator generates the config**, so an
       operator/Prometheus mismatch shows up here first. Then check targets are UP
       via the Prometheus UI or `/api/v1/targets`.
@@ -186,8 +199,8 @@ kubectl -n monitoring get pods -o jsonpath='{range .items[*]}{.metadata.name}{" 
       `/api/plugins?type=datasource` lists `prometheus` and `loki`. Blank dashboards with a healthy pod is the /tmp bug, not a Grafana fault.
       Also: pod Ready; **the SQLite migration is ONE-WAY**, so if
       this fails a tag revert alone will not fix it. Check it serves, log in, and
-      confirm the ConfigMap-loaded dashboards (Kong service, Kong API, infra,
-      k8s-health) still render — the `k8s-sidecar` bump (1.x→2.x) is what loads them.
+      confirm the three ConfigMap-loaded dashboards (Kong, infra, k8s-health)
+      still render — the `k8s-sidecar` bump (1.x→2.x) is what loads them.
 - [ ] **Loki** — logs still flowing: query a recent range in Grafana Explore.
       A schema/index change across 3.1→3.6 would show as empty results despite a
       healthy pod.
@@ -197,11 +210,25 @@ kubectl -n monitoring get pods -o jsonpath='{range .items[*]}{.metadata.name}{" 
 
 ## Rollback
 
-Revert the values file and redeploy — every change here is an image tag. **Except
-Grafana**: its DB will already be migrated to 13, so reverting the tag leaves
-Grafana 11 unable to read it. Recovery is deleting the grafana PVC (losing
-dashboards/users, all of which are re-created from ConfigMaps except manual ones)
-or restoring a backup.
+**Not a plain values revert.** `Chart.yaml`, `Chart.lock` and four vendored
+`.tgz` all changed alongside the image tags, so reverting is a chart
+**downgrade** across 23 kube-prometheus-stack majors (65.1.1←88.5.2), loki 7→6
+and alloy 1.11→1.8 — any CRDs applied forward (see the CRD-upgrade note
+elsewhere in this PR) are not rolled back by a chart downgrade, and operator/CRD
+mismatches in the *other* direction are exactly what motivated this bump in the
+first place.
+
+One-way, in addition to the chart downgrade itself:
+
+- **Grafana**: its DB will already be migrated to 13, so reverting the tag
+  leaves Grafana 11 unable to read it. Recovery is deleting the grafana PVC
+  (losing dashboards/users, all of which are re-created from ConfigMaps except
+  manual ones) or restoring a backup.
+- **Redis**: the common-services swap (`bitnamilegacy/redis:7.2.5` →
+  `dhi/redis:7.4.11-compat`) is also a version move, on a PVC configured
+  **AOF-only** (`appendonly yes`, `save ""`). Reverting the tag against
+  7.4-written AOF data is unverified — treat it as one-way until proven
+  otherwise, not as a safe tag flip.
 
 The mirrored GHCR packages do not need to be touched on a rollback — an unused
 mirror costs nothing, and re-mirroring is the slow part of rolling forward again.

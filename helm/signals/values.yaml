@@ -43,12 +43,16 @@ global:
 # -----------------------------------------------------------------------------
 images:
   api: &api_image
+    # Every real deploy overrides this via <env>/global-images.yaml, but a
+    # standalone `helm template` without that overlay gets this default
+    # verbatim — keep it a post-DHI tag or the securityContext/probe changes
+    # below don't match the image's shell and permission model.
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "sha-56aad4d"
+    tag: "sha-a55f707"
     pullPolicy: Always
   ui: &ui_image
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "sha-56aad4d"
+    tag: "sha-a55f707"
     pullPolicy: Always
   notificationService: &notification_service_image
     # Was a PERSONAL Docker Hub namespace, which is what a fresh environment got

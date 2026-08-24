@@ -239,6 +239,7 @@ function create_namespaces_and_secrets() {
 # 2a-pre) monitoring (Prometheus + Alertmanager + Loki + Alloy + Grafana)
 # Deployed before app charts so metrics and alerts are live from first deploy.
 function deploy_monitoring() {
+    apply_prometheus_crds
     echo -e "\nDeploying monitoring"
     helm upgrade --install "$MON_REL" "$MON_DIR" \
         -n "$MON_NS" --create-namespace \
@@ -246,6 +247,27 @@ function deploy_monitoring() {
         -f "$GLOBAL_SECRETS" \
         $IMAGE_PULL_HELM_ARGS \
         --wait --timeout 10m
+}
+
+# Same Helm limitation as Kong (see apply_kong_crds below): CRDs vendored inside
+# a subchart (kube-prometheus-stack's charts/crds/) are laid down by Helm ONLY
+# on first install, never on upgrade. Bumping kube-prometheus-stack across a
+# CRD-bearing version (e.g. 65.1.1 -> 88.5.2, operator 0.77.1 -> 0.93.1) then
+# leaves an existing cluster's CRDs behind: the apiserver silently PRUNES any
+# field the old CRD schema doesn't know about on a structural CRD, with no
+# error — pods stay Ready, new spec fields just don't take effect.
+#
+# The chart's own opt-in remedy (`crds.upgradeJob.enabled`) is marked preview
+# upstream; applying the manifests directly, same as Kong, avoids taking a
+# dependency on that. MUST be --server-side: a plain `kubectl apply` writes a
+# client-side last-applied-configuration annotation capped at 256 KB, and
+# crd-prometheuses.yaml / crd-alertmanagers.yaml alone are 833 KB / 621 KB.
+# Source of truth: helm/monitoring/crds/, extracted from
+# charts/kube-prometheus-stack-*.tgz's charts/crds/crds/ — re-extract this
+# directory whenever kube-prometheus-stack is bumped.
+function apply_prometheus_crds() {
+    echo -e "\nApplying prometheus-operator CRDs (helm skips subchart/upgrade CRDs)"
+    kubectl apply --server-side -f "$MON_DIR/crds/"
 }
 
 # 2a) common-services (Kong + cert-manager + ClusterIssuer + Postgres + Redis)

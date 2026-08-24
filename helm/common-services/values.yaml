@@ -505,13 +505,17 @@ redis:
     #
     # The `-compat` variant specifically. The Bitnami chart starts the container
     # with `/bin/bash -c .../start-master.sh`, which OVERRIDES the image
-    # ENTRYPOINT, so the image only has to supply bash, cp and redis-server on
-    # PATH — every /opt/bitnami path the script touches is a volume mount, not
-    # image content. Plain `redis:7.4.11` ships no shell at all and would fail
-    # instantly. Verified by running the chart's real start script against this
-    # image under the pod's actual constraints (uid 1001, readOnlyRootFilesystem,
-    # all caps dropped): Redis reached "Ready to accept connections", auth was
-    # enforced from the mounted password file, and set/get worked.
+    # ENTRYPOINT, so the start script needs only bash, cp and redis-server on
+    # PATH — every /opt/bitnami path it touches is a volume mount, not image
+    # content. The liveness/readiness probes are a separate requirement: they
+    # exec /health/ping_*_local.sh, which is also #!/bin/bash and additionally
+    # calls redis-cli, timeout and awk. Plain `redis:7.4.11` ships no shell at
+    # all and would fail instantly. Verified by running the chart's real start
+    # script against this image under the pod's actual constraints (uid 1001,
+    # readOnlyRootFilesystem, all caps dropped): Redis reached "Ready to accept
+    # connections", auth was enforced from the mounted password file, set/get
+    # worked, and `command -v redis-cli timeout awk bash cp redis-server`
+    # resolved all six.
     #
     # `7.4.11-compat` and `7.4.11-debian-compat` resolve to the SAME digest, so
     # the default compat flavour is the debian one — which is why bash is present.

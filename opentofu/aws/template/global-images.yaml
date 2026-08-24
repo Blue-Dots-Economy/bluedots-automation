@@ -19,26 +19,28 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "202608-s1-rc4"
+    # Must stay a post-DHI tag in step with ui and the migrate Job below —
+    # a pre/post-DHI mismatch breaks the release in either direction.
+    tag: "sha-a55f707"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "202608-s1-rc4"
+    tag: "sha-a55f707"
     pullPolicy: Always
 
 notification-service:
   image:
     repository: ghcr.io/blue-dots-economy/notification-service
-    tag: "202608-s1-rc1"
+    tag: "sha-f3b901a"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
 search:
   image:
     repository: ghcr.io/blue-dots-economy/signals-search
-    tag: "202608-s1-rc1"
+    tag: "sha-7b20617"
     pullPolicy: Always
 
 # search-embeddings: TEI model image with BAAI/bge-m3 baked in
@@ -60,19 +62,19 @@ s3-export:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "202608-s1-rc3"
+    tag: "sha-f7d3811"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "202608-s1-rc3"
+    tag: "sha-f7d3811"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "202608-s1-rc3"
+    tag: "sha-f7d3811"
     pullPolicy: Always
 
 keycloak:
@@ -95,7 +97,7 @@ keycloak:
   # (sha-xxxxxxx); the sha- form is pinned here because it is immutable per build.
   themesInit:
     image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
-    tag: sha-a4cc90b
+    tag: sha-f7d3811
     pullPolicy: Always
 
 

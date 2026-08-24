@@ -9,12 +9,6 @@
 # Nothing here is mirrored or deployed. Move a line to dhi-mirror-images.txt
 # (with a tag) to adopt it.
 
-# Highest priority. The deployed image, docker.io/bitnamilegacy/redis:7.2.5, was
-# BUILT 2024-08-20 and the whole bitnamilegacy namespace was frozen 2025-07-18
-# when Broadcom moved Bitnami's free catalog there. It will never receive another
-# patch, and Redis 7.2 is EOL upstream.
-redis
-
 # Kong. The gateway is likely available; the ingress controller is the open
 # question, and without it the pair splits across two provenance chains. Both
 # upstream images are actively maintained and currently fresh (built within the
@@ -29,24 +23,16 @@ kubernetes-ingress-controller
 alpine
 
 # ── Specific tags to inspect ─────────────────────────────────────────────────
-# Written as name:tag, these get their entrypoint/cmd/user printed as well. That
-# is what decides whether a variant can drop into a chart that starts its
-# container with a shell — DHI's `-compat` variants exist for exactly this, and
-# the Bitnami redis chart needs only bash, cp and redis-server from the image
-# (every /opt/bitnami path it touches is a volume mount, not image content).
-redis:7.4.11
-redis:7.4.11-compat
-redis:7.4.11-debian-compat
+# Written as name:tag, these get their entrypoint/cmd/user printed as well —
+# what decides whether a variant can drop into a chart that starts its
+# container with a shell.
 kong:3.9.3
 
 # ── Keycloak ─────────────────────────────────────────────────────────────────
-# dockerfiles/keycloak/Dockerfile builds FROM quay.io/keycloak/keycloak — upstream,
-# not hardened — while DHI publishes a keycloak image. The open question is
-# whether it can work at all: our Dockerfile's ENTRYPOINT is
-# /opt/keycloak/bin/kc.sh, which is a SHELL SCRIPT, and it also needs `RUN kc.sh
-# build` to index the OTP authenticator SPI jar. A DHI runtime variant has no
-# shell, so both the build step and the entrypoint need checking before this is
-# worth attempting.
-keycloak
-keycloak:26.5.5
-keycloak:26.5
+# RESOLVED, adopted: dockerfiles/keycloak/Dockerfile is FROM dhi.io/keycloak
+# (build-keycloak-image.yml). The open question this block used to record —
+# whether it could work at all, since our old ENTRYPOINT was the shell script
+# /opt/keycloak/bin/kc.sh — is answered: DHI's own keycloak image ships kc.sh
+# as ITS entrypoint too, i.e. it ships a shell by necessity. Booted against a
+# real Postgres with both authenticator provider ids the shared realm's
+# browser flows bind to registered.

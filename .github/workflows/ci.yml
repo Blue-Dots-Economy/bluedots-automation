@@ -102,6 +102,72 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Renders all 5 charts once, shared by both drift checks below. Layers
+      # the template env's own committed global-images.yaml/global-values.yaml
+      # (non-secret, no cluster needed) rather than chart defaults only:
+      # flag-gated components (postgresBootstrap, rdsRelay, clusterAutoscaler)
+      # and env-overridden images (postgresql -> our postgres-pgvector) are
+      # invisible on chart defaults alone, which is how postgres-pgvector
+      # escaped this check for as long as it did. postgres.host/
+      # credentials.postgresAdminPassword are RDS-derived generated values
+      # this repo can't have in CI — set to inert placeholders purely to force
+      # the render; nothing here talks to a real cluster.
+      - name: Render all charts (shared by the two drift checks below)
+        run: |
+          set -euo pipefail
+          : > /tmp/all-rendered.yaml
+          for chart in monitoring common-services signals aggregator keycloak; do
+            echo "::group::render $chart"
+            case "$chart" in
+              common-services)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set postgresql.enabled=true \
+                  --set postgresBootstrap.enabled=true \
+                  --set rdsRelay.enabled=true \
+                  --set postgres.host=ci-smoke.invalid \
+                  --set credentials.postgresAdminPassword=ci-smoke \
+                  --set clusterAutoscaler.enabled=true \
+                  --set clusterAutoscaler.clusterName=ci-smoke \
+                  --set clusterAutoscaler.awsRegion=ap-south-1 \
+                  --set clusterAutoscaler.serviceAccount.roleArn=arn:aws:iam::000000000000:role/ci-smoke \
+                  >> /tmp/all-rendered.yaml
+                ;;
+              signals)
+                # yellow_dot/purple_dot are fetched at deploy time and not
+                # committed (see fetch_signals_configs); blue_dot is, so it's
+                # the one network this static render can use.
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set-json 'api.schemas.networks=["blue_dot"]' \
+                  >> /tmp/all-rendered.yaml
+                ;;
+              aggregator)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set global.existingSecret=ci-smoke \
+                  --set global.networkConfigDelivery=false \
+                  >> /tmp/all-rendered.yaml
+                ;;
+              keycloak)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set global.existingSecret=ci-smoke \
+                  --set global.keycloakRealm=ci-smoke \
+                  >> /tmp/all-rendered.yaml
+                ;;
+              *)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  >> /tmp/all-rendered.yaml
+                ;;
+            esac
+            echo "::endgroup::"
+          done
+
       # Every Docker Hardened Image the charts deploy is served from OUR GHCR
       # mirror, not from dhi.io (see the header of helm/*/values.yaml for why).
       # The mirror only contains what .github/dhi-mirror-images.txt lists, so a
@@ -119,10 +185,7 @@ jobs:
       - name: DHI mirror list covers every rendered image
         run: |
           set -euo pipefail
-          for chart in monitoring common-services; do
-            helm template "$chart" "helm/$chart" -f helm/global-resources.yaml
-          done \
-            | grep -oE 'ghcr\.io/blue-dots-economy/dhi/[A-Za-z0-9._-]+:[A-Za-z0-9._-]+' \
+          grep -oE 'ghcr\.io/blue-dots-economy/dhi/[A-Za-z0-9._-]+:[A-Za-z0-9._-]+' /tmp/all-rendered.yaml \
             | sed 's|ghcr\.io/blue-dots-economy/dhi/||' \
             | sort -u > /tmp/rendered-dhi.txt
 
@@ -151,23 +214,32 @@ jobs:
       # hardening. A chart bump is precisely when this happens, because a
       # subchart can add a container that no value of ours mentions.
       #
-      # So: every rendered image must be either on the mirror or explicitly
-      # exempted with a reason in .github/dhi-exempt-images.txt.
+      # So: every rendered image must be either on the mirror, explicitly
+      # exempted with a reason in .github/dhi-exempt-images.txt, or one of our
+      # OWN app images (signals/aggregator/keycloak's own `image:` values) —
+      # those are already built from a DHI base in their own repo's CI, a
+      # separate provenance chain this check has no visibility into and isn't
+      # meant to police. What this check actually guards against is a VENDORED
+      # SUBCHART quietly adding a new third-party container, which is a
+      # monitoring/common-services-shaped problem, not an app-chart one.
+      #
+      # Matched on repository, not full ref — these tags change on every app
+      # deploy, unlike the exempt list's pinned refs for rarely-rebuilt bases.
       - name: no unhardened image sneaks in
         run: |
           set -euo pipefail
-          for chart in monitoring common-services; do
-            helm template "$chart" "helm/$chart" -f helm/global-resources.yaml
-          done \
-            | grep -ohE 'image: +"?[^"[:space:]]+' \
-            | sed -E 's/image: *"?//' \
+          grep -ohE '(image: +"?[^"[:space:]]+|--[a-z0-9-]*-image=[^[:space:]"]+)' /tmp/all-rendered.yaml \
+            | sed -E 's/^image: *"?//; s/^--[a-z0-9-]*-image=//' \
             | sort -u > /tmp/all-images.txt
 
           grep -vE '^[[:space:]]*(#|$)' .github/dhi-exempt-images.txt \
             | tr -d '[:blank:]' | sort -u > /tmp/exempt.txt
 
-          # Anything neither mirrored nor exempted.
+          own_app_images='^ghcr\.io/blue-dots-economy/(signals-dpg/|signals-search|notification-service|tei-bge-m3|aggregator-dpg/|keycloak-server)'
+
+          # Anything neither mirrored, exempted, nor one of our own app images.
           unexpected=$(grep -v '^ghcr\.io/blue-dots-economy/dhi/' /tmp/all-images.txt \
+                        | grep -vE "$own_app_images" \
                         | grep -vxF -f /tmp/exempt.txt || true)
 
           total=$(wc -l < /tmp/all-images.txt)

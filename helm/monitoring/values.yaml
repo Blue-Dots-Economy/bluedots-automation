@@ -637,6 +637,12 @@ prometheus:
         registry: ghcr.io
         repository: blue-dots-economy/dhi/alertmanager
         tag: "0.34.0-alpine3.23"
+      # Without this, the operator defaults Alertmanager.spec.version to the
+      # image tag above, and "0.34.0-alpine3.23" parses as a semver PRERELEASE
+      # of 0.34.0 (i.e. sorts below it) — a version-comparison field carrying
+      # an image-variant string. The operator gates some CLI flags on this
+      # field, so pin it to the clean release version explicitly.
+      version: "0.34.0"
       # Point the Prometheus operator to our template-generated Secret (see
       # helm/monitoring/templates/alertmanager-config.yaml). This overrides the
       # auto-generated secret from `config:` above.
@@ -682,10 +688,11 @@ loki:
   # drift check only verifies that dhi/* refs are mirrored: it is blind to a NEW
   # non-DHI image appearing.
   #
-  # Pointed at the same mirrored k8s-sidecar the Grafana sidecars already use
-  # (2.10.1 vs the chart's 2.5.0 — k8s-sidecar's job is to watch ConfigMaps and
-  # write files, and we have been running 2.10.1 for Grafana's dashboards and
-  # datasources without issue).
+  # Pointed at the same mirrored k8s-sidecar the Grafana sidecars use in this
+  # PR (2.10.1 vs the chart's own 2.5.0 default). 2.10.1 is new here too — the
+  # prior Grafana sidecar was the chart's own 1.27.4 default, not 2.10.1 — so
+  # this has the same "new, verified on Test-dev" status as the loki sidecar
+  # above, not a track record to lean on.
   sidecar:
     image:
       registry: ghcr.io
