@@ -8,7 +8,7 @@
 global:
   s3:
     region: ${cloud_storage_region}
-    bucket: ${storage_bucket_private}
+    bucket: ${storage_bucket_app}
     forcePathStyle: false
   signedUrl:
     ttlSeconds: ${signed_url_ttl_seconds}

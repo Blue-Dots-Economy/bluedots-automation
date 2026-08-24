@@ -60,7 +60,7 @@ dependency "storage" {
   config_path                            = "../storage"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    storage_bucket_private = ""
+    storage_bucket_app = ""
     buckets                = {}
   }
 }
@@ -120,7 +120,7 @@ inputs = {
   signals_export_role_arn = dependency.iam.outputs.signals_export_role_arn == null ? "" : dependency.iam.outputs.signals_export_role_arn
 
   # Storage
-  storage_bucket_private = dependency.storage.outputs.storage_bucket_private == null ? "" : dependency.storage.outputs.storage_bucket_private
+  storage_bucket_app     = dependency.storage.outputs.storage_bucket_app == null ? "" : dependency.storage.outputs.storage_bucket_app
   signed_url_ttl_seconds = lookup(local.global_vars.global, "signed_url_ttl_seconds", 600)
   signals_export_bucket = try(dependency.storage.outputs.buckets["signals-export"].id, "")
 

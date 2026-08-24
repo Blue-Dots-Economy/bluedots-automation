@@ -26,6 +26,11 @@ inputs = {
   # Restrict cross-origin access to the aggregator domain only (never "*").
   cors_allowed_origins = local.cors_allowed_origins
 
+  # Which logical bucket the application uses. Environments provisioned before the
+  # private-object-storage migration keep their historical key ("public") so the
+  # bucket is hardened in place rather than renamed — a rename is destroy+create.
+  app_bucket_key = lookup(local.global_vars.global, "app_bucket_key", "private")
+
   # Bucket definitions — override in global-values.yaml under global.buckets.
   # Each entry: { type = "private", versioning_enabled = bool, cors_enabled = bool,
   #               lifecycle_rules = { ...retention days... } }

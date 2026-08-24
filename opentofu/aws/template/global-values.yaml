@@ -195,6 +195,14 @@ global:
   # Every bucket is PRIVATE — `type: public` is no longer provisionable and a
   # config still declaring it fails `tofu validate`. Objects are served only via
   # pre-signed URLs the application mints after authorising the caller.
+  # Which logical bucket below the aggregator application uses. Fresh installs
+  # leave this at "private". An environment provisioned BEFORE the private-object-
+  # storage migration must set it to its historical key ("public") and keep that
+  # key in the map: the bucket name is <building_block>-<environment>-<account_id>-<key>,
+  # so renaming the key is destroy + create — a data migration on live participant
+  # PII for a cosmetic rename. Hardening in place is the supported path.
+  app_bucket_key: private
+
   buckets:
     private:
       type: private

@@ -32,3 +32,19 @@ output "storage_bucket_private_arn" {
   description = "ARN of the bucket whose logical key is 'private' (null if not provisioned)"
   value       = try(aws_s3_bucket.this["private"].arn, null)
 }
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The application bucket, resolved through var.app_bucket_key. Consumers (iam, output-file) use
+# THIS rather than a hardcoded key, so an environment keeping its historical key needs no change
+# on their side. See var.app_bucket_key for why the key is not simply "private" everywhere.
+# ---------------------------------------------------------------------------------------------------------------------
+
+output "storage_bucket_app" {
+  description = "Name of the bucket the aggregator application uses (var.app_bucket_key)"
+  value       = try(aws_s3_bucket.this[var.app_bucket_key].id, null)
+}
+
+output "storage_bucket_app_arn" {
+  description = "ARN of the bucket the aggregator application uses (var.app_bucket_key)"
+  value       = try(aws_s3_bucket.this[var.app_bucket_key].arn, null)
+}

@@ -139,13 +139,19 @@ Guard it in a validation block; the inverse reading deletes production data on f
 
 ### 3.4 Point the application at the private bucket
 
-- `modules/output-file/global-cloud-values.yaml.tfpl:11` — `bucket: ${storage_bucket_private}`.
-- `_common/output-file.hcl:123` and its `mock_outputs` (`:63`) — swap
-  `storage_bucket_public` → `storage_bucket_private`.
-- `modules/output-file/variables.tf` — rename the variable to match.
-- `modules/iam/main.tf:61`–`:63` — scope the app role to `var.storage_bucket_private`.
-  `modules/iam/variables.tf:26`–`:34` already declares **both** `storage_bucket_public` and
-  `storage_bucket_private`; drop the public one.
+- New `var.app_bucket_key` on the storage module names which logical bucket the application uses,
+  and a new `storage_bucket_app` output resolves it. Consumers bind to that instead of a hardcoded
+  key, which is what makes in-place hardening possible (§4) — an environment keeps its historical
+  key and its bucket name while its posture changes.
+- `modules/output-file/global-cloud-values.yaml.tfpl` — `bucket: ${storage_bucket_app}`, plus a new
+  `global.signedUrl.ttlSeconds`.
+- `_common/output-file.hcl` and `_common/iam.hcl` — consume `storage_bucket_app`; mock outputs
+  updated to match.
+- `modules/iam` — the app role is scoped to `var.storage_bucket_app`. The `storage_bucket_public`
+  variable is dropped.
+- `modules/storage/outputs.tf` — the `storage_bucket_public*` outputs are **removed**, not left as
+  null-returning aliases. An alias would let a stale consumer wire the application to an empty
+  bucket name and fail at runtime instead of at plan time.
 
 The `signals-export` bucket and its write-only `signals_export_s3` role
 (`modules/iam/main.tf:108`–`:129`) are already private and least-privilege. **No change.**
@@ -200,27 +206,54 @@ feeds "CORS allowed origins" *and* the public-read referer scope; only the forme
 
 ## 4. Migration sequencing
 
-The bucket name is `<building_block>-<environment>-<account_id>-<key>`, so renaming the logical key
-from `public` to `aggregator` **creates a new bucket**. Objects must be copied before the flip.
+**Revised during implementation.** The original sequence renamed the logical bucket key from
+`public` to `private`, provisioned the new bucket alongside the old one, `aws s3 sync`ed objects
+across, then flipped the application. That plan is wrong, and the reason is worth recording: the
+bucket name is `<building_block>-<environment>-<account_id>-<key>`, so renaming the key is a
+**destroy + create** in Terraform. It turns a policy change into a data migration over live
+participant PII — with a copy window during which writes can be missed — to buy nothing but a
+tidier bucket suffix.
+
+The bucket is hardened **in place** instead. `var.app_bucket_key` (§3.4) lets an environment keep
+its historical key, so no bucket is renamed, nothing is copied, and there is no cutover window.
+The `-public` suffix on those buckets becomes a misnomer, which is documented where it appears.
 
 | # | Step | Where | Reversible? |
 |---|---|---|---|
-| 0 | Run the stored-URL audit query (`aggregator-dpg` doc §3.5) against the environment's DB. Non-zero rows on query 1 invalidate the "no backfill" premise and this sequence needs a backfill step added. | operator | n/a |
-| 1 | Merge this PR + the `aggregator-dpg` PR. No environment changes yet. | both repos | yes |
-| 2 | Add the new private bucket **alongside** the existing public one, apply. Two buckets exist. | infra-deployments | yes |
-| 3 | `aws s3 sync s3://<public> s3://<private>` — objects, not ACLs. | operator | yes |
-| 4 | Regenerate + re-encrypt `global-cloud-values.yaml`; deploy aggregator api+worker. App now reads/writes the private bucket. | infra-deployments | **yes** — revert the overlay; the public bucket still holds every object |
-| 5 | Verify: bulk upload end-to-end, `errors.csv` download, QR download, and an **unsigned** `curl` against a known key returns `403`. | operator | — |
-| 6 | Empty and destroy the public bucket. | infra-deployments | **no** |
+| 0 | Run the stored-URL audit query (`aggregator-dpg` doc §3.5). Non-zero rows on query 1 mean object *URLs* were persisted somewhere and this plan needs a backfill step added. | operator | n/a |
+| 1 | Merge this PR + the `aggregator-dpg` PR; build images. | both repos | yes |
+| 2 | Set `type: private`, `cors_enabled: true`, `lifecycle_rules` and `app_bucket_key` per environment; `terragrunt apply` storage + iam + output-file. **The public-read policy is gone from this moment** — the exposure closes here. | infra-deployments | yes — revert the commit and re-apply |
+| 3 | `helm upgrade` the aggregator release so api + worker pick up `SIGNED_URL_TTL_SECONDS` and the new key layout. | infra-deployments | yes |
+| 4 | Verify (§4.1). | operator | — |
 
-Step 4 is the cutover and it is reversible; step 6 is the point of no return and should trail step 5
-by at least one full business day. Do not collapse 2–4 into one apply: that flips the app to an empty
-bucket and every existing `errors.csv`/QR download 404s.
+Step 2 is the security fix and step 3 is the application change; they are independent and either
+order works, because the app already presigns everything and the bucket policy only ever affected
+*unauthenticated* reads. Doing 2 first closes the hole sooner.
 
-`helm lint` and `tofu validate -backend=false` run in CI (`.github/workflows/ci.yml`, path-filtered
-to `helm/` and `opentofu/`) plus `install.sh lint` (`opentofu/aws/template/install.sh:563`) — those
-cover template/module syntax but **not** the bucket policy semantics. Step 5's unsigned-`curl` check
-is the only real verification that the bucket went private.
+Nothing here is irreversible, which is the main benefit of dropping the rename: there is no
+"destroy the old bucket" step to gate, and no window in which objects exist in only one place.
+
+### 4.1 Verification
+
+`helm lint`, `helm template`, `tofu fmt -check` and `tofu validate -backend=false` run in CI
+(`.github/workflows/ci.yml`) and cover template/module syntax. They do **not** cover bucket policy
+semantics. Two checks do:
+
+```bash
+# 1. Unsigned read must be refused. This is the whole point of the change.
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://<bucket>.s3.<region>.amazonaws.com/<known-key>"                 # expect 403
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Referer: https://<aggregator_host>/' \
+  "https://<bucket>.s3.<region>.amazonaws.com/<known-key>"                 # expect 403 (was 200)
+
+# 2. Lifecycle actually exists, with a rule per configured prefix.
+aws s3api get-bucket-lifecycle-configuration --bucket <bucket>
+```
+
+For (2), if versioning is ever enabled on the bucket, confirm each transient rule carries
+`NoncurrentVersionExpiration` as well as `Expiration` — otherwise the rule writes a delete marker
+and keeps the PII body indefinitely. The module renders both; the check is that nobody has
+hand-edited them apart.
 
 ## 5. Follow-up required in `bluedots-infra-deployments`
 

@@ -54,8 +54,8 @@ variable "signals_export_role_arn" {
 # -----------------------------------------------------------------------------
 # Storage (S3)
 # -----------------------------------------------------------------------------
-variable "storage_bucket_private" {
-  description = "Private aggregator object bucket. Rendered into global.s3.bucket — the application never receives a publicly readable bucket name."
+variable "storage_bucket_app" {
+  description = "Aggregator object bucket, fully private. Rendered into global.s3.bucket — the application never receives a publicly readable bucket name."
   type        = string
   default     = ""
 }
