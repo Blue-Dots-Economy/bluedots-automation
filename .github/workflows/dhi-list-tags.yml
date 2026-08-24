@@ -1,0 +1,140 @@
+# List the tags dhi.io publishes for each image we mirror.
+#
+# Exists because choosing a DHI tag is not a free choice: the vendored Helm
+# charts expect a specific upstream version (kube-prometheus-stack 65.1.1 wants
+# Prometheus v2.54.1, kube-state-metrics 2.13.0, and so on), and taking DHI's
+# newest tag instead silently ships a version jump. That is not theoretical —
+# kube-state-metrics 2.20.0 moved /readyz from the metrics port to the telemetry
+# port, and the chart hardcodes the probe path and port, so the pod never became
+# Ready; Grafana 13 moved to installing its datasource plugins at runtime, which
+# fails on a read-only /tmp. Both were version jumps, not hardening problems.
+#
+# dhi.io refuses anonymous access, so this cannot be answered from a laptop
+# without the Docker Hub credentials. Hence a workflow: it reads the names from
+# .github/dhi-mirror-images.txt and prints every tag dhi.io has for each, so the
+# tag choice can be made against what actually exists.
+#
+# Read-only. Pushes nothing, changes nothing.
+name: List DHI tags
+
+on:
+  push:
+    paths:
+      - '.github/workflows/dhi-list-tags.yml'
+      - '.github/dhi-candidate-images.txt'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Only list images whose name matches this substring (blank = all)"
+        required: false
+        default: ""
+      grep:
+        description: "Only show tags matching this substring (e.g. '2.13' or '1.20')"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install regctl
+        env:
+          REGCTL_VERSION: v0.11.5
+          # regclient doesn't publish a standalone checksum file for this
+          # binary; pinned by hand from `sha256sum` against the release asset.
+          # Bump both together when REGCTL_VERSION changes.
+          REGCTL_SHA256: c93aa7638749f5aaac1a8e01787321889c78f0101809bb2880343478d0ba0467
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /usr/local/bin/regctl \
+            "https://github.com/regclient/regclient/releases/download/${REGCTL_VERSION}/regctl-linux-amd64"
+          echo "${REGCTL_SHA256}  /usr/local/bin/regctl" | sha256sum -c -
+          chmod 755 /usr/local/bin/regctl
+
+      - name: Log in to dhi.io
+        env:
+          DHI_USER: ${{ vars.DOCKERHUB_USERNAME }}
+          DHI_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${DHI_TOKEN}" | regctl registry login dhi.io -u "${DHI_USER}" --pass-stdin
+
+      - name: List tags
+        env:
+          ONLY: ${{ inputs.only }}
+          GREP: ${{ inputs.grep }}
+        run: |
+          set -uo pipefail
+          # Mirror list (name:tag) plus the candidate list (names only). Tags are
+          # stripped below, so both formats feed the same loop.
+          cat .github/dhi-mirror-images.txt > /tmp/dhi-names.txt
+          if [ -f .github/dhi-candidate-images.txt ]; then
+            echo "" >> /tmp/dhi-names.txt
+            cat .github/dhi-candidate-images.txt >> /tmp/dhi-names.txt
+          fi
+          while IFS= read -r line; do
+            case "$line" in ''|'#'*) continue ;; esac
+            name=$(echo "${line%%:*}" | tr -d '[:space:]')
+            [ -n "$name" ] || continue
+            if [ -n "${ONLY}" ] && [ "${name#*"${ONLY}"}" = "$name" ]; then continue; fi
+
+            echo "::group::${name}"
+            if ! tags=$(regctl tag ls "dhi.io/${name}" 2>&1); then
+              echo "  could not list: $tags"
+              echo "::endgroup::"
+              continue
+            fi
+            if [ -n "${GREP}" ]; then
+              shown=$(echo "$tags" | grep -F "${GREP}" || true)
+            else
+              shown=$tags
+            fi
+            echo "  $(echo "$tags" | grep -c . ) tag(s) total"
+            echo "$shown" | sed 's/^/    /'
+            echo "::endgroup::"
+
+            {
+              echo "<details><summary><code>${name}</code></summary>"
+              echo
+              echo '```'
+              echo "$shown"
+              echo '```'
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done < /tmp/dhi-names.txt
+
+      # A tag list says a variant EXISTS; it does not say whether it can actually
+      # replace what we run. A chart that starts its container with
+      # `/bin/bash -c some-script.sh` needs the image to ship a shell — and a DHI
+      # runtime variant does not, which is why the tag alone is never the answer.
+      # So for any candidate written as name:tag, also print the image's
+      # entrypoint, cmd and user. That is the part that decides drop-in-ability.
+      - name: Inspect specific candidate tags
+        if: ${{ always() }}
+        run: |
+          set -uo pipefail
+          [ -f .github/dhi-candidate-images.txt ] || exit 0
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Candidate image configs" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ref | user | entrypoint | cmd |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^[a-z0-9-]+:' .github/dhi-candidate-images.txt | tr -d '[:blank:]' | while read -r ref; do
+            [ -n "$ref" ] || continue
+            echo "::group::config ${ref}"
+            if cfg=$(regctl image config "dhi.io/${ref}" 2>&1); then
+              u=$(echo "$cfg" | python3 -c 'import sys,json;print(json.load(sys.stdin)["config"].get("User"))' 2>/dev/null || echo '?')
+              e=$(echo "$cfg" | python3 -c 'import sys,json;print(json.load(sys.stdin)["config"].get("Entrypoint"))' 2>/dev/null || echo '?')
+              c=$(echo "$cfg" | python3 -c 'import sys,json;print(json.load(sys.stdin)["config"].get("Cmd"))' 2>/dev/null || echo '?')
+              echo "  user=$u entrypoint=$e cmd=$c"
+              echo "| \`$ref\` | $u | $e | $c |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "  could not read: $cfg"
+              echo "| \`$ref\` | — | — | unreadable |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "::endgroup::"
+          done

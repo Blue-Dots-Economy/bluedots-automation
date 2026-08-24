@@ -19,26 +19,28 @@
 api:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
-    tag: "202608-s1-rc4"
+    # Must stay a post-DHI tag in step with ui and the migrate Job below —
+    # a pre/post-DHI mismatch breaks the release in either direction.
+    tag: "sha-a55f707"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "202608-s1-rc4"
+    tag: "sha-a55f707"
     pullPolicy: Always
 
 notification-service:
   image:
     repository: ghcr.io/blue-dots-economy/notification-service
-    tag: "202608-s1-rc1"
+    tag: "sha-f3b901a"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
 search:
   image:
     repository: ghcr.io/blue-dots-economy/signals-search
-    tag: "202608-s1-rc1"
+    tag: "sha-7b20617"
     pullPolicy: Always
 
 # search-embeddings: TEI model image with BAAI/bge-m3 baked in
@@ -60,19 +62,19 @@ s3-export:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "202608-s1-rc3"
+    tag: "sha-f7d3811"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "202608-s1-rc3"
+    tag: "sha-f7d3811"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "202608-s1-rc3"
+    tag: "sha-f7d3811"
     pullPolicy: Always
 
 keycloak:
@@ -95,7 +97,7 @@ keycloak:
   # (sha-xxxxxxx); the sha- form is pinned here because it is immutable per build.
   themesInit:
     image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
-    tag: sha-a4cc90b
+    tag: sha-f7d3811
     pullPolicy: Always
 
 
@@ -117,10 +119,14 @@ postgresql:
       - ghcr-pull
 
 redis:
+  # DHI mirror (bluedots-automation#136). MUST stay in step with
+  # helm/common-services/values.yaml: this overlay is layered after the chart
+  # defaults, so whatever is here wins — leaving bitnamilegacy here would have
+  # silently undone the swap.
   image:
-    registry: docker.io
-    repository: bitnamilegacy/redis
-    tag: "7.2.5"
+    registry: ghcr.io
+    repository: blue-dots-economy/dhi/redis
+    tag: "7.4.11-compat"
     pullPolicy: IfNotPresent
 
 ingress-nginx:
@@ -131,6 +137,9 @@ ingress-nginx:
       tag: "v1.15.1"                     # chart default (chart v4.15.1)
       pullPolicy: IfNotPresent
 
-# cert-manager resolves its image internally from appVersion (v1.20.2 →
-# quay.io/jetstack/cert-manager-controller:v1.20.2); no override needed here
-# unless pinning to a different version.
+# cert-manager and metrics-server images are NOT set here. They are pinned in
+# helm/common-services/values.yaml at ghcr.io/blue-dots-economy/dhi/* — our
+# mirror of the Docker Hardened Images (bluedots-automation#136) — because those
+# refs must stay in lockstep with .github/dhi-mirror-images.txt, which is what
+# CI checks and what the mirror workflow actually copies. A per-env override
+# here would silently escape that check and deploy an unmirrored ref.

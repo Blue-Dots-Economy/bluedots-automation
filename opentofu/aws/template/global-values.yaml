@@ -500,6 +500,11 @@ ui:
   reference:
     enabled: true
   service:
+    # This one value drives both the Service targetPort and the Deployment's
+    # containerPort/probe target — must match nginx's `listen` in the ui image
+    # (apps/ui/Dockerfile) or probes hit a dead port and the pod restart-loops
+    # with clean nginx logs. uid 65532 can bind 80 because nodes set
+    # net.ipv4.ip_unprivileged_port_start=0. `port` (Kong-facing) stays 80 either way.
     port: 80
     targetPort: 80
 

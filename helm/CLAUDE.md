@@ -204,7 +204,9 @@ The single shared Redis (`common-services/values.yaml`, `redis.commonConfigurati
 
 ## Image pull secrets
 
-Private images at `ghcr.io/blue-dots-economy/*` need a `ghcr-pull` secret per namespace. `create_namespaces_and_secrets` creates it in each via `rotate-ghcr-pull.sh` using `$GHCR_PAT` (a `read:packages` token). Some images also live under `vinodbbhorge/*` (Docker Hub). **Never commit a PAT.**
+Private images at `ghcr.io/blue-dots-economy/*` need a `ghcr-pull` secret per namespace. `create_namespaces_and_secrets` creates it in each via `rotate-ghcr-pull.sh` using `$GHCR_PAT` (a `read:packages` token). **Never commit a PAT.**
+
+Some defaults used to point at a personal Docker Hub namespace (`vinodbbhorge/*`), which meant a fresh environment could deploy an artifact built outside the org; those are gone. That does not mean every rendered image lives under `ghcr.io/blue-dots-economy/*` — official upstream images with no DHI equivalent (`kong:3.9`, `postgres:16-alpine` in the signals migrate Job, `alpine:3.20` in keycloak's kc-init, `alpine/socat` in rds-relay) are legitimate and stay non-org. What CI actually enforces, across all five charts: every rendered image is either on the `dhi/*` GHCR mirror, one of our own app images (already built from a DHI base in their own repo's CI — a separate provenance chain this check doesn't police), or explicitly exempted with a reason in `.github/dhi-exempt-images.txt`.
 
 ## Pod securityContexts + NetworkPolicies (#1.12)
 

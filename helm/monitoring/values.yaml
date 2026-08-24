@@ -5,6 +5,21 @@
 # =============================================================================
 
 # =============================================================================
+# `ghcr.io/blue-dots-economy/dhi/*` image refs below are Docker Hardened Images
+# (bluedots-automation#136) MIRRORED into this repo's own GHCR packages — the
+# bytes and digests are upstream's, unchanged. They do not point at dhi.io
+# because that registry refuses anonymous pulls, and these are third-party
+# charts: the kubelet does the pull itself, so a direct reference would need a
+# dhi.io credential in every namespace (and install.sh's IMAGES_PUBLIC=true
+# default actively CLEARS pull secrets). The mirror is public, so the pull stays
+# anonymous and the credential count stays at zero.
+#
+# Mirrored by .github/workflows/mirror-dhi-images.yml from the list in
+# .github/dhi-mirror-images.txt. Adding a ref here without adding it there is
+# an ImagePullBackOff at deploy time; CI fails the PR instead.
+# =============================================================================
+
+# =============================================================================
 # Alert channel toggles
 # Set enabled: true/false per channel. When both are true, each severity-routed
 # receiver fires both Discord and email simultaneously.
@@ -29,6 +44,57 @@ prometheus:
 
   grafana:
     enabled: true
+    # ── Docker Hardened Images (bluedots-automation#136) ──────────────────────
+    # NOTE this is a MAJOR upgrade, not just a base swap: DHI publishes no
+    # Grafana 11.x, so 11.2.1 -> 13.2.0. Grafana MIGRATES its SQLite database on
+    # first start and that migration is ONE-WAY — rolling back to 11 needs a
+    # restore, not just a tag revert. Accepted here because this instance holds
+    # no data worth keeping; do NOT copy this to an environment that does
+    # without taking a backup of the grafana PVC first.
+    #
+    # The chart pins runAsUser: 472 / fsGroup: 472 in its podSecurityContext,
+    # which OVERRIDES the image's own user — so the pod keeps running as 472 and
+    # the PVC's file ownership is unchanged by this swap.
+    image:
+      registry: ghcr.io
+      repository: blue-dots-economy/dhi/grafana
+      tag: "13.2.0"
+    # Grafana 13 installs its datasource plugins AT RUNTIME instead of shipping
+    # them in the image, unpacking each one through a temp file. The DHI image's
+    # /tmp is not writable by uid 472 (the uid the chart pins), so every install
+    # failed with `permission denied` and Grafana came up with NO prometheus and
+    # NO loki plugin — pods Ready, database fine, every dashboard blank, and the
+    # only clue a `Failed to install plugin` line in the log.
+    #
+    # An emptyDir is the whole fix: plugins land on the PVC at
+    # /var/lib/grafana/plugins, /tmp is only the unpack scratch space. It is
+    # mounted at /tmp and NOT at a subpath because the failure is Grafana's own
+    # choice of temp file name. /tmp/dashboards keeps working — the kubelet
+    # mounts parent paths before nested ones, so the sidecar's dashboard volume
+    # still lands inside this one.
+    #
+    # This is NOT fixed by the chart bump: neither grafana subchart 11.x nor
+    # 12.11.1 mounts /tmp. It is a property of the hardened image.
+    extraEmptyDirMounts:
+      - name: grafana-tmp
+        mountPath: /tmp
+    # init-chown-data chowns the Grafana PVC so uid 472 can write it, which means
+    # it MUST run as root — the chart pins runAsUser 0 plus CHOWN/DAC_OVERRIDE.
+    # So this swap buys no privilege reduction, and that is not why it is here:
+    # it removes the last direct docker.io dependency from the monitoring stack,
+    # so every image in the namespace comes from one registry we control. The
+    # hardened busybox carries the same chown/BusyBox binaries the chart's
+    # command needs.
+    initChownData:
+      image:
+        registry: ghcr.io
+        repository: blue-dots-economy/dhi/busybox
+        tag: "1.38-alpine"
+    sidecar:
+      image:
+        registry: ghcr.io
+        repository: blue-dots-economy/dhi/k8s-sidecar
+        tag: "2.10.1-alpine3.22"
     # Hide kube-prometheus-stack's ~30 bundled dashboards (etcd, CoreDNS, k8s
     # compute-resources, node-exporter, etc.). We only want the dashboards WE
     # ship as ConfigMaps (Kong service, Kong API, infra, k8s-health). The sidecar
@@ -90,8 +156,73 @@ prometheus:
   kubeStateMetrics:
     enabled: true
 
+  # ── Docker Hardened Images (bluedots-automation#136) ────────────────────────
+  # The operator + its config-reloader must move together: the reloader image is
+  # part of the operator's release train (both 0.93.1), and the operator injects
+  # it as a sidecar into every Prometheus/Alertmanager pod.
+  prometheusOperator:
+    image:
+      registry: ghcr.io
+      repository: blue-dots-economy/dhi/prometheus-operator
+      tag: "0.93.1"
+    prometheusConfigReloader:
+      image:
+        registry: ghcr.io
+        repository: blue-dots-economy/dhi/prometheus-config-reloader
+        tag: "0.93.1-alpine3.23"
+    admissionWebhooks:
+      patch:
+        image:
+          registry: ghcr.io
+          repository: blue-dots-economy/dhi/kube-webhook-certgen
+          tag: "1.8.5-alpine3.23"
+
+  # Subchart value keys are HYPHENATED (`prometheus-node-exporter`,
+  # `kube-state-metrics`) — distinct from the camelCase enable toggles above,
+  # which belong to kube-prometheus-stack itself. Using the toggle names here
+  # would be silently ignored.
+  prometheus-node-exporter:
+    image:
+      registry: ghcr.io
+      repository: blue-dots-economy/dhi/node-exporter
+      tag: "1.12.1-alpine3.23"
+      # MUST stay false. kube-prometheus-stack 88.5.2 defaults this to TRUE
+      # (65.1.1 had no such key), and the subchart appends the flag to the tag
+      # rather than switching repository — so it rendered
+      # `node-exporter:1.12.1-alpine3.23-distroless`, a tag DHI does not publish
+      # and the mirror therefore does not carry. It selects UPSTREAM's distroless
+      # variant, which is meaningless here: the DHI image is already minimal, and
+      # `-alpine3.23` already names the variant we want. Caught by the mirror
+      # drift check in ci.yml, which is exactly the class of silent breakage it
+      # exists for.
+      distroless: false
+
+  kube-state-metrics:
+    image:
+      registry: ghcr.io
+      repository: blue-dots-economy/dhi/kube-state-metrics
+      tag: "2.20.0"
+
   prometheus:
     prometheusSpec:
+      # ── Docker Hardened Images (bluedots-automation#136) ────────────────────
+      # 3.14.0 is the version kube-prometheus-stack 88.5.2 itself defaults to
+      # (v3.14.0-distroless), so image and chart agree. That agreement is the
+      # whole point of the 65.1.1 -> 88.5.2 chart bump: DHI publishes no
+      # Prometheus 2.x at all, so the old chart could only ever be paired with a
+      # v3 image it was never tested against — and it was the operator, pinned to
+      # 0.77.1 by that chart, that generated v3's config.
+      #
+      # An earlier revision pinned 3.5.5 (DHI's LTS line) against the OLD chart.
+      # That is the pairing to avoid: a chart built for one major driving a
+      # binary from another.
+      #
+      # runAsUser: 1000 / fsGroup: 2000 stay pinned by the chart and override the
+      # image's own user, so PVC ownership is unchanged.
+      image:
+        registry: ghcr.io
+        repository: blue-dots-economy/dhi/prometheus
+        tag: "3.14.0"
       scrapeInterval: 30s
       evaluationInterval: 30s
 
@@ -496,6 +627,22 @@ prometheus:
         - name: 'null'
 
     alertmanagerSpec:
+      # DHI (bluedots-automation#136): v0.27.0 -> 0.34.0. Same major. The chart
+      # pins runAsUser 1000 / fsGroup 2000, which overrides the image's own user,
+      # so the PVC's file ownership is unchanged by this swap.
+      # Merged into this EXISTING block on purpose — a second `alertmanagerSpec:`
+      # key would be a duplicate and YAML keeps only the last, silently dropping
+      # whichever came first.
+      image:
+        registry: ghcr.io
+        repository: blue-dots-economy/dhi/alertmanager
+        tag: "0.34.0-alpine3.23"
+      # Without this, the operator defaults Alertmanager.spec.version to the
+      # image tag above, and "0.34.0-alpine3.23" parses as a semver PRERELEASE
+      # of 0.34.0 (i.e. sorts below it) — a version-comparison field carrying
+      # an image-variant string. The operator gates some CLI flags on this
+      # field, so pin it to the clean release version explicitly.
+      version: "0.34.0"
       # Point the Prometheus operator to our template-generated Secret (see
       # helm/monitoring/templates/alertmanager-config.yaml). This overrides the
       # auto-generated secret from `config:` above.
@@ -535,7 +682,32 @@ loki:
 
   deploymentMode: SingleBinary
 
+  # The rules sidecar. NEW in loki chart 7.x — 6.7.1 shipped no such container,
+  # so the chart bump quietly added `docker.io/kiwigrid/k8s-sidecar:2.5.0` to a
+  # stack we had just finished hardening, and it went unnoticed because the CI
+  # drift check only verifies that dhi/* refs are mirrored: it is blind to a NEW
+  # non-DHI image appearing.
+  #
+  # Pointed at the same mirrored k8s-sidecar the Grafana sidecars use in this
+  # PR (2.10.1 vs the chart's own 2.5.0 default). 2.10.1 is new here too — the
+  # prior Grafana sidecar was the chart's own 1.27.4 default, not 2.10.1 — so
+  # this has the same "new, verified on Test-dev" status as the loki sidecar
+  # above, not a track record to lean on.
+  sidecar:
+    image:
+      registry: ghcr.io
+      repository: blue-dots-economy/dhi/k8s-sidecar
+      tag: "2.10.1-alpine3.22"
+
   loki:
+    # DHI (bluedots-automation#136): 3.1.0 -> 3.6.15. Staying inside v3 (DHI also
+    # publishes 3.7) to keep the jump small. The chart pins runAsUser 10001 /
+    # fsGroup 10001, which overrides the image's own user, so the PVC's file
+    # ownership is unchanged by this swap.
+    image:
+      registry: ghcr.io
+      repository: blue-dots-economy/dhi/loki
+      tag: "3.6.15"
     auth_enabled: false
 
     commonConfig:
@@ -591,6 +763,37 @@ loki:
 
 alloy:
   enabled: true
+
+  # Docker Hardened Images (bluedots-automation#136). Alloy is the one monitoring
+  # component that is genuinely a plain pod restart: it is a DaemonSet with no
+  # PersistentVolume (it reads host logs and ships them on), and its DHI uid is
+  # 473 — the SAME uid the upstream grafana/alloy image uses, so there is no
+  # file-ownership question either.
+  #
+  # The chart joins these as a literal "{{ registry }}/{{ repository }}", so the
+  # host goes in `registry` and EVERYTHING after it — org included — in
+  # `repository`. Leaving `registry` empty and putting the full ref in
+  # `repository` renders a leading slash ("/ghcr.io/...") and an invalid
+  # reference; splitting it the other way renders a doubled separator. Both are
+  # caught by `helm template`, neither by `helm lint`.
+  #
+  # Also a version bump: chart appVersion is v1.16.1, DHI publishes 1.18.1.
+  image:
+    registry: ghcr.io
+    repository: blue-dots-economy/dhi/alloy
+    tag: "1.18.1"
+
+  # Alloy ships its own config-reloader SIDECAR — a different image from the
+  # prometheus-operator's reloader, and easy to miss: it renders inside the alloy
+  # DaemonSet, not anywhere near the prometheus values.
+  # `sha` must be cleared: the chart default pins a digest, and a digest wins over
+  # the tag, so the old image would keep being pulled despite the override.
+  configReloader:
+    image:
+      registry: ghcr.io
+      repository: blue-dots-economy/dhi/prometheus-config-reloader
+      tag: "0.93.1-alpine3.23"
+      sha: ""
 
   alloy:
     configMap:
