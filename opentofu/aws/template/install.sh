@@ -262,12 +262,27 @@ function deploy_monitoring() {
 # dependency on that. MUST be --server-side: a plain `kubectl apply` writes a
 # client-side last-applied-configuration annotation capped at 256 KB, and
 # crd-prometheuses.yaml / crd-alertmanagers.yaml alone are 833 KB / 621 KB.
-# Source of truth: helm/monitoring/crds/, extracted from
-# charts/kube-prometheus-stack-*.tgz's charts/crds/crds/ — re-extract this
-# directory whenever kube-prometheus-stack is bumped.
+#
+# NOT vendored as a committed helm/monitoring/crds/ directory the way Kong's
+# is: Helm bundles a chart's own top-level crds/ into the packaged Chart
+# object, which is what gets stored (gzipped) in the release Secret — kube-
+# prometheus-stack's ~4.3 MB of CRDs pushed that Secret past etcd's 1 MiB
+# object limit on the very first upgrade attempt (`Too long: may not be more
+# than 1048576 bytes`). Extracted straight out of the already-vendored
+# charts/kube-prometheus-stack-*.tgz into a throwaway tempdir instead, so
+# nothing new is committed and nothing new is bundled into the release.
 function apply_prometheus_crds() {
     echo -e "\nApplying prometheus-operator CRDs (helm skips subchart/upgrade CRDs)"
-    kubectl apply --server-side -f "$MON_DIR/crds/"
+    local tgz tmp
+    tgz=$(ls "$MON_DIR"/charts/kube-prometheus-stack-*.tgz 2>/dev/null | head -1)
+    if [ -z "$tgz" ]; then
+        echo "ERROR: no kube-prometheus-stack-*.tgz found under $MON_DIR/charts/" >&2
+        return 1
+    fi
+    tmp=$(mktemp -d)
+    tar -xzf "$tgz" -C "$tmp" kube-prometheus-stack/charts/crds/crds/
+    kubectl apply --server-side -f "$tmp/kube-prometheus-stack/charts/crds/crds/"
+    rm -rf "$tmp"
 }
 
 # 2a) common-services (Kong + cert-manager + ClusterIssuer + Postgres + Redis)
