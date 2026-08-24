@@ -135,13 +135,18 @@ jobs:
                   >> /tmp/all-rendered.yaml
                 ;;
               signals)
-                # yellow_dot/purple_dot are fetched at deploy time and not
-                # committed (see fetch_signals_configs); blue_dot is, so it's
-                # the one network this static render can use.
+                # Every network's schema/consent/messages files, and the ui's
+                # college reference datasets, are fetched at deploy time and
+                # never committed (see fetch_signals_configs) — none of them
+                # exist in a fresh checkout. schemas.networks=[] skips the
+                # ConfigMap block that would otherwise `fail()` on the first
+                # missing file; ui.reference.enabled=false does the same for
+                # the reference datasets. Neither flag hides an app image.
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
                   -f opentofu/aws/template/global-images.yaml \
                   -f opentofu/aws/template/global-values.yaml \
-                  --set-json 'api.schemas.networks=["blue_dot"]' \
+                  --set-json 'api.schemas.networks=[]' \
+                  --set ui.reference.enabled=false \
                   >> /tmp/all-rendered.yaml
                 ;;
               aggregator)
