@@ -102,7 +102,7 @@ _grafana_host:          &grafana_host          "monitoring.example.com"
 | Anchor | Used as | Lands in |
 |--------|---------|----------|
 | `_signals_public_hosts` | signals public hosts (list) | signals `publicHosts` (api + ui ingress) |
-| `_signals_host_bindings` | multi-domain host→network/domain routing | `ui.hostBindings` (via `global-cloud-values.yaml`) |
+| `_signals_host_bindings` | multi-domain host→network/domain routing | `ui.hostBindings` **and** `api.config.UI_HOST_BINDINGS` (via `global-cloud-values.yaml`) |
 | `_aggregator_host` | aggregator host | aggregator `global.publicHost` (api + web share it) |
 | `_grafana_host` | Grafana host | monitoring Grafana ingress |
 
