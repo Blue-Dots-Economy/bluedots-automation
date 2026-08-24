@@ -28,6 +28,18 @@ data:
   S3_BUCKET: {{ .Values.global.s3.bucket | quote }}
   S3_FORCE_PATH_STYLE: {{ .Values.global.s3.forcePathStyle | quote }}
   AWS_REGION: {{ .Values.global.s3.region | quote }}
+  {{- /*
+    Canonical pre-signed URL lifetime. api and worker both inherit it from this
+    shared ConfigMap rather than each templating their own copy.
+
+    `required` rather than a bare render: an empty value reaches Zod's coercion
+    as 0 and fails the positive-integer check (api CrashLoopBackOff), and a YAML
+    null renders as a bare key that `kubectl apply` rejects outright. The
+    ceiling is enforced by the app at boot and by a tofu validation upstream;
+    this guard covers the "value went missing" case, which is the one a chart
+    can actually see.
+  */}}
+  SIGNED_URL_TTL_SECONDS: {{ required "global.signedUrl.ttlSeconds must be set (seconds; 1-3600). It is the canonical pre-signed URL lifetime." ((.Values.global.signedUrl | default dict).ttlSeconds) | quote }}
 
   # ─── Mail (shared SMTP wiring) ───────────────────────────────────────
   MAIL_PROVIDER: {{ .Values.mail.provider | quote }}

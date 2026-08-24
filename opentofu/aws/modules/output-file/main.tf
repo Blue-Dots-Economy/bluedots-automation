@@ -71,7 +71,8 @@ resource "local_sensitive_file" "global_cloud_values" {
   file_permission = "0600"
   content = templatefile("${path.module}/global-cloud-values.yaml.tfpl", {
     cloud_storage_region    = var.cloud_storage_region
-    storage_bucket_public   = var.storage_bucket_public
+    storage_bucket_app      = var.storage_bucket_app
+    signed_url_ttl_seconds  = var.signed_url_ttl_seconds
     app_sa_role_arn         = var.app_sa_role_arn
     signals_export_role_arn = var.signals_export_role_arn
     signals_export_bucket   = var.signals_export_bucket

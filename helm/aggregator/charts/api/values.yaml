@@ -56,9 +56,11 @@ resources:
   limits:   { cpu: 2,    memory: 1Gi   }
 runMigrationsOnBoot: true
 bulk:
-  uploadUrlTtlSeconds: 900
+  # Empty = inherit global.signedUrl.ttlSeconds (600s). See the umbrella values.
+  uploadUrlTtlSeconds: ""
   uploadMaxBytes: 10485760
-  qrDownloadUrlTtlSeconds: 900
+  qrDownloadUrlTtlSeconds: ""
+  errorsCsvDownloadUrlTtlSeconds: ""
 adminEmails: "admin@bluedots.local"
 publicLinkBaseUrl: ""
 serviceAccount:

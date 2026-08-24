@@ -14,15 +14,20 @@ locals {
   }
 
   # Derived sub-maps used by conditional resources
-  public_buckets    = { for k, v in var.buckets : k => v if v.type == "public" }
   cors_buckets      = { for k, v in var.buckets : k => v if v.cors_enabled }
   versioned_buckets = { for k, v in var.buckets : k => v if v.versioning_enabled }
 
-  # CORS origins fall back to the configured referers (stripped of any path suffix) so that a
-  # cors_enabled bucket is never left wide open when only allowed_referers is supplied.
-  effective_cors_origins = length(var.cors_allowed_origins) > 0 ? var.cors_allowed_origins : [
-    for r in var.allowed_referers : replace(r, "/\\/\\*$/", "")
-  ]
+  # cors_allowed_origins is now the SOLE source of CORS origins (the referer
+  # fallback went with the public-read policy). A cors_enabled bucket with no
+  # origins gets no rule, which breaks browser uploads — hence the precondition
+  # on the CORS resource below rather than a silent empty allow-list.
+  effective_cors_origins = var.cors_allowed_origins
+
+  # Buckets that declare at least one non-zero retention window.
+  lifecycle_buckets = {
+    for k, v in var.buckets : k => v
+    if length([for days in values(v.lifecycle_rules) : days if days != null && days > 0]) > 0
+  }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -44,7 +49,10 @@ resource "aws_s3_bucket" "this" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Public-access block — private buckets are fully blocked, public buckets are open
+# Public-access block — unconditional. Every bucket is fully blocked from public access.
+# These are hardcoded rather than derived from `type`: a bucket whose access posture can be
+# flipped by a config value is one config edit away from re-exposing participant PII.
+# Pre-signed URLs are authenticated requests and are unaffected by these settings.
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_s3_bucket_public_access_block" "this" {
@@ -52,10 +60,10 @@ resource "aws_s3_bucket_public_access_block" "this" {
 
   bucket = aws_s3_bucket.this[each.key].id
 
-  block_public_acls       = each.value.type == "private"
-  block_public_policy     = each.value.type == "private"
-  ignore_public_acls      = each.value.type == "private"
-  restrict_public_buckets = each.value.type == "private"
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -76,10 +84,11 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Bucket policy — one policy per bucket, combining:
-#   1. DenyInsecureTransport  : reject any request not over TLS (applies to ALL buckets)
-#   2. PublicReadGetObject    : public buckets only; scoped to allowed_referers when provided
-# S3 permits a single bucket policy per bucket, so both statements must live in one resource.
+# Bucket policy — DenyInsecureTransport only: reject any request not over TLS.
+#
+# The former PublicReadGetObject statement (Principal "*", scoped by aws:Referer) is gone.
+# aws:Referer is a request header any client can set, so it was not an access control at all.
+# Reads and writes are now authorised per-object by a pre-signed URL minted by the API.
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_s3_bucket_policy" "this" {
@@ -89,39 +98,21 @@ resource "aws_s3_bucket_policy" "this" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = concat(
-      [
-        {
-          Sid       = "DenyInsecureTransport"
-          Effect    = "Deny"
-          Principal = "*"
-          Action    = "s3:*"
-          Resource = [
-            aws_s3_bucket.this[each.key].arn,
-            "${aws_s3_bucket.this[each.key].arn}/*",
-          ]
-          Condition = {
-            Bool = { "aws:SecureTransport" = "false" }
-          }
-        },
-      ],
-      each.value.type == "public" ? [
-        merge(
-          {
-            Sid       = "PublicReadGetObject"
-            Effect    = "Allow"
-            Principal = "*"
-            Action    = "s3:GetObject"
-            Resource  = "${aws_s3_bucket.this[each.key].arn}/*"
-          },
-          length(var.allowed_referers) > 0 ? {
-            Condition = {
-              StringLike = { "aws:Referer" = var.allowed_referers }
-            }
-          } : {}
-        ),
-      ] : []
-    )
+    Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.this[each.key].arn,
+          "${aws_s3_bucket.this[each.key].arn}/*",
+        ]
+        Condition = {
+          Bool = { "aws:SecureTransport" = "false" }
+        }
+      },
+    ]
   })
 
   depends_on = [aws_s3_bucket_public_access_block.this]
@@ -134,11 +125,19 @@ resource "aws_s3_bucket_policy" "this" {
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_s3_bucket_cors_configuration" "this" {
-  for_each = {
-    for k, v in local.cors_buckets : k => v if length(local.effective_cors_origins) > 0
-  }
+  for_each = local.cors_buckets
 
   bucket = aws_s3_bucket.this[each.key].id
+
+  # Fail the plan rather than provision a cors_enabled bucket with no rule. A
+  # missing CORS rule breaks every browser pre-signed PUT at preflight, and the
+  # resulting error looks like anything except "aggregator_host is unset".
+  lifecycle {
+    precondition {
+      condition     = length(local.effective_cors_origins) > 0
+      error_message = "Bucket '${each.key}' has cors_enabled but no cors_allowed_origins were supplied. Set global.aggregator_host in global-values.yaml — browsers cannot complete a pre-signed upload without a CORS rule."
+    }
+  }
 
   cors_rule {
     allowed_headers = var.cors_allowed_headers
@@ -161,4 +160,101 @@ resource "aws_s3_bucket_versioning" "this" {
   versioning_configuration {
     status = "Enabled"
   }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Lifecycle — per-prefix expiry for transient objects.
+#
+# Retention is a deployment-time value (see var.buckets.lifecycle_rules); 0/unset renders no rule
+# for that prefix. Two things here are load-bearing and easy to omit:
+#
+#   1. noncurrent_version_expiration alongside every expiration. On an UNVERSIONED bucket (which is
+#      how the aggregator bucket is deployed today) a plain expiration permanently deletes and the
+#      noncurrent rule is an accepted no-op. The moment versioning is enabled, though, an
+#      expiration-only rule merely writes a delete marker and keeps the object body — and therefore
+#      the participant PII — as a noncurrent version FOREVER: configured-looking, deleting nothing.
+#      Both are rendered unconditionally so enabling versioning later cannot silently reintroduce
+#      that. Do not "simplify" by dropping the noncurrent rule because the current bucket is
+#      unversioned.
+#   2. abort_incomplete_multipart_upload. An abandoned browser PUT leaves parts that are billable
+#      and invisible to ListObjects.
+#
+# `qr/` is deliberately absent: QR PNGs are durable. A printed QR code outlives any retention
+# window, so expiring the object breaks physical collateral already in the field.
+# ---------------------------------------------------------------------------------------------------------------------
+
+resource "aws_s3_bucket_lifecycle_configuration" "this" {
+  for_each = local.lifecycle_buckets
+
+  bucket = aws_s3_bucket.this[each.key].id
+
+  # Raw participant CSVs — highest-PII object we hold, so the shortest life.
+  dynamic "rule" {
+    for_each = each.value.lifecycle_rules.uploads_raw_retention_days > 0 ? [1] : []
+    content {
+      id     = "expire-uploads-raw"
+      status = "Enabled"
+      filter {
+        prefix = "uploads/raw/"
+      }
+      expiration {
+        days = each.value.lifecycle_rules.uploads_raw_retention_days
+      }
+      noncurrent_version_expiration {
+        noncurrent_days = each.value.lifecycle_rules.uploads_raw_retention_days
+      }
+    }
+  }
+
+  # Generated error reports — the aggregator's own worklist for fixing rejected rows.
+  dynamic "rule" {
+    for_each = each.value.lifecycle_rules.uploads_errors_retention_days > 0 ? [1] : []
+    content {
+      id     = "expire-uploads-errors"
+      status = "Enabled"
+      filter {
+        prefix = "uploads/errors/"
+      }
+      expiration {
+        days = each.value.lifecycle_rules.uploads_errors_retention_days
+      }
+      noncurrent_version_expiration {
+        noncurrent_days = each.value.lifecycle_rules.uploads_errors_retention_days
+      }
+    }
+  }
+
+  # Pre-migration keys (raw CSVs and error reports both lived under bulk-uploads/).
+  # Retire this rule once the window has elapsed and no rows reference the old layout.
+  dynamic "rule" {
+    for_each = each.value.lifecycle_rules.legacy_bulk_retention_days > 0 ? [1] : []
+    content {
+      id     = "expire-legacy-bulk-uploads"
+      status = "Enabled"
+      filter {
+        prefix = "bulk-uploads/"
+      }
+      expiration {
+        days = each.value.lifecycle_rules.legacy_bulk_retention_days
+      }
+      noncurrent_version_expiration {
+        noncurrent_days = each.value.lifecycle_rules.legacy_bulk_retention_days
+      }
+    }
+  }
+
+  # Abandoned multipart uploads, bucket-wide.
+  dynamic "rule" {
+    for_each = each.value.lifecycle_rules.abort_incomplete_mpu_days > 0 ? [1] : []
+    content {
+      id     = "abort-incomplete-multipart-uploads"
+      status = "Enabled"
+      filter {}
+      abort_incomplete_multipart_upload {
+        days_after_initiation = each.value.lifecycle_rules.abort_incomplete_mpu_days
+      }
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.this]
 }

@@ -84,8 +84,10 @@ global:
   network:                *network
   signals_served_domains: *signals_served_domains
 
-  # Used by storage.hcl to compute the S3 bucket's CORS allowed origins.
-  # (Same anchor also feeds the Helm-consumed publicHost below.)
+  # Used by storage.hcl to compute the S3 bucket's CORS allowed origins — now the
+  # SOLE source of them. MUST be set: an empty value means no CORS rule, and the
+  # storage module fails the plan rather than shipping a bucket whose pre-signed
+  # uploads break at preflight. (Same anchor also feeds Helm's publicHost below.)
   aggregator_host: *aggregator_host
 
   # Network configuration (optional - set create_network: false to use an existing VPC)
@@ -189,13 +191,34 @@ global:
   # rds_force_ssl: false                      # default false; true to require TLS
 
   # Key becomes suffix: <building_block>-<environment>-<account_id>-<key>
+  #
+  # Every bucket is PRIVATE — `type: public` is no longer provisionable and a
+  # config still declaring it fails `tofu validate`. Objects are served only via
+  # pre-signed URLs the application mints after authorising the caller.
+  # Which logical bucket below the aggregator application uses. Fresh installs
+  # leave this at "private". An environment provisioned BEFORE the private-object-
+  # storage migration must set it to its historical key ("public") and keep that
+  # key in the map: the bucket name is <building_block>-<environment>-<account_id>-<key>,
+  # so renaming the key is destroy + create — a data migration on live participant
+  # PII for a cosmetic rename. Hardening in place is the supported path.
+  app_bucket_key: private
+
   buckets:
-    public:
-      type: public
+    private:
+      type: private
+      # REQUIRED for any bucket a browser PUTs to or GETs from with a pre-signed
+      # URL. Without a CORS rule the preflight fails and every upload breaks.
+      # Origins come from global.aggregator_host below, which must be set.
       cors_enabled: true
-    # private:
-    #   type: private
-    #   versioning_enabled: true
+      versioning_enabled: true
+      # Retention for transient prefixes, in days. 0/unset = no rule for that
+      # prefix (never "expire immediately"). Durable objects — QR PNGs under
+      # `qr/` — have no rule at all: a printed QR outlives any window.
+      lifecycle_rules:
+        uploads_raw_retention_days: 7        # uploads/raw/    raw participant CSVs
+        uploads_errors_retention_days: 30    # uploads/errors/ generated error reports
+        legacy_bulk_retention_days: 30       # bulk-uploads/   pre-migration keys
+        abort_incomplete_mpu_days: 1
     # Dedicated PRIVATE bucket for the Signals non-PII S3 export
     # (helm/signals/charts/s3-export). Uncomment to provision it — its presence
     # auto-creates the write-only exporter IRSA role in the iam module.
@@ -203,6 +226,13 @@ global:
     # signals-export:
     #   type: private
     #   versioning_enabled: true
+    #   cors_enabled: false
+
+  # Canonical lifetime of every pre-signed object-storage URL, in seconds.
+  # Ten minutes. Rendered into the aggregator chart as SIGNED_URL_TTL_SECONDS;
+  # the app refuses anything above 3600 at boot because a pre-signed URL cannot
+  # be revoked before it expires.
+  signed_url_ttl_seconds: 600
 
   cors_max_age_seconds: 3000
 

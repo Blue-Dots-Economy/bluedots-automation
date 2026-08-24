@@ -23,11 +23,10 @@ dependency "storage" {
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
     buckets = {
-      public  = { id = "dummy-public-bucket",  arn = "arn:aws:s3:::dummy-public-bucket",  domain = "dummy-public-bucket.s3.amazonaws.com",  type = "public" }
+      public  = { id = "dummy-public-bucket",  arn = "arn:aws:s3:::dummy-public-bucket",  domain = "dummy-public-bucket.s3.amazonaws.com",  type = "private" }
       private = { id = "dummy-private-bucket", arn = "arn:aws:s3:::dummy-private-bucket", domain = "dummy-private-bucket.s3.amazonaws.com", type = "private" }
     }
-    storage_bucket_public  = "dummy-public-bucket"
-    storage_bucket_private = "dummy-private-bucket"
+    storage_bucket_app = "dummy-app-bucket"
   }
 }
 
@@ -37,8 +36,7 @@ inputs = {
   aws_region                 = local.aws_region
   oidc_provider_arn          = dependency.eks.outputs.oidc_provider_arn
   oidc_provider              = dependency.eks.outputs.oidc_provider
-  storage_bucket_public      = dependency.storage.outputs.storage_bucket_public
-  storage_bucket_private     = dependency.storage.outputs.storage_bucket_private
+  storage_bucket_app         = dependency.storage.outputs.storage_bucket_app
   service_account_subjects   = lookup(local.global_vars.global, "service_account_subjects", [
     "system:serviceaccount:app:app-sa"
   ])

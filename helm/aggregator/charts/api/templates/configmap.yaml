@@ -25,9 +25,22 @@ data:
   RUN_MIGRATIONS_ON_BOOT: "{{ .Values.runMigrationsOnBoot }}"
   ADMIN_EMAILS: "{{ .Values.adminEmails }}"
   PUBLIC_API_URL: "{{ include "api.publicBaseUrl" . }}/backend"
-  BULK_UPLOAD_URL_TTL_SECONDS: "{{ .Values.bulk.uploadUrlTtlSeconds }}"
   BULK_UPLOAD_MAX_BYTES: "{{ .Values.bulk.uploadMaxBytes }}"
-  QR_DOWNLOAD_URL_TTL_SECONDS: "{{ .Values.bulk.qrDownloadUrlTtlSeconds }}"
+  {{- /*
+    Per-class pre-signed URL TTL overrides. Rendered ONLY when set: the app
+    treats them as optional and falls back to SIGNED_URL_TTL_SECONDS, but an
+    empty string would reach Zod's coercion as 0 and fail the positive-integer
+    check at boot.
+  */}}
+  {{- with .Values.bulk.uploadUrlTtlSeconds }}
+  BULK_UPLOAD_URL_TTL_SECONDS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.bulk.qrDownloadUrlTtlSeconds }}
+  QR_DOWNLOAD_URL_TTL_SECONDS: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.bulk.errorsCsvDownloadUrlTtlSeconds }}
+  ERRORS_CSV_DOWNLOAD_URL_TTL_SECONDS: {{ . | quote }}
+  {{- end }}
   PUBLIC_LINK_BASE_URL: "{{ default (include "api.publicBaseUrl" .) .Values.publicLinkBaseUrl }}"
   # Per-network deployment: every path-dependent var keys off
   # `global.aggregatorNetwork` so flipping it in values-<net>.yaml
