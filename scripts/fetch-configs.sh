@@ -22,6 +22,14 @@
 #                 -> helm/signals/charts/api/files/{networks,consent}/
 #               network.json's instance_url is normalized to __PUBLIC_API_URL__
 #               (the token schemas-configmap.yaml substitutes with the real host).
+#               network.json prefers the BRAND copy outright (a brand network
+#               schema is always a full document). Brand CONSENT is not always
+#               full, so --consent-brand-mode (auto|replace|merge, default auto)
+#               decides: a brand file covering every key the network default
+#               defines is served AS consent.json and the network default is not
+#               delivered at all (up-gzb); a partial one ships alongside it for
+#               the api to deep-merge (upsdm, onetac). See the brand consent
+#               block below.
 #               PLUS messages.properties (+ <brand>/messages.properties) — the
 #               per-network email copy (signals-dpg#540)
 #                 -> helm/signals/charts/api/files/messages/
@@ -29,14 +37,21 @@
 #               copy and merges these PER KEY, so a network with no file (or a
 #               ref predating them) keeps the built-in wording instead of
 #               failing the deploy.
-#   aggregator  consent.json (a FULL document) from the aggregator-dpg config tree.
-#               The aggregator's loader requires a top-level {"audiences":…};
-#               bluedots-schemas' <network>/consent.json is the signals document
-#               ({"documents":…}) — a different schema under the same filename.
-#               Candidates, brand > network > repo-wide default:
+#   aggregator  consent.json (a FULL document), canonical in bluedots-schemas —
+#               the SAME repo network.json comes from, resolved brand > network the
+#               same way. NOTE it is NOT the same file as <network>/consent.json in
+#               that repo: the aggregator's loader requires a top-level
+#               {"audiences":…}, while <network>/consent.json is the signals
+#               document ({"documents":…}) — a different schema under the same
+#               filename, which is why it sits under schemas/aggregator/.
+#               Candidates, in order — the schemas repo first, then the
+#               aggregator-dpg config tree as a fallback for networks that have not
+#               migrated their aggregator consent yet (e.g. orange_dot):
 #                 <consent-dir>/<network>/<brand>/schemas/aggregator/consent.json
 #                 <consent-dir>/<network>/schemas/aggregator/consent.json
-#                 <consent-dir>/schemas/aggregator/consent.json
+#                 <fallback-dir>/<network>/<brand>/schemas/aggregator/consent.json
+#                 <fallback-dir>/<network>/schemas/aggregator/consent.json
+#                 <fallback-dir>/schemas/aggregator/consent.json
 #                 -> helm/aggregator/files/consent/consent.json
 #               Shape is asserted (assert_aggregator_consent) because the app
 #               tolerates a bad document instead of failing.
@@ -50,14 +65,21 @@
 #               redeploying picks it up with NO image rebuild.
 #
 # Usage:
-#   fetch-configs.sh signals    --global-values <path> [--ref <r>] [--repo <o/n>] [--network <n>] [--brand <b>] [--college-dataset <ka|up>]
+#   fetch-configs.sh signals    --global-values <path> [--ref <r>] [--repo <o/n>] [--network <n>] [--brand <b>] [--college-dataset <ka|up>] [--consent-brand-mode <auto|replace|merge>]
 #   fetch-configs.sh aggregator --global-values <path> [--ref <r>] [--repo <o/n>] [--network <n>] [--brand <b>]
 #
-# aggregator consent source knobs (flag > env > default), independent of both the
-# schemas repo and the aggregator.config.yaml source above:
-#   --consent-repo / AGGREGATOR_CONSENT_REPO default Blue-Dots-Economy/aggregator-dpg
-#   --consent-ref  / AGGREGATOR_CONSENT_REF  default main   (pin a tag/SHA for prod)
-#   --consent-dir  / AGGREGATOR_CONSENT_DIR  default config    (empty = repo root)
+# aggregator consent source knobs (flag > env > default), independent of the
+# aggregator.config.yaml source above:
+#   --consent-repo / AGGREGATOR_CONSENT_REPO default Blue-Dots-Economy/bluedots-schemas
+#   --consent-ref  / AGGREGATOR_CONSENT_REF  default main      (pin a tag/SHA for prod)
+#   --consent-dir  / AGGREGATOR_CONSENT_DIR  default <empty>   (= repo root)
+#
+# …and the legacy fallback source, tried only if the above misses:
+#   --consent-fallback-repo / AGGREGATOR_CONSENT_FALLBACK_REPO default Blue-Dots-Economy/aggregator-dpg
+#   --consent-fallback-ref  / AGGREGATOR_CONSENT_FALLBACK_REF  default main
+#   --consent-fallback-dir  / AGGREGATOR_CONSENT_FALLBACK_DIR  default config (empty = repo root)
+# Pass --consent-fallback-repo "" to require the schemas repo and fail loudly
+# otherwise (recommended once a network's consent has migrated).
 #
 # --network/--brand/--college-dataset override the _network/_brand/_college_dataset
 # anchors read from global-values.yaml.
@@ -88,13 +110,25 @@ AGGREGATOR_CONFIG_REF_DEFAULT="main"
 AGGREGATOR_CONFIG_DIR_DEFAULT="config"
 AGGREGATOR_CONFIG_FILE_DEFAULT="aggregator.config.yaml"
 
-# Aggregator consent source. Separate from the schemas repo above: the aggregator
-# consent is an {"audiences":…} document that lives in the aggregator-dpg config
-# tree. Separate from the config source below too, so the consent doc and
-# aggregator.config.yaml can be pinned to different refs.
-AGGREGATOR_CONSENT_REPO_DEFAULT="Blue-Dots-Economy/aggregator-dpg"
+# Aggregator consent source. Now the unified schemas repo — the same repo, ref and
+# brand > network resolution network.json uses — with the layout it already ships:
+#   <network>/<brand>/schemas/aggregator/consent.json
+# (blue_dot/up-gzb landed there in bluedots-schemas#20). Still its own knobs rather
+# than reusing AGGREGATOR_REF: this is a distinct {"audiences":…} document from the
+# signals <network>/consent.json, and it stays pinnable independently of both that
+# and aggregator.config.yaml.
+AGGREGATOR_CONSENT_REPO_DEFAULT="Blue-Dots-Economy/bluedots-schemas"
 AGGREGATOR_CONSENT_REF_DEFAULT="main"
-AGGREGATOR_CONSENT_DIR_DEFAULT="config"
+AGGREGATOR_CONSENT_DIR_DEFAULT=""
+
+# Legacy fallback: the aggregator-dpg config/ tree, where the aggregator consent
+# lived before the migration. Tried only after the schemas repo misses, so networks
+# that have not moved yet (orange_dot, and the repo-wide default document some
+# networks resolve entirely via) keep deploying unchanged. Set the repo to "" to
+# disable the fallback and make a missing schemas-repo consent a hard failure.
+AGGREGATOR_CONSENT_FALLBACK_REPO_DEFAULT="Blue-Dots-Economy/aggregator-dpg"
+AGGREGATOR_CONSENT_FALLBACK_REF_DEFAULT="main"
+AGGREGATOR_CONSENT_FALLBACK_DIR_DEFAULT="config"
 
 # Optional auth for a PRIVATE schemas repo. If a token is present we fetch via the
 # GitHub Contents API (the reliable way to pull raw file content from a private
@@ -145,6 +179,38 @@ assert_aggregator_consent() { # <file>
     echo "       (check --consent-repo / --consent-dir)." >&2
   fi
   return 1
+}
+
+# Does <brand-file> cover every consent key <network-file> defines?
+#
+# This is what decides whether the brand document can BE the served consent.json
+# or has to ride alongside it as a partial override. The signals loader
+# (packages/config/src/consent_config_loader.ts) resolves per key —
+# `pick(brand)?.[category] ?? pick(def)?.[category]` — so a brand file that
+# defines every key never consults the network default, and delivering both is
+# pure duplication. One that does NOT (upsdm ships only documents.privacy +
+# documents.terms; onetac the same) depends on the default for profile_creation,
+# the u18_documents set and every action consent — promoting it would silently
+# drop those and break U18 go-live gating and action consent.
+#
+# Compared as a KEY SET, not by content: identical keys with different copy is
+# exactly the case we want to collapse. Needs jq; without it the caller falls
+# back to the two-file merge delivery, which is correct for every brand, just
+# not minimal.
+consent_key_set() { # <file>
+  jq -S -r '[ (.documents      // {} | keys[] | "doc." + .),
+              (.u18_documents  // {} | keys[] | "u18." + .),
+              (.actions // {} | to_entries[] | .key as $a
+                 | (.value | keys[]) | "act." + $a + "." + .) ] | sort | .[]' "$1"
+}
+
+brand_consent_is_complete() { # <brand-file> <network-file>
+  command -v jq >/dev/null 2>&1 || return 1
+  local missing
+  # Keys in the network default that the brand file does not define. Empty = the
+  # brand document stands alone.
+  missing="$(comm -23 <(consent_key_set "$2") <(consent_key_set "$1") 2>/dev/null)" || return 1
+  [ -z "$missing" ]
 }
 
 # Rewrite any known literal support email in a fetched consent file to the
@@ -259,8 +325,14 @@ fetch_optional() { # <dest> <url> <label> <fallback-note>
 
 TARGET="${1:-}"; shift 2>/dev/null || true
 GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""; COLLEGE_DATASET=""
+# auto | replace | merge — see the brand consent block in the signals target.
+CONSENT_BRAND_MODE="${CONSENT_BRAND_MODE:-auto}"
 CFG_REPO=""; CFG_REF=""; CFG_DIR=""; CFG_FILE=""; CFG_DIR_SET=0
 CONSENT_REPO=""; CONSENT_REF=""; CONSENT_DIR=""; CONSENT_DIR_SET=0
+# --consent-fallback-repo "" is meaningful (= disable the fallback), so the
+# "was it passed?" flag matters here for the repo too, not just the dir.
+CONSENT_FB_REPO=""; CONSENT_FB_REPO_SET=0
+CONSENT_FB_REF=""; CONSENT_FB_DIR=""; CONSENT_FB_DIR_SET=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --global-values) GLOBAL_VALUES="$2"; shift 2 ;;
@@ -269,6 +341,7 @@ while [ $# -gt 0 ]; do
     --network)       NETWORK="$2"; shift 2 ;;
     --brand)         BRAND="$2"; shift 2 ;;
     --college-dataset) COLLEGE_DATASET="$2"; shift 2 ;;
+    --consent-brand-mode) CONSENT_BRAND_MODE="$2"; shift 2 ;;
     # aggregator.config.yaml source overrides (aggregator target only).
     --config-repo)   CFG_REPO="$2"; shift 2 ;;
     --config-ref)    CFG_REF="$2"; shift 2 ;;
@@ -280,6 +353,9 @@ while [ $# -gt 0 ]; do
     --consent-repo)  CONSENT_REPO="$2"; shift 2 ;;
     --consent-ref)   CONSENT_REF="$2"; shift 2 ;;
     --consent-dir)   CONSENT_DIR="$2"; CONSENT_DIR_SET=1; shift 2 ;;
+    --consent-fallback-repo) CONSENT_FB_REPO="$2"; CONSENT_FB_REPO_SET=1; shift 2 ;;
+    --consent-fallback-ref)  CONSENT_FB_REF="$2"; shift 2 ;;
+    --consent-fallback-dir)  CONSENT_FB_DIR="$2"; CONSENT_FB_DIR_SET=1; shift 2 ;;
     -h|--help)       usage; exit 0 ;;
     *) echo "ERROR: unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -295,6 +371,10 @@ fi
 # itself matching the widget's own "ka" default), or we'd fetch a region the
 # ConfigMap template then can't find.
 COLLEGE_DATASET="${COLLEGE_DATASET:-ka}"
+case "$CONSENT_BRAND_MODE" in
+  auto|replace|merge) ;;
+  *) echo "ERROR: --consent-brand-mode must be auto|replace|merge (got '${CONSENT_BRAND_MODE}')" >&2; exit 2 ;;
+esac
 [ -n "$NETWORK" ] || { echo "ERROR: network not set — pass --network or provide _network in --global-values" >&2; exit 1; }
 
 case "$TARGET" in
@@ -310,10 +390,13 @@ case "$TARGET" in
 
     tmp="$(mktemp)"
     # Brand copy first — a brand folder is a FULL copy of its network folder, not
-    # a partial override (same convention as the aggregator's config/consent
-    # below). Unlike consent, a network schema is a whole document, so there is
-    # nothing to deep-merge: the brand file simply wins. The DESTINATION filename
-    # is unchanged, so the ConfigMap key, the `items` mapping and
+    # a partial override (same convention as the aggregator consent/config below).
+    # Unlike consent, a network schema is a whole document, so there is nothing to
+    # deep-merge: the brand file simply wins. up-gzb's is the copy that carries the
+    # service_provider domain, absent from blue_dot/network.json — without this,
+    # signals and the aggregator (which resolves the brand file itself via
+    # global.networkSource.brand) render different schemas. The DESTINATION
+    # filename is unchanged, so the ConfigMap key, the `items` mapping and
     # NETWORK_CONFIG_LOCAL_FILE all stay exactly as they are.
     cands=()
     [ -n "$BRAND" ] && cands+=("${RAW}/${NETWORK}/${BRAND}/network.json")
@@ -327,10 +410,48 @@ case "$TARGET" in
     normalize_support_email "${CONSENT_DIR}/${NETWORK}.json"
     echo "  consent -> ${CONSENT_DIR}/${NETWORK}.json"
 
+    # ── brand consent: replace vs merge ───────────────────────────────────────
+    # Unlike network.json, a brand consent file is NOT always a full copy, so it
+    # cannot unconditionally win the way the network schema does.
+    #
+    #   replace — the brand document defines every key the network default does
+    #             (up-gzb). It is served AS consent.json, the only consent in the
+    #             ConfigMap, and no brand subdir is mounted. Nothing from the
+    #             network default can reach a user.
+    #   merge   — the brand document is a genuine partial (upsdm, onetac). Both
+    #             files ship and the api deep-merges per key, as before.
+    #
+    # `auto` picks per deploy from the fetched files; force with
+    # --consent-brand-mode. A stale file from a previous deploy in the OTHER mode
+    # is removed either way — the chart renders on file presence, so a leftover
+    # would resurrect the delivery we just decided against.
     if [ -n "$BRAND" ]; then
-      try_fetch "${CONSENT_DIR}/${NETWORK}.${BRAND}.json" "${RAW}/${NETWORK}/${BRAND}/consent.json"
-      normalize_support_email "${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
-      echo "  brand consent -> ${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
+      brand_tmp="$(mktemp)"
+      try_fetch "$brand_tmp" "${RAW}/${NETWORK}/${BRAND}/consent.json"
+      normalize_support_email "$brand_tmp"
+
+      mode="$CONSENT_BRAND_MODE"
+      if [ "$mode" = auto ]; then
+        if brand_consent_is_complete "$brand_tmp" "${CONSENT_DIR}/${NETWORK}.json"; then
+          mode=replace
+        else
+          mode=merge
+          command -v jq >/dev/null 2>&1 \
+            || echo "  ⚠ jq not found — cannot test brand consent coverage, using merge" >&2
+        fi
+      fi
+
+      if [ "$mode" = replace ]; then
+        mv -f "$brand_tmp" "${CONSENT_DIR}/${NETWORK}.json"
+        rm -f "${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
+        echo "  brand consent (${BRAND}) is a FULL document -> served as consent.json"
+        echo "  consent -> ${CONSENT_DIR}/${NETWORK}.json (brand copy; network default not delivered)"
+      else
+        mv -f "$brand_tmp" "${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
+        echo "  brand consent (${BRAND}) is a PARTIAL override -> merged over the network default"
+        echo "  brand consent -> ${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
+      fi
+      rm -f "$brand_tmp"
     fi
 
     # ── per-network email copy (signals-dpg#540) ──────────────────────────────
@@ -382,10 +503,14 @@ case "$TARGET" in
     warn_if_moving_ref "$REF"
 
     # ── aggregator consent ────────────────────────────────────────────────────
-    # From the aggregator-dpg config tree, not the schemas repo: the aggregator's
-    # loader requires {"audiences": {org, aggregator}}
-    # (packages/config-loader AggregatorConsentConfigSchema), whereas the schemas
-    # repo's <network>/consent.json is the signals {"documents":…} schema.
+    # Canonical is the unified schemas repo, resolved brand > network exactly like
+    # network.json — up-gzb's document lives at
+    #   blue_dot/up-gzb/schemas/aggregator/consent.json
+    # It is deliberately NOT the schemas repo's <network>/consent.json: the
+    # aggregator's loader requires {"audiences": {org, aggregator}}
+    # (packages/config-loader AggregatorConsentConfigSchema), whereas
+    # <network>/consent.json is the signals {"documents":…} schema. Same filename,
+    # different document — hence the schemas/aggregator/ sub-path.
     CONSENT_REPO="${CONSENT_REPO:-${AGGREGATOR_CONSENT_REPO:-$AGGREGATOR_CONSENT_REPO_DEFAULT}}"
     CONSENT_REF="${CONSENT_REF:-${AGGREGATOR_CONSENT_REF:-$AGGREGATOR_CONSENT_REF_DEFAULT}}"
     if [ "$CONSENT_DIR_SET" -eq 0 ]; then
@@ -396,14 +521,35 @@ case "$TARGET" in
     echo "  consent source: repo=${CONSENT_REPO} ref=${CONSENT_REF} dir=${CONSENT_DIR:-<root>}"
     warn_if_moving_ref "$CONSENT_REF"
 
+    # Legacy source, tried only after the schemas repo misses. Empty repo = the
+    # operator has opted out of the fallback, so a missing canonical document
+    # fails the deploy instead of silently resolving to a pre-migration copy.
+    if [ "$CONSENT_FB_REPO_SET" -eq 0 ]; then
+      CONSENT_FB_REPO="${AGGREGATOR_CONSENT_FALLBACK_REPO-$AGGREGATOR_CONSENT_FALLBACK_REPO_DEFAULT}"
+    fi
+    CONSENT_FB_REF="${CONSENT_FB_REF:-${AGGREGATOR_CONSENT_FALLBACK_REF:-$AGGREGATOR_CONSENT_FALLBACK_REF_DEFAULT}}"
+    if [ "$CONSENT_FB_DIR_SET" -eq 0 ]; then
+      CONSENT_FB_DIR="${AGGREGATOR_CONSENT_FALLBACK_DIR-$AGGREGATOR_CONSENT_FALLBACK_DIR_DEFAULT}"
+    fi
+
     # A FULL document (not a partial override), one per deployed network+brand.
-    # brand > network > repo-wide default. The repo-wide default is required, not
-    # decorative: some networks (e.g. blue_dot) ship no aggregator consent of their
-    # own and resolve entirely via it.
+    # Schemas repo brand > network, then the fallback's brand > network > repo-wide
+    # default. That repo-wide default is not decorative: some networks (e.g. plain
+    # blue_dot) ship no aggregator consent of their own and resolve entirely via it.
     cands=()
     [ -n "$BRAND" ] && cands+=("${CONSENT_BASE}/${NETWORK}/${BRAND}/schemas/aggregator/consent.json")
     cands+=("${CONSENT_BASE}/${NETWORK}/schemas/aggregator/consent.json")
-    cands+=("${CONSENT_BASE}/schemas/aggregator/consent.json")
+    if [ -n "$CONSENT_FB_REPO" ]; then
+      CONSENT_FB_BASE="https://raw.githubusercontent.com/${CONSENT_FB_REPO}/${CONSENT_FB_REF}"
+      [ -n "$CONSENT_FB_DIR" ] && CONSENT_FB_BASE="${CONSENT_FB_BASE}/${CONSENT_FB_DIR}"
+      echo "  consent fallback: repo=${CONSENT_FB_REPO} ref=${CONSENT_FB_REF} dir=${CONSENT_FB_DIR:-<root>}"
+      warn_if_moving_ref "$CONSENT_FB_REF"
+      [ -n "$BRAND" ] && cands+=("${CONSENT_FB_BASE}/${NETWORK}/${BRAND}/schemas/aggregator/consent.json")
+      cands+=("${CONSENT_FB_BASE}/${NETWORK}/schemas/aggregator/consent.json")
+      cands+=("${CONSENT_FB_BASE}/schemas/aggregator/consent.json")
+    else
+      echo "  consent fallback: disabled"
+    fi
     try_fetch "$OUT" "${cands[@]}"
     assert_aggregator_consent "$OUT"
     normalize_support_email "$OUT"
