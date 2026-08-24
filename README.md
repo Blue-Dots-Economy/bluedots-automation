@@ -154,6 +154,29 @@ shipped in the image) — no `schema.sql` is vendored in this repo.
 to the aggregator web + api pods as the `ORG_HIERARCHY_ENABLED` env var (via their
 ConfigMaps), enabling the org-hierarchy features in the aggregator app.
 
+### Onboarding modes and the Signals hand-off
+
+Two aggregator-**api**-only knobs, both set under `global:` in `global-values.yaml`
+and emitted by `helm/aggregator/charts/api/templates/configmap.yaml`. The worker
+and web read neither.
+
+| Value | Env var | What it does |
+|-------|---------|--------------|
+| `global.onboardingEnabled` | `AGGREGATOR_ONBOARDING_ENABLED` | Comma-separated allow-list of registration modes: `form`, `voice` (`bulk` is reserved and gates nothing yet). |
+| `global.signalsUiUrls` | `SIGNALS_UI_URLS` | Comma-separated `domain=url` pairs mapping each network domain to its Signals UI login page. Powers the "Already Registered — Sign In" chooser and the post-submit redirect. |
+
+> **`onboardingEnabled` empty is not the same as unset.** The api is fail-closed:
+> unset means *all* modes enabled, but an empty string means *nothing* enabled —
+> every registration mode off and every public-link creation 400s. The ConfigMap
+> template therefore **omits the key entirely** when the value is empty instead of
+> rendering `AGGREGATOR_ONBOARDING_ENABLED: ""`. That conditional is deliberate;
+> don't collapse it into an unconditional line.
+
+> **`signalsUiUrls` must point at the Signals UI, not Keycloak.** Use the UI login
+> page (normally `<origin>/auth/login`). A Keycloak authorization URL embeds
+> one-time `state`/PKCE values bound to the browser that generated them, so it
+> fails for every other user.
+
 ---
 
 ## Which branch?

@@ -108,6 +108,42 @@ global:
   # mount doesn't hot-update).
   consentSupportEmail: hello@bluedotseconomy.org
 
+  # ── Onboarding capability allow-list (AGGREGATOR_ONBOARDING_ENABLED) ───────
+  # Comma-separated allow-list of the registration modes this deployment offers.
+  # Recognised today: `form`, `voice` (`bulk` is reserved and currently gates
+  # nothing). Emitted to the api only — worker and web do not read it.
+  #
+  # READ THIS BEFORE CHANGING: empty is NOT the same as unset.
+  #   unset / omitted  -> ALL capabilities enabled (the api's default)
+  #   "form"           -> form only; voice registration is off
+  #   ""  (empty!)     -> NOTHING enabled — every registration mode is disabled
+  #                       and every public-link creation fails with a 400
+  # The api is fail-closed by design, so the api ConfigMap template OMITS the key
+  # entirely when this is empty rather than rendering `""`. That conditional is
+  # load-bearing; do not "tidy" it into an unconditional line.
+  #
+  # UAT: blue_dot and purple_dot want `form` (voice forms off).
+  onboardingEnabled: ''
+
+  # ── Signals UI hand-off (SIGNALS_UI_URLS) ─────────────────────────────────
+  # Comma-separated `domain=url` pairs mapping each network domain to the login
+  # page of the Signals UI that fronts it, e.g.
+  #   seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login
+  # Each network domain is served by its OWN Signals UI, so there is one pair per
+  # domain — not one shared URL. Emitted to the api only.
+  #
+  # It powers the "Already Registered — Sign In" chooser and the post-submit
+  # redirect; leave it empty and that hand-off is invisible to every user.
+  #
+  # The URL MUST be the Signals **UI** login page (normally `<origin>/auth/login`)
+  # and NEVER a Keycloak authorization URL. A Keycloak authorize URL embeds
+  # one-time `state`/PKCE values bound to the browser session that generated them,
+  # so a copied one fails for every user who follows it.
+  #
+  # Omitted from the rendered ConfigMap when empty — an empty value here is merely
+  # inert rather than dangerous, but it keeps both new keys consistent.
+  signalsUiUrls: ''
+
   # Signal-stack integration. Used by api/worker to call the signal-stack
   # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
   #   - actingOrgId: signal-stack `organization` row of type `network_service`

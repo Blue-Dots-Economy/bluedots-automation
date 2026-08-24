@@ -281,6 +281,29 @@ global:
   networkSource:
     file: network.json
     url: ''
+  # ── Onboarding capability allow-list (aggregator api only) ────────────────
+  # Comma-separated allow-list of registration modes this deployment offers:
+  # `form`, `voice` (`bulk` is reserved, gates nothing yet).
+  #
+  # LEAVE IT COMMENTED OUT to keep every mode enabled. Do NOT set it to an empty
+  # string: unset means "all enabled", but "" means "nothing enabled" and every
+  # public-link creation 400s. The chart omits the env var entirely when the value
+  # is empty, which is what makes commenting this out safe.
+  #
+  # UAT blue_dot and purple_dot want `form` (voice registration off):
+  # onboardingEnabled: form
+
+  # ── Signals UI hand-off (aggregator api only) ─────────────────────────────
+  # Comma-separated `domain=url` pairs — one per network domain — pointing at the
+  # login page of the Signals UI that fronts THAT domain. Drives the
+  # "Already Registered — Sign In" chooser and the post-submit redirect; without
+  # it the hand-off is invisible to users.
+  #
+  # Must be the Signals UI login page (normally `<origin>/auth/login`), NEVER a
+  # Keycloak authorization URL — those embed one-time state/PKCE values bound to
+  # the browser that generated them and fail for everyone else.
+  # signalsUiUrls: "seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login"
+
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   signalstack:
     # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
