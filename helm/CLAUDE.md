@@ -194,6 +194,14 @@ Two caveats. It **requires aggregator-dpg#513 in the deployed image**; until the
 Once #513 is deployed, canonical can drop `source:` from the YAML entirely (it becomes `.optional()` there), making the env var the single source of truth and turning a missing value into a loud `CONFIG_PARSE_FAILED` instead of a silent fallback. Note `fetch-configs.sh`'s `warn_if_moving_ref` does **not** cover this URL — it bypasses the fetch script.
 
 
+## Aggregator onboarding modes + Signals hand-off (api-only, CONDITIONAL keys)
+
+`global.onboardingEnabled` → `AGGREGATOR_ONBOARDING_ENABLED` and `global.signalsUiUrls` → `SIGNALS_UI_URLS`, both emitted **only** by `helm/aggregator/charts/api/templates/configmap.yaml` (worker and web read neither, so they do **not** belong in `templates/configmap-global.yaml`). Chart defaults are empty strings.
+
+**These are the only conditionally-rendered keys in that ConfigMap, and that is load-bearing.** `AGGREGATOR_ONBOARDING_ENABLED` is fail-closed in the api: *unset* = all capabilities enabled, *empty string* = **nothing** enabled — every registration mode off, every public-link creation 400s. So the template wraps the key in `{{- if .Values.global.onboardingEnabled }}` and omits it when unconfigured; an unconditional `{{ … | quote }}` on the empty default would render `""` and brick onboarding everywhere the chart lands. aggregator-dpg's `docker-compose.yml` already hit this with `${AGGREGATOR_ONBOARDING_ENABLED:-}` and had to switch to a value-less passthrough. `SIGNALS_UI_URLS` is conditional for consistency (an empty value there is inert, not dangerous). Do not "tidy" either back into an unconditional line.
+
+`signalsUiUrls` is `domain=url` pairs, one per network domain, each pointing at **that domain's own Signals UI login page** (normally `<origin>/auth/login`) — **never** a Keycloak authorization URL, which embeds one-time `state`/PKCE values bound to the browser that generated it and fails for every other user.
+
 ## Org hierarchy flag
 
 `global.orgHierarchyEnabled` (in `global-values.yaml`, default `true`) is emitted as `ORG_HIERARCHY_ENABLED` to the aggregator **web + api** pods via their ConfigMaps (`helm/aggregator/charts/{web,api}/templates/configmap.yaml`). There's no default in the aggregator chart's own `values.yaml`, so the global value must be present (it is) — set it identically for web and api or the two halves disagree.

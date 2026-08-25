@@ -59,6 +59,14 @@ api:
   config:
     API_DOMAIN: https://${signals_public_hosts[0]}
     FRONTEND_BASE_URL: https://${signals_public_hosts[0]}
+    # Same string as ui.hostBindings below — the UI maps host -> domain, the API
+    # maps domain -> host so an email CTA reaches the recipient's own portal
+    # (#569). Set it at _signals_host_bindings in global-values.yaml, never here.
+    #   format: "<host>=<network>/<domain>", entries separated by ";"
+    #   e.g.    "providers-signals.example.org=blue_dot/provider;seekers-signals.example.org=blue_dot/seeker"
+    # Emitted unconditionally: the api chart drops empty values, so a single-host
+    # release (bindings == "") falls back to FRONTEND_BASE_URL, unchanged.
+    UI_HOST_BINDINGS: "${signals_host_bindings}"
     ALLOWED_ORIGINS: "${signals_allowed_origins}"
     NETWORK_CONFIG_LOCAL_FILE: "/app/schemas/${signals_network}.json"
   schemas:

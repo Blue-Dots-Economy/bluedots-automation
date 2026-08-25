@@ -212,6 +212,22 @@ misbranded / unable to send OTP / unable to log in. Two layers:
 | `secrets.smtpUser` | Sender email for aggregator SMTP auth |
 | `api.adminEmails` | Admin notification recipient(s) |
 | `mail.smtp.from` | From address on outgoing mail |
+| `global.onboardingEnabled` | Aggregator registration modes allow-list (`form`, `voice`) — **leave commented out for "all modes"**; see the warning below |
+| `global.signalsUiUrls` | `domain=url` pairs pointing each network domain at its Signals UI **login page** (`<origin>/auth/login`) |
+
+> **Never set `global.onboardingEnabled` to an empty string.** The aggregator api
+> is fail-closed: *unset* enables every registration mode, but *empty* enables
+> **none** — all registration modes go dark and every public-link creation 400s.
+> Leave the key commented out when you don't need it; the chart omits the env var
+> entirely rather than rendering `AGGREGATOR_ONBOARDING_ENABLED: ""`.
+>
+> **`global.signalsUiUrls` must be the Signals UI login page, never a Keycloak
+> authorization URL** — a Keycloak authorize URL carries one-time `state`/PKCE
+> values bound to the browser that produced it and fails for everyone else.
+>
+> Editing `opentofu/aws/template/global-values.yaml` changes **only the template**.
+> Each live environment has its own values file in the private deployment repo, and
+> those must be updated separately or nothing changes in that environment.
 
 ### `secrets.yaml` (the secrets you fill in)
 
