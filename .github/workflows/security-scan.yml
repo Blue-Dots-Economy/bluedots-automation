@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, persist-credentials: false }
 
       - name: Trivy filesystem scan
         # Ref is pinned literally, NOT taken from an input: GitHub resolves a step's
@@ -121,6 +121,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # TypeScript: pnpm audit reads the lockfile (no install needed).
       - name: Setup Node + pnpm
@@ -202,7 +204,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with: { fetch-depth: 0 }   # full history so gitleaks scans past commits
+        with: { fetch-depth: 0, persist-credentials: false }   # full history so gitleaks scans past commits
       - name: gitleaks (OSS image — no marketplace licence)
         run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
@@ -224,6 +226,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # uvx, matching how uv-secure is already run above — no extra marketplace
       # action to trust in a job holding security-events: write.
