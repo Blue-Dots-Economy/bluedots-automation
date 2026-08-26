@@ -66,7 +66,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Resolve image name (ghcr.io/<owner>/keycloak-server)
         id: ref
@@ -75,10 +75,10 @@ jobs:
           echo "image=ghcr.io/${owner_lc}/keycloak-server" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       # The base image is now a Docker Hardened Image (dockerfiles/keycloak/Dockerfile
       # builds FROM dhi.io/keycloak). dhi.io refuses anonymous pulls even for the
@@ -100,7 +100,7 @@ jobs:
 
       - name: Log in to GHCR
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -108,7 +108,7 @@ jobs:
 
       - name: Compute image tags & labels
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ steps.ref.outputs.image }}
           tags: |
@@ -124,7 +124,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: dockerfiles/keycloak
           file: dockerfiles/keycloak/Dockerfile
@@ -168,7 +168,7 @@ jobs:
 
       - name: Upload Trivy image SARIF
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.push) }}
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@42947a340483f03ba47bb1a039b2c519aab3df85 # v3
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image-keycloak-server
