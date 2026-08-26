@@ -223,6 +223,17 @@ global:
 
   cors_max_age_seconds: 3000
 
+  # Campaign PII export retention (#579, #163). ONE knob for both halves, so the
+  # file and its download link cannot drift apart:
+  #  - opentofu: lifecycle-deletes `campaign-exports/` objects after this many days.
+  #  - helm (aggregator): sets EXPORT_URL_TTL_SECONDS = this × 86400, the TTL on the
+  #    pre-signed link the export email carries.
+  # Default 1 day, matching the worker's own EXPORT_URL_TTL_SECONDS default (86400).
+  # NOTE: S3 lifecycle is an asynchronous daily sweep — an object becomes eligible
+  # after N days and is usually gone within 24-48h after that, NOT at the instant the
+  # link expires. Treat this as "retention floor", not a precise deletion time.
+  campaignExportExpiryDays: 1
+
   # Subjects allowed to assume the single app_sa IRSA role (S3 + SES). The
   # s3-export entry is load-bearing: the exporter shares this role and the
   # public bucket above instead of owning a dedicated pair, so dropping it
