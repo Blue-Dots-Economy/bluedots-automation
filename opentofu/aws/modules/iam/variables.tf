@@ -33,27 +33,14 @@ variable "storage_bucket_private" {
   type        = string
 }
 
+# Every subject listed here can assume app_sa — the aggregator api/worker and
+# the signals s3-export CronJob (which shares this role and the public bucket
+# instead of a dedicated exporter role). A subject missing from this list fails
+# at STS assume time inside the pod, not at deploy time.
 variable "service_account_subjects" {
   description = "List of Kubernetes service account subjects allowed to assume the application IAM role (format: system:serviceaccount:<namespace>:<sa-name>)"
   type        = list(string)
   default = [
     "system:serviceaccount:app:app-sa"
   ]
-}
-
-# ── Signals S3-export exporter (optional, opt-in) ────────────────────────────
-# A dedicated least-privilege IRSA role for the signals-s3-export CronJob,
-# separate from the shared app_sa role. Created only when
-# signals_export_bucket is non-empty (i.e. the cluster provisions a
-# dedicated export bucket). Scoped to write-only access on that one bucket.
-variable "signals_export_bucket" {
-  description = "Name of the dedicated Signals export S3 bucket. Empty disables the exporter IRSA role entirely."
-  type        = string
-  default     = ""
-}
-
-variable "signals_export_sa_subject" {
-  description = "Kubernetes service account subject bound to the exporter role (format: system:serviceaccount:<namespace>:<sa-name>)."
-  type        = string
-  default     = "system:serviceaccount:signals:signals-s3-export"
 }

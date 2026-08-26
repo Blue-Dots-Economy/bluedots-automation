@@ -38,19 +38,22 @@ worker:
     create: true
     annotations:
       eks.amazonaws.com/role-arn: ${app_sa_role_arn}
-%{ if signals_export_role_arn != "" ~}
 
-# signals s3-export subchart — IRSA role + bucket (from iam + storage modules).
+# signals s3-export subchart — SAME app_sa role and SAME public bucket as the
+# aggregator worker above. There is no dedicated exporter role or export bucket
+# any more, so nothing here is conditional: the app_sa role and the public
+# bucket always exist. The SA name must stay in step with the exporter subject
+# listed in global.service_account_subjects (iam module trust policy) — rename
+# one without the other and the CronJob fails at STS assume time.
 s3-export:
   serviceAccount:
     create: true
     name: signals-s3-export
     annotations:
-      eks.amazonaws.com/role-arn: ${signals_export_role_arn}
+      eks.amazonaws.com/role-arn: ${app_sa_role_arn}
   s3:
-    bucket: ${signals_export_bucket}
+    bucket: ${storage_bucket_public}
     region: ${cloud_storage_region}
-%{ endif ~}
 
 # ─── signals chart — computed config ─────────────────────────────────────────
 # Values that require HCL operations plain YAML anchors can't do:

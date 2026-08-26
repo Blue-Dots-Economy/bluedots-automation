@@ -33,6 +33,16 @@ VPC split into **public** and **private** subnets. Public subnets host the IGW a
 
 `output-file` is what makes `preflight` pass: it generates the two gitignored files (`global-secrets.yaml` = all secrets; `global-cloud-values.yaml` = cloud outputs + computed hosts/origins + the RDS host above). After editing config that feeds them, regenerate just these with `bash install.sh apply_tf_output_file` rather than re-running the whole apply.
 
+### One bucket, one role — the s3-export exporter shares both
+
+The signals `s3-export` CronJob used to get a dedicated pair: a private `signals-export` bucket (a `global.buckets` entry) and a write-only IRSA role `<bb>-<env>-signals-s3-export`, created in the `iam` module *only* when that bucket existed. **Both are gone.** The exporter now writes to the same `public` bucket and assumes the same `app_sa` role as the aggregator api/worker, so `global-cloud-values.yaml` emits the `s3-export` IRSA block unconditionally, right beside `aggregator-api`/`worker`, from `app_sa_role_arn` + `storage_bucket_public`.
+
+Three consequences worth knowing:
+
+- **`service_account_subjects` is now load-bearing for signals, not just the aggregator.** `app_sa`'s trust policy is a single `StringEquals` on `<oidc>:sub` against that list, so `system:serviceaccount:signals:signals-s3-export` **must** be listed or the CronJob gets `AccessDenied` from STS *inside the pod* — a clean `helm upgrade` and a green apply, then a failing job hours later at its first scheduled run. It must also match `s3-export.serviceAccount.name`, which the generated file pins to `signals-s3-export`. **Every per-deployment branch needs this entry added to its own `<env>/global-values.yaml`;** the template carries it, existing env files don't.
+- **`storage_bucket_public` is keyed by logical name, not by `type`.** The storage module's output is `try(aws_s3_bucket.this["public"].id, null)` — the bucket whose `global.buckets` *key* is `public`, whatever `type` it declares. An env that sets `public: {type: private}` gets a fully access-blocked bucket despite the name; an env that leaves it `type: public` gets an anonymous `s3:GetObject` allow on `/*`. **Check which one your env is before enabling the exporter** — in the `type: public` case the export NDJSON is world-readable, and `app_sa`'s policy is `Get/Put/Delete/List` on the whole bucket rather than the old `PutObject`-only on one prefix.
+- **Removing the bucket entry plans a destroy, and the storage module sets no `force_destroy`.** So `tofu apply` on `storage` fails with `BucketNotEmpty` while any export object remains. Copy anything worth keeping to the public bucket, empty the old bucket, then apply.
+
 ### Hand-entered secrets live in `<env>/secrets.yaml` (the third input file)
 
 Some secrets can neither be committed (they're real credentials) nor generated (`random_passwords` can't invent a Gmail App Password). Those live in **`<env>/secrets.yaml`** — gitignored and operator-owned. Create it once per env by copying the committed **`secrets.example.yaml`** (`cp secrets.example.yaml secrets.yaml`) and filling in the real values. `install.sh` deliberately does **not** manage this file: it only has to exist before the `output-file` module runs, which is the only thing that reads it.
