@@ -219,7 +219,7 @@ function create_image_pull_secret() {
         echo "ERROR: $SCRIPT_DIR/rotate-ghcr-pull.sh missing"
         exit 1
     }
-    bash "$SCRIPT_DIR/rotate-ghcr-pull.sh" "${GHCR_PAT:-}" "$SIGNALS_NS"
+    bash "$SCRIPT_DIR/rotate-ghcr-pull.sh" "${GHCR_PAT:-}" "$CS_NS" "$SIGNALS_NS" "$AGG_NS"
 }
 
 # Both, in order. Kept because deploy_all_services and the runbooks call it.
@@ -403,7 +403,7 @@ function deploy_aggregator() {
         --wait --timeout 10m
     # subPath mounts don't hot-update and the config is boot-cached in-process, so a
     # config-only change leaves the Deployment spec untouched and helm rolls nothing.
-    # restart_aggregator_config_consumers
+    restart_aggregator_config_consumers
 }
 
 # Roll the workloads that subPath-mount the {release}-network-config /
