@@ -87,9 +87,20 @@ spec:
             {{- if .Values.schemas.consentNetwork }}
               - key: consent.json
                 path: consent.json
+              {{- /*
+                Brand consent, only when fetch-configs.sh wrote one — gated on
+                the same Files.Get the ConfigMap keys off, for the same reason
+                as the messages entries below: an `items` entry naming a key
+                that doesn't exist leaves the volume unmountable and the pod
+                stuck in ContainerCreating. In --consent-brand-mode=replace the
+                brand document is served as consent.json above, so there is no
+                brand key and no subdir to mount.
+              */ -}}
               {{- if .Values.schemas.consentBrand }}
+              {{- if .Files.Get (printf "files/consent/%s.%s.json" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
               - key: {{ .Values.schemas.consentBrand }}-consent.json
                 path: {{ .Values.schemas.consentBrand }}/consent.json
+              {{- end }}
               {{- end }}
               {{- /*
                 Per-network email copy, when fetch-configs.sh found one. Listed

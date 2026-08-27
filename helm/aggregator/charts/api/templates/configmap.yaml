@@ -4,6 +4,17 @@
   network.json the signals deploy did. global.networkSource.url overrides the
   derivation wholesale. Keep this expression identical to the worker's copy —
   a subchart cannot share the umbrella's _helpers.tpl, hence the duplication.
+
+  The brand path segment comes from networkSource.brand (explicit opt-in), NEVER
+  from global.aggregatorBrand. A templated URL cannot fall back on a 404 the way
+  fetch-configs.sh's try_fetch does, so deriving it from aggregatorBrand points
+  EVERY branded deploy at a file that may not exist — blue_dot/upsdm and
+  orange_dot/onetac ship consent.json but no network.json, so the loader fails at
+  boot while fetch-configs.sh quietly falls back to <network>/network.json,
+  re-splitting the two halves this expression exists to keep together. Brand wins
+  outright when networkSource.brand IS set (a brand folder is a full copy, not a
+  partial override) — same rule fetch-configs.sh uses. See values.yaml
+  networkSource.brand.
 */ -}}
 {{- $ns := .Values.global.networkSource | default dict -}}
 {{- $networkSource := $ns.url | default "" -}}
