@@ -209,7 +209,13 @@ brand_consent_is_complete() { # <brand-file> <network-file>
   local missing
   # Keys in the network default that the brand file does not define. Empty = the
   # brand document stands alone.
-  missing="$(comm -23 <(consent_key_set "$2") <(consent_key_set "$1") 2>/dev/null)" || return 1
+  # LC_ALL=C: jq's `sort` is codepoint order, and `comm` requires its inputs to be
+  # sorted the same way it compares them. Under a UTF-8 locale, shell collation
+  # ignores punctuation, so dotted keys ("act.x.y" vs "actz") can collate in a
+  # different order than jq emitted — comm then reports spurious differences.
+  # Fails safe today (a false "incomplete" only picks merge over replace), but the
+  # result is locale-dependent, which is worse than either outcome.
+  missing="$(LC_ALL=C comm -23 <(LC_ALL=C consent_key_set "$2") <(LC_ALL=C consent_key_set "$1") 2>/dev/null)" || return 1
   [ -z "$missing" ]
 }
 
@@ -310,16 +316,52 @@ try_fetch() { # <dest> <url>...
   return 1
 }
 
+# ── THE resolution rule, in one place ────────────────────────────────────────
+# Every per-network artifact resolves the same way: the BRAND copy if the brand
+# folder carries one, else the NETWORK default. Prints the candidate URLs in
+# priority order for try_fetch, which takes the first that returns content — so
+# "absent" is decided by an actual 404, never by a guess about the layout.
+#
+# This is the only correct test, because the schemas repo is deliberately
+# irregular: every brand ships a different subset. On main today —
+#   blue_dot/ka-dhwd  network.json ✓  consent ✓  messages ✗  brand.json ✗
+#   blue_dot/up-gzb   network.json ✓  consent ✓  messages ✗  brand.json ✗
+#   blue_dot/upsdm    network.json ✗  consent ✓  messages ✓  brand.json ✓
+#   orange_dot/onetac network.json ✗  consent ✓  messages ✓  brand.json ✓
+# — so per-artifact assumptions about what a brand "should" have are wrong for
+# at least one brand each. Ask the repo, per artifact, every time.
+#
+# Applies to every network (colour dot) identically; nothing here is keyed to a
+# particular network or brand name.
+brand_then_network() { # <base-url> <relative-path>  -> candidate URLs, best first
+  local base="$1" rel="$2"
+  [ -n "$BRAND" ] && printf '%s\n' "${base}/${NETWORK}/${BRAND}/${rel}"
+  printf '%s\n' "${base}/${NETWORK}/${rel}"
+}
+
+# Guard against a 200 carrying something that is not the document we asked for —
+# an LFS pointer, a mirror's HTML error page, a truncated proxy response. Those
+# bake straight into a ConfigMap and fail much later, inside the app.
+assert_json() { # <file> <label>
+  command -v jq >/dev/null 2>&1 || return 0
+  jq -e . "$1" >/dev/null 2>&1 \
+    || { echo "ERROR: fetched $2 is not valid JSON: $1" >&2; exit 1; }
+}
+
 # try_fetch for a genuinely OPTIONAL file — one the app has its own fallback for,
 # so a miss is reported and shrugged off instead of failing the deploy. Removes
 # the destination on a miss, so the chart's Files.Get presence check sees
 # "absent" rather than an empty file.
-fetch_optional() { # <dest> <url> <label> <fallback-note>
-  if try_fetch "$1" "$2" 2>/dev/null; then
-    echo "  $3 -> $1"
+# Takes a candidate LADDER, not a single URL, so an optional artifact resolves
+# brand > network exactly like a required one — the only difference is what
+# happens when every candidate 404s.
+fetch_optional() { # <dest> <label> <fallback-note> <url>...
+  local dest="$1" label="$2" note="$3"; shift 3
+  if try_fetch "$dest" "$@" 2>/dev/null; then
+    echo "  ${label} -> ${dest}"
   else
-    rm -f "$1"
-    echo "  $3: absent on ${REF} — $4"
+    rm -f "$dest"
+    echo "  ${label}: absent on ${REF} — ${note}"
   fi
 }
 
@@ -398,15 +440,19 @@ case "$TARGET" in
     # global.networkSource.brand) render different schemas. The DESTINATION
     # filename is unchanged, so the ConfigMap key, the `items` mapping and
     # NETWORK_CONFIG_LOCAL_FILE all stay exactly as they are.
-    cands=()
-    [ -n "$BRAND" ] && cands+=("${RAW}/${NETWORK}/${BRAND}/network.json")
-    cands+=("${RAW}/${NETWORK}/network.json")
+    mapfile -t cands < <(brand_then_network "$RAW" network.json)
     try_fetch "$tmp" "${cands[@]}"
+    assert_json "$tmp" "network.json"
     sed -E 's/("instance_url"[[:space:]]*:[[:space:]]*)"[^"]*"/\1"__PUBLIC_API_URL__"/' "$tmp" > "${NET_DIR}/${NETWORK}.json"
     rm -f "$tmp"
     echo "  network -> ${NET_DIR}/${NETWORK}.json"
 
+    # The NETWORK default is required — it is the base the brand document merges
+    # over, and the only consent when the brand ships none. No brand candidate
+    # here on purpose: the brand copy is handled below, where replace-vs-merge is
+    # decided, and that decision needs both documents side by side.
     try_fetch "${CONSENT_DIR}/${NETWORK}.json" "${RAW}/${NETWORK}/consent.json"
+    assert_json "${CONSENT_DIR}/${NETWORK}.json" "consent.json"
     normalize_support_email "${CONSENT_DIR}/${NETWORK}.json"
     echo "  consent -> ${CONSENT_DIR}/${NETWORK}.json"
 
@@ -425,9 +471,18 @@ case "$TARGET" in
     # --consent-brand-mode. A stale file from a previous deploy in the OTHER mode
     # is removed either way — the chart renders on file presence, so a leftover
     # would resurrect the delivery we just decided against.
-    if [ -n "$BRAND" ]; then
-      brand_tmp="$(mktemp)"
-      try_fetch "$brand_tmp" "${RAW}/${NETWORK}/${BRAND}/consent.json"
+    # A brand consent document is OPTIONAL, per the brand > network rule: a brand
+    # that ships none falls back to the network default already fetched above.
+    # This used to be a bare try_fetch with no fallback, so under `set -e` a brand
+    # without its own consent.json aborted the entire deploy. Every brand on main
+    # happens to carry one, which is why it went unnoticed.
+    #
+    # Stale files from a previous deploy are cleared on every path, because the
+    # chart renders on file PRESENCE — a leftover would resurrect a delivery mode
+    # (or a different brand's copy) that this deploy decided against.
+    brand_tmp="$(mktemp)"
+    if [ -n "$BRAND" ] && try_fetch "$brand_tmp" "${RAW}/${NETWORK}/${BRAND}/consent.json" 2>/dev/null; then
+      assert_json "$brand_tmp" "brand consent.json"
       normalize_support_email "$brand_tmp"
 
       mode="$CONSENT_BRAND_MODE"
@@ -452,6 +507,11 @@ case "$TARGET" in
         echo "  brand consent -> ${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
       fi
       rm -f "$brand_tmp"
+    elif [ -n "$BRAND" ]; then
+      rm -f "$brand_tmp" "${CONSENT_DIR}/${NETWORK}.${BRAND}.json"
+      echo "  brand consent (${BRAND}): absent on ${REF} — network default serves"
+    else
+      rm -f "$brand_tmp"
     fi
 
     # ── per-network email copy (signals-dpg#540) ──────────────────────────────
@@ -465,14 +525,21 @@ case "$TARGET" in
     mkdir -p "$MESSAGES_DIR"
     rm -f "$MESSAGES_DIR"/*.properties
 
+    # NOTE: email copy is the one artifact that deliberately does NOT collapse to a
+    # single brand > network file. The api merges it PER KEY (bundled < network <
+    # brand), so both levels ship as separate files and the fallback happens inside
+    # the app, key by key — a brand overriding one string keeps the network wording
+    # for all the rest. Collapsing these into one ladder would make a partial brand
+    # file hide every network string it doesn't mention. Net effect still matches
+    # the rule: brand absent -> network copy applies.
     fetch_optional "${MESSAGES_DIR}/${NETWORK}.properties" \
-      "${RAW}/${NETWORK}/messages.properties" \
-      "email copy" "api keeps its bundled defaults"
+      "email copy" "api keeps its bundled defaults" \
+      "${RAW}/${NETWORK}/messages.properties"
 
     if [ -n "$BRAND" ]; then
       fetch_optional "${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties" \
-        "${RAW}/${NETWORK}/${BRAND}/messages.properties" \
-        "brand email copy" "network/bundled copy only"
+        "brand email copy" "network/bundled copy only" \
+        "${RAW}/${NETWORK}/${BRAND}/messages.properties"
     fi
 
     # UI college/institute reference list for the selected region. Lives under
@@ -536,16 +603,16 @@ case "$TARGET" in
     # Schemas repo brand > network, then the fallback's brand > network > repo-wide
     # default. That repo-wide default is not decorative: some networks (e.g. plain
     # blue_dot) ship no aggregator consent of their own and resolve entirely via it.
-    cands=()
-    [ -n "$BRAND" ] && cands+=("${CONSENT_BASE}/${NETWORK}/${BRAND}/schemas/aggregator/consent.json")
-    cands+=("${CONSENT_BASE}/${NETWORK}/schemas/aggregator/consent.json")
+    mapfile -t cands < <(brand_then_network "$CONSENT_BASE" schemas/aggregator/consent.json)
     if [ -n "$CONSENT_FB_REPO" ]; then
       CONSENT_FB_BASE="https://raw.githubusercontent.com/${CONSENT_FB_REPO}/${CONSENT_FB_REF}"
       [ -n "$CONSENT_FB_DIR" ] && CONSENT_FB_BASE="${CONSENT_FB_BASE}/${CONSENT_FB_DIR}"
       echo "  consent fallback: repo=${CONSENT_FB_REPO} ref=${CONSENT_FB_REF} dir=${CONSENT_FB_DIR:-<root>}"
       warn_if_moving_ref "$CONSENT_FB_REF"
-      [ -n "$BRAND" ] && cands+=("${CONSENT_FB_BASE}/${NETWORK}/${BRAND}/schemas/aggregator/consent.json")
-      cands+=("${CONSENT_FB_BASE}/${NETWORK}/schemas/aggregator/consent.json")
+      mapfile -t -O "${#cands[@]}" cands < <(brand_then_network "$CONSENT_FB_BASE" schemas/aggregator/consent.json)
+      # Repo-wide default, below both brand and network in the fallback source:
+      # some networks (plain blue_dot on main) ship no aggregator consent at all
+      # and resolve entirely via this.
       cands+=("${CONSENT_FB_BASE}/schemas/aggregator/consent.json")
     else
       echo "  consent fallback: disabled"
@@ -575,16 +642,67 @@ case "$TARGET" in
 
     # Brand copy first — a brand folder is a full copy of its network folder, not a
     # partial override. Fetched verbatim; the chart mounts it over the image copy.
-    cands=()
-    [ -n "$BRAND" ] && cands+=("${CFG_BASE}/${NETWORK}/${BRAND}/${CFG_FILE}")
-    cands+=("${CFG_BASE}/${NETWORK}/${CFG_FILE}")
+    mapfile -t cands < <(brand_then_network "$CFG_BASE" "$CFG_FILE")
     try_fetch "$CFG_OUT" "${cands[@]}"
     echo "  aggregator config -> ${CFG_OUT}"
     ;;
 
+  # ── resolve-network-brand ──────────────────────────────────────────────────
+  # Prints the brand path segment the aggregator must use for its network.json
+  # URL — the brand name if <network>/<brand>/network.json exists on this ref,
+  # otherwise EMPTY. Prints nothing else on stdout, so it is safe to capture.
+  #
+  # Why this exists: signals gets network.json through try_fetch, which PROBES
+  # brand-then-network and self-corrects per brand. The aggregator instead fetches
+  # network.json itself at boot from a URL a Helm template rendered, and a template
+  # cannot test whether a URL 404s. So the aggregator half has to be TOLD the answer
+  # signals discovers, and `global.aggregatorBrand` is not that answer — it means
+  # "which brand skin", not "does this brand ship its own network schema", and on
+  # main those diverge for half the brands (up-gzb/ka-dhwd ship one; upsdm/onetac
+  # do not).
+  #
+  # Resolved HERE rather than in install.sh so there is exactly ONE probe, reusing
+  # the same read_anchor, GH_TOKEN and curl plumbing as the real fetch. Two
+  # independent probes could disagree — which is the whole failure mode being fixed.
+  #
+  # Guessing wrong is silent in one direction: too-eager gives a 404 at pod boot
+  # (loud), too-shy gives signals the brand schema and the aggregator the network
+  # one (silent split, and up-gzb's brand copy carries a service_provider domain
+  # the network copy lacks).
+  resolve-network-brand)
+    REPO="${REPO:-${SIGNALS_DPG_REPO:-$SIGNALS_REPO_DEFAULT}}"
+    REF="${REF:-${SIGNALS_DPG_REF:-$SIGNALS_REF_DEFAULT}}"
+    [ -n "$BRAND" ] || { echo ""; exit 0; }
+    probe="https://raw.githubusercontent.com/${REPO}/${REF}/${NETWORK}/${BRAND}/network.json"
+    probe_url="$probe"
+    if [ -n "$GH_TOKEN" ] && [[ "$probe" =~ ^https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)$ ]]; then
+      probe_url="https://api.github.com/repos/${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/contents/${BASH_REMATCH[4]}?ref=${BASH_REMATCH[3]}"
+    fi
+    if [ -n "$GH_TOKEN" ]; then
+      hit=$(curl -fsSL "${CURL_OPTS[@]}" -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github.raw" -o /dev/null "$probe_url" 2>/dev/null && echo y || echo n)
+    else
+      hit=$(curl -fsSL "${CURL_OPTS[@]}" -o /dev/null "$probe_url" 2>/dev/null && echo y || echo n)
+    fi
+    # Diagnostics to stderr — stdout is the captured value.
+    if [ "$hit" = y ]; then
+      echo "resolve-network-brand: ${NETWORK}/${BRAND}/network.json present -> brand segment '${BRAND}'" >&2
+      echo "$BRAND"
+    else
+      echo "resolve-network-brand: ${NETWORK}/${BRAND}/network.json absent -> falling back to ${NETWORK}/network.json" >&2
+      echo ""
+    fi
+    ;;
+
   *)
-    echo "ERROR: unknown target '${TARGET}' (expected: signals | aggregator)" >&2
+    echo "ERROR: unknown target '${TARGET}' (expected: signals | aggregator | resolve-network-brand)" >&2
     usage; exit 2 ;;
 esac
 
-echo "fetch-configs[${TARGET}]: done."
+# resolve-network-brand's stdout IS its return value (captured by deploy_aggregator),
+# so its progress line goes to stderr like the rest of that target's diagnostics.
+# Anything printed to stdout here would end up inside --set networkSource.brand=.
+if [ "$TARGET" = resolve-network-brand ]; then
+  echo "fetch-configs[${TARGET}]: done." >&2
+else
+  echo "fetch-configs[${TARGET}]: done."
+fi
