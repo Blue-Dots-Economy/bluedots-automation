@@ -47,17 +47,26 @@ data:
   consent.json: |
 {{ $craw | replace "__SUPPORT_EMAIL__" $supportEmail | indent 4 }}
 {{- /*
-  Optional brand override. Signals' consent loader deep-merges the brand file
-  (partial) OVER the network default, so BOTH files must be delivered — the
-  brand one is placed at /app/schemas/<brand>/consent.json via the api
-  deployment's volume `items` mapping. Source: files/consent/<net>.<brand>.json.
+  Optional brand override, delivered only when scripts/fetch-configs.sh left one
+  on disk. Signals' consent loader resolves per key —
+  `pick(brand)?.[category] ?? pick(def)?.[category]` — so a PARTIAL brand file
+  needs the network default underneath it and both must ship; it is placed at
+  /app/schemas/<brand>/consent.json via the api deployment's volume `items`
+  mapping. Source: files/consent/<net>.<brand>.json.
+
+  Conditioned on the SOURCE FILE, not on schemas.consentBrand — same reason the
+  messages.properties blocks below are. In --consent-brand-mode=replace the
+  brand document IS the served consent.json above (it covers every key, so the
+  network default could never be reached) and no brand file is written; keying
+  this off consentBrand would then fail a render that is deliberately
+  single-file. consentBrand stays meaningful: it names the mount subdir and
+  selects the brand email copy.
 */ -}}
 {{- if .Values.schemas.consentBrand }}
-{{- $bfile := printf "files/consent/%s.%s.json" .Values.schemas.consentNetwork .Values.schemas.consentBrand -}}
-{{- $braw := $.Files.Get $bfile -}}
-{{- if not $braw }}{{ fail (printf "missing brand consent file %s (schemas.consentBrand=%s)" $bfile $.Values.schemas.consentBrand) }}{{- end }}
-  {{ .Values.schemas.consentBrand }}-consent.json: |
-{{ $braw | replace "__SUPPORT_EMAIL__" $supportEmail | indent 4 }}
+{{- with $.Files.Get (printf "files/consent/%s.%s.json" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
+  {{ $.Values.schemas.consentBrand }}-consent.json: |
+{{ . | replace "__SUPPORT_EMAIL__" $supportEmail | indent 4 }}
+{{- end }}
 {{- end }}
 {{- /*
   Per-network email copy (signals-dpg#540). Same delivery as consent above and

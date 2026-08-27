@@ -2,6 +2,12 @@
   Upstream network.json URL. Keep identical to charts/api/templates/configmap.yaml —
   duplicated because a subchart cannot use the umbrella's _helpers.tpl, and both
   halves must resolve the same network.json.
+
+  The brand path segment comes from networkSource.brand (explicit opt-in), NEVER
+  from global.aggregatorBrand — a templated URL cannot 404-fall-back the way
+  fetch-configs.sh's try_fetch does, so deriving it from aggregatorBrand breaks
+  every branded deploy whose schemas folder carries no network.json. Brand wins
+  outright when networkSource.brand IS set. See the api copy + values.yaml.
 */ -}}
 {{- $ns := .Values.global.networkSource | default dict -}}
 {{- $networkSource := $ns.url | default "" -}}
@@ -42,3 +48,5 @@ data:
   LINK_METRICS_ROLLUP_INTERVAL_MS: "{{ .Values.cron.linkMetricsRollupIntervalMs }}"
   WATCHDOG_INTERVAL_MS: "{{ .Values.cron.watchdogIntervalMs }}"
   S3_FORCE_PATH_STYLE: "{{ .Values.global.s3.forcePathStyle }}"
+  S3_BUCKET: "{{ .Values.global.s3.bucket }}"
+  S3_REGION: "{{ .Values.global.s3.region }}"

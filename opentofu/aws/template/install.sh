@@ -58,9 +58,7 @@ fi
 # Source of aggregator.config.yaml — INDEPENDENT of the schemas repo above, because
 # canonical for that file is the aggregator-dpg config/ tree. All four parts are
 # configurable; override any of them to repoint (e.g. at bluedots-schemas once it
-# carries the file) with no chart change. Defaults to main, matching SIGNALS_DPG_REF
-# and AGGREGATOR_DPG_REF above — the images are cut from main, so the config tree
-# has to come from main too or config and code skew. Pin to a tag/SHA for prod.
+# carries the file) with no chart change. Pin AGGREGATOR_CONFIG_REF for prod.
 AGGREGATOR_CONFIG_REPO="${AGGREGATOR_CONFIG_REPO:-Blue-Dots-Economy/aggregator-dpg}"
 AGGREGATOR_CONFIG_REF="${AGGREGATOR_CONFIG_REF:-main}"
 AGGREGATOR_CONFIG_DIR="${AGGREGATOR_CONFIG_DIR-config}"
@@ -68,7 +66,6 @@ AGGREGATOR_CONFIG_FILE="${AGGREGATOR_CONFIG_FILE:-aggregator.config.yaml}"
 # Source of the aggregator consent doc. Also aggregator-dpg, and separate from the
 # config knobs above so the two can be pinned independently: the aggregator consent
 # is an {"audiences":…} document, distinct from the schemas repo's signals consent.
-# Also defaults to main, for the same no-skew reason as the config ref.
 AGGREGATOR_CONSENT_REPO="${AGGREGATOR_CONSENT_REPO:-Blue-Dots-Economy/aggregator-dpg}"
 AGGREGATOR_CONSENT_REF="${AGGREGATOR_CONSENT_REF:-main}"
 AGGREGATOR_CONSENT_DIR="${AGGREGATOR_CONSENT_DIR-config}"
@@ -239,6 +236,7 @@ function create_namespaces_and_secrets() {
 # 2a-pre) monitoring (Prometheus + Alertmanager + Loki + Alloy + Grafana)
 # Deployed before app charts so metrics and alerts are live from first deploy.
 function deploy_monitoring() {
+    apply_prometheus_crds
     echo -e "\nDeploying monitoring"
     helm upgrade --install "$MON_REL" "$MON_DIR" \
         -n "$MON_NS" --create-namespace \
@@ -246,6 +244,42 @@ function deploy_monitoring() {
         -f "$GLOBAL_SECRETS" \
         $IMAGE_PULL_HELM_ARGS \
         --wait --timeout 10m
+}
+
+# Same Helm limitation as Kong (see apply_kong_crds below): CRDs vendored inside
+# a subchart (kube-prometheus-stack's charts/crds/) are laid down by Helm ONLY
+# on first install, never on upgrade. Bumping kube-prometheus-stack across a
+# CRD-bearing version (e.g. 65.1.1 -> 88.5.2, operator 0.77.1 -> 0.93.1) then
+# leaves an existing cluster's CRDs behind: the apiserver silently PRUNES any
+# field the old CRD schema doesn't know about on a structural CRD, with no
+# error — pods stay Ready, new spec fields just don't take effect.
+#
+# The chart's own opt-in remedy (`crds.upgradeJob.enabled`) is marked preview
+# upstream; applying the manifests directly, same as Kong, avoids taking a
+# dependency on that. MUST be --server-side: a plain `kubectl apply` writes a
+# client-side last-applied-configuration annotation capped at 256 KB, and
+# crd-prometheuses.yaml / crd-alertmanagers.yaml alone are 833 KB / 621 KB.
+#
+# NOT vendored as a committed helm/monitoring/crds/ directory the way Kong's
+# is: Helm bundles a chart's own top-level crds/ into the packaged Chart
+# object, which is what gets stored (gzipped) in the release Secret — kube-
+# prometheus-stack's ~4.3 MB of CRDs pushed that Secret past etcd's 1 MiB
+# object limit on the very first upgrade attempt (`Too long: may not be more
+# than 1048576 bytes`). Extracted straight out of the already-vendored
+# charts/kube-prometheus-stack-*.tgz into a throwaway tempdir instead, so
+# nothing new is committed and nothing new is bundled into the release.
+function apply_prometheus_crds() {
+    echo -e "\nApplying prometheus-operator CRDs (helm skips subchart/upgrade CRDs)"
+    local tgz tmp
+    tgz=$(ls "$MON_DIR"/charts/kube-prometheus-stack-*.tgz 2>/dev/null | head -1)
+    if [ -z "$tgz" ]; then
+        echo "ERROR: no kube-prometheus-stack-*.tgz found under $MON_DIR/charts/" >&2
+        return 1
+    fi
+    tmp=$(mktemp -d)
+    tar -xzf "$tgz" -C "$tmp" kube-prometheus-stack/charts/crds/crds/
+    kubectl apply --server-side -f "$tmp/kube-prometheus-stack/charts/crds/crds/"
+    rm -rf "$tmp"
 }
 
 # 2a) common-services (Kong + cert-manager + ClusterIssuer + Postgres + Redis)
