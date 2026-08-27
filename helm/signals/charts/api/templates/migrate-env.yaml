@@ -43,10 +43,11 @@ data:
 ---
 {{/*
   Keys the Job reads: migrate.mjs needs the POSTGRES_* connection vars; the
-  provision container additionally seeds the aggregator-dpg and signals-search
-  service apikeys. Add to this list if the Job ever needs another secret.
+  provision container additionally seeds the aggregator-dpg, signals-search and
+  raya-voice-bot service apikeys. Add to this list if the Job ever needs another
+  secret.
 */}}
-{{- $needed := list "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "AGGREGATOR_DPG_API_KEY" "SIGNALS_SEARCH_API_KEY" }}
+{{- $needed := list "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "AGGREGATOR_DPG_API_KEY" "SIGNALS_SEARCH_API_KEY" "RAYA_VOICE_BOT_API_KEY" }}
 apiVersion: v1
 kind: Secret
 metadata:

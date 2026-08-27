@@ -129,7 +129,29 @@ secret all unchanged.
 
 ## Signals schema — applied from the api image (no vendored `schema.sql`)
 
-The signals migrate-job does **not** vendor a `schema.sql` in this repo. A `migrate-ddl` initContainer runs the **api image itself** (`node apps/api/scripts/migrate.mjs`, i.e. `db:migrate:deploy`) as the app DB role: extension **preflight** → auto-baseline (legacy cutover) → one Drizzle `migrate()` over the committed `apps/api/drizzle/` ledger (declarative tables + the raw partitioned/geo tables as custom migrations). Because the schema ships inside the image and runs from that same image, the deployed schema always matches the running api build — **parity is automatic, nothing to keep in sync here**. A second `provision` container then upserts the integrating-DPG (aggregator-dpg) apikey from the only SQL still vendored, `provision_service_users.sql`. Extensions are created upstream by `common-services` (`postgresBootstrap`) as the RDS master; the migrate step **asserts they exist and aborts loudly if not** (it never creates them — the app role is not a superuser).
+The signals migrate-job does **not** vendor a `schema.sql` in this repo. A `migrate-ddl` initContainer runs the **api image itself** (`node apps/api/scripts/migrate.mjs`, i.e. `db:migrate:deploy`) as the app DB role: extension **preflight** → auto-baseline (legacy cutover) → one Drizzle `migrate()` over the committed `apps/api/drizzle/` ledger (declarative tables + the raw partitioned/geo tables as custom migrations). Because the schema ships inside the image and runs from that same image, the deployed schema always matches the running api build — **parity is automatic, nothing to keep in sync here**. A second `provision` container then upserts the **service apikeys** from the only SQL still vendored, `provision_service_users.sql`. Extensions are created upstream by `common-services` (`postgresBootstrap`) as the RDS master; the migrate step **asserts they exist and aborts loudly if not** (it never creates them — the app role is not a superuser).
+
+### Service apikeys — adding one is a four-file change
+
+`provision_service_users.sql` seeds one org + user + `apikey` row per integrating service, hashing the raw key as `base64url(sha256(raw))` to match better-auth's `defaultKeyHasher`. **Only the hash reaches the database** — the raw key lives solely in the generated `global-secrets.yaml` and in the caller's own config. Rotation is `UPDATE … WHERE user_id`, keyed per service user, so rotating one service never disturbs another.
+
+| Service user | Key | Direction |
+|---|---|---|
+| `aggregator-dpg` | `AGGREGATOR_DPG_API_KEY` | aggregator → signals api |
+| `signals-search-client` | `SIGNALS_SEARCH_API_KEY` | signals api → signals-search `/v1/relevance` |
+| `raya-voice-bot` | `RAYA_VOICE_BOT_API_KEY` | raya voice bot → signals api |
+
+Adding another means touching **four** places or it fails in a confusing way:
+1. `charts/api/values.yaml` + umbrella `values.yaml` — declare the key under `secrets.data` (the api `secret.yaml` ranges over the whole map, so it's picked up automatically).
+2. `migrate-env.yaml`'s **`$needed` allowlist** — the migrate-env Secret is a *deny-by-default* subset of `secrets.data`. Miss this and the key is simply absent from the Job's env.
+3. `migrate-job.yaml` — the `:?missing` guard and a matching `psql -v`.
+4. the SQL — a `set_config(...)` line **outside** the `DO $$…$$` block plus a `VALUES` row. psql's `:'var'` interpolation does not expand inside dollar-quoted strings, which is why the GUC hop exists.
+
+**`RAYA_VOICE_BOT_API_KEY` is not the same credential as `secrets.voiceDpgSignalsSecret`.** Both belong to the same voice bot, but the latter is its `voice-dpg` Keycloak *client-credentials* secret (OIDC token exchange) while this is the *api-key* path. They are generated independently and rotate independently — do not "deduplicate" them.
+
+**Operational note:** the `:?missing` guards make the migrate-job — and therefore the whole `signals` release — fail if a key is absent from the api Secret. So after pulling a change that adds a service apikey, run `bash install.sh apply_tf_output_file` to regenerate `global-secrets.yaml` **before** `deploy_signals`.
+
+**Every one of these orgs is `type = 'network_service'`, and that collides with `actingOrgId`.** The org row is inserted with a hardcoded `network_service` type, and because `now()` is *transaction* time and the whole loop is one `DO $$…$$`, all of them share a byte-identical `created_at`. So `SELECT id FROM organization WHERE type='network_service' ORDER BY created_at LIMIT 1` — what `get-signalstack-org-id.sh` used to run, and what several docs told operators to run by hand — is a **tie with no deterministic winner**: a plain `UPDATE organization SET name = name` on any of those rows reorders the heap and flips the answer (verified). The script now filters on `slug` (`ORG_SLUG`, default `aggregator-dpg`, the org `actingOrgId` is defined as). **Adding a service apikey adds another `network_service` org, so never reintroduce a type-only lookup.**
 
 ## Consent config is ConfigMap-delivered (not baked into images)
 

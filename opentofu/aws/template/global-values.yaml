@@ -327,7 +327,10 @@ global:
 
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   signalstack:
-    # Set after signals is deployed: SELECT id FROM organization WHERE type='network_service';
+    # Set after signals is deployed. Several service orgs share type
+    # 'network_service' — match the slug or you may pick the wrong one:
+    #   SELECT id FROM organization WHERE type='network_service' AND slug='aggregator-dpg';
+    # Easier: ORG_ID=$(./get-signalstack-org-id.sh)
     actingOrgId: ""
   dataPlatform:
     namespace:       common-services

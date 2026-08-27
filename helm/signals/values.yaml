@@ -139,6 +139,11 @@ credentials:
       SIGNALS_SEARCH_API_KEY: ""
       # Discover BFF → signals-search (signals-dpg#203). Unset = silent fallback to native search.
       SIGNALS_SEARCH_URL: "http://signals-search:3100"
+      # Raw apikey for the raya voice bot calling INTO the signals api (>=32 chars).
+      # Same seeding path as AGGREGATOR_DPG_API_KEY above — the migrate-job upserts
+      # SHA-256→base64url into the `apikey` table, so signals never stores the raw
+      # value. Hand the raw key to raya out of band. Rotate = change value + upgrade.
+      RAYA_VOICE_BOT_API_KEY: ""
       # ── Keycloak (AUTH_PROVIDER=keycloak) ─────────────────────────────────
       # Confidential client secret for the `signals-api` client. The SAME value
       # must reach the shared keycloak release as secrets.signalsApiSecret — that
