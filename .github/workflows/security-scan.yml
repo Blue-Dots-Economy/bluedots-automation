@@ -234,12 +234,20 @@ jobs:
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
 
       - name: zizmor
-        env:
-          # Enables the online audits (impostor-commit, known-vulnerable-actions).
-          # impostor-commit matters here specifically: it catches a SHA that looks
-          # pinned but does not belong to the upstream repo's history, which a
-          # pin-only check would happily accept.
-          GH_TOKEN: ${{ github.token }}
+        # --offline ON PURPOSE. This run FEEDS the pinning gate below, so it must
+        # always produce a SARIF. The blocking check is unpinned-uses, an OFFLINE
+        # audit — so offline mode loses nothing the gate needs. The online audits
+        # (impostor-commit, known-vulnerable-actions) run separately, best-effort,
+        # further down.
+        #
+        # Why not online here: an online audit aborts the WHOLE run on a GitHub
+        # API error, emitting no SARIF. Observed: impostor-commit doing a cross-repo
+        # pin lookup (aquasecurity/trivy-action) gets HTTP 403 from api.github.com
+        # under the default GITHUB_TOKEN's rate limit, `fatal: no audit was
+        # performed`, exit 1 — which took the deterministic pinning gate down with
+        # it in every caller pointing at this workflow. Decoupling keeps the gate
+        # unbreakable by a flaky third-party API call.
+        #
         # zizmor's own version is pinned for the same reason everything else here
         # is. Dependabot does NOT see this line (it is a `run:`, not a `uses:`),
         # so bump it by hand — same convention as the trivy-action refs above.
@@ -251,6 +259,7 @@ jobs:
         #   out of the one check that exists because opting out is the problem.
         run: |
           uvx zizmor@1.29.0 \
+            --offline \
             --format=sarif \
             --no-exit-codes \
             --no-config \
@@ -281,3 +290,38 @@ jobs:
             zizmor.sarif
           echo "::error::$count unpinned action reference(s). Pin each to a 40-character commit SHA with a trailing version comment, e.g. uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0"
           exit 1
+
+      # Online audits (impostor-commit, known-vulnerable-actions), best-effort.
+      # These need api.github.com and so cannot be trusted to complete: the
+      # default GITHUB_TOKEN's rate limit returns 403 on cross-repo pin lookups
+      # (impostor-commit reads e.g. api.github.com/repos/<action-owner>/.../git/tags/<sha>),
+      # and zizmor treats that as fatal. Kept OUT of the gate above precisely so
+      # a flaky third-party API call can never block a merge. `continue-on-error`
+      # + `always()` mean this reports when it can and is a no-op when it can't.
+      # impostor-commit findings still surface in code scanning under the
+      # `zizmor-online` category on the runs where the API cooperates.
+      - name: zizmor online audits (best-effort)
+        id: zizmor_online
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if uvx zizmor@1.29.0 \
+               --format=sarif \
+               --no-exit-codes \
+               --no-config \
+               .github > zizmor-online.sarif; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::zizmor online audits (impostor-commit, known-vulnerable-actions) did not complete — likely a GitHub API 403/rate-limit on a cross-repo pin lookup. The offline pinning gate above is authoritative and unaffected."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload zizmor online SARIF
+        if: always() && steps.zizmor_online.outputs.ok == 'true'
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@42947a340483f03ba47bb1a039b2c519aab3df85 # v3
+        with:
+          sarif_file: zizmor-online.sarif
+          category: zizmor-online
