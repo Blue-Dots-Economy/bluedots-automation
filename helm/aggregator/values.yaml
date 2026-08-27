@@ -100,8 +100,10 @@ global:
   # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
   #   - actingOrgId: signal-stack `organization` row of type `network_service`
   #     that represents aggregator-dpg itself. Sent as `x-acting-org-id` on
-  #     every admin call. Read from signal-stack DB after install:
-  #       SELECT id FROM organization WHERE type='network_service';
+  #     every admin call. Read from signal-stack DB after install — match the
+  #     SLUG too, since every integrating service (signals-search-client,
+  #     raya-voice-bot, …) also has type `network_service`:
+  #       SELECT id FROM organization WHERE type='network_service' AND slug='aggregator-dpg';
   #   - baseUrl + adminKey are wired via secret/configmap elsewhere.
   signalstack:
     actingOrgId: '' # REQUIRED before login; otherwise SIGNALSTACK_ORG_NOT_REGISTERED

@@ -17,6 +17,7 @@ locals {
   random_string_length                          = try(local.global_vars.global.random_string_length, 24)
   signalstack_admin_key_length                  = try(local.global_vars.global.signalstack_admin_key_length, 48)
   signals_search_api_key_length                 = try(local.global_vars.global.signals_search_api_key_length, 48)
+  raya_voice_bot_api_key_length                 = try(local.global_vars.global.raya_voice_bot_api_key_length, 48)
   monitoring_grafana_password_length            = try(local.global_vars.global.monitoring_grafana_password_length, 16)
 }
 
@@ -42,5 +43,6 @@ inputs = {
   random_string_length                          = local.random_string_length
   signalstack_admin_key_length                  = local.signalstack_admin_key_length
   signals_search_api_key_length                 = local.signals_search_api_key_length
+  raya_voice_bot_api_key_length                 = local.raya_voice_bot_api_key_length
   monitoring_grafana_password_length            = local.monitoring_grafana_password_length
 }

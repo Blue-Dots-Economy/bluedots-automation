@@ -272,8 +272,16 @@ echo "$ORG_ID"                               # e.g. org_59102d50-...
 Without it, aggregator login fails with `SIGNALSTACK_ORG_NOT_REGISTERED`.
 
 > The script reads the `dpg-postgres` secret and queries the shared Postgres
-> (`SELECT id FROM organization WHERE type='network_service'`). It prints only
-> the id (errors to stderr), so capture it or pipe into a `--set`.
+> (`SELECT id FROM organization WHERE type='network_service' AND slug='aggregator-dpg'`).
+> It prints only the id (errors to stderr), so capture it or pipe into a `--set`.
+>
+> **The slug filter matters.** `provision_service_users.sql` seeds one org per
+> integrating service — `aggregator-dpg`, `signals-search-client`,
+> `raya-voice-bot` — all of type `network_service`, and all with the *same*
+> `created_at` (`now()` is transaction time and they are inserted in one `DO`
+> block). Selecting on type alone is a tie that any later `UPDATE` on those rows
+> can silently flip. Override with `ORG_SLUG=<slug>` to fetch a different
+> service org.
 
 ---
 

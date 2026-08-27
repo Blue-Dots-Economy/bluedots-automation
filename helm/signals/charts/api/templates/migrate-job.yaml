@@ -63,7 +63,7 @@ spec:
           envFrom:
             {{- include "dpg-api.migrateEnvFrom" . | nindent 12 }}
       containers:
-        # Upserts the aggregator-dpg service org/user/apikey after migrate-ddl; idempotent.
+        # Upserts each service org/user/apikey after migrate-ddl; idempotent.
         - name: provision
           image: {{ .Values.migrate.image | default "postgres:16-alpine" }}
           imagePullPolicy: {{ .Values.migrate.imagePullPolicy | default "IfNotPresent" }}
@@ -86,10 +86,12 @@ spec:
               echo "postgres ready"
               : "${AGGREGATOR_DPG_API_KEY:?missing — set via the api Secret}"
               : "${SIGNALS_SEARCH_API_KEY:?missing — set via the api Secret}"
+              : "${RAYA_VOICE_BOT_API_KEY:?missing — set via the api Secret}"
               echo "provisioning service apikeys"
               PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 \
                 -v aggregator_dpg_api_key="$AGGREGATOR_DPG_API_KEY" \
                 -v signals_search_api_key="$SIGNALS_SEARCH_API_KEY" \
+                -v raya_voice_bot_api_key="$RAYA_VOICE_BOT_API_KEY" \
                 -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
                 -f /sql/provision_service_users.sql
               echo "service apikeys provisioned"

@@ -127,3 +127,9 @@ output "signals_search_api_key" {
   value       = random_password.signals_search_api_key.result
   sensitive   = true
 }
+
+output "raya_voice_bot_api_key" {
+  description = "API key the raya voice bot sends to the signals api (signals RAYA_VOICE_BOT_API_KEY)"
+  value       = random_password.raya_voice_bot_api_key.result
+  sensitive   = true
+}
