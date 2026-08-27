@@ -88,6 +88,18 @@ spec:
                   optional: true
             - name: HEALTH_PORT
               value: {{ .Values.healthPort | quote }}
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
           # /healthz endpoint (aggregator-dpg#675), not exec — the image has no shell.
           livenessProbe:
             httpGet:
