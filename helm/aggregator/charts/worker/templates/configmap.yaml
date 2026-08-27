@@ -1,14 +1,17 @@
 {{- /*
   Upstream network.json URL. Keep identical to charts/api/templates/configmap.yaml —
   duplicated because a subchart cannot use the umbrella's _helpers.tpl, and both
-  halves must resolve the same network.json.
+  halves must resolve the same network.json. Brand wins outright when set (a
+  brand folder is a full copy, not a partial override) — mirrors fetch-configs.sh.
 */ -}}
 {{- $ns := .Values.global.networkSource | default dict -}}
 {{- $networkSource := $ns.url | default "" -}}
 {{- if and (not $networkSource) $ns.repo $ns.ref -}}
-{{- $netPath := .Values.global.aggregatorNetwork -}}
-{{- if $ns.brand -}}{{- $netPath = printf "%s/%s" $netPath $ns.brand -}}{{- end -}}
-{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref $netPath ($ns.file | default "network.json") -}}
+{{- if .Values.global.aggregatorBrand -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork .Values.global.aggregatorBrand ($ns.file | default "network.json") -}}
+{{- else -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork ($ns.file | default "network.json") -}}
+{{- end -}}
 {{- end -}}
 apiVersion: v1
 kind: ConfigMap
@@ -42,3 +45,5 @@ data:
   LINK_METRICS_ROLLUP_INTERVAL_MS: "{{ .Values.cron.linkMetricsRollupIntervalMs }}"
   WATCHDOG_INTERVAL_MS: "{{ .Values.cron.watchdogIntervalMs }}"
   S3_FORCE_PATH_STYLE: "{{ .Values.global.s3.forcePathStyle }}"
+  S3_BUCKET: "{{ .Values.global.s3.bucket }}"
+  S3_REGION: "{{ .Values.global.s3.region }}"
