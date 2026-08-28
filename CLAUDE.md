@@ -149,6 +149,8 @@ The helm job also runs a **DHI mirror drift check**: it renders monitoring + com
 
 This mirrors `bash install.sh lint` but gates it per-PR. Separately, `.github/workflows/develop-pr-gate.yml` enforces the Release-Notes + doc-update PR gate (see `.claude/rules/pr-gate.md`).
 
+Security scanning runs on its own: `.github/workflows/security.yml` (PRs to `feature`/`develop`/`main`, plus a weekly cron) calls the local reusable `.github/workflows/security-scan.yml` — the same workflow the other five repos consume. Almost everything it does (Trivy, gitleaks, most zizmor audits) is **report-only** and uploads SARIF to the Security tab. The one exception is a **zizmor action-pinning gate** (#154): the `workflow-lint` job's `Pinning gate` step **fails the PR** when any workflow `uses:` a GitHub Action not pinned to a full 40-char commit SHA — **GitHub-owned `actions/*` and `github/*` included** — regardless of the `block:` input, because report-only is exactly what let unpinned refs slip in. The gate reads an **offline** zizmor run (`unpinned-uses` is an offline audit); zizmor's online audits (impostor-commit, known-vulnerable-actions) were decoupled into a separate best-effort step (#168) so a GitHub-API 403/rate-limit on a cross-repo pin lookup can't abort the run and take the deterministic gate down with it.
+
 ---
 
 ## Inspect & Debug
