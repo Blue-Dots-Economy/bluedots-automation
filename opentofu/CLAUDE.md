@@ -29,9 +29,57 @@ VPC split into **public** and **private** subnets. Public subnets host the IGW a
 
 `rds` is opt-in (`rds_*` sizing in `global-values.yaml`). Its SG allows `5432` only from the EKS cluster SG, and it shares the master password with the `random_passwords`-generated secret. **Pointing the charts at RDS is automated, not manual:** the `rds` module's `db_address` flows via `_common/output-file.hcl` → `postgres_host` into the `output-file` module, which — **only when the endpoint is non-empty** — emits `global.dataPlatform.postgresHost`, `api.postgres.host`, and `search.postgres.host` into the generated `global-cloud-values.yaml`. Since that file is layered after `global-values.yaml` via `-f` (see root `CLAUDE.md`'s values-file architecture), the RDS endpoint overrides the in-cluster Postgres default for signals + aggregator; with no RDS endpoint, the overrides are simply omitted and the in-cluster default stands. **Caveat:** app DB roles/databases must still exist on the RDS instance — the wiring points the charts at RDS but doesn't bootstrap the databases.
 
+## Generated service api keys (`random_passwords` → `output-file`)
+
+Three secrets in `global-secrets.yaml` are **raw better-auth api keys** rather than passwords or OIDC client secrets: `signalstack_admin_key` (rendered as `AGGREGATOR_DPG_API_KEY`), `signals_search_api_key`, and `raya_voice_bot_api_key`. They share a shape — `random_password`, `special = false`, length from a `*_api_key_length` knob defaulting to **48** with a **`>= 32` validation** — because the signals api migrate-job's `provision_service_users.sql` rejects anything shorter. Only the `base64url(sha256())` hash is ever stored in the database; see `helm/CLAUDE.md` → *Service apikeys* for the consuming side.
+
+The length knobs read through `try(local.global_vars.global.<name>, 48)` in `_common/random_passwords.hcl`, so they are **optional** in `global-values.yaml` — a new key needs no per-env edit. Adding one touches eight files and the pairing that bites is `modules/output-file/main.tf` ↔ `global-secrets.yaml.tfpl`: `templatefile()` renders at **apply** time, so a key referenced in the template but missing from the map passes `tofu validate` and CI, then fails only during `apply_tf_output_file`. Also add a `mock_outputs` entry in `_common/output-file.hcl` (`>= 32` chars, or a plan against empty state trips the SQL length guard).
+
+Do not conflate these with the `voice_dpg_signals_secret` / `*_client_secret` family — those are `random_id` hex Keycloak client secrets for a different auth path. `raya_voice_bot_api_key` and `voice_dpg_signals_secret` belong to the *same* voice bot on purpose and must stay separately rotatable.
+
 ## `output-file` module — where the generated values come from
 
 `output-file` is what makes `preflight` pass: it generates the two gitignored files (`global-secrets.yaml` = all secrets; `global-cloud-values.yaml` = cloud outputs + computed hosts/origins + the RDS host above). After editing config that feeds them, regenerate just these with `bash install.sh apply_tf_output_file` rather than re-running the whole apply.
+
+### One bucket, one role — the s3-export exporter shares both
+
+The signals `s3-export` CronJob used to get a dedicated pair: a private `signals-export` bucket (a `global.buckets` entry) and a write-only IRSA role `<bb>-<env>-signals-s3-export`, created in the `iam` module *only* when that bucket existed. **Both are gone.** The exporter now writes to the same `public` bucket and assumes the same `app_sa` role as the aggregator api/worker, so `global-cloud-values.yaml` emits the `s3-export` IRSA block unconditionally, right beside `aggregator-api`/`worker`, from `app_sa_role_arn` + `storage_bucket_public`.
+
+Three consequences worth knowing:
+
+- **`service_account_subjects` is now load-bearing for signals, not just the aggregator.** `app_sa`'s trust policy is a single `StringEquals` on `<oidc>:sub` against that list, so `system:serviceaccount:signals:signals-s3-export` **must** be listed or the CronJob gets `AccessDenied` from STS *inside the pod* — a clean `helm upgrade` and a green apply, then a failing job hours later at its first scheduled run. It must also match `s3-export.serviceAccount.name`, which the generated file pins to `signals-s3-export`. **Every per-deployment branch needs this entry added to its own `<env>/global-values.yaml`;** the template carries it, existing env files don't.
+- **`storage_bucket_public` is keyed by logical name, not by `type`.** The storage module's output is `try(aws_s3_bucket.this["public"].id, null)` — the bucket whose `global.buckets` *key* is `public`, whatever `type` it declares. An env that sets `public: {type: private}` gets a fully access-blocked bucket despite the name; an env that leaves it `type: public` gets an anonymous `s3:GetObject` allow on `/*`. **Check which one your env is before enabling the exporter** — in the `type: public` case the export NDJSON is world-readable, and `app_sa`'s policy is `Get/Put/Delete/List` on the whole bucket rather than the old `PutObject`-only on one prefix.
+- **Removing the bucket entry plans a destroy, and the storage module sets no `force_destroy`.** So `tofu apply` on `storage` fails with `BucketNotEmpty` while any export object remains. Copy anything worth keeping to the public bucket, empty the old bucket, then apply.
+
+## Lifecycle rules (`storage` module) — one config, two rules, and the prefix is load-bearing
+
+S3 allows exactly **one** lifecycle configuration per bucket, so both rules live in a single `aws_s3_bucket_lifecycle_configuration.this`. A second resource aimed at the same bucket would *overwrite* this one, not add to it.
+
+**`campaign-export-expiry`** deletes campaign PII exports under `campaign_export_prefix` (default `campaign-exports/`) after `global.campaignExportExpiryDays` days, so decrypted CSVs aren't retained far longer than the download link. The same knob sets the aggregator's `EXPORT_URL_TTL_SECONDS` (`× 86400`) in `helm/aggregator/templates/configmap-global.yaml`, so file expiry and link expiry can't drift — change it in one place. `EXPORT_URL_TTL_SECONDS` is read by the **worker** (`apps/worker/src/config.ts`), which gets it via `envFrom` on the umbrella global ConfigMap.
+
+**The prefix scoping is the whole safety story.** That bucket is shared: `bulk-uploads/` (raw.csv + errors.csv), `qr/` (registration QR PNGs), and the signals s3-export dump at `<network>/<instance_id>/`. A bucket-wide expiration deletes all of them. `campaign_export_prefix` therefore has a `validation` block rejecting an empty string, because `filter { prefix = "" }` is legal and silently means *the entire bucket*. The prefix must match the worker's key builder — `campaign-exports/<signalstackOrgId>/<jobId>.csv` in `aggregator-dpg` `apps/worker/src/services/campaign-process/index.ts`. **A prefix that matches nothing fails completely silently**: no error, no metric, objects simply never expire. Verify with the probe below rather than assuming.
+
+`noncurrent_version_expiration` is **unconditional**, not gated on `versioning_enabled`. The worker writes a deterministic per-job key, so a retry *overwrites* — which on a versioned bucket leaves a noncurrent version holding the same PII that the current-version rule would never reclaim. It's inert without versioning, and ungated it also covers a bucket versioned outside this module.
+
+**`abort-incomplete-multipart-upload`** is deliberately **bucket-wide** (`abortIncompleteMultipartDays`, default 7). Safe, because aborting an *incomplete* upload can never delete a completed object — only orphaned parts that are billed but unreachable. It must be unscoped: the biggest multipart producers sit outside the export prefix — the signals s3-export CronJob (boto3 multiparts large NDJSON; the retired exporter policy carried `s3:AbortMultipartUpload` for this) and bulk CSV uploads.
+
+Either knob at `0` drops its rule; both at `0` skips the resource, since S3 rejects a lifecycle configuration with no rules.
+
+### Verifying it without waiting a day
+
+Lifecycle is an asynchronous daily sweep, so you cannot watch an object vanish on demand. You *can* get S3 to tell you the computed delete date — `x-amz-expiration` comes back on any object a rule matches:
+
+```bash
+aws s3api put-object --bucket <bucket> --key campaign-exports/_probe/probe.csv --body /tmp/probe.csv
+aws s3api head-object --bucket <bucket> --key campaign-exports/_probe/probe.csv --query Expiration
+#  expiry-date="Fri, 28 Aug 2026 00:00:00 GMT", rule-id="campaign-export-expiry"
+aws s3api head-object --bucket <bucket> --key qr/<any>.png --query Expiration    # -> None (control)
+aws s3api delete-object --bucket <bucket> --key campaign-exports/_probe/probe.csv
+```
+
+Always run the **negative control** too — an object under `qr/`, `bulk-uploads/` and `<network>/` must return `None`. That is what proves the rule is scoped rather than bucket-wide.
+
+**The file always outlives the link.** S3 computes `Days` expiry as creation + N days *rounded up to the next UTC midnight*, then sweeps some time after. Measured on a real object: created 11:00 UTC with a 1-day rule → `expiry-date` of **00:00 UTC two days later, ~37h**, against a 24h link TTL. So `campaignExportExpiryDays` is a retention *floor*, never a precise deletion moment — which is why the aggregator's export email must not claim the file is deleted the instant the link dies (`campaign-process/index.ts`, `renderExportEmail`). That copy lives in `aggregator-dpg` and is a separate fix.
 
 ### Hand-entered secrets live in `<env>/secrets.yaml` (the third input file)
 

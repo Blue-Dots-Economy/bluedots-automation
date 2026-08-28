@@ -8,7 +8,7 @@ Guidance for the Helm half of the repo. Read the root `CLAUDE.md` first (the cri
 - **`common-services/`** (chart `platform`) — Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres`/`data-redis` Secrets in the `common-services` namespace. The Bitnami `postgresql` subchart runs the org **portable-pgvector** image (`ghcr.io/blue-dots-economy/postgres-pgvector`, #93) — a Postgres + pgvector + PostGIS build compiled without AVX-512 so it doesn't SIGILL on non-AVX-512 nodes; it needs the `image.*` override plus `allowInsecureImages`, since the Bitnami chart otherwise refuses a non-Bitnami image.
 - **`signals/`** (chart `dpg`) — api, ui, notification-service, search (+ search-embeddings), s3-export. Connects to the shared DBs in `common-services`. The `match-score` subchart (the external dpg-scoring service) was removed in #89 — match-score now calls signals-search `POST /v1/relevance`. The **`s3-export`** subchart (chart `dpg-s3-export`, #86) is a CronJob that dumps allowlisted **non-PII** Signals data to S3 for campaign analytics.
 - **`keycloak/`** (chart `keycloak-platform`) — the **shared** Keycloak. One instance, one realm, **both DPGs' clients**. Its own release in the `common-services` namespace (see the deadlock note below). Owns this repo's realm artefact (`charts/keycloak/files/realm.json`) plus the two realm-reconciliation scripts.
-- **`aggregator/`** (chart `aggregator-dpg`) — web (BFF), api, worker. Vendored `ingress-nginx`/`cert-manager` subcharts are **disabled** (`platform` owns them). Keycloak is no longer here.
+- **`aggregator/`** (chart `aggregator-dpg`) — web (BFF), api, worker. Vendored `ingress-nginx`/`cert-manager` subcharts are **disabled** (`platform` owns them). Keycloak is no longer here. The worker liveness probe is an `httpGet` on `/healthz` (aggregator-dpg#675), not an `exec` — the DHI-based image has no shell.
 
 Resource requests/limits (Kong `replicaCount: 2`, cert-manager, Redis, `postgresBootstrap`, metrics-server, app replicas/HPA/PDB) live in the shared `helm/global-resources.yaml`, not per-chart values.
 
@@ -129,7 +129,29 @@ secret all unchanged.
 
 ## Signals schema — applied from the api image (no vendored `schema.sql`)
 
-The signals migrate-job does **not** vendor a `schema.sql` in this repo. A `migrate-ddl` initContainer runs the **api image itself** (`node apps/api/scripts/migrate.mjs`, i.e. `db:migrate:deploy`) as the app DB role: extension **preflight** → auto-baseline (legacy cutover) → one Drizzle `migrate()` over the committed `apps/api/drizzle/` ledger (declarative tables + the raw partitioned/geo tables as custom migrations). Because the schema ships inside the image and runs from that same image, the deployed schema always matches the running api build — **parity is automatic, nothing to keep in sync here**. A second `provision` container then upserts the integrating-DPG (aggregator-dpg) apikey from the only SQL still vendored, `provision_service_users.sql`. Extensions are created upstream by `common-services` (`postgresBootstrap`) as the RDS master; the migrate step **asserts they exist and aborts loudly if not** (it never creates them — the app role is not a superuser).
+The signals migrate-job does **not** vendor a `schema.sql` in this repo. A `migrate-ddl` initContainer runs the **api image itself** (`node apps/api/scripts/migrate.mjs`, i.e. `db:migrate:deploy`) as the app DB role: extension **preflight** → auto-baseline (legacy cutover) → one Drizzle `migrate()` over the committed `apps/api/drizzle/` ledger (declarative tables + the raw partitioned/geo tables as custom migrations). Because the schema ships inside the image and runs from that same image, the deployed schema always matches the running api build — **parity is automatic, nothing to keep in sync here**. A second `provision` container then upserts the **service apikeys** from the only SQL still vendored, `provision_service_users.sql`. Extensions are created upstream by `common-services` (`postgresBootstrap`) as the RDS master; the migrate step **asserts they exist and aborts loudly if not** (it never creates them — the app role is not a superuser).
+
+### Service apikeys — adding one is a four-file change
+
+`provision_service_users.sql` seeds one org + user + `apikey` row per integrating service, hashing the raw key as `base64url(sha256(raw))` to match better-auth's `defaultKeyHasher`. **Only the hash reaches the database** — the raw key lives solely in the generated `global-secrets.yaml` and in the caller's own config. Rotation is `UPDATE … WHERE user_id`, keyed per service user, so rotating one service never disturbs another.
+
+| Service user | Key | Direction |
+|---|---|---|
+| `aggregator-dpg` | `AGGREGATOR_DPG_API_KEY` | aggregator → signals api |
+| `signals-search-client` | `SIGNALS_SEARCH_API_KEY` | signals api → signals-search `/v1/relevance` |
+| `raya-voice-bot` | `RAYA_VOICE_BOT_API_KEY` | raya voice bot → signals api |
+
+Adding another means touching **four** places or it fails in a confusing way:
+1. `charts/api/values.yaml` + umbrella `values.yaml` — declare the key under `secrets.data` (the api `secret.yaml` ranges over the whole map, so it's picked up automatically).
+2. `migrate-env.yaml`'s **`$needed` allowlist** — the migrate-env Secret is a *deny-by-default* subset of `secrets.data`. Miss this and the key is simply absent from the Job's env.
+3. `migrate-job.yaml` — the `:?missing` guard and a matching `psql -v`.
+4. the SQL — a `set_config(...)` line **outside** the `DO $$…$$` block plus a `VALUES` row. psql's `:'var'` interpolation does not expand inside dollar-quoted strings, which is why the GUC hop exists.
+
+**`RAYA_VOICE_BOT_API_KEY` is not the same credential as `secrets.voiceDpgSignalsSecret`.** Both belong to the same voice bot, but the latter is its `voice-dpg` Keycloak *client-credentials* secret (OIDC token exchange) while this is the *api-key* path. They are generated independently and rotate independently — do not "deduplicate" them.
+
+**Operational note:** the `:?missing` guards make the migrate-job — and therefore the whole `signals` release — fail if a key is absent from the api Secret. So after pulling a change that adds a service apikey, run `bash install.sh apply_tf_output_file` to regenerate `global-secrets.yaml` **before** `deploy_signals`.
+
+**Every one of these orgs is `type = 'network_service'`, and that collides with `actingOrgId`.** The org row is inserted with a hardcoded `network_service` type, and because `now()` is *transaction* time and the whole loop is one `DO $$…$$`, all of them share a byte-identical `created_at`. So `SELECT id FROM organization WHERE type='network_service' ORDER BY created_at LIMIT 1` — what `get-signalstack-org-id.sh` used to run, and what several docs told operators to run by hand — is a **tie with no deterministic winner**: a plain `UPDATE organization SET name = name` on any of those rows reorders the heap and flips the answer (verified). The script now filters on `slug` (`ORG_SLUG`, default `aggregator-dpg`, the org `actingOrgId` is defined as). **Adding a service apikey adds another `network_service` org, so never reintroduce a type-only lookup.**
 
 ## Consent config is ConfigMap-delivered (not baked into images)
 
@@ -194,6 +216,14 @@ Two caveats. It **requires aggregator-dpg#513 in the deployed image**; until the
 Once #513 is deployed, canonical can drop `source:` from the YAML entirely (it becomes `.optional()` there), making the env var the single source of truth and turning a missing value into a loud `CONFIG_PARSE_FAILED` instead of a silent fallback. Note `fetch-configs.sh`'s `warn_if_moving_ref` does **not** cover this URL — it bypasses the fetch script.
 
 
+## Aggregator onboarding modes + Signals hand-off (api-only, CONDITIONAL keys)
+
+`global.onboardingEnabled` → `AGGREGATOR_ONBOARDING_ENABLED` and `global.signalsUiUrls` → `SIGNALS_UI_URLS`, both emitted **only** by `helm/aggregator/charts/api/templates/configmap.yaml` (worker and web read neither, so they do **not** belong in `templates/configmap-global.yaml`). Chart defaults are empty strings.
+
+**These are the only conditionally-rendered keys in that ConfigMap, and that is load-bearing.** `AGGREGATOR_ONBOARDING_ENABLED` is fail-closed in the api: *unset* = all capabilities enabled, *empty string* = **nothing** enabled — every registration mode off, every public-link creation 400s. So the template wraps the key in `{{- if .Values.global.onboardingEnabled }}` and omits it when unconfigured; an unconditional `{{ … | quote }}` on the empty default would render `""` and brick onboarding everywhere the chart lands. aggregator-dpg's `docker-compose.yml` already hit this with `${AGGREGATOR_ONBOARDING_ENABLED:-}` and had to switch to a value-less passthrough. `SIGNALS_UI_URLS` is conditional for consistency (an empty value there is inert, not dangerous). Do not "tidy" either back into an unconditional line.
+
+`signalsUiUrls` is `domain=url` pairs, one per network domain, each pointing at **that domain's own Signals UI login page** (normally `<origin>/auth/login`) — **never** a Keycloak authorization URL, which embeds one-time `state`/PKCE values bound to the browser that generated it and fails for every other user.
+
 ## Org hierarchy flag
 
 `global.orgHierarchyEnabled` (in `global-values.yaml`, default `true`) is emitted as `ORG_HIERARCHY_ENABLED` to the aggregator **web + api** pods via their ConfigMaps (`helm/aggregator/charts/{web,api}/templates/configmap.yaml`). There's no default in the aggregator chart's own `values.yaml`, so the global value must be present (it is) — set it identically for web and api or the two halves disagree.
@@ -204,7 +234,9 @@ The single shared Redis (`common-services/values.yaml`, `redis.commonConfigurati
 
 ## Image pull secrets
 
-Private images at `ghcr.io/blue-dots-economy/*` need a `ghcr-pull` secret per namespace. `create_namespaces_and_secrets` creates it in each via `rotate-ghcr-pull.sh` using `$GHCR_PAT` (a `read:packages` token). Some images also live under `vinodbbhorge/*` (Docker Hub). **Never commit a PAT.**
+Private images at `ghcr.io/blue-dots-economy/*` need a `ghcr-pull` secret per namespace. `create_namespaces_and_secrets` creates it in each via `rotate-ghcr-pull.sh` using `$GHCR_PAT` (a `read:packages` token). **Never commit a PAT.**
+
+Some defaults used to point at a personal Docker Hub namespace (`vinodbbhorge/*`), which meant a fresh environment could deploy an artifact built outside the org; those are gone. That does not mean every rendered image lives under `ghcr.io/blue-dots-economy/*` — official upstream images with no DHI equivalent (`kong:3.9`, `postgres:16-alpine` in the signals migrate Job, `alpine:3.20` in keycloak's kc-init, `alpine/socat` in rds-relay) are legitimate and stay non-org. What CI actually enforces, across all five charts: every rendered image is either on the `dhi/*` GHCR mirror, one of our own app images (already built from a DHI base in their own repo's CI — a separate provenance chain this check doesn't police), or explicitly exempted with a reason in `.github/dhi-exempt-images.txt`.
 
 ## Pod securityContexts + NetworkPolicies (#1.12)
 

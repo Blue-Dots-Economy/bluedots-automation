@@ -51,8 +51,7 @@ dependency "iam" {
   config_path                            = "../iam"
   mock_outputs_merge_strategy_with_state = "shallow"
   mock_outputs = {
-    app_sa_role_arn         = "arn:aws:iam::123456789012:role/dummy-app-sa"
-    signals_export_role_arn = ""
+    app_sa_role_arn = "arn:aws:iam::123456789012:role/dummy-app-sa"
   }
 }
 
@@ -89,6 +88,7 @@ dependency "random_passwords" {
     signals_pii_key                = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     signals_notification_secret    = "00000000000000000000000000000004"
     signals_search_api_key         = "dummy-signals-search-api-key-00000000000000"
+    raya_voice_bot_api_key         = "dummy-raya-voice-bot-api-key-0000000000000000"
     signals_instance_shared_secret = "000000000000000000000000000000000000000000000000000000000000000d"
 
     aggregator_postgres_password            = "0000000000000000000000000000000000000000000000000000000000000006"
@@ -115,13 +115,12 @@ inputs = {
   signals_network         = local.network
   signals_allowed_origins = local.signals_allowed_origins
 
-  # IAM
-  app_sa_role_arn         = dependency.iam.outputs.app_sa_role_arn
-  signals_export_role_arn = dependency.iam.outputs.signals_export_role_arn == null ? "" : dependency.iam.outputs.signals_export_role_arn
+  # IAM — one role for the aggregator api/worker AND the signals s3-export
+  # CronJob (no dedicated exporter role).
+  app_sa_role_arn = dependency.iam.outputs.app_sa_role_arn
 
-  # Storage
+  # Storage — one public bucket, likewise shared with the s3-export CronJob.
   storage_bucket_public = dependency.storage.outputs.storage_bucket_public == null ? "" : dependency.storage.outputs.storage_bucket_public
-  signals_export_bucket = try(dependency.storage.outputs.buckets["signals-export"].id, "")
 
   # RDS (managed Postgres) — endpoint hostname injected into all three chart overlays
   postgres_host = dependency.rds.outputs.db_address
@@ -138,6 +137,7 @@ inputs = {
   signals_pii_key                = dependency.random_passwords.outputs.signals_pii_key
   signals_notification_secret    = dependency.random_passwords.outputs.signals_notification_secret
   signals_search_api_key         = dependency.random_passwords.outputs.signals_search_api_key
+  raya_voice_bot_api_key         = dependency.random_passwords.outputs.raya_voice_bot_api_key
   signals_instance_shared_secret = dependency.random_passwords.outputs.signals_instance_shared_secret
 
   aggregator_postgres_password            = dependency.random_passwords.outputs.aggregator_postgres_password

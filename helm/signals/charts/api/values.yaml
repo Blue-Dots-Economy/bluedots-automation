@@ -186,6 +186,11 @@ secrets:
     SIGNALS_SEARCH_API_KEY: ""
     # Discover BFF → signals-search (signals-dpg#203); shares SIGNALS_SEARCH_API_KEY.
     SIGNALS_SEARCH_URL: ""
+    # Raw apikey for the raya voice bot calling INTO the signals api. Min 32 chars.
+    # The migrate-job upserts a SHA-256(value) hash into the better-auth `apikey`
+    # table on every install/upgrade; updating this value and re-running
+    # `helm upgrade` rotates the key in place.
+    RAYA_VOICE_BOT_API_KEY: ""
 
 # DB schema migration Job. A migrate-ddl initContainer runs the api image's
 # db:migrate:deploy (drizzle migrations + raw item/action/event SQL, all shipped

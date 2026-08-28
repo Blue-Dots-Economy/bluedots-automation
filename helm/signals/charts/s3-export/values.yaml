@@ -19,11 +19,17 @@ serviceAccount:
   create: true
   automount: false
   name: ""
-  # EKS/IRSA: role limited to s3:PutObject on the export prefix.
-  # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/signals-s3-export
+  # EKS/IRSA: in a provisioned environment this is the SHARED app_sa role (the
+  # same one the aggregator worker uses) — the generated global-cloud-values.yaml
+  # sets it, along with `name: signals-s3-export`, which must stay listed in the
+  # role's trusted service-account subjects.
+  # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/<bb>-<env>-app-sa
   annotations: {}
 
 # ── destination ──────────────────────────────────────────────────────────────
+# In a provisioned environment `bucket` is overridden to the SHARED public
+# bucket (<bb>-<env>-<account_id>-public). Set a `prefix` when export keys must
+# not sit beside other objects at that bucket's root.
 s3:
   bucket: signals-export
   prefix: ""             # empty = keys start at <network>/<instance_id>/

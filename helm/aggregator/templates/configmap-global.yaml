@@ -28,6 +28,10 @@ data:
   S3_BUCKET: {{ .Values.global.s3.bucket | quote }}
   S3_FORCE_PATH_STYLE: {{ .Values.global.s3.forcePathStyle | quote }}
   AWS_REGION: {{ .Values.global.s3.region | quote }}
+  # Campaign PII export download-link TTL (seconds), derived from the shared
+  # global.campaignExportExpiryDays so the pre-signed link expires at the same time the
+  # S3 lifecycle rule deletes the file (opentofu storage module). Default 1 day.
+  EXPORT_URL_TTL_SECONDS: {{ mul (.Values.global.campaignExportExpiryDays | default 1) 86400 | quote }}
 
   # ─── Mail (shared SMTP wiring) ───────────────────────────────────────
   MAIL_PROVIDER: {{ .Values.mail.provider | quote }}

@@ -103,3 +103,66 @@ variable "buckets" {
     error_message = "Each bucket entry must have a unique key."
   }
 }
+
+variable "campaign_export_expiry_days" {
+  description = <<-EOT
+    Days after which campaign PII export objects (under campaign_export_prefix) are deleted
+    from every bucket via a lifecycle rule, so decrypted CSVs are not retained at rest longer
+    than the short-lived download link. Should match the aggregator's EXPORT_URL_TTL_SECONDS
+    (which is this value × 86400) — both are driven by global.campaignExportExpiryDays. 0
+    disables the rule.
+  EOT
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.campaign_export_expiry_days >= 0
+    error_message = "campaign_export_expiry_days must be >= 0 (0 disables the rule)."
+  }
+}
+
+variable "campaign_export_noncurrent_days" {
+  description = <<-EOT
+    Days after which NONCURRENT versions of campaign export objects are deleted, on buckets where
+    versioning is enabled. The worker overwrites a deterministic per-job key on retry, so without
+    this the superseded version keeps the same PII after the current version expires. Inert on a
+    non-versioned bucket. 1 is the S3 minimum.
+  EOT
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.campaign_export_noncurrent_days >= 1
+    error_message = "campaign_export_noncurrent_days must be >= 1 (the S3 minimum)."
+  }
+}
+
+variable "abort_incomplete_multipart_days" {
+  description = <<-EOT
+    Days after initiation that incomplete multipart uploads are aborted, BUCKET-WIDE. Orphaned parts
+    from a failed upload are billed but unreachable, and aborting an incomplete upload can never
+    delete a completed object — so this is safe to apply unscoped, and it needs to be: the signals
+    s3-export CronJob and bulk CSV uploads both multipart outside campaign_export_prefix. 0 disables
+    the rule.
+  EOT
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = var.abort_incomplete_multipart_days >= 0
+    error_message = "abort_incomplete_multipart_days must be >= 0 (0 disables the rule)."
+  }
+}
+
+variable "campaign_export_prefix" {
+  description = "Object key prefix for campaign PII exports subject to the expiry lifecycle rule. Must match the key the aggregator worker writes: campaign-exports/<signalstackOrgId>/<jobId>.csv."
+  type        = string
+  default     = "campaign-exports/"
+
+  # An empty prefix would silently widen the DELETE rule to the whole bucket, taking
+  # bulk-uploads/, qr/ and the signals s3-export dump with it. Fail at plan time instead.
+  validation {
+    condition     = length(trimspace(var.campaign_export_prefix)) > 0
+    error_message = "campaign_export_prefix must not be empty — an empty prefix expires the ENTIRE bucket, not just campaign exports."
+  }
+}

@@ -34,7 +34,8 @@
 #
 # Overridable via env: SIGNALS_NS, CS_NS, CS_REL, PG_STS, PG_HOST, PG_PORT,
 #                      PG_DB, PG_USER, PG_SECRET, PG_SECRET_KEY, ORG_TYPE,
-#                      RELAY_NS, RELAY_DEPLOY, RELAY_CONTAINER, PSQL_IMAGE
+#                      ORG_SLUG, RELAY_NS, RELAY_DEPLOY, RELAY_CONTAINER,
+#                      PSQL_IMAGE
 #
 # Set PG_HOST explicitly to bypass detection entirely (e.g. to query a database
 # the charts do not know about).
@@ -50,6 +51,16 @@ PG_USER="${PG_USER:-dpg}"
 PG_SECRET="${PG_SECRET:-dpg-postgres}"
 PG_SECRET_KEY="${PG_SECRET_KEY:-password}"
 ORG_TYPE="${ORG_TYPE:-network_service}"
+# Which network_service org to return. provision_service_users.sql seeds one per
+# integrating service (aggregator-dpg, signals-search-client, raya-voice-bot, …),
+# ALL of type network_service and all with the same created_at — `now()` is
+# transaction time and they are inserted inside one DO block. So `ORDER BY
+# created_at LIMIT 1` alone is a tie with no deterministic winner: a plain
+# `UPDATE organization SET ...` on any of them reorders the heap and silently
+# changes the answer. Match the slug instead. aggregator-dpg is the default
+# because actingOrgId is defined as the org "that represents aggregator-dpg
+# itself" (helm/aggregator/values.yaml).
+ORG_SLUG="${ORG_SLUG:-aggregator-dpg}"
 # rds-relay carries a psql sidecar; see helm/common-services/templates/rds-relay.yaml.
 # Its Deployment is pinned to the `default` namespace by that template.
 RELAY_NS="${RELAY_NS:-default}"
@@ -64,7 +75,7 @@ log() { echo "$*" >&2; }
 command -v kubectl >/dev/null || { log "ERROR: kubectl not installed"; exit 1; }
 kubectl cluster-info >/dev/null 2>&1 || { log "ERROR: cluster unreachable; check kubeconfig"; exit 1; }
 
-SQL="SELECT id FROM organization WHERE type='${ORG_TYPE}' ORDER BY created_at LIMIT 1;"
+SQL="SELECT id FROM organization WHERE type='${ORG_TYPE}' AND slug='${ORG_SLUG}' ORDER BY created_at, id LIMIT 1;"
 
 # ── Resolve which Postgres the signals API is pointed at ─────────────────────
 # Order: explicit override -> the API's own ConfigMap (authoritative: it is the
@@ -234,8 +245,12 @@ JSON
 fi
 
 if [[ -z "$ORG_ID" ]]; then
-  log "ERROR: no organization of type '${ORG_TYPE}' found in $PG_DB on $PG_HOST."
+  log "ERROR: no organization with slug '${ORG_SLUG}' and type '${ORG_TYPE}' found"
+  log "       in $PG_DB on $PG_HOST."
   log "       Is the signals stack fully deployed + migrate-job complete?"
+  log "       If the slug is the problem, list what was seeded:"
+  log "         SELECT slug, type FROM organization WHERE type='${ORG_TYPE}';"
+  log "       and re-run with ORG_SLUG=<slug> if you need a different service org."
   if [[ "$MODE" == "rds" ]]; then
     log "       RDS notes: the app roles/databases must already exist (the"
     log "       common-services postgresBootstrap Job creates them), and the pod"

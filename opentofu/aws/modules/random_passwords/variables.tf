@@ -151,3 +151,13 @@ variable "signals_search_api_key_length" {
     error_message = "signals_search_api_key_length must be at least 32."
   }
 }
+
+variable "raya_voice_bot_api_key_length" {
+  type        = number
+  description = "Length of the raya voice bot → signals api key (signals RAYA_VOICE_BOT_API_KEY). Must be >= 32; provision_service_users.sql rejects anything shorter."
+  default     = 48
+  validation {
+    condition     = var.raya_voice_bot_api_key_length >= 32
+    error_message = "raya_voice_bot_api_key_length must be at least 32."
+  }
+}

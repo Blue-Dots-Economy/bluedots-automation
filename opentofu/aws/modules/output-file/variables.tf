@@ -40,13 +40,9 @@ variable "signals_allowed_origins" {
 # -----------------------------------------------------------------------------
 # IAM (IRSA)
 # -----------------------------------------------------------------------------
+# Single app IRSA role, annotated onto the aggregator api/worker AND the
+# signals s3-export ServiceAccounts — the exporter no longer has its own.
 variable "app_sa_role_arn" {
-  type    = string
-  default = ""
-}
-
-# Signals s3-export exporter IRSA role ARN (empty when not provisioned).
-variable "signals_export_role_arn" {
   type    = string
   default = ""
 }
@@ -54,13 +50,9 @@ variable "signals_export_role_arn" {
 # -----------------------------------------------------------------------------
 # Storage (S3)
 # -----------------------------------------------------------------------------
+# Single public bucket, shared by the aggregator and the signals s3-export
+# CronJob (which no longer has a dedicated private export bucket).
 variable "storage_bucket_public" {
-  type    = string
-  default = ""
-}
-
-# Dedicated Signals s3-export bucket name (empty when not provisioned).
-variable "signals_export_bucket" {
   type    = string
   default = ""
 }
@@ -87,6 +79,12 @@ variable "signals_search_api_key" {
   type        = string
   sensitive   = true
   description = "API key the signals api sends to signals-search /v1/relevance as x-api-key (signals SIGNALS_SEARCH_API_KEY)"
+}
+
+variable "raya_voice_bot_api_key" {
+  type        = string
+  sensitive   = true
+  description = "API key the raya voice bot sends to the signals api as x-api-key (signals RAYA_VOICE_BOT_API_KEY)"
 }
 
 # ─── Signals notification service ─────────────────────────────────────────

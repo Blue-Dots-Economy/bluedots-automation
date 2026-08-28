@@ -66,3 +66,43 @@ data:
   S3_FORCE_PATH_STYLE: "{{ .Values.global.s3.forcePathStyle }}"
   ORG_HIERARCHY_ENABLED: "{{ .Values.global.orgHierarchyEnabled }}"
   SUPPORT_EMAIL: "{{ .Values.supportEmail }}"
+{{- /*
+  Onboarding capability allow-list (aggregator-dpg#663, issue #637) and the
+  Signals UI hand-off (aggregator-dpg#653/#654, issues #652/#635). Both are
+  API-ONLY -- the worker and web read neither, which is why they live here and
+  not in the umbrella's configmap-global.yaml.
+
+  BOTH KEYS ARE RENDERED CONDITIONALLY, ON PURPOSE. This is the only place in
+  this ConfigMap that does so, so it will look out of place -- please leave it.
+
+  AGGREGATOR_ONBOARDING_ENABLED is fail-closed in the api:
+    unset / key absent  -> ALL capabilities enabled (the api's default)
+    "form" / "form,voice" -> only the listed modes
+    ""  (empty string!) -> NOTHING enabled: every registration mode is off and
+                           every public-link creation fails with a 400
+  So an unconditional `{{ .Values.global.onboardingEnabled | quote }}` would emit
+  AGGREGATOR_ONBOARDING_ENABLED: "" on the empty chart default and disable
+  onboarding in every environment this chart touches. aggregator-dpg's
+  docker-compose.yml hit exactly this with `${AGGREGATOR_ONBOARDING_ENABLED:-}`
+  and had to be changed to a value-less passthrough. Omitting the key is the fix.
+
+  SIGNALS_UI_URLS is conditional for consistency and to keep the rendered
+  ConfigMap clean; an empty value there is inert rather than dangerous.
+
+  These comments are Helm comments, not YAML comments, so they are stripped from
+  the render -- a `#` block here would leave the key name in the output even when
+  the key itself is omitted, which defeats the point of the conditional.
+*/}}
+{{- if .Values.global.onboardingEnabled }}
+  # Registration modes this deployment offers: form, voice (bulk is reserved and
+  # gates nothing yet). Unset = all modes; empty = none, so the key is omitted
+  # rather than rendered empty. See values.yaml global.onboardingEnabled.
+  AGGREGATOR_ONBOARDING_ENABLED: {{ .Values.global.onboardingEnabled | quote }}
+{{- end }}
+{{- if .Values.global.signalsUiUrls }}
+  # `domain=url` pairs, one per network domain, each pointing at THAT domain's own
+  # Signals UI login page (<origin>/auth/login) -- never a Keycloak authorization
+  # URL, which embeds one-time state/PKCE values bound to a single browser.
+  # Drives the "Already Registered - Sign In" chooser and post-submit redirect.
+  SIGNALS_UI_URLS: {{ .Values.global.signalsUiUrls | quote }}
+{{- end }}

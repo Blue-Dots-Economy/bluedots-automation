@@ -39,6 +39,10 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.healthPort }}
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: {{ include "worker.globalConfigMap" . }}
@@ -82,16 +86,28 @@ spec:
                   name: {{ include "worker.secretName" . }}
                   key: SIGNALSTACK_ADMIN_KEY
                   optional: true
+            - name: HEALTH_PORT
+              value: {{ .Values.healthPort | quote }}
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+          # /healthz endpoint (aggregator-dpg#675), not exec — the image has no shell.
           livenessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - pgrep -f "node" >/dev/null || exit 1
-            initialDelaySeconds: 30
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
