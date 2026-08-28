@@ -224,6 +224,51 @@ Once #513 is deployed, canonical can drop `source:` from the YAML entirely (it b
 
 `signalsUiUrls` is `domain=url` pairs, one per network domain, each pointing at **that domain's own Signals UI login page** (normally `<origin>/auth/login`) — **never** a Keycloak authorization URL, which embeds one-time `state`/PKCE values bound to the browser that generated it and fails for every other user.
 
+## Token `azp` allow-lists — fail-OPEN, the mirror image of the onboarding flag
+
+`global.keycloakAllowedAzp` → `KEYCLOAK_ALLOWED_AZP` and `global.campaignManagerAllowedAzp` → `CAMPAIGN_MANAGER_ALLOWED_AZP`, both emitted **only** by `helm/aggregator/charts/api/templates/configmap.yaml` (web and worker read neither). They client-scope token verification on top of the issuer check: `azp` is the client a token was minted for, so an allow-list stops a token issued to a *different* client in the same shared realm being replayed against this API. The second one **replaces** the first on `/v1/campaign/*` (export, email, voice, dump), scoping those routes to the external `campaign-manager` client.
+
+**They are rendered unconditionally, and that is the opposite of `AGGREGATOR_ONBOARDING_ENABLED` two sections up — deliberately.** `assertAllowedAzp` returns early on an empty list (`if (allow.length === 0) return; // gate disabled when unconfigured`), so these are **fail-open**: a blank value silently *removes* the check rather than denying everything. An omitted-when-empty conditional would therefore be the dangerous choice here, which is why both carry real defaults in `helm/aggregator/values.yaml` instead of empty strings. The onboarding flag is fail-*closed* and must be omitted. Two adjacent keys, opposite treatment, for opposite reasons — don't "make them consistent".
+
+`campaignManagerAllowedAzp` cannot un-gate even if blanked (the app falls back to the literal `campaign-manager` rather than returning an empty list, precisely because that route is the most sensitive). It is still set explicitly so the deployed value is visible in the rendered ConfigMap instead of implied by whichever image tag is running. `keycloakAllowedAzp`'s three ids — `aggregator-portal`, `aggregator-api`, `aggregator-bff` — are the clients the shared realm defines for this DPG; rename one there without updating this list and every exchange fails closed with `AzpNotAllowedError`.
+
+## Signals non-PII dump — a cross-RELEASE key contract nothing validates
+
+`GET /v1/campaign/dump` pre-signs the Signals non-PII snapshot so the campaign manager needs no S3 credentials of its own. The catch is that the objects are written by a **different helm release**: the signals `s3-export` CronJob, at three fixed keys overwritten in place every run (no manifest, no dated run folder):
+
+```
+[<prefix>/]<network>/<instance_id>/{user,items,item_actions}.ndjson.gz
+```
+
+So the key root is **configured on both sides and never probed**. Three things must line up, and **none of them fails the deploy** — both releases install green and the route returns `404 DUMP_NOT_AVAILABLE` at first call, possibly hours later:
+
+| aggregator (reads) | signals (writes) |
+|---|---|
+| `global.campaignDumpInstanceId` → `CAMPAIGN_DUMP_INSTANCE_ID` | `s3-export.instances[].id` → `INSTANCE_ID` |
+| `global.campaignDumpPrefix` → `CAMPAIGN_DUMP_PREFIX` | `s3-export.s3.prefix` → `S3_PREFIX` |
+| `global.s3.bucket` → `S3_BUCKET` | `s3-export.s3.bucket` |
+
+**Bind the instance id to a single YAML anchor in `<env>/global-values.yaml`** (`_s3_export_instance_id`, consumed by both keys) — it is the only mechanism that can keep two separate releases equal, since Helm cannot see across them. The bucket needs no per-env entry: `global-cloud-values.yaml` pins both sides to the generated `public` bucket (see `opentofu/CLAUDE.md` → *One bucket, one role*).
+
+`<network>` is **not** configurable — the api reads it from the resolved `aggregator.config.yaml`/`network.json` (`getNetworkConfig().network.id`), so it cannot drift from what the app actually serves. Note that it is the network **id inside network.json**, not `global.aggregatorNetwork` and not the brand: with `_network: blue_dot` and an exporter instance of `up-gzb` the key root is `blue_dot/up-gzb/`, even though the *brand* is also `up-gzb`. Do not collapse the instance-id anchor onto `*brand`.
+
+`CAMPAIGN_DUMP_INSTANCE_ID` has **no default and is safe to render empty** — the route returns `503 DUMP_NOT_CONFIGURED` (reason `CAMPAIGN_DUMP_INSTANCE_ID_UNSET`) and nothing else in the API is affected, so deployments with no campaign manager need no value. That is why it is a blank chart default rather than a `fail()`.
+
+## `RAYA_*` — the two keys that crash the worker when rendered EMPTY
+
+The outbound leg of the campaign voice channel (worker → Raya's hosted API). Both are **worker-only**; the api submits voice jobs but never dials out, so neither belongs in `templates/configmap-global.yaml`.
+
+**Empty is not the same as absent for either of these, and getting it wrong takes down the whole worker — every queue, not just voice.** The worker validates its entire env through one `ConfigSchema.parse(process.env)` at boot:
+
+- `RAYA_BASE_URL: z.string().url().default('https://v1.getraya.app/api')` — `.default()` applies only to an **absent** key, and `""` is not a valid URL. So `global.rayaBaseUrl` is rendered **conditionally** in `charts/worker/templates/configmap.yaml`; omitting the key is what lets the app default apply. Set it only for a non-prod Raya.
+- `RAYA_API_KEY: z.string().min(1).optional()` — `.optional()` admits `undefined` but **not** `""`. So `templates/secrets.yaml` renders this key **conditionally** (`{{- with .Values.secrets.rayaApiKey }}`), the only conditional key in that Secret. Every other key there is safe to write empty because its consumer reads `""` as "feature off"; this one is not.
+
+The worker deployment's `secretKeyRef` carries `optional: true`, and **that only covers a key ABSENT from the Secret, never one present-and-empty** — so the `with` guard in the Secret and the `optional: true` in the deployment are a pair and must change together. Unset is the correct "no Raya configured" state: the provider asserts the key **lazily**, so voice jobs still accept with `202` and fail at dispatch with a named `ConfigError` while every other queue runs normally.
+
+`secrets.rayaApiKey` is **deliberately not plumbed through** the `secrets.yaml` → `output-file` → `global-secrets.yaml` chain that `smtpPassword` uses. Nothing generates it, so there is no placeholder to rotate and no unused credential sitting in a generated file; supply it out of band when a deployment actually enables voice (`--set secrets.rayaApiKey=…`, or a pre-created `global.existingSecret` carrying a `RAYA_API_KEY` key).
+
+**`RAYA_API_KEY` is not signals' `RAYA_VOICE_BOT_API_KEY`.** That one is *inbound* (the raya bot → the signals api, a better-auth apikey generated by `random_passwords`), and neither is `secrets.voiceDpgSignalsSecret`, the same bot's Keycloak client-credentials secret. Three separate values for one vendor, each independently rotatable — see *Service apikeys* above.
+
 ## Org hierarchy flag
 
 `global.orgHierarchyEnabled` (in `global-values.yaml`, default `true`) is emitted as `ORG_HIERARCHY_ENABLED` to the aggregator **web + api** pods via their ConfigMaps (`helm/aggregator/charts/{web,api}/templates/configmap.yaml`). There's no default in the aggregator chart's own `values.yaml`, so the global value must be present (it is) — set it identically for web and api or the two halves disagree.

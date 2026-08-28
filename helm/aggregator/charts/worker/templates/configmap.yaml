@@ -50,3 +50,29 @@ data:
   S3_FORCE_PATH_STYLE: "{{ .Values.global.s3.forcePathStyle }}"
   S3_BUCKET: "{{ .Values.global.s3.bucket }}"
   S3_REGION: "{{ .Values.global.s3.region }}"
+{{- /*
+  Raya voice provider base URL (campaign voice channel). WORKER-ONLY — the api
+  submits voice jobs but never dials out, so this does not belong in the
+  umbrella's configmap-global.yaml. The API KEY is a secret and arrives via the
+  umbrella Secret (see the deployment's RAYA_API_KEY env), not from here.
+
+  RENDERED CONDITIONALLY, AND THAT IS LOAD-BEARING. The worker parses it as
+  `z.string().url().default('https://v1.getraya.app/api')`, and "" is not a
+  valid URL — `.default()` only applies to an ABSENT key. So an unconditional
+  `RAYA_BASE_URL: "{{ ... }}"` on the empty chart default emits `""`, fails
+  ConfigSchema.parse(process.env) at boot, and CrashLoopBackOffs the entire
+  worker — every queue (bulk rows, exports, cron, link rollups), not just voice.
+  Omitting the key is what lets the app's own default apply. Set the value only
+  for a non-prod Raya endpoint.
+
+  Same trap, same shape as AGGREGATOR_ONBOARDING_ENABLED in the api ConfigMap,
+  for a different reason: there an empty string is a VALID value with dangerous
+  semantics, here it is an INVALID value that refuses to boot. Both are fixed by
+  omitting the key rather than rendering it blank.
+
+  Helm comment, not a YAML comment, so it is stripped from the render — a `#`
+  block here would leave text in the output even when the key is omitted.
+*/}}
+{{- if .Values.global.rayaBaseUrl }}
+  RAYA_BASE_URL: {{ .Values.global.rayaBaseUrl | quote }}
+{{- end }}
