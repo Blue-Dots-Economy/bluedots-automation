@@ -463,14 +463,20 @@ search:
 # instances sharing one DB must deploy only one entry. DATABASE_URL secrets:
 # pre-create and reference via existingDatabaseSecret (preferred), or pass
 # databaseUrl via --set at install time — never commit it.
+#
+# Destination + IRSA are NOT set here in a provisioned environment: the
+# generated global-cloud-values.yaml layers the SHARED public bucket and the
+# SHARED app_sa role (the aggregator worker's role) over these defaults. The
+# exporter has no dedicated bucket or role.
 s3-export:
   enabled: false
   s3:
     bucket: signals-export
     region: ap-south-1
   # serviceAccount:
+  #   name: signals-s3-export
   #   annotations:
-  #     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/signals-s3-export
+  #     eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/<bb>-<env>-app-sa
   instances: []
   #  - id: blue_dot_up
   #    network: blue_dot

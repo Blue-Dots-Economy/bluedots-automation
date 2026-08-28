@@ -73,8 +73,6 @@ resource "local_sensitive_file" "global_cloud_values" {
     cloud_storage_region    = var.cloud_storage_region
     storage_bucket_public   = var.storage_bucket_public
     app_sa_role_arn         = var.app_sa_role_arn
-    signals_export_role_arn = var.signals_export_role_arn
-    signals_export_bucket   = var.signals_export_bucket
     signals_public_hosts    = var.signals_public_hosts
     signals_allowed_origins = var.signals_allowed_origins
     signals_network         = var.signals_network
