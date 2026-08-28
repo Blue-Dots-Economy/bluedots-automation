@@ -128,3 +128,14 @@ resource "random_password" "signals_search_api_key" {
   length  = var.signals_search_api_key_length
   special = false
 }
+
+# Raw api key the raya voice bot sends to the signals api as x-api-key. Same
+# shape and seeding path as signalstack_admin_key above: the api migrate-job
+# hashes it into the better-auth `apikey` table via provision_service_users.sql,
+# so only the hash reaches signals. Distinct from voice_dpg_signals_secret (the
+# `voice-dpg` Keycloak client-credentials secret) — that authenticates the same
+# bot over OIDC, this one over the api-key path, and the two rotate separately.
+resource "random_password" "raya_voice_bot_api_key" {
+  length  = var.raya_voice_bot_api_key_length
+  special = false
+}

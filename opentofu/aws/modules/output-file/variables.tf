@@ -81,6 +81,12 @@ variable "signals_search_api_key" {
   description = "API key the signals api sends to signals-search /v1/relevance as x-api-key (signals SIGNALS_SEARCH_API_KEY)"
 }
 
+variable "raya_voice_bot_api_key" {
+  type        = string
+  sensitive   = true
+  description = "API key the raya voice bot sends to the signals api as x-api-key (signals RAYA_VOICE_BOT_API_KEY)"
+}
+
 # ─── Signals notification service ─────────────────────────────────────────
 variable "notification_gmail_user" {
   type    = string
