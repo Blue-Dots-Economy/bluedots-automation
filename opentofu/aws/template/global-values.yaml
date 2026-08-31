@@ -66,6 +66,27 @@ _keycloak_realm: &keycloak_realm "bluedots"
 _network: &network "blue_dot"
 _brand: &brand ""
 
+# ── Signals instance id — the s3-export CronJob AND the aggregator dump API ───
+# ONE anchor, consumed twice, because the two halves are a silent contract:
+#   * signals  s3-export.instances[].id  -> the CronJob's INSTANCE_ID, which is
+#     the key segment it WRITES:  <network>/<instance_id>/<table>.ndjson.gz
+#   * aggregator global.campaignDumpInstanceId -> CAMPAIGN_DUMP_INSTANCE_ID, the
+#     key segment the dump API READS.
+# They are separate helm releases, so nothing but this anchor can keep them
+# equal — and a mismatch does not fail the deploy. Both charts install green and
+# `GET /v1/campaign/dump` then returns 404 DUMP_NOT_AVAILABLE for a key root
+# that simply has no objects under it. Never set either side by hand.
+#
+# EMPTY BY DEFAULT, which is the safe no-op: `s3-export:` at the bottom of this
+# file ships disabled, and an empty instance id makes every dump call return 503
+# DUMP_NOT_CONFIGURED instead of 404-ing against a guessed key root. Set it here
+# FIRST when enabling the exporter — both consumers then pick it up at once.
+#
+# NOTE this is the instance id, NOT the brand. They may coincidentally hold the
+# same string (e.g. both "up-gzb" on a branded deploy), which is exactly why they
+# must not be collapsed onto *brand.
+_s3_export_instance_id: &s3_export_instance_id ""
+
 # Which state's college/institute list backs the UI's reference-autocomplete
 # field: "ka" | "up". Feeds ui.runtimeConfig.VITE_COLLEGE_DATASET below, which is
 # the single knob: it selects both the dataset the UI requests and the one file
@@ -293,6 +314,47 @@ global:
     realm: *keycloak_realm
     publicBaseUrl: ''   # leave empty to use https://<aggregator_host>/auth
     internalBaseUrl: http://keycloak-keycloak.common-services.svc.cluster.local:8080/auth
+
+  # ── Token `azp` allow-lists (aggregator api only) ──────────────────────────
+  # Which Keycloak CLIENT a token was minted for must be allow-listed, on top of
+  # the issuer check. Both are FAIL-OPEN in the app — `assertAllowedAzp` returns
+  # early on an empty list — so blanking either one silently REMOVES the check
+  # rather than tightening it. Keep them populated.
+  #
+  # These three client ids come from the shared realm this cluster imports
+  # (_keycloak_realm above, rendered by the keycloak release). Rename a client
+  # there without updating this list and every exchange fails closed with
+  # AzpNotAllowedError; drop one from this list and that client is locked out.
+  keycloakAllowedAzp: "aggregator-portal,aggregator-api,aggregator-bff"
+  # REPLACES the list above on /v1/campaign/* only (export, email, voice, dump),
+  # scoping the campaign routes to the external campaign-manager client. Matches
+  # the app's own fallback; set explicitly so the deployed value is visible in
+  # the ConfigMap rather than implied by whichever image tag is running.
+  campaignManagerAllowedAzp: "campaign-manager"
+
+  # ── Signals non-PII dump download API (aggregator api only) ────────────────
+  # GET /v1/campaign/dump pre-signs the three objects the SIGNALS s3-export cron
+  # writes, so the campaign manager needs no S3 credentials of its own:
+  #     [<prefix>/]<network>/<instance_id>/{user,items,item_actions}.ndjson.gz
+  # in the bucket at global.s3.bucket. <network> is read from the deployed
+  # aggregator.config.yaml / network.json, not from env, so it cannot drift.
+  #
+  # Three things must line up with the `s3-export:` block at the bottom of this
+  # file, and NONE of them fails the deploy if wrong — a mismatch is a 404 at
+  # first call, hours later:
+  #   1. instance id -> anchored, see _s3_export_instance_id. Empty by default
+  #      (exporter ships disabled): every dump call returns 503
+  #      DUMP_NOT_CONFIGURED, which is the intended no-op, not a fault.
+  #   2. prefix      -> must equal s3-export.s3.prefix. Both empty by default,
+  #      which is the exporter's own default (keys start at the <network>
+  #      segment). If DevOps sets a prefix on the cron, change BOTH in the same
+  #      window.
+  #   3. bucket      -> both sides are pinned to the generated `public` bucket
+  #      by global-cloud-values.yaml (opentofu "one bucket, one role"), so there
+  #      is nothing to set here — but verify it after any storage change.
+  campaignDumpInstanceId: *s3_export_instance_id
+  campaignDumpPrefix: ""
+
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
   # Deliver aggregator.config.yaml (network binding, brand strings, domain labels,
@@ -597,7 +659,11 @@ s3-export:
   enabled: false
   networks:
     - blue_dot
+  # `id` is the key segment this cron WRITES and the aggregator dump API READS
+  # (global.campaignDumpInstanceId). Set _s3_export_instance_id at the top of this
+  # file and reference the anchor from BOTH places — never type the id twice, and
+  # never uncomment the entry below while the anchor is still empty.
   instances: []
-  #  - id: blue_dot_dev
-  #    network: blue_dot
+  #  - id: *s3_export_instance_id
+  #    network: *network
   #    schedule: "0 0,12 * * *"

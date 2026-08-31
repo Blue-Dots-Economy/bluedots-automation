@@ -605,6 +605,10 @@ function lint() {
     # Realm content invariants — no localhost redirects, no test users, org_owner
     # present, all 7 clients, gate scoped to the portal. See scripts/assert-realm.sh.
     bash "$REPO_ROOT/scripts/assert-realm.sh"
+    # Shell invariants that `bash -n` cannot see — currently a commented-out flag
+    # parked inside a `\`-continued command, which silently truncates that command's
+    # arguments. Checks the shared scripts AND this env's own install.sh.
+    bash "$REPO_ROOT/scripts/assert-shell.sh"
     # Aggregator secrets are guarded (aggregator.requireSecret fails the render on
     # empty / `change-me` placeholders). A bare `helm lint` has no real creds, so
     # point it at a placeholder existingSecret to skip the secret block — a real

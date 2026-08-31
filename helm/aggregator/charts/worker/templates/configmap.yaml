@@ -1,20 +1,17 @@
 {{- /*
   Upstream network.json URL. Keep identical to charts/api/templates/configmap.yaml —
   duplicated because a subchart cannot use the umbrella's _helpers.tpl, and both
-  halves must resolve the same network.json.
-
-  The brand path segment comes from networkSource.brand (explicit opt-in), NEVER
-  from global.aggregatorBrand — a templated URL cannot 404-fall-back the way
-  fetch-configs.sh's try_fetch does, so deriving it from aggregatorBrand breaks
-  every branded deploy whose schemas folder carries no network.json. Brand wins
-  outright when networkSource.brand IS set. See the api copy + values.yaml.
+  halves must resolve the same network.json. Brand wins outright when set (a
+  brand folder is a full copy, not a partial override) — mirrors fetch-configs.sh.
 */ -}}
 {{- $ns := .Values.global.networkSource | default dict -}}
 {{- $networkSource := $ns.url | default "" -}}
 {{- if and (not $networkSource) $ns.repo $ns.ref -}}
-{{- $netPath := .Values.global.aggregatorNetwork -}}
-{{- if $ns.brand -}}{{- $netPath = printf "%s/%s" $netPath $ns.brand -}}{{- end -}}
-{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref $netPath ($ns.file | default "network.json") -}}
+{{- if .Values.global.aggregatorBrand -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork .Values.global.aggregatorBrand ($ns.file | default "network.json") -}}
+{{- else -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork ($ns.file | default "network.json") -}}
+{{- end -}}
 {{- end -}}
 apiVersion: v1
 kind: ConfigMap
@@ -50,3 +47,29 @@ data:
   S3_FORCE_PATH_STYLE: "{{ .Values.global.s3.forcePathStyle }}"
   S3_BUCKET: "{{ .Values.global.s3.bucket }}"
   S3_REGION: "{{ .Values.global.s3.region }}"
+{{- /*
+  Raya voice provider base URL (campaign voice channel). WORKER-ONLY — the api
+  submits voice jobs but never dials out, so this does not belong in the
+  umbrella's configmap-global.yaml. The API KEY is a secret and arrives via the
+  umbrella Secret (see the deployment's RAYA_API_KEY env), not from here.
+
+  RENDERED CONDITIONALLY, AND THAT IS LOAD-BEARING. The worker parses it as
+  `z.string().url().default('https://v1.getraya.app/api')`, and "" is not a
+  valid URL — `.default()` only applies to an ABSENT key. So an unconditional
+  `RAYA_BASE_URL: "{{ ... }}"` on the empty chart default emits `""`, fails
+  ConfigSchema.parse(process.env) at boot, and CrashLoopBackOffs the entire
+  worker — every queue (bulk rows, exports, cron, link rollups), not just voice.
+  Omitting the key is what lets the app's own default apply. Set the value only
+  for a non-prod Raya endpoint.
+
+  Same trap, same shape as AGGREGATOR_ONBOARDING_ENABLED in the api ConfigMap,
+  for a different reason: there an empty string is a VALID value with dangerous
+  semantics, here it is an INVALID value that refuses to boot. Both are fixed by
+  omitting the key rather than rendering it blank.
+
+  Helm comment, not a YAML comment, so it is stripped from the render — a `#`
+  block here would leave text in the output even when the key is omitted.
+*/}}
+{{- if .Values.global.rayaBaseUrl }}
+  RAYA_BASE_URL: {{ .Values.global.rayaBaseUrl | quote }}
+{{- end }}
