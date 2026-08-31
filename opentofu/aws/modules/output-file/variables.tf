@@ -240,6 +240,11 @@ variable "voice_dpg_signals_secret" {
   sensitive = true
 }
 
+variable "campaign_manager_secret" {
+  type      = string
+  sensitive = true
+}
+
 variable "aggregator_kc_bootstrap_admin_password" {
   type      = string
   sensitive = true

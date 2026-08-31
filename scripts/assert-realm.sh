@@ -59,9 +59,9 @@ for role in org_owner signals_participant signals_admin; do
   fi
 done
 
-# ── A4. All seven clients, both DPGs ─────────────────────────────────────────
+# ── A4. All eight clients, both DPGs ─────────────────────────────────────────
 for client in aggregator-portal aggregator-api aggregator-bff \
-              signals-ui signals-api aggregator-dpg voice-dpg; do
+              signals-ui signals-api aggregator-dpg voice-dpg campaign-manager; do
   if jq -e --arg c "$client" '[.clients[].clientId] | index($c) != null' "$REALM_FILE" >/dev/null; then
     pass "client present: $client"
   else
@@ -79,14 +79,30 @@ else
   fail "signals-ui login_theme is '$theme', expected 'signals'"
 fi
 
-# ── A6. The entitlement gate is scoped to the portal, and only the portal ────
-# Too few bindings = the gate fell off aggregator-portal. Too many = it leaked
-# onto another client's login path, e.g. signals'.
-gated=$(q '[.clients[] | select((.authenticationFlowBindingOverrides // {}) != {}) | .clientId] | join(",")')
-if [ "$gated" = "aggregator-portal" ]; then
-  pass "flow-binding override on aggregator-portal only"
+# ── A6. Flow-binding overrides are on exactly the two clients that need one ──
+# Too few = a binding fell off. Too many = one leaked onto another client's
+# login path, e.g. signals'. Kept as an exact allow-list rather than a
+# contains-check for that reason.
+#   aggregator-portal -> aggregator-portal-browser (adds the entitlement gate)
+#   campaign-manager  -> aggregator-otp-browser    (plain OTP, no portal gate)
+gated=$(q '[.clients[] | select((.authenticationFlowBindingOverrides // {}) != {}) | .clientId] | sort | join(",")')
+if [ "$gated" = "aggregator-portal,campaign-manager" ]; then
+  pass "flow-binding overrides on aggregator-portal + campaign-manager only"
 else
-  fail "expected flow-binding override on aggregator-portal only, found: '${gated:-none}'"
+  fail "expected flow-binding overrides on aggregator-portal + campaign-manager, found: '${gated:-none}'"
+fi
+
+# ── A6b. campaign-manager must NOT inherit the portal entitlement gate ───────
+# Campaign-manager coordinators hold no portal entitlement, so binding them to
+# aggregator-portal-browser would lock them out. It must point at the plain OTP
+# browser flow — which is also what makes Keycloak ask for an emailed code
+# instead of a password these users do not have.
+otp_id=$(q '[.authenticationFlows[] | select(.alias=="aggregator-otp-browser") | .id] | first // ""')
+cm_bind=$(q '[.clients[] | select(.clientId=="campaign-manager") | .authenticationFlowBindingOverrides.browser] | first // ""')
+if [ -n "$otp_id" ] && [ "$cm_bind" = "$otp_id" ]; then
+  pass "campaign-manager bound to aggregator-otp-browser (not the portal gate)"
+else
+  fail "campaign-manager browser binding '$cm_bind' != aggregator-otp-browser id '$otp_id'"
 fi
 
 # ── A7. Realm name stays templated ───────────────────────────────────────────
@@ -114,7 +130,8 @@ fi
 # unset vars). Catching it here turns that into a CI failure instead.
 KNOWN='__KEYCLOAK_REALM__ __PUBLIC_BASE_URL__ __BRAND_LONG_NAME__
 __AGGREGATOR_API_SECRET__ __AGGREGATOR_PORTAL_SECRET__ __AGGREGATOR_BFF_SECRET__
-__SIGNALS_API_SECRET__ __SIGNALSTACK_CLIENT_SECRET__ __VOICE_DPG_SIGNALS_SECRET__
+__SIGNALS_API_SECRET__ __SIGNALSTACK_CLIENT_SECRET__ __VOICE_DPG_SIGNALS_SECRET__ __CAMPAIGN_MANAGER_SECRET__
+__CAMPAIGN_MANAGER_REDIRECT_URIS__
 __SMTP_HOST__ __SMTP_PORT__ __SMTP_FROM__ __SMTP_FROM_DISPLAY__ __SMTP_AUTH__
 __SMTP_SSL__ __SMTP_STARTTLS__ __SMTP_USER__ __SMTP_PASSWORD__'
 unknown=""
