@@ -36,6 +36,7 @@ resource "local_sensitive_file" "global_secrets" {
     signals_api_client_secret               = var.signals_api_client_secret
     signalstack_client_secret               = var.signalstack_client_secret
     voice_dpg_signals_secret                = var.voice_dpg_signals_secret
+    campaign_manager_secret                 = var.campaign_manager_secret
     aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
     aggregator_keycloak_admin_client_secret = var.aggregator_keycloak_admin_client_secret
     aggregator_approval_token_secret        = var.aggregator_approval_token_secret
@@ -47,6 +48,7 @@ resource "local_sensitive_file" "global_secrets" {
     signals_pii_key                         = var.signals_pii_key
     signals_notification_secret             = var.signals_notification_secret
     signals_search_api_key                  = var.signals_search_api_key
+    raya_voice_bot_api_key                  = var.raya_voice_bot_api_key
     signals_instance_shared_secret          = var.signals_instance_shared_secret
     notification_gmail_user                 = var.notification_gmail_user
 
@@ -73,8 +75,6 @@ resource "local_sensitive_file" "global_cloud_values" {
     cloud_storage_region    = var.cloud_storage_region
     storage_bucket_public   = var.storage_bucket_public
     app_sa_role_arn         = var.app_sa_role_arn
-    signals_export_role_arn = var.signals_export_role_arn
-    signals_export_bucket   = var.signals_export_bucket
     signals_public_hosts    = var.signals_public_hosts
     signals_allowed_origins = var.signals_allowed_origins
     signals_network         = var.signals_network

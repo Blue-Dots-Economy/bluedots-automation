@@ -39,13 +39,12 @@ inputs = {
   oidc_provider              = dependency.eks.outputs.oidc_provider
   storage_bucket_public      = dependency.storage.outputs.storage_bucket_public
   storage_bucket_private     = dependency.storage.outputs.storage_bucket_private
+  # Subjects allowed to assume the single app_sa role. The signals s3-export
+  # CronJob must be listed here in <env>/global-values.yaml: it writes to the
+  # same public bucket as the aggregator worker, so it shares that role rather
+  # than owning a dedicated one. Omit it and the CronJob fails at STS assume
+  # time inside the pod, long after a clean deploy.
   service_account_subjects   = lookup(local.global_vars.global, "service_account_subjects", [
     "system:serviceaccount:app:app-sa"
   ])
-
-  # Signals S3-export exporter IRSA role — created only when a bucket keyed
-  # "signals-export" exists in global.buckets (try() ⇒ "" otherwise, which
-  # disables the role in the iam module).
-  signals_export_bucket     = try(dependency.storage.outputs.buckets["signals-export"].id, "")
-  signals_export_sa_subject = lookup(local.global_vars.global, "signals_export_sa_subject", "system:serviceaccount:signals:signals-s3-export")
 }

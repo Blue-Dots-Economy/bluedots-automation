@@ -1,0 +1,38 @@
+# Images we are EVALUATING for the DHI mirror but have not adopted.
+#
+# Read by .github/workflows/dhi-list-tags.yml alongside the mirror list, so the
+# tags dhi.io actually publishes for a candidate can be checked before anyone
+# commits to a version. dhi.io refuses anonymous access, so this cannot be
+# answered from a laptop — hence a workflow.
+#
+# Names only, no tags — the point is to discover what tags exist.
+# Nothing here is mirrored or deployed. Move a line to dhi-mirror-images.txt
+# (with a tag) to adopt it.
+
+# Kong. The gateway is likely available; the ingress controller is the open
+# question, and without it the pair splits across two provenance chains. Both
+# upstream images are actively maintained and currently fresh (built within the
+# last three weeks), so this is a consistency question, not a security one.
+kong
+kong-ingress-controller
+kubernetes-ingress-controller
+
+# The keycloak chart's realm-renderer and kc-init containers. They `apk add` at
+# runtime, so a hardened runtime variant cannot work as a drop-in — probing to
+# see what base variants exist for a purpose-built replacement image.
+alpine
+
+# ── Specific tags to inspect ─────────────────────────────────────────────────
+# Written as name:tag, these get their entrypoint/cmd/user printed as well —
+# what decides whether a variant can drop into a chart that starts its
+# container with a shell.
+kong:3.9.3
+
+# ── Keycloak ─────────────────────────────────────────────────────────────────
+# RESOLVED, adopted: dockerfiles/keycloak/Dockerfile is FROM dhi.io/keycloak
+# (build-keycloak-image.yml). The open question this block used to record —
+# whether it could work at all, since our old ENTRYPOINT was the shell script
+# /opt/keycloak/bin/kc.sh — is answered: DHI's own keycloak image ships kc.sh
+# as ITS entrypoint too, i.e. it ships a shell by necessity. Booted against a
+# real Postgres with both authenticator provider ids the shared realm's
+# browser flows bind to registered.

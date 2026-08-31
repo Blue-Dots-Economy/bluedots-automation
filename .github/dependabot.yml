@@ -20,6 +20,18 @@
 # Branch model here is feature -> develop -> main, and `feature` is where work
 # integrates, so PRs target it rather than the default branch.
 
+
+# Cooldown: do not adopt a release until it has been public for 7 days. A
+# freshly-published version is the window in which a compromised release is
+# still undetected, and this repo's actions execute in jobs holding GITHUB_TOKEN
+# and SONAR_TOKEN — including security-scan.yml, which the other four repos call.
+# GitHub applies an implicit 3-day cooldown already; 7 is the threshold zizmor
+# checks for (zizmor dependabot-cooldown).
+#
+# This does NOT delay security patches: per GitHub's docs, "the cooldown option
+# is only available for version updates, not security updates". A CVE fix still
+# arrives immediately.
+
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -27,6 +39,8 @@ updates:
     target-branch: "feature"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       actions-minor-patch:
         update-types: ["minor", "patch"]
@@ -39,4 +53,6 @@ updates:
     target-branch: "feature"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 3

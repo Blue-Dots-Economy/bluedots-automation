@@ -81,6 +81,12 @@ output "voice_dpg_signals_secret" {
   sensitive   = true
 }
 
+output "campaign_manager_secret" {
+  description = "campaign-manager Keycloak client secret (keycloak secrets.campaignManagerSecret)"
+  value       = random_id.campaign_manager_secret.hex
+  sensitive   = true
+}
+
 output "aggregator_approval_token_secret" {
   value     = random_id.aggregator_approval_token_secret.hex
   sensitive = true
@@ -125,5 +131,11 @@ output "signalstack_admin_key" {
 output "signals_search_api_key" {
   description = "API key the signals api sends to signals-search /v1/relevance (signals SIGNALS_SEARCH_API_KEY)"
   value       = random_password.signals_search_api_key.result
+  sensitive   = true
+}
+
+output "raya_voice_bot_api_key" {
+  description = "API key the raya voice bot sends to the signals api (signals RAYA_VOICE_BOT_API_KEY)"
+  value       = random_password.raya_voice_bot_api_key.result
   sensitive   = true
 }

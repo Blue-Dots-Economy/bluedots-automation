@@ -1,0 +1,293 @@
+# Mirror the third-party Docker Hardened Images this repo deploys into GHCR
+# packages owned by this repo, so the cluster never needs a dhi.io credential.
+#
+# WHY THIS EXISTS
+# ---------------
+# Our own service images (signals api/ui, aggregator api/web/worker, search,
+# notification-service) are BUILT FROM a DHI base in each app repo's CI and
+# pushed to GHCR — the hardened layers arrive inside an image we publish, so the
+# cluster only ever talks to ghcr.io. The third-party charts are different: they
+# put a registry reference in a pod spec and the KUBELET does the pull. Pointing
+# those at dhi.io directly is what produced the `401 Unauthorized` /
+# ImagePullBackOff on deploy_common_services and deploy_monitoring, because
+# dhi.io refuses anonymous pulls even for the free Apache-2.0 catalog.
+#
+# The alternative — a dhi.io pull Secret in every namespace — is worse here:
+# alloy, metrics-server and kong ignore `global.imagePullSecrets` and need a
+# per-chart key, every DHI pod runs under its own ServiceAccount rather than
+# `default`, the monitoring namespace is not covered by the ghcr-pull rotation
+# at all (install.sh passes only common-services/signals/aggregator), and
+# install.sh defaults IMAGES_PUBLIC=true, which ACTIVELY CLEARS pull secrets
+# (`--set-json global.imagePullSecrets=[]`). Mirroring to a public GHCR package
+# leaves all of that untouched and keeps the credential count at zero.
+#
+# Licensing: the DHI catalog is Apache-2.0, which grants redistribution
+# outright. See .github/dhi-mirror-images.txt for the citation.
+#
+# WHAT "COPY" MEANS HERE
+# ----------------------
+# This does NOT rebuild anything. `regctl image copy` transfers the manifest
+# list byte-for-byte, so the mirrored image has the SAME digest as upstream.
+# That matters for more than tidiness: a naive `docker pull && docker tag &&
+# docker push` would rebuild a single-platform manifest and silently drop the
+# SBOM, SLSA provenance and Sigstore signatures, which are not layers in the
+# image — they are separate OCI referrer manifests attached to its digest.
+# `--referrers --digest-tags` brings those across too, so `docker scout` /
+# `cosign verify` still work against the mirror. The digest assertion at the end
+# of the copy step is what proves the copy stayed verbatim.
+#
+# Tracking: Blue-Dots-Economy/bluedots-automation#136
+name: Mirror DHI images to GHCR
+
+on:
+  # Branch-filtered to the trunk chain: an arbitrary feature-branch push
+  # touching these paths would otherwise mirror into the org's real GHCR
+  # packages before review — it can add new dhi/* packages to the org
+  # namespace or force a re-copy that overwrites an existing mutable tag.
+  # `workflow_dispatch` covers testing changes to this file on a branch once
+  # it exists on the default branch; before that, first-time bootstrap needs
+  # a push to any branch, which is why this stayed unfiltered until now.
+  push:
+    branches: [main, develop, feature]
+    paths:
+      - '.github/workflows/mirror-dhi-images.yml'
+      - '.github/dhi-mirror-images.txt'
+  # DHI's whole value proposition is continuously-rebuilt bases: upstream
+  # republishes the same tag at a new digest. Without this, the mirror only
+  # re-copies when someone edits dhi-mirror-images.txt, so the cluster stays
+  # frozen on whatever digest the last list edit happened to capture — the
+  # same rot dhi-mirror-images.txt itself criticises bitnamilegacy for.
+  schedule:
+    - cron: '0 3 * * 1' # weekly, Monday 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Mirror only images whose name matches this substring (blank = all)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Resolve digests and report, but do not push"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+# One mirror at a time. Two concurrent runs would race on the same destination
+# tags; harmless in practice (same bytes) but the digest assertions get noisy.
+concurrency:
+  group: mirror-dhi-images
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # regctl, not docker/skopeo/crane. skopeo `copy --all` moves the platform
+      # manifests but not referrer artifacts; crane copies the index but has no
+      # referrer flag. regctl is the one that does index + referrers + the
+      # cosign-style `sha256-<digest>.sig` digest-tags in a single call.
+      - name: Install regctl
+        env:
+          REGCTL_VERSION: v0.11.5
+          # regclient doesn't publish a standalone checksum file for this
+          # binary; pinned by hand from `sha256sum` against the release asset.
+          # Bump both together when REGCTL_VERSION changes.
+          REGCTL_SHA256: c93aa7638749f5aaac1a8e01787321889c78f0101809bb2880343478d0ba0467
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /usr/local/bin/regctl \
+            "https://github.com/regclient/regclient/releases/download/${REGCTL_VERSION}/regctl-linux-amd64"
+          echo "${REGCTL_SHA256}  /usr/local/bin/regctl" | sha256sum -c -
+          chmod 755 /usr/local/bin/regctl
+          regctl version
+
+      # dhi.io credentials are a Docker Hub account. They are used ONLY here, in
+      # CI, for the read side of the copy — nothing in the cluster ever sees
+      # them, which is the whole point of the mirror.
+      # Credentials go through `env:` and --pass-stdin rather than being
+      # interpolated into the script body: a `${{ }}` expansion is textual
+      # substitution into the shell source, so a token containing shell
+      # metacharacters would be parsed as syntax.
+      - name: Log in to dhi.io
+        env:
+          DHI_USER: ${{ vars.DOCKERHUB_USERNAME }}
+          DHI_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DHI_USER}" ] || [ -z "${DHI_TOKEN}" ]; then
+            echo "::error::dhi.io needs a Docker Hub login — set the DOCKERHUB_USERNAME repo/org VARIABLE and the DOCKERHUB_TOKEN SECRET. (Username is a variable, not a secret: it is also used by the app repos' build workflows.)"
+            exit 1
+          fi
+          printf '%s' "${DHI_TOKEN}" | regctl registry login dhi.io -u "${DHI_USER}" --pass-stdin
+
+      - name: Log in to GHCR
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_TOKEN}" | regctl registry login ghcr.io -u "${GHCR_USER}" --pass-stdin
+
+      - name: Copy images
+        id: copy
+        env:
+          ONLY: ${{ inputs.only }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # GHCR namespaces are case-sensitive and lowercase-only; the org is
+          # spelled "Blue-Dots-Economy" in github.repository_owner.
+          owner_lc=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
+          {
+            echo "| image | upstream digest | mirrored | result |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          failed=0
+          copied=0
+          # Strip comments and blank lines. Everything left is a bare name:tag.
+          while IFS= read -r ref; do
+            case "$ref" in ''|'#'*) continue ;; esac
+            ref=$(echo "$ref" | tr -d '[:space:]')
+            [ -n "$ref" ] || continue
+            if [ -n "${ONLY}" ] && [ "${ref#*"${ONLY}"}" = "$ref" ]; then
+              continue
+            fi
+
+            src="dhi.io/${ref}"
+            dst="ghcr.io/${owner_lc}/dhi/${ref}"
+            echo "::group::${ref}"
+
+            if ! src_digest=$(regctl image digest "$src" 2>&1); then
+              echo "FAILED to resolve $src: $src_digest"
+              echo "| \`$ref\` | — | — | ❌ source unresolvable |" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+              echo "::endgroup::"
+              continue
+            fi
+            echo "source   $src -> $src_digest"
+
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "| \`$ref\` | \`${src_digest:0:19}\` | — | 🔍 dry run |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # --referrers  : SBOM / SLSA provenance / attestation manifests
+            # --digest-tags: cosign's sha256-<digest>.sig|.att sidecar tags
+            # Both are no-ops when upstream has none, so this is safe for every
+            # image in the list regardless of what it carries.
+            #
+            # Retried, because GHCR throttles sustained writes and reports it as
+            # `403 permission_denied: write_package` rather than a 429. Mirroring
+            # 17 new packages in one run reliably trips it: the first attempt of
+            # this workflow copied 9 and left 8 with their blobs and attestation
+            # manifests pushed but the version tag missing, which reads exactly
+            # like a token-permission failure and is not one.
+            #
+            # Retrying is cheap and safe: regctl skips blobs and manifests that
+            # already exist at the target, so attempt 2 only pushes what attempt 1
+            # was refused. Backoff is 15s, 30s, 60s — the throttle is short-lived.
+            copy_attempt=1
+            copy_ok=0
+            copy_delay=15
+            while [ "$copy_attempt" -le 4 ]; do
+              if regctl image copy --referrers --digest-tags "$src" "$dst"; then
+                copy_ok=1
+                break
+              fi
+              if [ "$copy_attempt" -lt 4 ]; then
+                echo "attempt ${copy_attempt}/4 failed (GHCR throttling returns 403 here); retrying in ${copy_delay}s"
+                sleep "$copy_delay"
+                copy_delay=$((copy_delay * 2))
+              fi
+              copy_attempt=$((copy_attempt + 1))
+            done
+            if [ "$copy_ok" -ne 1 ]; then
+              echo "FAILED to copy $src -> $dst after 4 attempts"
+              echo "| \`$ref\` | \`${src_digest:0:19}\` | — | ❌ copy failed (4 attempts) |" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+              echo "::endgroup::"
+              continue
+            fi
+            if [ "$copy_attempt" -gt 1 ]; then
+              echo "copied on attempt ${copy_attempt}"
+            fi
+
+            # A digest mismatch means the copy was not verbatim — the manifest
+            # was rebuilt somewhere and the attestations no longer describe this
+            # artifact. Treat it as a failure, not a warning.
+            # Not a bare assignment: `set -e` would abort the whole loop here
+            # on a transient registry error, losing the summary rows for every
+            # image after this one.
+            if ! dst_digest=$(regctl image digest "$dst" 2>&1); then
+              echo "FAILED to resolve $dst after copy: $dst_digest"
+              echo "| \`$ref\` | \`${src_digest:0:19}\` | — | ❌ mirror unresolvable |" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+              echo "::endgroup::"
+              continue
+            fi
+            if [ "$src_digest" != "$dst_digest" ]; then
+              echo "DIGEST MISMATCH: $src_digest != $dst_digest"
+              echo "| \`$ref\` | \`${src_digest:0:19}\` | \`${dst_digest:0:19}\` | ❌ digest mismatch |" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+              echo "::endgroup::"
+              continue
+            fi
+
+            echo "mirrored $dst -> $dst_digest (identical)"
+            echo "| \`$ref\` | \`${src_digest:0:19}\` | \`${dst_digest:0:19}\` | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+            copied=$((copied + 1))
+            echo "::endgroup::"
+          done < .github/dhi-mirror-images.txt
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**$copied image(s) mirrored.**" >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
+
+      # A GHCR package is created PRIVATE on first push and there is no REST API
+      # to flip container visibility — it is a one-time click per package under
+      # the org's Packages settings. A private package would deploy fine only
+      # because install.sh's IMAGES_PUBLIC=true path assumes anonymous pulls
+      # work; it does not, and the pod would sit in ImagePullBackOff with a
+      # `denied` message that looks nothing like a visibility problem. So this
+      # step names the offenders explicitly. Non-fatal: it needs a token that
+      # can read org packages, which GITHUB_TOKEN may not have.
+      - name: Report package visibility
+        if: ${{ always() && inputs.dry_run != true }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Package visibility" >> "$GITHUB_STEP_SUMMARY"
+          private_found=0
+          while IFS= read -r ref; do
+            case "$ref" in ''|'#'*) continue ;; esac
+            name="${ref%%:*}"
+            name=$(echo "$name" | tr -d '[:space:]')
+            [ -n "$name" ] || continue
+            # Package name is the full path after the owner, URL-encoded: dhi/<name>.
+            vis=$(gh api "/orgs/${{ github.repository_owner }}/packages/container/dhi%2F${name}" \
+                    --jq '.visibility' 2>/dev/null || echo "unknown")
+            if [ "$vis" = "private" ]; then
+              echo "- \`dhi/$name\` — **private**, make it public" >> "$GITHUB_STEP_SUMMARY"
+              private_found=1
+            fi
+          done < .github/dhi-mirror-images.txt
+          if [ "$private_found" = "0" ]; then
+            echo "All mirrored packages are public (or visibility could not be read)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Flip these at https://github.com/orgs/${{ github.repository_owner }}/packages — Package settings → Danger Zone → Change visibility." >> "$GITHUB_STEP_SUMMARY"
+          fi

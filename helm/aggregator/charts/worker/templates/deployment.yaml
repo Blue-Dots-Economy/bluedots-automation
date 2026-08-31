@@ -39,6 +39,10 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: health
+              containerPort: {{ .Values.healthPort }}
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: {{ include "worker.globalConfigMap" . }}
@@ -82,16 +86,44 @@ spec:
                   name: {{ include "worker.secretName" . }}
                   key: SIGNALSTACK_ADMIN_KEY
                   optional: true
+            - name: HEALTH_PORT
+              value: {{ .Values.healthPort | quote }}
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: SMTP_USER
+                  optional: true
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: SMTP_PASSWORD
+                  optional: true
+            # Raya voice provider API key (campaign voice channel). Worker-only:
+            # the api submits voice jobs, the worker dials out. Asserted LAZILY
+            # by the provider, so an unconfigured deployment still boots and runs
+            # every other queue — voice jobs accept with 202 and fail at dispatch.
+            #
+            # `optional: true` is what lets the pod start when the key is absent,
+            # and the umbrella Secret OMITS it rather than writing "" precisely so
+            # that path is taken: the worker's schema is
+            # `z.string().min(1).optional()`, which rejects an empty string and
+            # would fail config parse at boot. Absent = fine, empty = crash.
+            - name: RAYA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "worker.secretName" . }}
+                  key: RAYA_API_KEY
+                  optional: true
+          # /healthz endpoint (aggregator-dpg#675), not exec — the image has no shell.
           livenessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - pgrep -f "node" >/dev/null || exit 1
-            initialDelaySeconds: 30
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

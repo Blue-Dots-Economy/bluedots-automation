@@ -19,11 +19,18 @@
 --                           against this same `apikey` table, using an identical
 --                           base64url(sha256(raw)) hash — so seeding here is all
 --                           that is required on the callee side.)
+--   raya-voice-bot        ← RAYA_VOICE_BOT_API_KEY  (raya voice bot → signals api.
+--                           Same inbound direction as aggregator-dpg above. This is
+--                           the api-key path for the bot that also has the `voice-dpg`
+--                           Keycloak client-credentials client; the two credentials are
+--                           independent and rotate separately.)
 --
--- Required psql variables:  aggregator_dpg_api_key, signals_search_api_key
+-- Required psql variables:  aggregator_dpg_api_key, signals_search_api_key,
+--                           raya_voice_bot_api_key
 -- Invoked from migrate-job.yaml as:
 --   psql -v aggregator_dpg_api_key="$AGGREGATOR_DPG_API_KEY" \
 --        -v signals_search_api_key="$SIGNALS_SEARCH_API_KEY" \
+--        -v raya_voice_bot_api_key="$RAYA_VOICE_BOT_API_KEY" \
 --        -f /sql/provision_service_users.sql
 --
 -- Requires pgcrypto (digest, gen_random_uuid), provisioned by common-services.
@@ -38,6 +45,7 @@
 -- back inside via current_setting().
 SELECT set_config('signals.aggregator_dpg_api_key', :'aggregator_dpg_api_key', false);
 SELECT set_config('signals.signals_search_api_key', :'signals_search_api_key', false);
+SELECT set_config('signals.raya_voice_bot_api_key', :'raya_voice_bot_api_key', false);
 
 DO $$
 DECLARE
@@ -52,7 +60,8 @@ BEGIN
   FOR _svc IN
     SELECT * FROM (VALUES
       ('aggregator-dpg',        'aggregator-dpg-svc@signals.local',        'signals.aggregator_dpg_api_key'),
-      ('signals-search-client', 'signals-search-client-svc@signals.local', 'signals.signals_search_api_key')
+      ('signals-search-client', 'signals-search-client-svc@signals.local', 'signals.signals_search_api_key'),
+      ('raya-voice-bot',        'raya-voice-bot-svc@signals.local',        'signals.raya_voice_bot_api_key')
     ) AS t(org_slug, user_email, guc)
   LOOP
     -- Reset per iteration: SELECT ... INTO assigns NULL when no row matches,
