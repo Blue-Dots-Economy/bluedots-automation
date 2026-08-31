@@ -85,6 +85,11 @@ variable "voice_dpg_signals_secret_bytes" {
   default = 32
 }
 
+variable "campaign_manager_secret_bytes" {
+  type    = number
+  default = 32
+}
+
 variable "aggregator_approval_token_secret_bytes" {
   type    = number
   default = 32

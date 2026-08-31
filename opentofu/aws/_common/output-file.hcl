@@ -96,6 +96,7 @@ dependency "random_passwords" {
     signals_api_client_secret               = "0000000000000000000000000000000000000000000000000000000000000010"
     signalstack_client_secret               = "0000000000000000000000000000000000000000000000000000000000000011"
     voice_dpg_signals_secret                = "0000000000000000000000000000000000000000000000000000000000000012"
+    campaign_manager_secret                 = "0000000000000000000000000000000000000000000000000000000000000013"
     aggregator_kc_bootstrap_admin_password  = "0000000000000000000000000000000000000000000000000000000000000007"
     aggregator_keycloak_admin_client_secret = "0000000000000000000000000000000000000000000000000000000000000008"
     aggregator_approval_token_secret        = "0000000000000000000000000000000000000000000000000000000000000009"
@@ -145,6 +146,7 @@ inputs = {
   signals_api_client_secret               = dependency.random_passwords.outputs.signals_api_client_secret
   signalstack_client_secret               = dependency.random_passwords.outputs.signalstack_client_secret
   voice_dpg_signals_secret                = dependency.random_passwords.outputs.voice_dpg_signals_secret
+  campaign_manager_secret                 = dependency.random_passwords.outputs.campaign_manager_secret
   aggregator_kc_bootstrap_admin_password  = dependency.random_passwords.outputs.aggregator_kc_bootstrap_admin_password
   aggregator_keycloak_admin_client_secret = dependency.random_passwords.outputs.aggregator_keycloak_admin_client_secret
   aggregator_approval_token_secret        = dependency.random_passwords.outputs.aggregator_approval_token_secret

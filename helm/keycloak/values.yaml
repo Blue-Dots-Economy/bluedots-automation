@@ -99,6 +99,7 @@ secrets:
   signalsApiSecret: ''         # == signals' KEYCLOAK_API_CLIENT_SECRET
   signalstackClientSecret: ''  # `aggregator-dpg` client (Phase C service auth)
   voiceDpgSignalsSecret: ''    # `voice-dpg` client
+  campaignManagerSecret: ''    # `campaign-manager` client (aggregator campaign APIs)
   # SMTP creds (optional under SES/IAM)
   smtpUser: ''
   smtpPassword: ''
@@ -115,6 +116,11 @@ secrets:
 # Replica/HPA/PDB/resources come from helm/global-resources.yaml, matching every
 # other workload in this repo.
 keycloak:
+  # Comma-separated OIDC callback URLs for the external campaign manager.
+  # Required for coordinator login: coordinators have no password and sign in
+  # with an emailed one-time code through the browser. Leaving this empty fails
+  # the realm render rather than importing an unusable placeholder.
+  campaignManagerRedirectUris: ''
   ingress:
     enabled: true
     className: kong
