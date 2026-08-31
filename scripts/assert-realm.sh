@@ -12,7 +12,15 @@
 
 set -uo pipefail
 
-REALM_FILE="${1:-helm/keycloak/charts/keycloak/files/realm.json}"
+# Default resolves against the REPO, not the caller's CWD. install.sh invokes this
+# as `bash "$REPO_ROOT/scripts/assert-realm.sh"` without cd-ing there, and it is
+# documented to be run from opentofu/aws/<env>/ — so a CWD-relative default made
+# `install.sh lint` fail its last step with "realm file not found" in every
+# environment, while the same command passed from the repo root. An explicit path
+# argument still wins.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REALM_FILE="${1:-$REPO_ROOT/helm/keycloak/charts/keycloak/files/realm.json}"
 
 command -v jq >/dev/null || { echo "error: jq is required" >&2; exit 1; }
 [ -f "$REALM_FILE" ] || { echo "error: realm file not found: $REALM_FILE" >&2; exit 1; }
