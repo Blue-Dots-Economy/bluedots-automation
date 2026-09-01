@@ -382,7 +382,7 @@ global:
   # is empty, which is what makes commenting this out safe.
   #
   # UAT blue_dot and purple_dot want `form` (voice registration off):
-  # onboardingEnabled: form
+  onboardingEnabled: form,voice
 
   # ── Signals UI hand-off (aggregator api only) ─────────────────────────────
   # Comma-separated `domain=url` pairs — one per network domain — pointing at the
@@ -393,7 +393,7 @@ global:
   # Must be the Signals UI login page (normally `<origin>/auth/login`), NEVER a
   # Keycloak authorization URL — those embed one-time state/PKCE values bound to
   # the browser that generated them and fail for everyone else.
-  # signalsUiUrls: "seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login"
+  signalsUiUrls: "seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login"
 
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   signalstack:
@@ -473,6 +473,30 @@ postgres:
 # namespace-local, so declaring it there names a missing Secret and Kong serves
 # self-signed for the whole host. See the runbook §10.2.
 keycloak:
+  # ── campaign-manager OIDC callbacks — YOU MUST SET THIS ────────────────────
+  # Consumed as CAMPAIGN_MANAGER_REDIRECT_URIS by render-realm.sh, which runs
+  # TWICE: once in the keycloak pod's realm-renderer initContainer and again as
+  # step 1/4 of the keycloak-init Job. Empty leaves the literal
+  # __CAMPAIGN_MANAGER_REDIRECT_URIS__ in realm.json and the script aborts — so
+  # `deploy_keycloak` fails outright rather than importing a client that looks
+  # configured and rejects every login with invalid_redirect_uri.
+  #
+  # Two valid answers:
+  #   "<url>[,<url>...]"  the campaign manager's real callback(s). Keycloak
+  #                       matches redirect_uri BYTE-EXACTLY — a trailing-slash
+  #                       difference fails login. List every callback it uses.
+  #   a URL you own       if this deployment only uses the client_credentials
+  #                       non-PII dump path (which needs no redirect URI at all),
+  #                       point it at a path on your own domain. Never at a host
+  #                       you do not control: this is an OAuth allow-list, and a
+  #                       third-party entry is an open-redirect primitive for
+  #                       stealing authorization codes.
+  #
+  # Left EMPTY here on purpose so a new environment has to make that choice
+  # rather than inheriting someone else's callback URL. It was previously absent
+  # from this file entirely, which made the failure look like a chart bug.
+  campaignManagerRedirectUris: ''
+
   # OTP delivery. The subchart defaults to `log`, which writes the code to the
   # pod log and sends nothing — Keycloak stays healthy and no OTP ever arrives.
   # Credentials come from secrets.msg91AuthKey + keycloak.msg91TemplateId.
