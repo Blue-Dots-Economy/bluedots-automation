@@ -107,6 +107,8 @@ spec:
               value: {{ .Values.keycloak.brandLongName | default "Blue Dots" | quote }}
             - name: SIGNALS_ORIGINS
               value: {{ include "keycloak-platform.signalsOrigins" . | quote }}
+            - name: CAMPAIGN_MANAGER_REDIRECT_URIS
+              value: {{ .Values.keycloak.campaignManagerRedirectUris | default "" | quote }}
             - name: AGGREGATOR_PORTAL_SECRET
               valueFrom:
                 secretKeyRef:
@@ -137,6 +139,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "keycloak-platform.secretName" . }}
                   key: VOICE_DPG_SIGNALS_SECRET
+            - name: CAMPAIGN_MANAGER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: CAMPAIGN_MANAGER_SECRET
             # render-realm.sh reads SMTP_SSL; the ConfigMap key is SMTP_SECURE.
             - name: SMTP_SSL
               value: {{ index .Values.smtp "SMTP_SECURE" | default "false" | quote }}
