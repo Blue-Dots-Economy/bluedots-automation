@@ -33,7 +33,7 @@ ui:
 notification-service:
   image:
     repository: ghcr.io/blue-dots-economy/notification-service
-    tag: "main"
+    tag: "202608-s2-rc1"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
