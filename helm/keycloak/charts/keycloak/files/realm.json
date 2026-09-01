@@ -49,6 +49,7 @@
   },
   "authenticationFlows": [
     {
+      "id": "3c7e91a4-52d8-4f16-b8a3-6e1d904c7b52",
       "alias": "aggregator-otp-browser",
       "description": "Browser flow: identifier (email/phone/username) then OTP via auto-routed channel",
       "providerId": "basic-flow",
@@ -714,6 +715,90 @@
       ],
       "redirectUris": null,
       "webOrigins": null
+    },
+    {
+      "clientId": "campaign-manager",
+      "name": "Campaign Manager",
+      "description": "Confidential client for the external campaign manager. Its service account is the client_credentials caller for the non-PII dump route (#692); browser login (OTP) and direct access grants give a coordinator a token for the org-scoped campaign routes.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "__CAMPAIGN_MANAGER_SECRET__",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email",
+        "basic"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ],
+      "protocolMappers": [
+        {
+          "name": "aggregator_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "aggregator_id",
+            "claim.name": "aggregator_id",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "aggregator_type",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "aggregator_type",
+            "claim.name": "aggregator_type",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "signalstack_org_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "signalstack_org_id",
+            "claim.name": "signalstack_org_id",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        }
+      ],
+      "redirectUris": [
+        "__CAMPAIGN_MANAGER_REDIRECT_URIS__"
+      ],
+      "webOrigins": [],
+      "authenticationFlowBindingOverrides": {
+        "browser": "3c7e91a4-52d8-4f16-b8a3-6e1d904c7b52"
+      }
     }
   ],
   "users": [

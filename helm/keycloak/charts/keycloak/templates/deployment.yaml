@@ -84,6 +84,8 @@ spec:
             */}}
             - name: SIGNALS_ORIGINS
               value: {{ include "keycloak.signalsOrigins" . | quote }}
+            - name: CAMPAIGN_MANAGER_REDIRECT_URIS
+              value: {{ .Values.campaignManagerRedirectUris | default "" | quote }}
             # All six client secrets the shared realm declares — both DPGs'.
             # render-realm.sh fails hard on any unset one rather than importing
             # an empty secret onto a confidential client.
@@ -117,6 +119,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "keycloak.secretName" . }}
                   key: VOICE_DPG_SIGNALS_SECRET
+            - name: CAMPAIGN_MANAGER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: CAMPAIGN_MANAGER_SECRET
             - name: SMTP_HOST
               valueFrom:
                 configMapKeyRef:

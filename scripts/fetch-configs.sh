@@ -106,7 +106,7 @@ AGGREGATOR_REF_DEFAULT="main"
 # overridable via flags or env so this can be repointed — e.g. to bluedots-schemas
 # once it ships aggregator.config.yaml — without touching the charts.
 AGGREGATOR_CONFIG_REPO_DEFAULT="Blue-Dots-Economy/aggregator-dpg"
-AGGREGATOR_CONFIG_REF_DEFAULT="develop"
+AGGREGATOR_CONFIG_REF_DEFAULT="main"
 AGGREGATOR_CONFIG_DIR_DEFAULT="config"
 AGGREGATOR_CONFIG_FILE_DEFAULT="aggregator.config.yaml"
 

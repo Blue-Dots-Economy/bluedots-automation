@@ -40,13 +40,9 @@ variable "signals_allowed_origins" {
 # -----------------------------------------------------------------------------
 # IAM (IRSA)
 # -----------------------------------------------------------------------------
+# Single app IRSA role, annotated onto the aggregator api/worker AND the
+# signals s3-export ServiceAccounts — the exporter no longer has its own.
 variable "app_sa_role_arn" {
-  type    = string
-  default = ""
-}
-
-# Signals s3-export exporter IRSA role ARN (empty when not provisioned).
-variable "signals_export_role_arn" {
   type    = string
   default = ""
 }
@@ -54,13 +50,9 @@ variable "signals_export_role_arn" {
 # -----------------------------------------------------------------------------
 # Storage (S3)
 # -----------------------------------------------------------------------------
+# Single public bucket, shared by the aggregator and the signals s3-export
+# CronJob (which no longer has a dedicated private export bucket).
 variable "storage_bucket_public" {
-  type    = string
-  default = ""
-}
-
-# Dedicated Signals s3-export bucket name (empty when not provisioned).
-variable "signals_export_bucket" {
   type    = string
   default = ""
 }
@@ -117,6 +109,13 @@ variable "aggregator_smtp_user" {
 # placeholders as the example file, so a missing/partial secrets.yaml still
 # renders (and fails loudly at runtime rather than silently using a real value).
 # -----------------------------------------------------------------------------
+variable "raya_api_key" {
+  description = "Raya voice API key (aggregator worker -> Raya hosted API). Feeds aggregator secrets.rayaApiKey. Distinct from the generated raya_voice_bot_api_key, which is the INBOUND key raya sends to the signals api."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
 variable "smtp_password" {
   description = "Gmail App Password. Feeds notification-service GMAIL_PASS, aggregator secrets.smtpPassword, monitoring alerting.email.smtpAuthPassword."
   type        = string
@@ -244,6 +243,11 @@ variable "signalstack_client_secret" {
 }
 
 variable "voice_dpg_signals_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "campaign_manager_secret" {
   type      = string
   sensitive = true
 }

@@ -154,6 +154,29 @@ shipped in the image) — no `schema.sql` is vendored in this repo.
 to the aggregator web + api pods as the `ORG_HIERARCHY_ENABLED` env var (via their
 ConfigMaps), enabling the org-hierarchy features in the aggregator app.
 
+### Onboarding modes and the Signals hand-off
+
+Two aggregator-**api**-only knobs, both set under `global:` in `global-values.yaml`
+and emitted by `helm/aggregator/charts/api/templates/configmap.yaml`. The worker
+and web read neither.
+
+| Value | Env var | What it does |
+|-------|---------|--------------|
+| `global.onboardingEnabled` | `AGGREGATOR_ONBOARDING_ENABLED` | Comma-separated allow-list of registration modes: `form`, `voice` (`bulk` is reserved and gates nothing yet). |
+| `global.signalsUiUrls` | `SIGNALS_UI_URLS` | Comma-separated `domain=url` pairs mapping each network domain to its Signals UI login page. Powers the "Already Registered — Sign In" chooser and the post-submit redirect. |
+
+> **`onboardingEnabled` empty is not the same as unset.** The api is fail-closed:
+> unset means *all* modes enabled, but an empty string means *nothing* enabled —
+> every registration mode off and every public-link creation 400s. The ConfigMap
+> template therefore **omits the key entirely** when the value is empty instead of
+> rendering `AGGREGATOR_ONBOARDING_ENABLED: ""`. That conditional is deliberate;
+> don't collapse it into an unconditional line.
+
+> **`signalsUiUrls` must point at the Signals UI, not Keycloak.** Use the UI login
+> page (normally `<origin>/auth/login`). A Keycloak authorization URL embeds
+> one-time `state`/PKCE values bound to the browser that generated them, so it
+> fails for every other user.
+
 ---
 
 ## Which branch?
@@ -448,12 +471,23 @@ environment there):
 | Component             | Image                                                  | Built by |
 |-----------------------|--------------------------------------------------------|----------|
 | Signals — api         | `ghcr.io/blue-dots-economy/signals-dpg/api`            | signals-dpg |
-| Signals — ui          | `vinodbbhorge/signalstack-ui`                          | signals-dpg |
-| Signals — notification | `ghcr.io/blue-dots-economy/notification-service`      | signals-dpg |
+| Signals — ui          | `ghcr.io/blue-dots-economy/signals-dpg/ui`             | signals-dpg |
+| Signals — search      | `ghcr.io/blue-dots-economy/signals-search`             | signals-search |
+| Signals — notification | `ghcr.io/blue-dots-economy/notification-service`      | notification-service |
 | Aggregator — web / api / worker | `ghcr.io/blue-dots-economy/aggregator-dpg/{web,api,worker}` | aggregator-dpg |
 | Keycloak — server     | `ghcr.io/blue-dots-economy/keycloak-server`            | **this repo** (`dockerfiles/keycloak/`) |
 | Keycloak — theme init | `ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme` | aggregator-dpg (per network/brand) |
 | Postgres (shared)     | `ghcr.io/blue-dots-economy/postgres-pgvector`          | **this repo** (`dockerfiles/postgres/`) |
+| Third-party hardened  | `ghcr.io/blue-dots-economy/dhi/*`                      | **this repo** (mirrored, see below) |
+
+The `dhi/*` entries are Docker Hardened Images copied byte-for-byte from
+`dhi.io` into our own packages by `.github/workflows/mirror-dhi-images.yml` —
+cert-manager, metrics-server and the whole monitoring stack. They are mirrored
+rather than referenced directly because `dhi.io` refuses anonymous pulls and
+those are third-party charts, so the *kubelet* does the pull: a direct reference
+would need a registry credential in every namespace. The list of what is
+mirrored lives in `.github/dhi-mirror-images.txt`, and anything deliberately
+left unhardened is recorded with a reason in `.github/dhi-exempt-images.txt`.
 
 ### Base images built here
 

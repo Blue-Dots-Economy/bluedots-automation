@@ -40,8 +40,8 @@ podLabels: {}
 
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 101         # nginx user in nginx:alpine
-  fsGroup: 101
+  runAsUser: 65532       # nginx user in the DHI nginx image (was 101 on nginx:alpine)
+  fsGroup: 65532
 
 securityContext:
   allowPrivilegeEscalation: false

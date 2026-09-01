@@ -4,11 +4,17 @@
   network.json the signals deploy did. global.networkSource.url overrides the
   derivation wholesale. Keep this expression identical to the worker's copy —
   a subchart cannot share the umbrella's _helpers.tpl, hence the duplication.
+  Brand, when set, wins outright (a brand folder is a full copy, not a partial
+  override) — same rule fetch-configs.sh uses, so both halves resolve one file.
 */ -}}
 {{- $ns := .Values.global.networkSource | default dict -}}
 {{- $networkSource := $ns.url | default "" -}}
 {{- if and (not $networkSource) $ns.repo $ns.ref -}}
+{{- if .Values.global.aggregatorBrand -}}
+{{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork .Values.global.aggregatorBrand ($ns.file | default "network.json") -}}
+{{- else -}}
 {{- $networkSource = printf "https://raw.githubusercontent.com/%s/%s/%s/%s" $ns.repo $ns.ref .Values.global.aggregatorNetwork ($ns.file | default "network.json") -}}
+{{- end -}}
 {{- end -}}
 apiVersion: v1
 kind: ConfigMap
@@ -53,3 +59,62 @@ data:
   S3_FORCE_PATH_STYLE: "{{ .Values.global.s3.forcePathStyle }}"
   ORG_HIERARCHY_ENABLED: "{{ .Values.global.orgHierarchyEnabled }}"
   SUPPORT_EMAIL: "{{ .Values.supportEmail }}"
+  # Token `azp` allow-lists. Both are FAIL-OPEN in the api — an empty list means
+  # "gate disabled", not "deny everything" — so they are rendered
+  # unconditionally with real defaults in values.yaml rather than omitted when
+  # blank. That is the opposite of AGGREGATOR_ONBOARDING_ENABLED below, which is
+  # fail-CLOSED and must be omitted; the two look inconsistent on purpose.
+  # KEYCLOAK_ALLOWED_AZP covers every route; CAMPAIGN_MANAGER_ALLOWED_AZP
+  # REPLACES it on /v1/campaign/* (export, email, voice, dump).
+  KEYCLOAK_ALLOWED_AZP: "{{ .Values.global.keycloakAllowedAzp }}"
+  CAMPAIGN_MANAGER_ALLOWED_AZP: "{{ .Values.global.campaignManagerAllowedAzp }}"
+  # Signals non-PII dump key root (GET /v1/campaign/dump). Written by the SIGNALS
+  # s3-export CronJob at [<prefix>/]<network>/<instance_id>/<table>.ndjson.gz in
+  # the bucket named by S3_BUCKET (umbrella global ConfigMap). <network> comes
+  # from the resolved aggregator.config.yaml, never from env, so only these two
+  # segments are configurable — and both must match what that cron writes or the
+  # route 404s DUMP_NOT_AVAILABLE. INSTANCE_ID empty => 503 DUMP_NOT_CONFIGURED,
+  # which is the intended no-op for deployments without a campaign manager, so
+  # both keys are safe to render blank. See values.yaml global.campaignDump*.
+  CAMPAIGN_DUMP_INSTANCE_ID: "{{ .Values.global.campaignDumpInstanceId }}"
+  CAMPAIGN_DUMP_PREFIX: "{{ .Values.global.campaignDumpPrefix }}"
+{{- /*
+  Onboarding capability allow-list (aggregator-dpg#663, issue #637) and the
+  Signals UI hand-off (aggregator-dpg#653/#654, issues #652/#635). Both are
+  API-ONLY -- the worker and web read neither, which is why they live here and
+  not in the umbrella's configmap-global.yaml.
+
+  BOTH KEYS ARE RENDERED CONDITIONALLY, ON PURPOSE. This is the only place in
+  this ConfigMap that does so, so it will look out of place -- please leave it.
+
+  AGGREGATOR_ONBOARDING_ENABLED is fail-closed in the api:
+    unset / key absent  -> ALL capabilities enabled (the api's default)
+    "form" / "form,voice" -> only the listed modes
+    ""  (empty string!) -> NOTHING enabled: every registration mode is off and
+                           every public-link creation fails with a 400
+  So an unconditional `{{ .Values.global.onboardingEnabled | quote }}` would emit
+  AGGREGATOR_ONBOARDING_ENABLED: "" on the empty chart default and disable
+  onboarding in every environment this chart touches. aggregator-dpg's
+  docker-compose.yml hit exactly this with `${AGGREGATOR_ONBOARDING_ENABLED:-}`
+  and had to be changed to a value-less passthrough. Omitting the key is the fix.
+
+  SIGNALS_UI_URLS is conditional for consistency and to keep the rendered
+  ConfigMap clean; an empty value there is inert rather than dangerous.
+
+  These comments are Helm comments, not YAML comments, so they are stripped from
+  the render -- a `#` block here would leave the key name in the output even when
+  the key itself is omitted, which defeats the point of the conditional.
+*/}}
+{{- if .Values.global.onboardingEnabled }}
+  # Registration modes this deployment offers: form, voice (bulk is reserved and
+  # gates nothing yet). Unset = all modes; empty = none, so the key is omitted
+  # rather than rendered empty. See values.yaml global.onboardingEnabled.
+  AGGREGATOR_ONBOARDING_ENABLED: {{ .Values.global.onboardingEnabled | quote }}
+{{- end }}
+{{- if .Values.global.signalsUiUrls }}
+  # `domain=url` pairs, one per network domain, each pointing at THAT domain's own
+  # Signals UI login page (<origin>/auth/login) -- never a Keycloak authorization
+  # URL, which embeds one-time state/PKCE values bound to a single browser.
+  # Drives the "Already Registered - Sign In" chooser and post-submit redirect.
+  SIGNALS_UI_URLS: {{ .Values.global.signalsUiUrls | quote }}
+{{- end }}

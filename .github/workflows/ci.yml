@@ -14,6 +14,8 @@ on:
       - 'opentofu/**'
       - 'scripts/**'
       - '.github/workflows/ci.yml'
+      - '.github/dhi-mirror-images.txt'
+      - '.github/dhi-exempt-images.txt'
   push:
     branches: [develop, main]
     paths:
@@ -21,6 +23,8 @@ on:
       - 'opentofu/**'
       - 'scripts/**'
       - '.github/workflows/ci.yml'
+      - '.github/dhi-mirror-images.txt'
+      - '.github/dhi-exempt-images.txt'
 
 permissions:
   contents: read
@@ -29,9 +33,11 @@ jobs:
   helm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.16.4
 
@@ -98,20 +104,178 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Renders all 5 charts once, shared by both drift checks below. Layers
+      # the template env's own committed global-images.yaml/global-values.yaml
+      # (non-secret, no cluster needed) rather than chart defaults only:
+      # flag-gated components (postgresBootstrap, rdsRelay, clusterAutoscaler)
+      # and env-overridden images (postgresql -> our postgres-pgvector) are
+      # invisible on chart defaults alone, which is how postgres-pgvector
+      # escaped this check for as long as it did. postgres.host/
+      # credentials.postgresAdminPassword are RDS-derived generated values
+      # this repo can't have in CI — set to inert placeholders purely to force
+      # the render; nothing here talks to a real cluster.
+      - name: Render all charts (shared by the two drift checks below)
+        run: |
+          set -euo pipefail
+          : > /tmp/all-rendered.yaml
+          for chart in monitoring common-services signals aggregator keycloak; do
+            echo "::group::render $chart"
+            case "$chart" in
+              common-services)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set postgresql.enabled=true \
+                  --set postgresBootstrap.enabled=true \
+                  --set rdsRelay.enabled=true \
+                  --set postgres.host=ci-smoke.invalid \
+                  --set credentials.postgresAdminPassword=ci-smoke \
+                  --set clusterAutoscaler.enabled=true \
+                  --set clusterAutoscaler.clusterName=ci-smoke \
+                  --set clusterAutoscaler.awsRegion=ap-south-1 \
+                  --set clusterAutoscaler.serviceAccount.roleArn=arn:aws:iam::000000000000:role/ci-smoke \
+                  >> /tmp/all-rendered.yaml
+                ;;
+              signals)
+                # Every network's schema/consent/messages files, and the ui's
+                # college reference datasets, are fetched at deploy time and
+                # never committed (see fetch_signals_configs) — none of them
+                # exist in a fresh checkout. schemas.networks=[] skips the
+                # ConfigMap block that would otherwise `fail()` on the first
+                # missing file; ui.reference.enabled=false does the same for
+                # the reference datasets. Neither flag hides an app image.
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set-json 'api.schemas.networks=[]' \
+                  --set ui.reference.enabled=false \
+                  >> /tmp/all-rendered.yaml
+                ;;
+              aggregator)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set global.existingSecret=ci-smoke \
+                  --set global.networkConfigDelivery=false \
+                  >> /tmp/all-rendered.yaml
+                ;;
+              keycloak)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set global.existingSecret=ci-smoke \
+                  --set global.keycloakRealm=ci-smoke \
+                  >> /tmp/all-rendered.yaml
+                ;;
+              *)
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  >> /tmp/all-rendered.yaml
+                ;;
+            esac
+            echo "::endgroup::"
+          done
+
+      # Every Docker Hardened Image the charts deploy is served from OUR GHCR
+      # mirror, not from dhi.io (see the header of helm/*/values.yaml for why).
+      # The mirror only contains what .github/dhi-mirror-images.txt lists, so a
+      # values.yaml that names a ref absent from that list deploys a pod that
+      # can never pull — and the error at deploy time is a bare `denied`, which
+      # reads like a permissions problem rather than a missing mirror. Catch it
+      # in the PR instead.
+      #
+      # `helm template` is the right source here rather than grepping values:
+      # the refs are assembled from split registry/repository/tag keys nested at
+      # different depths per subchart, and only the render resolves them. The
+      # grep runs over the WHOLE rendered manifest, not just `image:` keys —
+      # cert-manager passes its acmesolver image as a controller FLAG
+      # (--acme-http01-solver-image) and would otherwise be missed.
+      - name: DHI mirror list covers every rendered image
+        run: |
+          set -euo pipefail
+          grep -oE 'ghcr\.io/blue-dots-economy/dhi/[A-Za-z0-9._-]+:[A-Za-z0-9._-]+' /tmp/all-rendered.yaml \
+            | sed 's|ghcr\.io/blue-dots-economy/dhi/||' \
+            | sort -u > /tmp/rendered-dhi.txt
+
+          grep -vE '^[[:space:]]*(#|$)' .github/dhi-mirror-images.txt \
+            | tr -d '[:blank:]' | sort -u > /tmp/listed-dhi.txt
+
+          echo "rendered $(wc -l < /tmp/rendered-dhi.txt), listed $(wc -l < /tmp/listed-dhi.txt)"
+
+          # One-directional on purpose. Rendered-but-not-listed is a hard error:
+          # that pod cannot pull. Listed-but-not-rendered is only a stale line in
+          # the list — it costs one redundant copy, breaks nothing, and is the
+          # expected state while an image is being staged ahead of the values
+          # change that starts using it.
+          missing=$(comm -23 /tmp/rendered-dhi.txt /tmp/listed-dhi.txt)
+          if [ -n "$missing" ]; then
+            echo "::error::these images are deployed but not mirrored — add them to .github/dhi-mirror-images.txt:"
+            echo "$missing"
+            exit 1
+          fi
+          echo "OK — every rendered DHI ref is in the mirror list."
+
+      # The other direction, and the one that was missing. The check above only
+      # asks "is every dhi/* ref mirrored?" — it is blind to a NEW NON-DHI image
+      # appearing, which is exactly how the loki 6.7.1 -> 7.3.0 bump slipped
+      # `docker.io/kiwigrid/k8s-sidecar:2.5.0` into a stack we had just finished
+      # hardening. A chart bump is precisely when this happens, because a
+      # subchart can add a container that no value of ours mentions.
+      #
+      # So: every rendered image must be either on the mirror, explicitly
+      # exempted with a reason in .github/dhi-exempt-images.txt, or one of our
+      # OWN app images (signals/aggregator/keycloak's own `image:` values) —
+      # those are already built from a DHI base in their own repo's CI, a
+      # separate provenance chain this check has no visibility into and isn't
+      # meant to police. What this check actually guards against is a VENDORED
+      # SUBCHART quietly adding a new third-party container, which is a
+      # monitoring/common-services-shaped problem, not an app-chart one.
+      #
+      # Matched on repository, not full ref — these tags change on every app
+      # deploy, unlike the exempt list's pinned refs for rarely-rebuilt bases.
+      - name: no unhardened image sneaks in
+        run: |
+          set -euo pipefail
+          grep -ohE '(image: +"?[^"[:space:]]+|--[a-z0-9-]*-image=[^[:space:]"]+)' /tmp/all-rendered.yaml \
+            | sed -E 's/^image: *"?//; s/^--[a-z0-9-]*-image=//' \
+            | sort -u > /tmp/all-images.txt
+
+          grep -vE '^[[:space:]]*(#|$)' .github/dhi-exempt-images.txt \
+            | tr -d '[:blank:]' | sort -u > /tmp/exempt.txt
+
+          own_app_images='^ghcr\.io/blue-dots-economy/(signals-dpg/|signals-search|notification-service|tei-bge-m3|aggregator-dpg/|keycloak-server)'
+
+          # Anything neither mirrored, exempted, nor one of our own app images.
+          unexpected=$(grep -v '^ghcr\.io/blue-dots-economy/dhi/' /tmp/all-images.txt \
+                        | grep -vE "$own_app_images" \
+                        | grep -vxF -f /tmp/exempt.txt || true)
+
+          total=$(wc -l < /tmp/all-images.txt)
+          dhi=$(grep -c '^ghcr\.io/blue-dots-economy/dhi/' /tmp/all-images.txt || true)
+          echo "$dhi of $total rendered images are on the DHI mirror; $(wc -l < /tmp/exempt.txt) exempted"
+
+          if [ -n "$unexpected" ]; then
+            echo "::error::these images are neither on the DHI mirror nor exempted. Either mirror them (add to .github/dhi-mirror-images.txt and point the chart at ghcr.io/blue-dots-economy/dhi/...) or add them to .github/dhi-exempt-images.txt WITH A REASON:"
+            echo "$unexpected"
+            exit 1
+          fi
+          echo "OK — no unhardened image outside the exemption list."
+
   tofu:
     runs-on: ubuntu-latest
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tofu-plugin-cache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: 1.12.4
           tofu_wrapper: false
 
       - name: Cache OpenTofu providers
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: tofu-plugins-${{ runner.os }}

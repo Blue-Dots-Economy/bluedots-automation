@@ -14,6 +14,10 @@ global:
   # UPDATE: http for local, https when cert-manager issues a cert.
   publicProtocol: https
 
+  # Campaign PII export retention (days). Drives EXPORT_URL_TTL_SECONDS (× 86400) here AND
+  # the S3 lifecycle expiry in opentofu — set it once in global-values.yaml. Default 1 day.
+  campaignExportExpiryDays: 1
+
   # Container registry — left empty intentionally. Bitnami subcharts
   # (postgresql, redis) read `global.imageRegistry` first and would otherwise
   # have `docker.io/bitnamilegacy/...` rewritten to `<registry>/bitnamilegacy/...`
@@ -86,7 +90,19 @@ global:
     ref: main
     # Filename inside the per-network directory.
     file: network.json
+    # Brand sub-directory, when the brand ships its OWN network.json (a full copy,
+    # not a partial) — mirrors scripts/fetch-configs.sh, which prefers
+    # <network>/<brand>/network.json and falls back to <network>/network.json.
+    #
+    # EMPTY BY DEFAULT and NOT derived from global.aggregatorBrand on purpose. A
+    # templated URL cannot fall back on a 404 the way try_fetch does, so coupling
+    # this to aggregatorBrand would point every brand-ed deployment at a file that
+    # may not exist and break the loader at boot. Set it only where the brand
+    # folder really carries network.json.
+    brand: ''
     # Full-URL override, for a mirror / internal host / S3 instead of the derivation.
+    # Prefer `brand` over hardcoding a URL here: `url` also freezes repo/ref, which
+    # breaks the lockstep with $SIGNALS_DPG_REF that keeps both halves on one schema.
     url: ''
 
   # Support/grievance email injected into the aggregator consent T&C / Privacy /
@@ -95,6 +111,42 @@ global:
   # consent content. A consent change needs a rollout restart of web + api (subPath
   # mount doesn't hot-update).
   consentSupportEmail: hello@bluedotseconomy.org
+
+  # ── Onboarding capability allow-list (AGGREGATOR_ONBOARDING_ENABLED) ───────
+  # Comma-separated allow-list of the registration modes this deployment offers.
+  # Recognised today: `form`, `voice` (`bulk` is reserved and currently gates
+  # nothing). Emitted to the api only — worker and web do not read it.
+  #
+  # READ THIS BEFORE CHANGING: empty is NOT the same as unset.
+  #   unset / omitted  -> ALL capabilities enabled (the api's default)
+  #   "form"           -> form only; voice registration is off
+  #   ""  (empty!)     -> NOTHING enabled — every registration mode is disabled
+  #                       and every public-link creation fails with a 400
+  # The api is fail-closed by design, so the api ConfigMap template OMITS the key
+  # entirely when this is empty rather than rendering `""`. That conditional is
+  # load-bearing; do not "tidy" it into an unconditional line.
+  #
+  # UAT: blue_dot and purple_dot want `form` (voice forms off).
+  onboardingEnabled: ''
+
+  # ── Signals UI hand-off (SIGNALS_UI_URLS) ─────────────────────────────────
+  # Comma-separated `domain=url` pairs mapping each network domain to the login
+  # page of the Signals UI that fronts it, e.g.
+  #   seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login
+  # Each network domain is served by its OWN Signals UI, so there is one pair per
+  # domain — not one shared URL. Emitted to the api only.
+  #
+  # It powers the "Already Registered — Sign In" chooser and the post-submit
+  # redirect; leave it empty and that hand-off is invisible to every user.
+  #
+  # The URL MUST be the Signals **UI** login page (normally `<origin>/auth/login`)
+  # and NEVER a Keycloak authorization URL. A Keycloak authorize URL embeds
+  # one-time `state`/PKCE values bound to the browser session that generated them,
+  # so a copied one fails for every user who follows it.
+  #
+  # Omitted from the rendered ConfigMap when empty — an empty value here is merely
+  # inert rather than dangerous, but it keeps both new keys consistent.
+  signalsUiUrls: ''
 
   # Signal-stack integration. Used by api/worker to call the signal-stack
   # admin API (POST /api/v1/admin/aggregator/upsert, etc.).
@@ -112,11 +164,80 @@ global:
     clientId: aggregator-portal
     scope: 'openid profile email'
 
+  # ── Token client-scoping (`azp` allow-lists, api-only) ────────────────────
+  # Defence-in-depth over issuer-only verification: `azp` is the client that
+  # requested the token, so an allow-list stops a token minted for a DIFFERENT
+  # client in the same realm being replayed against this API.
+  #
+  # BOTH ARE FAIL-OPEN IN THE APP, which is why they carry real defaults here
+  # rather than empty strings. `assertAllowedAzp` returns early on an empty
+  # list ("gate disabled when unconfigured"), so a blank value is not a
+  # tightening — it silently removes the check. Keep them populated.
+  #
+  # keycloakAllowedAzp: the three clients the shared realm defines for this DPG
+  # (helm/keycloak realm.json). Must stay in step with that realm — a client
+  # renamed there and not here fails every exchange with AzpNotAllowedError.
+  keycloakAllowedAzp: 'aggregator-portal,aggregator-api,aggregator-bff'
+  # campaignManagerAllowedAzp: REPLACES the list above on the /v1/campaign/*
+  # routes only (export, email, voice, dump), scoping them to the external
+  # campaign-manager client. The app falls back to this same literal when the
+  # var is blank or parses to an empty list, so it can never un-gate the most
+  # sensitive routes — set explicitly anyway, so the deployed value is visible
+  # in the ConfigMap instead of implied by the image.
+  campaignManagerAllowedAzp: 'campaign-manager'
+
   # UPDATE: S3 wiring for bulk uploads, QR PNGs, error CSVs.
   s3:
     region: ap-south-1
     bucket: aggregator-bulk-uploads
     forcePathStyle: false
+
+  # ── Signals non-PII dump download API (api-only) ──────────────────────────
+  # `GET /v1/campaign/dump` hands the campaign manager pre-signed URLs for the
+  # Signals non-PII snapshot, so it needs no S3 credentials of its own. The
+  # objects are written by the SIGNALS `s3-export` CronJob — a different helm
+  # release — at three fixed keys, overwritten in place every run:
+  #
+  #     [<prefix>/]<network>/<instance_id>/{user,items,item_actions}.ndjson.gz
+  #
+  # There is no manifest and no dated run folder, so the key root is CONFIGURED
+  # and never probed: a wrong value returns 404 DUMP_NOT_AVAILABLE rather than
+  # serving a different dataset. `<network>` is read from the resolved
+  # aggregator.config.yaml, not from env, so it cannot drift; the other two
+  # segments are the two knobs below.
+  #
+  # THE BUCKET MUST ALSO MATCH. The api reads global.s3.bucket above; the
+  # exporter writes to s3-export.s3.bucket in the signals release. Both are
+  # pinned to the same generated `public` bucket by global-cloud-values.yaml
+  # (see opentofu/CLAUDE.md — "One bucket, one role").
+  #
+  # instanceId: the Signals instance THIS deployment serves — one aggregator
+  # deployment serves exactly one, hence no request parameter. It must equal
+  # `s3-export.instances[].id` in the signals values. NO DEFAULT ON PURPOSE:
+  # empty is inert (every dump call returns 503 DUMP_NOT_CONFIGURED with
+  # reason CAMPAIGN_DUMP_INSTANCE_ID_UNSET) rather than booting the API onto a
+  # guessed dataset, so deployments that do not use the campaign manager are
+  # unaffected. Bind it to the same anchor as the exporter's id in
+  # <env>/global-values.yaml so the two cannot drift apart.
+  campaignDumpInstanceId: ''
+  # prefix: MUST equal `s3-export.s3.prefix` in the signals release. Empty on
+  # both sides means keys start at the <network> segment, which is the
+  # exporter's default — if DevOps sets a prefix on the cron, change it here in
+  # the same window or every dump call 404s.
+  campaignDumpPrefix: ''
+
+  # ── Raya voice provider (worker-only) ─────────────────────────────────────
+  # Outbound leg of the campaign voice channel: the worker calls Raya's hosted
+  # API to place calls. The API KEY is a real third-party credential and lives
+  # in the umbrella Secret as `secrets.rayaApiKey` below, never here.
+  #
+  # Leave this EMPTY to use the app's own default (https://v1.getraya.app/api);
+  # the worker ConfigMap omits the key entirely when blank. Do not "helpfully"
+  # render it unconditionally: the worker parses it as
+  # `z.string().url().default(...)`, and `""` is not a valid URL, so an empty
+  # render fails ConfigSchema.parse at boot and takes the WHOLE worker down —
+  # every queue, not just voice jobs. Set it only for a non-prod Raya endpoint.
+  rayaBaseUrl: ''
 
   # If set, subcharts reference this Secret name instead of the umbrella's
   # templated `{release}-secrets`. The named Secret MUST exist before
@@ -211,6 +332,33 @@ secrets:
   # Raw apikey for signals-DPG admin onboard. Must match the value in the
   # signals helm release Secret `AGGREGATOR_DPG_API_KEY`.
   signalstackAdminKey: ''
+  # Raya API key — the OUTBOUND voice credential (worker → Raya's hosted API).
+  # A real third-party secret: it can neither be committed nor generated.
+  #
+  # Plumbed through the same chain as smtpPassword and msg91AuthKey: hand-entered
+  # in <env>/secrets.yaml (key `raya_api_key`), read by the opentofu output-file
+  # module on every apply, rendered into the generated global-secrets.yaml, and
+  # layered in here via -f at deploy time. Not generated — no generator can invent
+  # a third-party API key.
+  #
+  # The generated file uses the house "UPDATE_THIS_VALUE" placeholder for any
+  # hand-entered secret left unfilled. templates/secrets.yaml treats that literal
+  # as UNCONFIGURED and omits the Secret key, exactly as it does for empty, so an
+  # unfilled placeholder cannot reach the worker as a bogus credential.
+  #
+  # NOT the same credential as signals' RAYA_VOICE_BOT_API_KEY (INBOUND: the
+  # raya bot → the signals api, a better-auth apikey generated by
+  # random_passwords) and not secrets.voiceDpgSignalsSecret (the same bot's
+  # Keycloak client-credentials secret). Three separate values for one vendor —
+  # do not deduplicate them.
+  #
+  # Empty is SAFE and is the default: templates/secrets.yaml omits the key
+  # entirely rather than writing an empty one, and the worker's env is left
+  # unset. Voice jobs then still ACCEPT with 202 and fail at dispatch with a
+  # lazy ConfigError — every other queue is unaffected. An empty-but-PRESENT
+  # value would instead crash the worker at boot (see rayaBaseUrl above:
+  # `z.string().min(1).optional()` rejects "", it only accepts undefined).
+  rayaApiKey: ''
 
 # ─── Mail wiring (shared by api + keycloak) ────────────────────────────────
 mail:

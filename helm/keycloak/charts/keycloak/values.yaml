@@ -34,6 +34,12 @@ brandLongName: Blue Dots
 # keycloak.signalsOrigins in _helpers.tpl.
 signalsOrigins: []
 
+# Comma-separated OIDC callback URLs for the external campaign manager. Required
+# for coordinator login: coordinators have no password and sign in with an
+# emailed one-time code through the browser, and Keycloak matches redirect_uri
+# exactly. Set from the parent chart's `keycloak.campaignManagerRedirectUris`.
+campaignManagerRedirectUris: ''
+
 loginRateLimit:
   enabled: true
   minute: 20           # per-IP login-flow submits/min (~6 full logins/min per IP)

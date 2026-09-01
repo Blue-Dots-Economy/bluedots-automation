@@ -36,6 +36,7 @@ resource "local_sensitive_file" "global_secrets" {
     signals_api_client_secret               = var.signals_api_client_secret
     signalstack_client_secret               = var.signalstack_client_secret
     voice_dpg_signals_secret                = var.voice_dpg_signals_secret
+    campaign_manager_secret                 = var.campaign_manager_secret
     aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
     aggregator_keycloak_admin_client_secret = var.aggregator_keycloak_admin_client_secret
     aggregator_approval_token_secret        = var.aggregator_approval_token_secret
@@ -54,6 +55,7 @@ resource "local_sensitive_file" "global_secrets" {
     # Hand-entered secrets from the env's gitignored secrets.yaml. Each is
     # templated into every chart that needs it, so copies can't drift.
     smtp_password            = var.smtp_password
+    raya_api_key             = var.raya_api_key
     msg91_auth_key           = var.msg91_auth_key
     msg91_template_id        = var.msg91_template_id
     google_maps_api_key      = var.google_maps_api_key
@@ -74,8 +76,6 @@ resource "local_sensitive_file" "global_cloud_values" {
     cloud_storage_region    = var.cloud_storage_region
     storage_bucket_public   = var.storage_bucket_public
     app_sa_role_arn         = var.app_sa_role_arn
-    signals_export_role_arn = var.signals_export_role_arn
-    signals_export_bucket   = var.signals_export_bucket
     signals_public_hosts    = var.signals_public_hosts
     signals_allowed_origins = var.signals_allowed_origins
     signals_network         = var.signals_network

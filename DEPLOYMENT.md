@@ -195,6 +195,17 @@ misbranded / unable to send OTP / unable to log in. Two layers:
   > ⚠️ Don't hand-edit this file — it's overwritten on every apply. Edit
   > `secrets.yaml` instead.
 
+> **New service api-key? Re-render before `deploy_signals`.** Some releases add a
+> signals service apikey — the raya voice bot's `RAYA_VOICE_BOT_API_KEY` is the
+> latest (#170), alongside `AGGREGATOR_DPG_API_KEY` and `SIGNALS_SEARCH_API_KEY`.
+> Each is `random_passwords`-generated into `global-secrets.yaml`, and the signals
+> migrate-job guards it with `:?missing`, so an absent key fails the migrate-job —
+> and therefore the **whole `signals` release**. After pulling a change that adds a
+> service apikey, run `bash install.sh apply_tf_output_file` to regenerate
+> `global-secrets.yaml` **before** `deploy_signals`. (The api-key path is separate
+> from the voice bot's `voiceDpgSignalsSecret` Keycloak client secret — see
+> `helm/CLAUDE.md`.)
+
 ### `global-values.yaml` (public hosts)
 
 | Key | Meaning |
@@ -212,6 +223,34 @@ misbranded / unable to send OTP / unable to log in. Two layers:
 | `secrets.smtpUser` | Sender email for aggregator SMTP auth |
 | `api.adminEmails` | Admin notification recipient(s) |
 | `mail.smtp.from` | From address on outgoing mail |
+| `global.onboardingEnabled` | Aggregator registration modes allow-list (`form`, `voice`) — **leave commented out for "all modes"**; see the warning below |
+| `global.signalsUiUrls` | `domain=url` pairs pointing each network domain at its Signals UI **login page** (`<origin>/auth/login`) |
+
+> **Never set `global.onboardingEnabled` to an empty string.** The aggregator api
+> is fail-closed: *unset* enables every registration mode, but *empty* enables
+> **none** — all registration modes go dark and every public-link creation 400s.
+> Leave the key commented out when you don't need it; the chart omits the env var
+> entirely rather than rendering `AGGREGATOR_ONBOARDING_ENABLED: ""`.
+>
+> **`global.signalsUiUrls` must be the Signals UI login page, never a Keycloak
+> authorization URL** — a Keycloak authorize URL carries one-time `state`/PKCE
+> values bound to the browser that produced it and fails for everyone else.
+>
+> Editing `opentofu/aws/template/global-values.yaml` changes **only the template**.
+> Each live environment has its own values file in the private deployment repo, and
+> those must be updated separately or nothing changes in that environment.
+
+> **Enabling the signals `s3-export` exporter? Add its service account to
+> `service_account_subjects` first.** The CronJob writes to the shared `public`
+> bucket under the same `app_sa` IRSA role as the aggregator api/worker, and that
+> role's trust policy is a single `StringEquals` against `service_account_subjects`.
+> So every per-deployment `<env>/global-values.yaml` must add
+> `system:serviceaccount:signals:signals-s3-export` to that list **before** enabling
+> the exporter — the `template/` file already carries it, existing env files don't.
+> Miss it and you get a clean `helm upgrade` and a green apply, then a **`AccessDenied`
+> from STS inside the pod hours later at the CronJob's first scheduled run**. The
+> subject must also match `s3-export.serviceAccount.name` (pinned to
+> `signals-s3-export`). See `opentofu/CLAUDE.md` for the bucket/role sharing detail.
 
 ### `secrets.yaml` (the secrets you fill in)
 

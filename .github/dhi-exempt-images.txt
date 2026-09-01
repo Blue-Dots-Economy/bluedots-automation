@@ -1,0 +1,67 @@
+# Images the platform charts render that are deliberately NOT Docker Hardened.
+#
+# The mirror drift check in .github/workflows/ci.yml fails if a chart renders an
+# image that is neither on our DHI mirror nor listed here. That is the check that
+# was MISSING when the loki 6.7.1 -> 7.3.0 bump silently introduced
+# `docker.io/kiwigrid/k8s-sidecar:2.5.0`: the old check only verified that dhi/*
+# refs were mirrored, so a brand-new non-DHI image was invisible to it.
+#
+# Adding a line here is a deliberate decision, not a formality — say WHY, so the
+# next person can tell "no DHI equivalent exists" apart from "nobody looked yet".
+#
+# Format: one image reference (registry/repo:tag), exactly as rendered.
+# Tracking: Blue-Dots-Economy/bluedots-automation#136
+
+# ── Kong ─────────────────────────────────────────────────────────────────────
+# DHI publishes the Kong GATEWAY but no kubernetes-ingress-controller. Swapping
+# only the gateway while the controller beside it stays upstream buys little and
+# splits the pair across two provenance chains, so both stay upstream until the
+# controller has an equivalent.
+kong:3.9
+kong/kubernetes-ingress-controller:3.5
+
+# Redis was here. It is now on the mirror (dhi/redis:7.4.11-compat) — the
+# Bitnami chart only needed bash, cp and redis-server from the image, and the
+# -compat variant supplies all three.
+
+# ── Postgres ─────────────────────────────────────────────────────────────────
+# Our own build (dockerfiles/postgres/), Bitnami base + portable pgvector —
+# see that Dockerfile's header for why Bitnami over a DHI postgres (AVX-512
+# SIGILL fix). Only rendered with postgresql.enabled=true + the env overlay.
+ghcr.io/blue-dots-economy/postgres-pgvector:sha-5d4f334
+
+# postgresBootstrap Job: official upstream image, one-shot pre-install hook
+# that never serves traffic. Only rendered with postgresBootstrap.enabled=true
+# + an RDS host set.
+postgres:17-alpine
+
+# rdsRelay sidecar: official upstream image, needs only psql. Only rendered
+# with rdsRelay.enabled=true + an RDS host set. Tracked for pinning (TODO in
+# helm/common-services/templates/rds-relay.yaml) — :latest is the actual gap,
+# not the absence of a DHI equivalent.
+alpine/socat:latest
+
+# ── Cluster Autoscaler ───────────────────────────────────────────────────────
+# Official k8s.io image; no DHI equivalent published. Only rendered with
+# clusterAutoscaler.enabled=true (default off).
+registry.k8s.io/autoscaling/cluster-autoscaler:v1.35.0
+
+# ── Keycloak realm-import scripting sidecars ────────────────────────────────
+# Official Alpine; the kc-init Job apk-installs curl/jq/python3 at runtime to
+# reconcile the realm over the admin REST API — a one-shot Job, not a service.
+alpine:3.20
+
+# ── Signals migrate Job ──────────────────────────────────────────────────────
+# Official upstream image; the migrate Job's `provision` sidecar only runs
+# psql against Postgres once, then exits.
+postgres:16-alpine
+
+# ── prometheus-operator's --thanos-default-base-image flag ──────────────────
+# A CLI default for the operator to inject a Thanos sidecar into a Prometheus
+# CR that opts in. Nothing in this chart creates a ThanosRuler or sets a
+# Thanos config (grep for `ThanosRuler`/`thanos:` in helm/monitoring/ turns up
+# nothing), so this default is never actually pulled. Found by broadening the
+# unhardened-image check to also scan `--*-image=` flags, not just `image:`
+# keys — same blind spot class as cert-manager's acmesolver (mirrored, not
+# exempted, since that one genuinely runs on every ACME challenge).
+quay.io/thanos/thanos:v0.42.4

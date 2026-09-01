@@ -32,6 +32,7 @@ data:
     : "${SIGNALS_API_SECRET:?SIGNALS_API_SECRET must be set}"
     : "${SIGNALSTACK_CLIENT_SECRET:?SIGNALSTACK_CLIENT_SECRET must be set}"
     : "${VOICE_DPG_SIGNALS_SECRET:?VOICE_DPG_SIGNALS_SECRET must be set}"
+    : "${CAMPAIGN_MANAGER_SECRET:?CAMPAIGN_MANAGER_SECRET must be set}"
 
     # ── Optional: safe defaults ────────────────────────────────────────────
     : "${BRAND_LONG_NAME:=Blue Dots}"
@@ -64,6 +65,7 @@ data:
         -e "s|__SIGNALS_API_SECRET__|$(escape "$SIGNALS_API_SECRET")|g" \
         -e "s|__SIGNALSTACK_CLIENT_SECRET__|$(escape "$SIGNALSTACK_CLIENT_SECRET")|g" \
         -e "s|__VOICE_DPG_SIGNALS_SECRET__|$(escape "$VOICE_DPG_SIGNALS_SECRET")|g" \
+        -e "s|__CAMPAIGN_MANAGER_SECRET__|$(escape "$CAMPAIGN_MANAGER_SECRET")|g" \
         -e "s|__SMTP_HOST__|$(escape "$SMTP_HOST")|g" \
         -e "s|__SMTP_PORT__|$(escape "$SMTP_PORT")|g" \
         -e "s|__SMTP_FROM__|$(escape "$SMTP_FROM")|g" \
@@ -112,6 +114,27 @@ data:
       else
         echo "WARNING: SIGNALS_ORIGINS unset — signals-ui keeps the Keycloak-host" >&2
         echo "         fallback, which is WRONG if signals runs on its own host." >&2
+      fi
+
+      # campaign-manager redirect URIs. A JSON ARRAY, so a plain sed substitution
+      # cannot build them — same reason SIGNALS_ORIGINS is handled with jq above.
+      # Coordinators have no password and sign in through the browser with an
+      # emailed one-time code, and Keycloak matches redirect_uri EXACTLY, so this
+      # must list every callback the campaign manager actually uses.
+      if [ -n "${CAMPAIGN_MANAGER_REDIRECT_URIS:-}" ]; then
+        command -v jq >/dev/null 2>&1 || apk add --no-cache jq >/dev/null
+        cm_uris=$(printf '%s' "$CAMPAIGN_MANAGER_REDIRECT_URIS" \
+          | tr ',' '\n' | sed '/^[[:space:]]*$/d' | jq -R . | jq -s .)
+        jq --argjson u "$cm_uris" '
+          .clients = [
+            .clients[]
+            | if .clientId == "campaign-manager" then .redirectUris = $u else . end
+          ]' "$dst" > "$dst.tmp" && mv "$dst.tmp" "$dst"
+        echo "campaign-manager redirect URIs set to: $CAMPAIGN_MANAGER_REDIRECT_URIS"
+      else
+        echo "WARNING: CAMPAIGN_MANAGER_REDIRECT_URIS unset — the placeholder below" >&2
+        echo "         fails the render, deliberately: importing a literal" >&2
+        echo "         __PLACEHOLDER__ as a redirect URI silently breaks login." >&2
       fi
 
       # Fail loudly if any placeholder survived — a leftover __X__ in the realm
