@@ -109,6 +109,13 @@ variable "aggregator_smtp_user" {
 # placeholders as the example file, so a missing/partial secrets.yaml still
 # renders (and fails loudly at runtime rather than silently using a real value).
 # -----------------------------------------------------------------------------
+variable "raya_api_key" {
+  description = "Raya voice API key (aggregator worker -> Raya hosted API). Feeds aggregator secrets.rayaApiKey. Distinct from the generated raya_voice_bot_api_key, which is the INBOUND key raya sends to the signals api."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
 variable "smtp_password" {
   description = "Gmail App Password. Feeds notification-service GMAIL_PASS, aggregator secrets.smtpPassword, monitoring alerting.email.smtpAuthPassword."
   type        = string
