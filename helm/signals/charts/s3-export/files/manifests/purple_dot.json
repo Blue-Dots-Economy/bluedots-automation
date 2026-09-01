@@ -59,6 +59,6 @@
           "updated_at"
         ],
         "row_filters": ["exclude_test_action_owners"]
-        }
-    }
+      }
+  }
 }

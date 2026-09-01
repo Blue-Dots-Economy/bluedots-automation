@@ -38,10 +38,23 @@ _signals_host_bindings: &signals_host_bindings ""
 
 # ────────────────────────────────────────────────────────────────────────────
 # Aggregator Configuration passed to signalsUiUrls key. Responsible for the hand-off from aggregator to signals UI login page.
-_signals_ui_urls: &signals_ui_urls seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login
+# EMPTY ON PURPOSE. A sample value here is not inert: it makes the "Already
+# Registered — Sign In" chooser VISIBLE in every new environment, pointing users at
+# example.org URLs that do not resolve. Empty is omitted from the ConfigMap
+# entirely, so the hand-off stays invisible until real per-domain login pages are
+# set. Derive them from _signals_host_bindings (host=network/domain, inverted to
+# domain=<origin>/auth/login).
+_signals_ui_urls: &signals_ui_urls ''
 
 # Campaign Manager redirect URIs. Responsible for the hand-off from Keycloak to Campaign Manager after successful login.
-_campaign_manager_redirect_uris: &campaign_manager_redirect_uris https://<domain>/campaign-manager/callback
+# EMPTY ON PURPOSE — do not put a sample URL here. render-realm.sh's survivor
+# check is `grep -q '__[A-Z0-9_]*__'`, so a human-looking placeholder such as
+# `https://<domain>/...` does NOT match it: the render passes, Keycloak imports the
+# literal string as a redirect URI, the deploy goes green, and coordinator login
+# fails later with invalid_redirect_uri. Empty leaves the real
+# __CAMPAIGN_MANAGER_REDIRECT_URIS__ placeholder in place, which the check DOES
+# catch, so a new environment fails loudly until it sets a genuine callback.
+_campaign_manager_redirect_uris: &campaign_manager_redirect_uris ''
 
 _aggregator_host: &aggregator_host "aggregator.domain.com"
 _grafana_host:    &grafana_host    "monitoring.domain.com"
@@ -389,7 +402,7 @@ global:
   # is empty, which is what makes commenting this out safe.
   #
   # UAT blue_dot and purple_dot want `form` (voice registration off):
-  onboardingEnabled: form,voice
+  # onboardingEnabled: form
 
   # ── Signals UI hand-off (aggregator api only) ─────────────────────────────
   # Comma-separated `domain=url` pairs — one per network domain — pointing at the
