@@ -33,7 +33,7 @@ ui:
 notification-service:
   image:
     repository: ghcr.io/blue-dots-economy/notification-service
-    tag: "sha-f3b901a"
+    tag: "main"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
@@ -89,7 +89,7 @@ keycloak:
   # this repo publishes.
   image:
     repository: ghcr.io/blue-dots-economy/keycloak-server
-    tag: "202608-s1-rc2"
+    tag: "sha-c7b91b7"
     pullPolicy: IfNotPresent
   # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
   # because its brand strings come from that repo's config/<network>/keycloak.env.
