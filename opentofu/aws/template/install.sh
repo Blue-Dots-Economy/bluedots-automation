@@ -387,6 +387,21 @@ function deploy_signals() {
 function deploy_aggregator() {
     echo -e "\nDeploying aggregator"
     fetch_aggregator_configs
+    # The aggregator fetches network.json ITSELF at boot from a URL the chart
+    # renders, so unlike signals it cannot probe brand-then-network — a template
+    # can't test for a 404. Ask fetch-configs.sh (which already knows the network,
+    # the brand and the repo/ref, and already does this probe for signals) for the
+    # brand segment, so BOTH halves resolve the same file. Empty = the brand ships
+    # no network.json and the network default applies.
+    #
+    # Deliberately NOT derived from global.aggregatorBrand: that means "which brand
+    # skin", not "does this brand ship its own network schema", and on main those
+    # diverge for half the brands. See helm/aggregator/values.yaml networkSource.brand.
+    local ns_brand
+    ns_brand="$(bash "$REPO_ROOT/scripts/fetch-configs.sh" resolve-network-brand \
+        --global-values "$GLOBAL_VALUES" \
+        --repo "$SIGNALS_DPG_REPO" \
+        --ref "$SIGNALS_DPG_REF")"
     # networkSource repo/ref passed here rather than pinned in global-values.yaml, so
     # the aggregator's network.json URL is built from the same repo+ref
     # fetch-configs.sh used for signals — one pin covers both halves.
@@ -400,6 +415,7 @@ function deploy_aggregator() {
         $IMAGE_PULL_HELM_ARGS \
         --set "global.networkSource.repo=$SIGNALS_DPG_REPO" \
         --set "global.networkSource.ref=$SIGNALS_DPG_REF" \
+        --set "global.networkSource.brand=$ns_brand" \
         --wait --timeout 10m
     # subPath mounts don't hot-update and the config is boot-cached in-process, so a
     # config-only change leaves the Deployment spec untouched and helm rolls nothing.
