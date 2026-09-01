@@ -57,6 +57,13 @@ IMAGES_PUBLIC="${IMAGES_PUBLIC:-true}"
 # The key is the SUBCHART ALIAS, not the service name — see helm/*/Chart.yaml.
 # Notably aggregator's api is aliased `aggregator-api` so it does not collide
 # with signals' `api` in the shared global-images.yaml.
+#
+# Applied to the four APP charts only — deploy_monitoring is deliberately
+# excluded because it takes no -f "$GLOBAL_IMAGES", so it has no pinned tag to
+# override. Adding it there would suggest an override that cannot take effect.
+#
+# In deploy_aggregator this sits AFTER the two --set global.networkSource.*
+# flags, so it can override those too; helm takes the last --set for a key.
 EXTRA_HELM_ARGS="${EXTRA_HELM_ARGS:-}"
 
 IMAGE_PULL_HELM_ARGS=""
@@ -417,9 +424,9 @@ function deploy_aggregator() {
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
         $IMAGE_PULL_HELM_ARGS \
-        $EXTRA_HELM_ARGS \
         --set "global.networkSource.repo=$SIGNALS_DPG_REPO" \
         --set "global.networkSource.ref=$SIGNALS_DPG_REF" \
+        $EXTRA_HELM_ARGS \
         --wait --timeout 10m
     # subPath mounts don't hot-update and the config is boot-cached in-process, so a
     # config-only change leaves the Deployment spec untouched and helm rolls nothing.
@@ -649,13 +656,13 @@ function dry_run() {
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$KC_REL" "$KC_DIR" -n "$KC_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
 }
 
 # helm --dry-run ONLY signals, with the same -f layering as deploy_signals.
