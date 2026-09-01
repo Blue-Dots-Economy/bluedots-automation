@@ -36,6 +36,13 @@ _signals_public_hosts: &signals_public_hosts
 # entirely and every email link falls back to FRONTEND_BASE_URL, unchanged.
 _signals_host_bindings: &signals_host_bindings ""
 
+# ────────────────────────────────────────────────────────────────────────────
+# Aggregator Configuration passed to signalsUiUrls key. Responsible for the hand-off from aggregator to signals UI login page.
+_signals_ui_urls: &signals_ui_urls seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login
+
+# Campaign Manager redirect URIs. Responsible for the hand-off from Keycloak to Campaign Manager after successful login.
+_campaign_manager_redirect_uris: &campaign_manager_redirect_uris https://<domain>/campaign-manager/callback
+
 _aggregator_host: &aggregator_host "aggregator.domain.com"
 _grafana_host:    &grafana_host    "monitoring.domain.com"
 # ── Keycloak's own hostname ────────────────────────────────────────────────────
@@ -393,7 +400,7 @@ global:
   # Must be the Signals UI login page (normally `<origin>/auth/login`), NEVER a
   # Keycloak authorization URL — those embed one-time state/PKCE values bound to
   # the browser that generated them and fail for everyone else.
-  signalsUiUrls: "seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login"
+  signalsUiUrls: *signals_ui_urls
 
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   signalstack:
@@ -495,7 +502,7 @@ keycloak:
   # Left EMPTY here on purpose so a new environment has to make that choice
   # rather than inheriting someone else's callback URL. It was previously absent
   # from this file entirely, which made the failure look like a chart bug.
-  campaignManagerRedirectUris: ''
+  campaignManagerRedirectUris: *campaign_manager_redirect_uris
 
   # OTP delivery. The subchart defaults to `log`, which writes the code to the
   # pod log and sends nothing — Keycloak stays healthy and no OTP ever arrives.
