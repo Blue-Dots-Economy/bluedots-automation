@@ -137,6 +137,24 @@ spec:
                 secretKeyRef:
                   name: {{ include "keycloak-platform.secretName" . }}
                   key: VOICE_DPG_SIGNALS_SECRET
+            {{- /*
+              campaign-manager client. BOTH of these must be here, not just on the
+              Keycloak pod's realm-renderer initContainer: this Job re-runs the SAME
+              render-realm.sh as its step 1/4 (deliberately, so the substitution
+              cannot differ between the two), and that script hard-fails on an unset
+              CAMPAIGN_MANAGER_SECRET (`:?` guard) before it reaches anything else.
+              They were added to the Deployment and missed here, so step 1/4 died
+              with `CAMPAIGN_MANAGER_SECRET must be set` on every deploy into a realm
+              that already exists — i.e. every upgrade.
+              Keep this list in step with charts/keycloak/templates/deployment.yaml.
+            */}}
+            - name: CAMPAIGN_MANAGER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: CAMPAIGN_MANAGER_SECRET
+            - name: CAMPAIGN_MANAGER_REDIRECT_URIS
+              value: {{ .Values.keycloak.campaignManagerRedirectUris | default "" | quote }}
             # render-realm.sh reads SMTP_SSL; the ConfigMap key is SMTP_SECURE.
             - name: SMTP_SSL
               value: {{ index .Values.smtp "SMTP_SECURE" | default "false" | quote }}

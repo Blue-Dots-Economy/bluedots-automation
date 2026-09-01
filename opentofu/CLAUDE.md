@@ -87,11 +87,12 @@ Some secrets can neither be committed (they're real credentials) nor generated (
 
 `_common/output-file.hcl` reads it every apply (`fileexists()` guard → `{}` when absent, then per-key `try()` → the placeholder), passes the values as module variables, and the `.tfpl` interpolates them. **That's what makes regeneration safe: `apply_tf_output_file` re-renders `global-secrets.yaml` from the same `secrets.yaml`, so hand-entered values are never lost** — the earlier "re-paste after every regenerate" footgun is gone.
 
-Eight keys. Most are **one per distinct secret**, fanned out to every consumer so per-chart copies can't drift. The two Google keys are the deliberate exception — a Google API key accepts only **one** application restriction (HTTP referrers *or* IP addresses), so the browser key and the server key have to be separate entries to be restrictable at all (`google_maps_api_key` → referrers on the signals hosts; `google_geocoding_api_key` → the env's NAT gateway EIPs, both AZs). They may hold the same value if unrestricted.
+Nine keys. Most are **one per distinct secret**, fanned out to every consumer so per-chart copies can't drift. The two Google keys are the deliberate exception — a Google API key accepts only **one** application restriction (HTTP referrers *or* IP addresses), so the browser key and the server key have to be separate entries to be restrictable at all (`google_maps_api_key` → referrers on the signals hosts; `google_geocoding_api_key` → the env's NAT gateway EIPs, both AZs). They may hold the same value if unrestricted.
 
 | `secrets.yaml` key | Rendered into |
 |---|---|
 | `smtp_password` | notification-service `GMAIL_PASS`, aggregator `secrets.smtpPassword`, monitoring `alerting.email.smtpAuthPassword` |
+| `raya_api_key` | aggregator `secrets.rayaApiKey` — the **outbound** worker→Raya voice key. Not the generated `raya_voice_bot_api_key` (inbound, raya→signals api) and not `voice_dpg_signals_secret` (that bot's Keycloak client secret). Left as the placeholder, the aggregator chart omits the Secret key rather than shipping a bogus credential |
 | `msg91_auth_key` | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
 | `msg91_template_id` | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
 | `google_maps_api_key` | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` (browser) |

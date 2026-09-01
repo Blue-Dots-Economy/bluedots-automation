@@ -1,0 +1,64 @@
+{
+    "manifest_version": 1,
+    "network": "purple_dot",
+    "network_json_ref": "68335c01488a4afab04ec32ef89147eceb365b4c",
+    "format": "ndjson",
+    "tables": {
+      "user": {
+        "columns": [
+          "id",
+          "created_at",
+          "updated_at",
+          "domains",
+          "onboarded_by_org_id",
+          "onboarded_via",
+          "onboarded_source_id",
+          "onboarded_at",
+          "tags"
+        ],
+        "row_filters": ["exclude_test_users"]
+      },
+      "items": {
+        "columns": [
+          "item_network",
+          "item_domain",
+          "item_type",
+          "item_id",
+          "lifecycle_status",
+          "created_by",
+          "item_locations",
+          "created_at",
+          "updated_at"
+        ],
+        "row_filters": ["exclude_test_owned"],
+        "jsonb": {
+          "item_state": {
+            "seeker/profile_1.0": [
+              "age",
+              "gender",
+              "disability_type",
+              "disability_percentage",
+              "looking_for",
+              "documents_available",
+              "highest_qualification"
+            ],
+            "provider/profile_1.0": [
+              "provider_category",
+              "disabilities_served",
+              "services_offered",
+              "service_cities",
+              "catalog_url"
+            ]
+          }
+        }
+      },
+      "item_actions": {
+        "columns": [
+          "partition_network",
+          "created_at",
+          "updated_at"
+        ],
+        "row_filters": ["exclude_test_action_owners"]
+      }
+  }
+}

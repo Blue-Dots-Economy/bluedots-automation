@@ -55,6 +55,7 @@ resource "local_sensitive_file" "global_secrets" {
     # Hand-entered secrets from the env's gitignored secrets.yaml. Each is
     # templated into every chart that needs it, so copies can't drift.
     smtp_password            = var.smtp_password
+    raya_api_key             = var.raya_api_key
     msg91_auth_key           = var.msg91_auth_key
     msg91_template_id        = var.msg91_template_id
     google_maps_api_key      = var.google_maps_api_key

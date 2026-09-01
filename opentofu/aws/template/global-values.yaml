@@ -36,6 +36,26 @@ _signals_public_hosts: &signals_public_hosts
 # entirely and every email link falls back to FRONTEND_BASE_URL, unchanged.
 _signals_host_bindings: &signals_host_bindings ""
 
+# ────────────────────────────────────────────────────────────────────────────
+# Aggregator Configuration passed to signalsUiUrls key. Responsible for the hand-off from aggregator to signals UI login page.
+# EMPTY ON PURPOSE. A sample value here is not inert: it makes the "Already
+# Registered — Sign In" chooser VISIBLE in every new environment, pointing users at
+# example.org URLs that do not resolve. Empty is omitted from the ConfigMap
+# entirely, so the hand-off stays invisible until real per-domain login pages are
+# set. Derive them from _signals_host_bindings (host=network/domain, inverted to
+# domain=<origin>/auth/login).
+_signals_ui_urls: &signals_ui_urls ''
+
+# Campaign Manager redirect URIs. Responsible for the hand-off from Keycloak to Campaign Manager after successful login.
+# EMPTY ON PURPOSE — do not put a sample URL here. render-realm.sh's survivor
+# check is `grep -q '__[A-Z0-9_]*__'`, so a human-looking placeholder such as
+# `https://<domain>/...` does NOT match it: the render passes, Keycloak imports the
+# literal string as a redirect URI, the deploy goes green, and coordinator login
+# fails later with invalid_redirect_uri. Empty leaves the real
+# __CAMPAIGN_MANAGER_REDIRECT_URIS__ placeholder in place, which the check DOES
+# catch, so a new environment fails loudly until it sets a genuine callback.
+_campaign_manager_redirect_uris: &campaign_manager_redirect_uris ''
+
 _aggregator_host: &aggregator_host "aggregator.domain.com"
 _grafana_host:    &grafana_host    "monitoring.domain.com"
 # ── Keycloak's own hostname ────────────────────────────────────────────────────
@@ -393,7 +413,7 @@ global:
   # Must be the Signals UI login page (normally `<origin>/auth/login`), NEVER a
   # Keycloak authorization URL — those embed one-time state/PKCE values bound to
   # the browser that generated them and fail for everyone else.
-  # signalsUiUrls: "seeker=https://seeker.example.org/auth/login,provider=https://provider.example.org/auth/login"
+  signalsUiUrls: *signals_ui_urls
 
   signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
   signalstack:
@@ -473,6 +493,30 @@ postgres:
 # namespace-local, so declaring it there names a missing Secret and Kong serves
 # self-signed for the whole host. See the runbook §10.2.
 keycloak:
+  # ── campaign-manager OIDC callbacks — YOU MUST SET THIS ────────────────────
+  # Consumed as CAMPAIGN_MANAGER_REDIRECT_URIS by render-realm.sh, which runs
+  # TWICE: once in the keycloak pod's realm-renderer initContainer and again as
+  # step 1/4 of the keycloak-init Job. Empty leaves the literal
+  # __CAMPAIGN_MANAGER_REDIRECT_URIS__ in realm.json and the script aborts — so
+  # `deploy_keycloak` fails outright rather than importing a client that looks
+  # configured and rejects every login with invalid_redirect_uri.
+  #
+  # Two valid answers:
+  #   "<url>[,<url>...]"  the campaign manager's real callback(s). Keycloak
+  #                       matches redirect_uri BYTE-EXACTLY — a trailing-slash
+  #                       difference fails login. List every callback it uses.
+  #   a URL you own       if this deployment only uses the client_credentials
+  #                       non-PII dump path (which needs no redirect URI at all),
+  #                       point it at a path on your own domain. Never at a host
+  #                       you do not control: this is an OAuth allow-list, and a
+  #                       third-party entry is an open-redirect primitive for
+  #                       stealing authorization codes.
+  #
+  # Left EMPTY here on purpose so a new environment has to make that choice
+  # rather than inheriting someone else's callback URL. It was previously absent
+  # from this file entirely, which made the failure look like a chart bug.
+  campaignManagerRedirectUris: *campaign_manager_redirect_uris
+
   # OTP delivery. The subchart defaults to `log`, which writes the code to the
   # pod log and sends nothing — Keycloak stays healthy and no OTP ever arrives.
   # Credentials come from secrets.msg91AuthKey + keycloak.msg91TemplateId.
