@@ -396,6 +396,30 @@ bash install.sh deploy_all_services     # full stack, in order, with readiness w
 `preflight → create_namespaces_and_secrets → deploy_monitoring →
 deploy_common_services → deploy_signals → deploy_aggregator → fix_acme_issuer_uri`.
 
+### Overriding an image tag for one run — `EXTRA_HELM_ARGS`
+
+Deploy a single service's image without editing `global-images.yaml`:
+
+```bash
+EXTRA_HELM_ARGS="--set api.image.tag=sha-abc1234" bash install.sh deploy_signals
+```
+
+Appended after every `-f` overlay, so `--set` wins. Anything not named keeps the
+tag pinned in `global-images.yaml`, and the override applies to **that run only** —
+the recorded desired state is untouched, so an experiment cannot quietly become
+the default. This is the hook CI deployments use.
+
+The key is the **subchart alias**, not the service or repo name — see each
+`helm/<chart>/Chart.yaml`. Notably aggregator's `api` is aliased `aggregator-api`
+so it does not collide with signals' `api` in the shared `global-images.yaml`;
+using `api` there overrides nothing and the deploy still reports success.
+
+| Function | Honours `EXTRA_HELM_ARGS` |
+|---|---|
+| `deploy_common_services`, `deploy_keycloak`, `deploy_signals`, `deploy_aggregator` | yes |
+| `dry_run` (its four app charts), `dry_run_signals` | yes |
+| `deploy_monitoring`, and `dry_run`'s monitoring chart | no — takes no `-f "$GLOBAL_IMAGES"`, so there is no pinned tag to override |
+
 ### Why the order matters
 
 1. **`monitoring` first** — its `kube-prometheus-stack` also ships the

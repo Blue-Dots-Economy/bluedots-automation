@@ -43,6 +43,29 @@ SIGNALS_DPG_REPO="${SIGNALS_DPG_REPO:-Blue-Dots-Economy/bluedots-schemas}"
 # IMAGES_PUBLIC=false           private images; GHCR_PAT is required and the
 #   ghcr-pull Secret is written into each namespace.
 IMAGES_PUBLIC="${IMAGES_PUBLIC:-true}"
+
+# Extra helm args appended to every app-chart upgrade, AFTER all the -f overlays,
+# so they win. This is the hook CI deployments use to override individual image
+# tags without editing global-images.yaml:
+#   EXTRA_HELM_ARGS="--set api.image.tag=sha-abc1234" bash install.sh deploy_signals
+# Anything not named keeps the tag pinned in global-images.yaml, and the override
+# lasts only for that run.
+#
+# The ${VAR:-} default is load-bearing: this script runs under `set -u`, so a
+# bare $EXTRA_HELM_ARGS would abort every deploy with "unbound variable".
+#
+# The key is the SUBCHART ALIAS, not the service name — see helm/*/Chart.yaml.
+# Notably aggregator's api is aliased `aggregator-api` so it does not collide
+# with signals' `api` in the shared global-images.yaml.
+#
+# Applied to the four APP charts only — deploy_monitoring is deliberately
+# excluded because it takes no -f "$GLOBAL_IMAGES", so it has no pinned tag to
+# override. Adding it there would suggest an override that cannot take effect.
+#
+# In deploy_aggregator this sits AFTER the two --set global.networkSource.*
+# flags, so it can override those too; helm takes the last --set for a key.
+EXTRA_HELM_ARGS="${EXTRA_HELM_ARGS:-}"
+
 IMAGE_PULL_HELM_ARGS=""
 if [[ "$IMAGES_PUBLIC" == "true" ]]; then
     IMAGE_PULL_HELM_ARGS='--set-json global.imagePullSecrets=[] --set-json postgresql.image.pullSecrets=[]'
@@ -297,6 +320,7 @@ function deploy_common_services() {
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
         $IMAGE_PULL_HELM_ARGS \
+        $EXTRA_HELM_ARGS \
         --wait --timeout 5m
 }
 
@@ -366,6 +390,7 @@ function deploy_keycloak() {
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
         $IMAGE_PULL_HELM_ARGS \
+        $EXTRA_HELM_ARGS \
         --wait --timeout 10m
 }
 
@@ -380,6 +405,7 @@ function deploy_signals() {
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
         $IMAGE_PULL_HELM_ARGS \
+        $EXTRA_HELM_ARGS \
         --wait --timeout 10m
 }
 
@@ -400,6 +426,7 @@ function deploy_aggregator() {
         $IMAGE_PULL_HELM_ARGS \
         --set "global.networkSource.repo=$SIGNALS_DPG_REPO" \
         --set "global.networkSource.ref=$SIGNALS_DPG_REF" \
+        $EXTRA_HELM_ARGS \
         --wait --timeout 10m
     # subPath mounts don't hot-update and the config is boot-cached in-process, so a
     # config-only change leaves the Deployment spec untouched and helm rolls nothing.
@@ -629,13 +656,13 @@ function dry_run() {
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$KC_REL" "$KC_DIR" -n "$KC_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
 }
 
 # helm --dry-run ONLY signals, with the same -f layering as deploy_signals.
@@ -651,7 +678,7 @@ function dry_run_signals() {
     preflight
     fetch_signals_configs
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────
