@@ -164,6 +164,12 @@ Terraform omits the argument — so these modules work unchanged in an account w
 requirement. The name is set in `template/global-values.yaml` because Sanketika accounts DO require
 it; another org sets its own name there, or blanks it.
 
+> **EXISTING ENVIRONMENTS MUST ADD THE KEY.** `_common/*.hcl` reads it with `lookup(..., "")`, so an
+> `<env>/global-values.yaml` written before this change silently resolves to empty, the boundary is
+> omitted, and the next role creation fails with the same `iam:CreateRole` error this was added to
+> fix. The template carries it; **per-deployment branches don't** — same footgun as
+> `service_account_subjects` above. Add it to every live `<env>/global-values.yaml`.
+
 This is not optional hardening. The `DevOpsEngineer` Identity Center permission set grants
 `iam:CreateRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy`, `iam:DeleteRole`,
 `iam:UpdateAssumeRolePolicy`, `iam:PassRole` and `iam:PutRolePermissionsBoundary` **only when the
