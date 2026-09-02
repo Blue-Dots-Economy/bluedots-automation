@@ -12,7 +12,16 @@ locals {
   # authorized_keys. Each dev keeps their own private key locally — only public
   # keys ever reach here, so nothing secret lands in Terraform state.
   authorized_keys_block = join("\n", var.authorized_keys)
+
+  # Permissions boundary required by the DevOpsEngineer permission set: its iam:CreateRole /
+  # PutRolePolicy / AttachRolePolicy / PassRole grants are conditioned on the new role carrying
+  # this boundary. Omitting it fails as "no identity-based policy allows iam:CreateRole" — an
+  # unmatched conditional Allow, not a missing permission. The policy is deny-only (allows *,
+  # denies the privilege-escalation set), pre-created per account; never managed from here.
+  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/SanketikaWorkloadBoundary"
 }
+
+data "aws_caller_identity" "current" {}
 
 # ---------------------------------------------------------------------------------------------------------------------
 # AMI — latest Amazon Linux 2023 (x86_64)
@@ -70,7 +79,8 @@ resource "aws_security_group" "bastion" {
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_iam_role" "bastion" {
-  name = "${local.environment_name}-bastion"
+  name                 = "${local.environment_name}-bastion"
+  permissions_boundary = local.permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

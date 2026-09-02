@@ -8,7 +8,16 @@ locals {
     ManagedBy     = "Terraform"
     CloudProvider = "AWS"
   }
+
+  # Permissions boundary required by the DevOpsEngineer permission set: its iam:CreateRole /
+  # PutRolePolicy / AttachRolePolicy / PassRole grants are conditioned on the new role carrying
+  # this boundary. Omitting it fails as "no identity-based policy allows iam:CreateRole" — an
+  # unmatched conditional Allow, not a missing permission. The policy is deny-only (allows *,
+  # denies the privilege-escalation set), pre-created per account; never managed from here.
+  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/SanketikaWorkloadBoundary"
 }
+
+data "aws_caller_identity" "current" {}
 
 # -------------------------------
 # IAM roles and policies
@@ -26,8 +35,9 @@ data "aws_iam_policy_document" "eks_cluster_assume_role" {
 }
 
 resource "aws_iam_role" "eks_cluster" {
-  name               = "${var.building_block}-${var.environment}-eks-cluster-role"
-  assume_role_policy = data.aws_iam_policy_document.eks_cluster_assume_role.json
+  name                 = "${var.building_block}-${var.environment}-eks-cluster-role"
+  permissions_boundary = local.permissions_boundary
+  assume_role_policy   = data.aws_iam_policy_document.eks_cluster_assume_role.json
 
   tags = local.common_tags
 }
@@ -90,8 +100,9 @@ data "aws_iam_policy_document" "eks_node_assume_role" {
 }
 
 resource "aws_iam_role" "eks_node" {
-  name               = "${var.building_block}-${var.environment}-eks-node-role"
-  assume_role_policy = data.aws_iam_policy_document.eks_node_assume_role.json
+  name                 = "${var.building_block}-${var.environment}-eks-node-role"
+  permissions_boundary = local.permissions_boundary
+  assume_role_policy   = data.aws_iam_policy_document.eks_node_assume_role.json
 
   tags = local.common_tags
 }
@@ -266,7 +277,8 @@ module "ebs_csi_driver_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.48"
 
-  role_name_prefix = "${local.cluster_name}-ebs-csi-"
+  role_name_prefix              = "${local.cluster_name}-ebs-csi-"
+  role_permissions_boundary_arn = local.permissions_boundary
 
   attach_ebs_csi_policy = true
 
@@ -292,6 +304,7 @@ module "cluster_autoscaler_irsa" {
   version = "~> 5.48"
 
   role_name_prefix                 = "${local.cluster_name}-ca-"
+  role_permissions_boundary_arn    = local.permissions_boundary
   attach_cluster_autoscaler_policy = true
   cluster_autoscaler_cluster_names = [local.cluster_name]
 
@@ -343,7 +356,8 @@ resource "aws_eks_addon" "ebs_csi" {
 resource "aws_iam_role" "cloudwatch_observability" {
   count = var.enable_cloudwatch_observability ? 1 : 0
 
-  name = "${local.cluster_name}-cw-obs-role"
+  name                 = "${local.cluster_name}-cw-obs-role"
+  permissions_boundary = local.permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

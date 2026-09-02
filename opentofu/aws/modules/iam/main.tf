@@ -7,11 +7,21 @@ locals {
     ManagedBy     = "Terraform"
     CloudProvider = "AWS"
   }
+
+  # Permissions boundary required by the DevOpsEngineer permission set: its iam:CreateRole /
+  # PutRolePolicy / AttachRolePolicy / PassRole grants are conditioned on the new role carrying
+  # this boundary. Omitting it fails as "no identity-based policy allows iam:CreateRole" — an
+  # unmatched conditional Allow, not a missing permission. The policy is deny-only (allows *,
+  # denies the privilege-escalation set), pre-created per account; never managed from here.
+  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/SanketikaWorkloadBoundary"
 }
+
+data "aws_caller_identity" "current" {}
 
 # Application service account IRSA role
 resource "aws_iam_role" "app_sa" {
-  name = "${local.environment_name}-app-sa"
+  name                 = "${local.environment_name}-app-sa"
+  permissions_boundary = local.permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

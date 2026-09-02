@@ -10,6 +10,13 @@ locals {
   # Public SSH keys for the one-time Pritunl setup shell (ubuntu user). Public keys
   # only — private keys stay with each owner and never enter Terraform state.
   authorized_keys_block = join("\n", var.authorized_keys)
+
+  # Permissions boundary required by the DevOpsEngineer permission set: its iam:CreateRole /
+  # PutRolePolicy / AttachRolePolicy / PassRole grants are conditioned on the new role carrying
+  # this boundary. Omitting it fails as "no identity-based policy allows iam:CreateRole" — an
+  # unmatched conditional Allow, not a missing permission. The policy is deny-only (allows *,
+  # denies the privilege-escalation set), pre-created per account; never managed from here.
+  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/SanketikaWorkloadBoundary"
 }
 
 data "aws_caller_identity" "current" {}
@@ -94,9 +101,10 @@ data "aws_iam_policy_document" "ec2_assume_role" {
 }
 
 resource "aws_iam_role" "pritunl" {
-  name               = "${local.name}-role"
-  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
-  tags               = local.common_tags
+  name                 = "${local.name}-role"
+  permissions_boundary = local.permissions_boundary
+  assume_role_policy   = data.aws_iam_policy_document.ec2_assume_role.json
+  tags                 = local.common_tags
 }
 
 # Allow the VPN server to describe EKS clusters (for kubeconfig generation on the host)
