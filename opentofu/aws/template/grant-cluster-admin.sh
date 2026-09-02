@@ -63,7 +63,8 @@ GLOBAL_VALUES="${GLOBAL_VALUES:-$SCRIPT_DIR/global-values.yaml}"
 # AmazonEKSClusterAdminPolicy = full admin, matching what the bastion gets and
 # what the manual step granted. AmazonEKSAdminPolicy (no "Cluster") is the
 # namespace-scoped one — override if you want to hand out something narrower.
-ACCESS_POLICY_ARN="${ACCESS_POLICY_ARN:-arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy}"
+# Composed below once the partition is known, so this is not pinned to arn:aws:.
+ACCESS_POLICY_ARN="${ACCESS_POLICY_ARN:-}"
 ACCESS_SCOPE="${ACCESS_SCOPE:-cluster}"
 
 log() { echo "$*" >&2; }
@@ -141,6 +142,14 @@ if [[ -n "${AWS_REGION:-}" ]]; then
   AWS_ARGS=(--region "$AWS_REGION")
 else
   AWS_ARGS=()
+fi
+
+# Partition (aws | aws-us-gov | aws-cn) read from the caller's own ARN rather than
+# assumed, so the AWS-managed policy ARN below resolves outside the commercial
+# partition too. Only looked up when the caller has not overridden the policy.
+if [[ -z "$ACCESS_POLICY_ARN" ]]; then
+  _partition="$(aws sts get-caller-identity --query Arn --output text | cut -d: -f2)"
+  ACCESS_POLICY_ARN="arn:${_partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 fi
 
 # Skipped under --dry-run: previewing the ARN conversion is most useful BEFORE

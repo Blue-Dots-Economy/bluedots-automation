@@ -124,7 +124,7 @@ resource "aws_iam_role_policy" "eks_describe" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["eks:DescribeCluster", "eks:ListClusters"]
-      Resource = "arn:aws:eks:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/*"
+      Resource = "arn:${data.aws_partition.current.partition}:eks:${var.aws_region}:${data.aws_caller_identity.current.account_id}:cluster/*"
     }]
   })
 }

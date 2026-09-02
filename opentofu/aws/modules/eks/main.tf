@@ -51,12 +51,12 @@ resource "aws_iam_role" "eks_cluster" {
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSClusterPolicy" {
   role       = aws_iam_role.eks_cluster.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSServicePolicy" {
   role       = aws_iam_role.eks_cluster.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSServicePolicy"
 }
 
 # KMS envelope encryption for Kubernetes Secrets (see encryption_config on the
@@ -116,17 +116,17 @@ resource "aws_iam_role" "eks_node" {
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEKSWorkerNodePolicy" {
   role       = aws_iam_role.eks_node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOnly" {
   role       = aws_iam_role.eks_node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEKS_CNI_Policy" {
   role       = aws_iam_role.eks_node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
 # -------------------------------
@@ -391,7 +391,7 @@ resource "aws_iam_role" "cloudwatch_observability" {
 resource "aws_iam_role_policy_attachment" "cloudwatch_observability_policy" {
   count      = var.enable_cloudwatch_observability ? 1 : 0
   role       = aws_iam_role.cloudwatch_observability[0].name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 resource "aws_eks_addon" "cloudwatch_observability" {
