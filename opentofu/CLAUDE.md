@@ -112,6 +112,82 @@ Two optional modules that make the cluster reachable without a public EKS endpoi
 
 Access is **SSH public key only** (`bastion_authorized_keys`, shared by both hosts; private keys stay with devs, so nothing secret lands in tfstate). Add/remove a key or CIDR in `global-values.yaml` and re-apply `bastion`/`pritunl`. To go fully private-endpoint: set both `eks_endpoint_public_access` and `eks_endpoint_private_access` `true`, verify from the bastion, then flip public access `false`.
 
+### Granting a human cluster-admin — `<env>/grant-cluster-admin.sh`
+
+The bastion's access entry is Terraform (`modules/bastion/main.tf`) because its principal is a role
+Terraform itself creates. A **human's** principal is not: it changes with whoever runs the apply, and
+encoding "the caller" in state means the next engineer's apply revokes the previous one's access. So
+that half is a standalone script, run directly like `get-signalstack-org-id.sh`:
+
+```bash
+./grant-cluster-admin.sh                     # grant whoever is running it
+./grant-cluster-admin.sh <principal-arn>     # grant someone else
+./grant-cluster-admin.sh --list              # existing entries
+./grant-cluster-admin.sh --dry-run           # preview (works before the cluster exists)
+```
+
+**The ARN conversion is the point.** `aws sts get-caller-identity` returns an STS *session* ARN
+(`arn:aws:sts::<acct>:assumed-role/AWSReservedSSO_DevOpsEngineer_<suffix>/you@example.com`); EKS access
+entries take an IAM *role* ARN, so the session name has to go.
+
+**Keep the path.** `CreateAccessEntry` validates `principalArn` against IAM, so a hand-built pathless
+ARN names a role that does not exist and the call fails with
+`InvalidParameterException: The specified principalArn is invalid`. SSO roles really live at
+`/aws-reserved/sso.amazonaws.com/<region>/<RoleName>`. Stripping the path is the rule for the
+**aws-auth ConfigMap** — the opposite API — and carrying that habit over here is what breaks it.
+
+The script does not reconstruct the path (the region segment is the Identity Center instance's, not
+necessarily the cluster's); it resolves the bare role name through `aws iam get-role`, which returns
+the real ARN whatever its path. If `iam:GetRole` is denied it fails with the console lookup to run
+rather than guessing.
+
+Idempotent on both halves (`ResourceInUseException` is treated as success; the policy association is
+an upsert), so it is safe on a cluster where the entry was already added by hand. The association is
+the half that actually grants anything — an access entry with no policy authenticates the principal
+and authorises nothing, which is what a half-finished manual attempt leaves behind.
+
+Cluster name resolves as `CLUSTER_NAME` → the kubeconfig context (an EKS cluster ARN, so it carries
+name *and* region) → `<building_block>-<environment>` from `global-values.yaml`. Region reads the
+**anchor** `_cloud_storage_region`, not `global.cloud_storage_region`, because the latter is a YAML
+alias and sed would hand `*cloud_storage_region` straight to the AWS CLI.
+
+## IAM permissions boundary (every role must carry it)
+
+Every `aws_iam_role` this repo creates sets `permissions_boundary` to
+`arn:aws:iam::<account>:policy/SanketikaWorkloadBoundary`, via a `local.permissions_boundary` in each
+module that builds the ARN from `data.aws_caller_identity.current.account_id` — **never hard-code the
+account id**, the same modules deploy into four of them.
+
+This is not optional hardening. The `DevOpsEngineer` Identity Center permission set grants
+`iam:CreateRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy`, `iam:DeleteRole`,
+`iam:UpdateAssumeRolePolicy`, `iam:PassRole` and `iam:PutRolePermissionsBoundary` **only when the
+request carries that boundary**. A role without it fails with:
+
+```
+AccessDenied: ... is not authorized to perform: iam:CreateRole ...
+because no identity-based policy allows the iam:CreateRole action
+```
+
+That message is misleading — it reads as a missing permission, but it is a *conditional Allow that
+did not match*. Note the wording: **"no identity-based policy allows"** means an unmatched condition,
+whereas **"with an explicit deny in an identity-based policy"** means a Deny statement fired. Do not
+chase this as a permissions request to the account admin; the fix is here.
+
+The boundary is **deny-only** (allows `*`, denies the privilege-escalation set: IAM user/key
+creation, `organizations:*`, `sso:*`, `identitystore:*`, `account:*`, `sts:AssumeRoot`, boundary
+tampering). It grants nothing, so a role needing a new AWS service never needs the boundary amended.
+The policy is pre-created per account and **must never be created or modified from this repo** — the
+permission set denies editing it. `NoSuchEntity` on `CreateRole` (as opposed to `AccessDenied`) means
+the account baseline was never applied: stop and report rather than recreating it.
+
+Roles created inside third-party modules take it through their own variable, not the
+`permissions_boundary` argument — both `iam-role-for-service-accounts-eks` instances in the `eks`
+module (`ebs_csi_driver_irsa`, `cluster_autoscaler_irsa`) use `role_permissions_boundary_arn`. When
+adding any new role, set the boundary in the same commit; a missed one only surfaces at apply time.
+
+**Backfilling existing roles** is an in-place update — `tofu plan` shows `~`, never `-/+`. If a role
+plans as a *replacement*, stop: replacing a live EKS cluster role takes the cluster down.
+
 ## Infra state & secrets
 
 tfstate lives in an S3 bucket (encrypted, versioned, private) — never committed; `.terraform/`, `*.tfstate`, `*.tfvars`, generated `tf.sh`/`global-cloud-values.yaml`/`global-secrets.yaml` are all gitignored. App secrets are generated by `random_passwords` + `output-file` into the gitignored `global-secrets.yaml`; most SMTP/MSG91/maps keys are also set there now (as `UPDATE_THIS_VALUE` placeholders — see the `output-file` module section above), a few remain plain anchors in `global-values.yaml`.

@@ -132,8 +132,8 @@ resource "aws_subnet" "this" {
       Name = "${local.environment_name}-${each.key}-subnet"
       Tier = each.value.type == "public" ? "Public" : "Private"
       # EKS load-balancer discovery tags
-      "kubernetes.io/role/elb"                                  = each.value.type == "public" ? "1" : "0"
-      "kubernetes.io/role/internal-elb"                         = each.value.type == "private" ? "1" : "0"
+      "kubernetes.io/role/elb"                          = each.value.type == "public" ? "1" : "0"
+      "kubernetes.io/role/internal-elb"                 = each.value.type == "private" ? "1" : "0"
       "kubernetes.io/cluster/${local.environment_name}" = "shared"
     }
   )
