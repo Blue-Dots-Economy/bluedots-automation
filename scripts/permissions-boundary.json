@@ -1,0 +1,72 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowEverythingByDefault",
+      "Effect": "Allow",
+      "Action": "*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyIamPrincipalAndCredentialCreation",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:UpdateUser",
+        "iam:DeleteUser",
+        "iam:CreateAccessKey",
+        "iam:UpdateAccessKey",
+        "iam:DeleteAccessKey",
+        "iam:CreateLoginProfile",
+        "iam:UpdateLoginProfile",
+        "iam:DeleteLoginProfile",
+        "iam:ChangePassword",
+        "iam:CreateSAMLProvider",
+        "iam:UpdateSAMLProvider",
+        "iam:DeleteSAMLProvider",
+        "iam:CreateOpenIDConnectProvider",
+        "iam:UpdateOpenIDConnectProviderThumbprint",
+        "iam:DeleteOpenIDConnectProvider"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyOrganizationAndIdentityControlPlanes",
+      "Effect": "Deny",
+      "Action": [
+        "organizations:*",
+        "sso:*",
+        "sso-directory:*",
+        "identitystore:*",
+        "account:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyAssumeRoot",
+      "Effect": "Deny",
+      "Action": "sts:AssumeRoot",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyTamperingWithThisBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:DeletePolicy"
+      ],
+      "Resource": "__BOUNDARY_POLICY_ARN__"
+    },
+    {
+      "Sid": "DenyRemovingAnyPermissionsBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:DeleteUserPermissionsBoundary"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

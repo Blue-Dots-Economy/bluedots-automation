@@ -69,4 +69,7 @@ inputs = {
   node_count_desired              = local.node_count_desired
   node_capacity_type              = local.node_capacity_type
   ebs_csi_addon_version           = local.ebs_csi_addon_version
+  # Name of an IAM policy in this account attached as the permissions boundary on every role
+  # this module creates. Optional: absent/empty attaches none. See modules/<m>/variables.tf.
+  permissions_boundary_policy_name = lookup(local.global_vars.global, "permissions_boundary_policy_name", "")
 }

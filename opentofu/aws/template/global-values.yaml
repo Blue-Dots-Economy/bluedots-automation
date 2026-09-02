@@ -2,6 +2,22 @@
 _building_block: &building_block "purple-dots"
 _environment:    &environment    "dev"
 _cloud_storage_region: &cloud_storage_region "ap-south-1"
+
+# ── IAM permissions boundary (per-account, optional) ───────────────────────────
+# Name of an IAM policy IN THIS ACCOUNT attached as the permissions boundary on
+# every role this repo creates. Leave EMPTY if your account does not gate role
+# creation on a boundary — the modules then omit the argument entirely.
+#
+# Required in Sanketika accounts: the DevOpsEngineer permission set only grants
+# iam:CreateRole / PutRolePolicy / AttachRolePolicy / PassRole when the request
+# carries it, so an empty value there fails with "no identity-based policy allows
+# the iam:CreateRole action" — an unmatched condition, not a missing permission.
+#
+# A NAME, not an ARN: the account id and partition are resolved from the caller,
+# so one value works in every account. Create the policy once per account with
+#   scripts/create-permissions-boundary.sh --name <YourWorkloadBoundary>
+# and put the same name here. This repo never creates or edits the policy.
+_permissions_boundary_policy_name: &permissions_boundary_policy_name "SanketikaWorkloadBoundary"
 _eks_cluster_version:    &eks_cluster_version    "1.35"
 _eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
 _eks_node_disk_size_gb:  &eks_node_disk_size_gb  40
@@ -139,6 +155,7 @@ global:
   building_block: *building_block
   environment:    *environment
   cloud_storage_region: *cloud_storage_region
+  permissions_boundary_policy_name: *permissions_boundary_policy_name
 
   # Feeds output-file's CORS/network locals (signals_allowed_origins, network).
   signals_public_hosts:   *signals_public_hosts
