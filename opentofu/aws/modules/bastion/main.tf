@@ -202,7 +202,7 @@ resource "aws_eks_access_entry" "bastion" {
 resource "aws_eks_access_policy_association" "bastion" {
   cluster_name  = var.cluster_name
   principal_arn = aws_iam_role.bastion.arn
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  policy_arn    = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
   access_scope {
     type = "cluster"
