@@ -153,10 +153,16 @@ alias and sed would hand `*cloud_storage_region` straight to the AWS CLI.
 
 ## IAM permissions boundary (every role must carry it)
 
-Every `aws_iam_role` this repo creates sets `permissions_boundary` to
-`arn:aws:iam::<account>:policy/SanketikaWorkloadBoundary`, via a `local.permissions_boundary` in each
-module that builds the ARN from `data.aws_caller_identity.current.account_id` — **never hard-code the
-account id**, the same modules deploy into four of them.
+Every `aws_iam_role` this repo creates sets `permissions_boundary` from
+**`global.permissions_boundary_policy_name`** in `<env>/global-values.yaml` — a policy **name**, not
+an ARN. Each module composes the ARN from `data.aws_partition.current` +
+`data.aws_caller_identity.current.account_id`, so one name works in every account and partition and
+**no account id is ever hard-coded** (the same modules deploy into four).
+
+**Empty is valid and is the default.** The var defaults to `""`, the local resolves to `null`, and
+Terraform omits the argument — so these modules work unchanged in an account with no boundary
+requirement. The name is set in `template/global-values.yaml` because Sanketika accounts DO require
+it; another org sets its own name there, or blanks it.
 
 This is not optional hardening. The `DevOpsEngineer` Identity Center permission set grants
 `iam:CreateRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy`, `iam:DeleteRole`,
@@ -176,9 +182,17 @@ chase this as a permissions request to the account admin; the fix is here.
 The boundary is **deny-only** (allows `*`, denies the privilege-escalation set: IAM user/key
 creation, `organizations:*`, `sso:*`, `identitystore:*`, `account:*`, `sts:AssumeRoot`, boundary
 tampering). It grants nothing, so a role needing a new AWS service never needs the boundary amended.
-The policy is pre-created per account and **must never be created or modified from this repo** — the
-permission set denies editing it. `NoSuchEntity` on `CreateRole` (as opposed to `AccessDenied`) means
-the account baseline was never applied: stop and report rather than recreating it.
+The policy is **never created or modified by a deploy**. `NoSuchEntity` on `CreateRole` (as opposed
+to `AccessDenied`) means the account baseline was never applied.
+
+Baselining a new account is a separate, admin-only step: **`scripts/create-permissions-boundary.sh
+--name <YourWorkloadBoundary>`**, with the document in the reviewable
+`scripts/permissions-boundary.json` beside it. `--name` has no default on purpose — each org owns its
+own policy, so two teams sharing these modules cannot collide on one. The script is **create-only**:
+against an existing policy it reports and exits rather than publishing a new default version, since
+that would silently re-cap every role already attached to it. `--verify` diffs the live policy
+against the committed document; `--update` publishes a new version deliberately. Treat the LIVE
+policy as authoritative when they differ.
 
 Roles created inside third-party modules take it through their own variable, not the
 `permissions_boundary` argument — both `iam-role-for-service-accounts-eks` instances in the `eks`

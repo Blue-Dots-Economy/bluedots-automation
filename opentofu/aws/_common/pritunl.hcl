@@ -36,4 +36,7 @@ inputs = {
   key_name         = local.key_name
   authorized_keys  = local.authorized_keys
   ingress_cidrs    = local.ingress_cidrs
+  # Name of an IAM policy in this account attached as the permissions boundary on every role
+  # this module creates. Optional: absent/empty attaches none. See modules/<m>/variables.tf.
+  permissions_boundary_policy_name = lookup(local.global_vars.global, "permissions_boundary_policy_name", "")
 }

@@ -47,4 +47,7 @@ inputs = {
   service_account_subjects   = lookup(local.global_vars.global, "service_account_subjects", [
     "system:serviceaccount:app:app-sa"
   ])
+  # Name of an IAM policy in this account attached as the permissions boundary on every role
+  # this module creates. Optional: absent/empty attaches none. See modules/<m>/variables.tf.
+  permissions_boundary_policy_name = lookup(local.global_vars.global, "permissions_boundary_policy_name", "")
 }

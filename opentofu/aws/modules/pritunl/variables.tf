@@ -46,3 +46,23 @@ variable "ingress_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "permissions_boundary_policy_name" {
+  description = <<-EOT
+    Name of an IAM policy in THIS account to attach as the permissions boundary on every role
+    this module creates. Empty (the default) attaches none, which is the right answer for any
+    account that does not gate role creation on a boundary.
+
+    Set it where the DEPLOYING principal's own IAM grants are conditioned on it — Sanketika's
+    `DevOpsEngineer` permission set only allows iam:CreateRole / PutRolePolicy /
+    AttachRolePolicy / PassRole when the request carries the boundary, so omitting it there
+    fails with "no identity-based policy allows the iam:CreateRole action". That reads like a
+    missing permission but is an unmatched condition on a grant you already have.
+
+    A policy NAME, not an ARN: a boundary must live in the same account as the role, so the
+    account id is resolved from the caller and the same value works in every account. Create
+    the policy with scripts/create-permissions-boundary.sh — this repo never manages it.
+  EOT
+  type        = string
+  default     = ""
+}

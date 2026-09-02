@@ -8,15 +8,22 @@ locals {
     CloudProvider = "AWS"
   }
 
-  # Permissions boundary required by the DevOpsEngineer permission set: its iam:CreateRole /
-  # PutRolePolicy / AttachRolePolicy / PassRole grants are conditioned on the new role carrying
-  # this boundary. Omitting it fails as "no identity-based policy allows iam:CreateRole" — an
-  # unmatched conditional Allow, not a missing permission. The policy is deny-only (allows *,
-  # denies the privilege-escalation set), pre-created per account; never managed from here.
-  permissions_boundary = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/SanketikaWorkloadBoundary"
+  # Permissions boundary attached to every role below. Empty var = null = argument omitted, so
+  # the modules work unchanged in an account with no boundary requirement. Where the deploying
+  # principal's IAM grants ARE conditioned on it, omitting it fails as "no identity-based policy
+  # allows iam:CreateRole" — an unmatched conditional Allow, not a missing permission.
+  # Account id and partition come from the caller so one name works in every account/partition.
+  # The policy itself is never managed here; see scripts/create-permissions-boundary.sh.
+  permissions_boundary = var.permissions_boundary_policy_name != "" ? format(
+    "arn:%s:iam::%s:policy/%s",
+    data.aws_partition.current.partition,
+    data.aws_caller_identity.current.account_id,
+    var.permissions_boundary_policy_name,
+  ) : null
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
 
 # Application service account IRSA role
 resource "aws_iam_role" "app_sa" {
