@@ -59,7 +59,9 @@ while [[ $# -gt 0 ]]; do
     --dry-run) DRY_RUN=yes; shift ;;
     --verify)  VERIFY=yes;  shift ;;
     --update)  UPDATE=yes;  shift ;;
-    -h|--help) sed -n '2,48p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    # Print the leading comment block, however long it grows. A hardcoded line
+    # range silently truncates (or spills into code) the moment the header changes.
+    -h|--help) awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "${BASH_SOURCE[0]}"; exit 0 ;;
     *)         log "ERROR: unknown argument: $1"; exit 1 ;;
   esac
 done
