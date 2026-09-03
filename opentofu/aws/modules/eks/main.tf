@@ -8,7 +8,23 @@ locals {
     ManagedBy     = "Terraform"
     CloudProvider = "AWS"
   }
+
+  # Permissions boundary attached to every role below. Empty var = null = argument omitted, so
+  # the modules work unchanged in an account with no boundary requirement. Where the deploying
+  # principal's IAM grants ARE conditioned on it, omitting it fails as "no identity-based policy
+  # allows iam:CreateRole" — an unmatched conditional Allow, not a missing permission.
+  # Account id and partition come from the caller so one name works in every account/partition.
+  # The policy itself is never managed here; see scripts/create-permissions-boundary.sh.
+  permissions_boundary = var.permissions_boundary_policy_name != null && var.permissions_boundary_policy_name != "" ? format(
+    "arn:%s:iam::%s:policy/%s",
+    data.aws_partition.current.partition,
+    data.aws_caller_identity.current.account_id,
+    var.permissions_boundary_policy_name,
+  ) : null
 }
+
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
 
 # -------------------------------
 # IAM roles and policies
@@ -26,20 +42,21 @@ data "aws_iam_policy_document" "eks_cluster_assume_role" {
 }
 
 resource "aws_iam_role" "eks_cluster" {
-  name               = "${var.building_block}-${var.environment}-eks-cluster-role"
-  assume_role_policy = data.aws_iam_policy_document.eks_cluster_assume_role.json
+  name                 = "${var.building_block}-${var.environment}-eks-cluster-role"
+  permissions_boundary = local.permissions_boundary
+  assume_role_policy   = data.aws_iam_policy_document.eks_cluster_assume_role.json
 
   tags = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSClusterPolicy" {
   role       = aws_iam_role.eks_cluster.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSClusterPolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_AmazonEKSServicePolicy" {
   role       = aws_iam_role.eks_cluster.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSServicePolicy"
 }
 
 # KMS envelope encryption for Kubernetes Secrets (see encryption_config on the
@@ -90,25 +107,26 @@ data "aws_iam_policy_document" "eks_node_assume_role" {
 }
 
 resource "aws_iam_role" "eks_node" {
-  name               = "${var.building_block}-${var.environment}-eks-node-role"
-  assume_role_policy = data.aws_iam_policy_document.eks_node_assume_role.json
+  name                 = "${var.building_block}-${var.environment}-eks-node-role"
+  permissions_boundary = local.permissions_boundary
+  assume_role_policy   = data.aws_iam_policy_document.eks_node_assume_role.json
 
   tags = local.common_tags
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEKSWorkerNodePolicy" {
   role       = aws_iam_role.eks_node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKSWorkerNodePolicy"
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOnly" {
   role       = aws_iam_role.eks_node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
 resource "aws_iam_role_policy_attachment" "node_AmazonEKS_CNI_Policy" {
   role       = aws_iam_role.eks_node.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
 # -------------------------------
@@ -266,7 +284,8 @@ module "ebs_csi_driver_irsa" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.48"
 
-  role_name_prefix = "${local.cluster_name}-ebs-csi-"
+  role_name_prefix              = "${local.cluster_name}-ebs-csi-"
+  role_permissions_boundary_arn = local.permissions_boundary
 
   attach_ebs_csi_policy = true
 
@@ -292,6 +311,7 @@ module "cluster_autoscaler_irsa" {
   version = "~> 5.48"
 
   role_name_prefix                 = "${local.cluster_name}-ca-"
+  role_permissions_boundary_arn    = local.permissions_boundary
   attach_cluster_autoscaler_policy = true
   cluster_autoscaler_cluster_names = [local.cluster_name]
 
@@ -343,7 +363,8 @@ resource "aws_eks_addon" "ebs_csi" {
 resource "aws_iam_role" "cloudwatch_observability" {
   count = var.enable_cloudwatch_observability ? 1 : 0
 
-  name = "${local.cluster_name}-cw-obs-role"
+  name                 = "${local.cluster_name}-cw-obs-role"
+  permissions_boundary = local.permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -370,7 +391,7 @@ resource "aws_iam_role" "cloudwatch_observability" {
 resource "aws_iam_role_policy_attachment" "cloudwatch_observability_policy" {
   count      = var.enable_cloudwatch_observability ? 1 : 0
   role       = aws_iam_role.cloudwatch_observability[0].name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
 resource "aws_eks_addon" "cloudwatch_observability" {
@@ -389,4 +410,17 @@ resource "aws_eks_addon" "cloudwatch_observability" {
     aws_eks_node_group.default,
     aws_iam_role_policy_attachment.cloudwatch_observability_policy
   ]
+}
+
+# Warns (does not fail) when the key is absent from <env>/global-values.yaml, as it
+# is in every per-deployment branch written before the boundary existed. Absent
+# silently attaches no boundary, and in an account whose iam:CreateRole grant is
+# conditioned on one the next role creation fails with "no identity-based policy
+# allows..." — which reads like a missing permission. An explicit "" is silent:
+# that is a real choice for an account with no boundary requirement.
+check "permissions_boundary_configured" {
+  assert {
+    condition     = var.permissions_boundary_policy_name != null
+    error_message = "permissions_boundary_policy_name is not set in global-values.yaml — no permissions boundary will be attached. Set it to your account's boundary policy name, or to \"\" to state explicitly that this account needs none."
+  }
 }

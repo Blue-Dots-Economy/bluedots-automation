@@ -44,6 +44,13 @@ SIGNALS_DPG_REPO="${SIGNALS_DPG_REPO:-Blue-Dots-Economy/bluedots-schemas}"
 #   ghcr-pull Secret is written into each namespace.
 IMAGES_PUBLIC="${IMAGES_PUBLIC:-true}"
 
+# Namespaces needing the `ghcr-pull` Secret even when IMAGES_PUBLIC=true, for the
+# "one private image in an otherwise-public stack" case (the s3-export CronJob).
+# IMAGES_PUBLIC=false would instead attach the secret to every pod in every
+# namespace. Space-separated; empty = no-op. Pair it with a per-chart
+# `imagePullSecrets` in <env>/global-values.yaml — the Secret alone does nothing.
+PRIVATE_IMAGE_NAMESPACES="${PRIVATE_IMAGE_NAMESPACES:-}"
+
 # Extra helm args appended to every app-chart upgrade, AFTER all the -f overlays,
 # so they win. This is the hook CI deployments use to override individual image
 # tags without editing global-images.yaml:
@@ -245,10 +252,39 @@ function create_image_pull_secret() {
     bash "$SCRIPT_DIR/rotate-ghcr-pull.sh" "${GHCR_PAT:-}" "$CS_NS" "$SIGNALS_NS" "$AGG_NS"
 }
 
+# Write `ghcr-pull` into ONLY $PRIVATE_IMAGE_NAMESPACES. Deliberately ignores
+# IMAGES_PUBLIC — that is the point: the global stays `true` so no other chart
+# references a pull secret.
+#
+#   PRIVATE_IMAGE_NAMESPACES=signals GHCR_PAT=ghp_xxx \
+#       bash install.sh create_private_image_pull_secret
+function create_private_image_pull_secret() {
+    if [[ -z "$PRIVATE_IMAGE_NAMESPACES" ]]; then
+        echo -e "\nPRIVATE_IMAGE_NAMESPACES is empty — nothing to do."
+        echo "  Set it to the namespace(s) whose pods pull a PRIVATE image, e.g."
+        echo "    PRIVATE_IMAGE_NAMESPACES=\"$SIGNALS_NS\" bash install.sh create_private_image_pull_secret"
+        return 0
+    fi
+
+    echo -e "\nCreating ghcr-pull secret in: $PRIVATE_IMAGE_NAMESPACES"
+    test -f "$SCRIPT_DIR/rotate-ghcr-pull.sh" || {
+        echo "ERROR: $SCRIPT_DIR/rotate-ghcr-pull.sh missing"
+        exit 1
+    }
+    # Unquoted on purpose: the namespace list is space-separated and must word-split.
+    # shellcheck disable=SC2086
+    bash "$SCRIPT_DIR/rotate-ghcr-pull.sh" "${GHCR_PAT:-}" $PRIVATE_IMAGE_NAMESPACES
+
+    echo "Reminder: the pod must also REFERENCE it — set the chart's own"
+    echo "  imagePullSecrets in <env>/global-values.yaml, or it pulls anonymously."
+}
+
 # Both, in order. Kept because deploy_all_services and the runbooks call it.
+# The third is a no-op unless PRIVATE_IMAGE_NAMESPACES is set.
 function create_namespaces_and_secrets() {
     create_namespaces
     create_image_pull_secret
+    create_private_image_pull_secret
 }
 
 # ═══ helm: deploy individual services ═════════════════════════════════════════

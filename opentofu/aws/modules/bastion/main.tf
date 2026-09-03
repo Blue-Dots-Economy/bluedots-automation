@@ -12,7 +12,23 @@ locals {
   # authorized_keys. Each dev keeps their own private key locally — only public
   # keys ever reach here, so nothing secret lands in Terraform state.
   authorized_keys_block = join("\n", var.authorized_keys)
+
+  # Permissions boundary attached to every role below. Empty var = null = argument omitted, so
+  # the modules work unchanged in an account with no boundary requirement. Where the deploying
+  # principal's IAM grants ARE conditioned on it, omitting it fails as "no identity-based policy
+  # allows iam:CreateRole" — an unmatched conditional Allow, not a missing permission.
+  # Account id and partition come from the caller so one name works in every account/partition.
+  # The policy itself is never managed here; see scripts/create-permissions-boundary.sh.
+  permissions_boundary = var.permissions_boundary_policy_name != null && var.permissions_boundary_policy_name != "" ? format(
+    "arn:%s:iam::%s:policy/%s",
+    data.aws_partition.current.partition,
+    data.aws_caller_identity.current.account_id,
+    var.permissions_boundary_policy_name,
+  ) : null
 }
+
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
 
 # ---------------------------------------------------------------------------------------------------------------------
 # AMI — latest Amazon Linux 2023 (x86_64)
@@ -70,7 +86,8 @@ resource "aws_security_group" "bastion" {
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_iam_role" "bastion" {
-  name = "${local.environment_name}-bastion"
+  name                 = "${local.environment_name}-bastion"
+  permissions_boundary = local.permissions_boundary
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -185,11 +202,24 @@ resource "aws_eks_access_entry" "bastion" {
 resource "aws_eks_access_policy_association" "bastion" {
   cluster_name  = var.cluster_name
   principal_arn = aws_iam_role.bastion.arn
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  policy_arn    = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
   access_scope {
     type = "cluster"
   }
 
   depends_on = [aws_eks_access_entry.bastion]
+}
+
+# Warns (does not fail) when the key is absent from <env>/global-values.yaml, as it
+# is in every per-deployment branch written before the boundary existed. Absent
+# silently attaches no boundary, and in an account whose iam:CreateRole grant is
+# conditioned on one the next role creation fails with "no identity-based policy
+# allows..." — which reads like a missing permission. An explicit "" is silent:
+# that is a real choice for an account with no boundary requirement.
+check "permissions_boundary_configured" {
+  assert {
+    condition     = var.permissions_boundary_policy_name != null
+    error_message = "permissions_boundary_policy_name is not set in global-values.yaml — no permissions boundary will be attached. Set it to your account's boundary policy name, or to \"\" to state explicitly that this account needs none."
+  }
 }

@@ -48,7 +48,8 @@ The signals `s3-export` CronJob used to get a dedicated pair: a private `signals
 Three consequences worth knowing:
 
 - **`service_account_subjects` is now load-bearing for signals, not just the aggregator.** `app_sa`'s trust policy is a single `StringEquals` on `<oidc>:sub` against that list, so `system:serviceaccount:signals:signals-s3-export` **must** be listed or the CronJob gets `AccessDenied` from STS *inside the pod* — a clean `helm upgrade` and a green apply, then a failing job hours later at its first scheduled run. It must also match `s3-export.serviceAccount.name`, which the generated file pins to `signals-s3-export`. **Every per-deployment branch needs this entry added to its own `<env>/global-values.yaml`;** the template carries it, existing env files don't.
-- **`storage_bucket_public` is keyed by logical name, not by `type`.** The storage module's output is `try(aws_s3_bucket.this["public"].id, null)` — the bucket whose `global.buckets` *key* is `public`, whatever `type` it declares. An env that sets `public: {type: private}` gets a fully access-blocked bucket despite the name; an env that leaves it `type: public` gets an anonymous `s3:GetObject` allow on `/*`. **Check which one your env is before enabling the exporter** — in the `type: public` case the export NDJSON is world-readable, and `app_sa`'s policy is `Get/Put/Delete/List` on the whole bucket rather than the old `PutObject`-only on one prefix.
+- **`storage_bucket_public` is keyed by logical name, not by `type`** — and which name is `global.app_bucket_key` (default `"public"`). Three separate things, easy to conflate: the map **key** is the bucket's NAME suffix (`<bb>-<env>-<account>-<key>`), **`type`** is the access control, and **`app_bucket_key`** picks which entry becomes `global.s3.bucket` + the `app_sa` policy ARN. So `public: {type: private}` is a fully access-blocked bucket that happens to be *named* `-public`; `app_bucket_key: private` with `private: {type: private}` is the same thing named `-private`. **Check `type` before enabling the exporter** — with `type: public` the export NDJSON is world-readable, and `app_sa`'s policy is `Get/Put/Delete/List` on the whole bucket rather than the old `PutObject`-only on one prefix.
+- **`app_bucket_key` must name a real entry, and the module now enforces it at plan time.** It previously resolved with `try(..., null)`; a key that matched nothing became `null`, which `_common/output-file.hcl` turns into `""`, which renders an **empty** `global.s3.bucket`. No chart guards that value — `S3_BUCKET: {{ .Values.global.s3.bucket | quote }}` — so the aggregator installs green, every pod reports healthy, and the first bulk upload / QR render / error-CSV download fails at runtime hours later. An output `precondition` now fails the plan instead, naming the available keys. Renaming the key without updating `app_bucket_key` is exactly how an environment lands in that state.
 - **Removing the bucket entry plans a destroy, and the storage module sets no `force_destroy`.** So `tofu apply` on `storage` fails with `BucketNotEmpty` while any export object remains. Copy anything worth keeping to the public bucket, empty the old bucket, then apply.
 
 ## Lifecycle rules (`storage` module) — one config, two rules, and the prefix is load-bearing
@@ -111,6 +112,113 @@ Two optional modules that make the cluster reachable without a public EKS endpoi
 - **`bastion`** — Amazon-Linux-2023 deploy workstation in a **private** `private-eks-*` subnet, **no public IP**, SG allows SSH from the VPC CIDR only (reachable only after VPN connect). Ships kubectl/helm/aws-cli/k9s/git/yq and pre-runs `aws eks update-kubeconfig` at boot. Mapped into the cluster with `AmazonEKSClusterAdminPolicy` via an EKS access entry (`authentication_mode = API_AND_CONFIG_MAP`). No repo code baked in — `git pull` + deploy from here.
 
 Access is **SSH public key only** (`bastion_authorized_keys`, shared by both hosts; private keys stay with devs, so nothing secret lands in tfstate). Add/remove a key or CIDR in `global-values.yaml` and re-apply `bastion`/`pritunl`. To go fully private-endpoint: set both `eks_endpoint_public_access` and `eks_endpoint_private_access` `true`, verify from the bastion, then flip public access `false`.
+
+### Granting a human cluster-admin — `<env>/grant-cluster-admin.sh`
+
+The bastion's access entry is Terraform (`modules/bastion/main.tf`) because its principal is a role
+Terraform itself creates. A **human's** principal is not: it changes with whoever runs the apply, and
+encoding "the caller" in state means the next engineer's apply revokes the previous one's access. So
+that half is a standalone script, run directly like `get-signalstack-org-id.sh`:
+
+```bash
+./grant-cluster-admin.sh                     # grant whoever is running it
+./grant-cluster-admin.sh <principal-arn>     # grant someone else
+./grant-cluster-admin.sh --list              # existing entries
+./grant-cluster-admin.sh --dry-run           # preview (works before the cluster exists)
+```
+
+**The ARN conversion is the point.** `aws sts get-caller-identity` returns an STS *session* ARN
+(`arn:aws:sts::<acct>:assumed-role/AWSReservedSSO_DevOpsEngineer_<suffix>/you@example.com`); EKS access
+entries take an IAM *role* ARN, so the session name has to go.
+
+**Keep the path.** `CreateAccessEntry` validates `principalArn` against IAM, so a hand-built pathless
+ARN names a role that does not exist and the call fails with
+`InvalidParameterException: The specified principalArn is invalid`. SSO roles really live at
+`/aws-reserved/sso.amazonaws.com/<region>/<RoleName>`. Stripping the path is the rule for the
+**aws-auth ConfigMap** — the opposite API — and carrying that habit over here is what breaks it.
+
+The script does not reconstruct the path (the region segment is the Identity Center instance's, not
+necessarily the cluster's); it resolves the bare role name through `aws iam get-role`, which returns
+the real ARN whatever its path. If `iam:GetRole` is denied it fails with the console lookup to run
+rather than guessing.
+
+Idempotent on both halves (`ResourceInUseException` is treated as success; the policy association is
+an upsert), so it is safe on a cluster where the entry was already added by hand. The association is
+the half that actually grants anything — an access entry with no policy authenticates the principal
+and authorises nothing, which is what a half-finished manual attempt leaves behind.
+
+Cluster name resolves as `CLUSTER_NAME` → the kubeconfig context (an EKS cluster ARN, so it carries
+name *and* region) → `<building_block>-<environment>` from `global-values.yaml`. Region reads the
+**anchor** `_cloud_storage_region`, not `global.cloud_storage_region`, because the latter is a YAML
+alias and sed would hand `*cloud_storage_region` straight to the AWS CLI.
+
+## IAM permissions boundary (every role must carry it)
+
+Every `aws_iam_role` this repo creates sets `permissions_boundary` from
+**`global.permissions_boundary_policy_name`** in `<env>/global-values.yaml` — a policy **name**, not
+an ARN. Each module composes the ARN from `data.aws_partition.current` +
+`data.aws_caller_identity.current.account_id`, so one name works in every account and partition and
+**no account id is ever hard-coded** (the same modules deploy into four).
+
+**Empty is valid.** The module var defaults to `""`, the local resolves to `null`, and Terraform omits
+the argument — so these modules work unchanged in an account with no boundary requirement.
+
+`template/global-values.yaml` ships the deliberately-wrong placeholder **`ExampleWorkloadBoundary`**,
+not a real name. A new environment has to choose: its account's real policy name, or `""`. Deploying
+the placeholder unchanged fails at the first role with `NoSuchEntity`, which is loud and traceable to
+that one line. **Distinguish the two failure modes** — a *wrong* name gives `NoSuchEntity`; an *empty*
+value in an account that does require a boundary gives `no identity-based policy allows the
+iam:CreateRole action`, which reads like a missing permission but is an unmatched condition.
+
+> **EXISTING ENVIRONMENTS MUST ADD THE KEY.** An `<env>/global-values.yaml` written before this
+> change has no boundary key, so none is attached, and the next role creation fails with the same
+> `iam:CreateRole` error this was added to fix. **Per-deployment branches don't carry it** — same
+> footgun as `service_account_subjects` above. Add it to every live `<env>/global-values.yaml`.
+>
+> `_common/*.hcl` reads it with `try(..., null)`, not `lookup(..., "")`, so the two cases are
+> distinguishable: **null** = key absent (a mistake), **`""`** = an operator deliberately choosing no
+> boundary (legitimate — that is what makes these modules usable in an account with no boundary
+> requirement). Both attach nothing, so this cannot fail closed; instead each module carries a
+> `check "permissions_boundary_configured"` block that **warns** on null and stays silent on `""`.
+> A warning rather than an error is the whole point — failing would break the no-boundary account.
+
+This is not optional hardening. The `DevOpsEngineer` Identity Center permission set grants
+`iam:CreateRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy`, `iam:DeleteRole`,
+`iam:UpdateAssumeRolePolicy`, `iam:PassRole` and `iam:PutRolePermissionsBoundary` **only when the
+request carries that boundary**. A role without it fails with:
+
+```
+AccessDenied: ... is not authorized to perform: iam:CreateRole ...
+because no identity-based policy allows the iam:CreateRole action
+```
+
+That message is misleading — it reads as a missing permission, but it is a *conditional Allow that
+did not match*. Note the wording: **"no identity-based policy allows"** means an unmatched condition,
+whereas **"with an explicit deny in an identity-based policy"** means a Deny statement fired. Do not
+chase this as a permissions request to the account admin; the fix is here.
+
+The boundary is **deny-only** (allows `*`, denies the privilege-escalation set: IAM user/key
+creation, `organizations:*`, `sso:*`, `identitystore:*`, `account:*`, `sts:AssumeRoot`, boundary
+tampering). It grants nothing, so a role needing a new AWS service never needs the boundary amended.
+The policy is **never created or modified by a deploy**. `NoSuchEntity` on `CreateRole` (as opposed
+to `AccessDenied`) means the account baseline was never applied.
+
+Baselining a new account is a separate, admin-only step: **`scripts/create-permissions-boundary.sh
+--name <YourWorkloadBoundary>`**, with the document in the reviewable
+`scripts/permissions-boundary.json` beside it. `--name` has no default on purpose — each org owns its
+own policy, so two teams sharing these modules cannot collide on one. The script is **create-only**:
+against an existing policy it reports and exits rather than publishing a new default version, since
+that would silently re-cap every role already attached to it. `--verify` diffs the live policy
+against the committed document; `--update` publishes a new version deliberately. Treat the LIVE
+policy as authoritative when they differ.
+
+Roles created inside third-party modules take it through their own variable, not the
+`permissions_boundary` argument — both `iam-role-for-service-accounts-eks` instances in the `eks`
+module (`ebs_csi_driver_irsa`, `cluster_autoscaler_irsa`) use `role_permissions_boundary_arn`. When
+adding any new role, set the boundary in the same commit; a missed one only surfaces at apply time.
+
+**Backfilling existing roles** is an in-place update — `tofu plan` shows `~`, never `-/+`. If a role
+plans as a *replacement*, stop: replacing a live EKS cluster role takes the cluster down.
 
 ## Infra state & secrets
 
