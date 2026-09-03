@@ -170,11 +170,17 @@ that one line. **Distinguish the two failure modes** — a *wrong* name gives `N
 value in an account that does require a boundary gives `no identity-based policy allows the
 iam:CreateRole action`, which reads like a missing permission but is an unmatched condition.
 
-> **EXISTING ENVIRONMENTS MUST ADD THE KEY.** `_common/*.hcl` reads it with `lookup(..., "")`, so an
-> `<env>/global-values.yaml` written before this change silently resolves to empty, the boundary is
-> omitted, and the next role creation fails with the same `iam:CreateRole` error this was added to
-> fix. The template carries it; **per-deployment branches don't** — same footgun as
-> `service_account_subjects` above. Add it to every live `<env>/global-values.yaml`.
+> **EXISTING ENVIRONMENTS MUST ADD THE KEY.** An `<env>/global-values.yaml` written before this
+> change has no boundary key, so none is attached, and the next role creation fails with the same
+> `iam:CreateRole` error this was added to fix. **Per-deployment branches don't carry it** — same
+> footgun as `service_account_subjects` above. Add it to every live `<env>/global-values.yaml`.
+>
+> `_common/*.hcl` reads it with `try(..., null)`, not `lookup(..., "")`, so the two cases are
+> distinguishable: **null** = key absent (a mistake), **`""`** = an operator deliberately choosing no
+> boundary (legitimate — that is what makes these modules usable in an account with no boundary
+> requirement). Both attach nothing, so this cannot fail closed; instead each module carries a
+> `check "permissions_boundary_configured"` block that **warns** on null and stays silent on `""`.
+> A warning rather than an error is the whole point — failing would break the no-boundary account.
 
 This is not optional hardening. The `DevOpsEngineer` Identity Center permission set grants
 `iam:CreateRole`, `iam:PutRolePolicy`, `iam:AttachRolePolicy`, `iam:DeleteRole`,

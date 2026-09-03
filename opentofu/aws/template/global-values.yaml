@@ -17,18 +17,25 @@ _cloud_storage_region: &cloud_storage_region "ap-south-1"
 #   ""              your account does not gate role creation on a boundary.
 #                   The modules then omit the argument entirely.
 #
-# Left as an example on purpose. Deploying with this value unchanged fails at the
-# first role with NoSuchEntity (no such policy) — loud, and obviously traceable to
-# this line. That is deliberate: the two failure modes are easy to confuse, so
-# note the difference. A WRONG name gives NoSuchEntity; an EMPTY value in an
-# account that DOES require a boundary gives "no identity-based policy allows the
-# iam:CreateRole action", which reads like a missing permission but is an
-# unmatched condition on a grant you already have.
+# EMPTY ON PURPOSE — do not put a sample name here. A new environment is copied
+# from this file, so a placeholder is not inert: it attaches
+# arn:<partition>:iam::<account>:policy/<that name> to all six roles, and the
+# first CreateRole fails with NoSuchEntity on a brand-new cluster. Worse if a
+# second team happens to have created a policy by the same sample name — every
+# role is then silently capped by whatever it contains.
+#
+# The two failure modes read very differently, so note which is which:
+#   WRONG name  -> NoSuchEntity (no such policy)
+#   EMPTY, in an account that DOES require a boundary
+#               -> "no identity-based policy allows the iam:CreateRole action",
+#                  which reads like a missing permission but is an unmatched
+#                  condition on a grant you already have.
 #
 # A NAME, not an ARN: the account id and partition are resolved from the caller,
 # so one value works in every account and partition. This repo never creates or
-# edits the policy itself.
-_permissions_boundary_policy_name: &permissions_boundary_policy_name "ExampleWorkloadBoundary"
+# edits the policy itself. Example shape only — never copy it verbatim:
+#   _permissions_boundary_policy_name: &permissions_boundary_policy_name "AcmeWorkloadBoundary"
+_permissions_boundary_policy_name: &permissions_boundary_policy_name ''
 _eks_cluster_version:    &eks_cluster_version    "1.35"
 _eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
 _eks_node_disk_size_gb:  &eks_node_disk_size_gb  40

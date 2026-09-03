@@ -18,6 +18,9 @@ locals {
   cors_buckets      = { for k, v in var.buckets : k => v if v.cors_enabled }
   versioned_buckets = { for k, v in var.buckets : k => v if v.versioning_enabled }
 
+  # Shared by the three application-bucket output preconditions.
+  app_bucket_key_error = "app_bucket_key = \"${var.app_bucket_key}\" is not a key in `buckets` (have: ${join(", ", keys(var.buckets))}). It selects the application bucket; a wrong value renders an empty global.s3.bucket and breaks uploads at runtime, not at deploy."
+
   # CORS origins fall back to the configured referers (stripped of any path suffix) so that a
   # cors_enabled bucket is never left wide open when only allowed_referers is supplied.
   effective_cors_origins = length(var.cors_allowed_origins) > 0 ? var.cors_allowed_origins : [

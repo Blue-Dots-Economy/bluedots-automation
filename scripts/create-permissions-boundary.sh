@@ -41,7 +41,11 @@
 #   ./create-permissions-boundary.sh --name AcmeWorkloadBoundary --update
 #
 # Needs: iam:GetPolicy, iam:CreatePolicy (+ iam:GetPolicyVersion for --verify,
-#        iam:CreatePolicyVersion for --update).
+#        iam:CreatePolicyVersion / ListPolicyVersions / DeletePolicyVersion for
+#        --update, which prunes the oldest non-default version at the 5-version cap).
+#
+# --update asks for a typed confirmation. Set BOUNDARY_UPDATE_YES=1 to skip it in
+# automation — deliberately not a flag, so it cannot be added by reflex.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -98,17 +102,32 @@ print(json.dumps(parsed, sort_keys=True, separators=(",", ":")))
 PY
 )"
 
+# Probe BEFORE reporting, so --dry-run cannot claim it would create a policy that
+# already exists — a real run against that account is a no-op, and an admin
+# checking first would otherwise be told the opposite.
+POLICY_EXISTS=""
+DEFAULT_VER=""
+if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
+  POLICY_EXISTS=yes
+  DEFAULT_VER="$(aws iam get-policy --policy-arn "$POLICY_ARN" \
+                   --query 'Policy.DefaultVersionId' --output text)"
+fi
+
 if [[ -n "$DRY_RUN" ]]; then
   log ""
-  log "--dry-run: would create $POLICY_ARN with:"
-  python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1]), indent=2))' "$RENDERED"
+  if [[ -n "$POLICY_EXISTS" ]]; then
+    log "--dry-run: $POLICY_ARN ALREADY EXISTS (default version $DEFAULT_VER)."
+    log "           A real run would change nothing. Use --verify to diff it"
+    log "           against $(basename "$POLICY_DOC"), or --update to republish."
+  else
+    log "--dry-run: would create $POLICY_ARN with:"
+    python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1]), indent=2))' "$RENDERED"
+  fi
   exit 0
 fi
 
-# ── Does it already exist? ───────────────────────────────────────────────────
-if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
-  DEFAULT_VER="$(aws iam get-policy --policy-arn "$POLICY_ARN" \
-                   --query 'Policy.DefaultVersionId' --output text)"
+# ── Does it already exist? (probed above) ────────────────────────────────────
+if [[ -n "$POLICY_EXISTS" ]]; then
   log "exists:   yes (default version $DEFAULT_VER)"
 
   if [[ -n "$VERIFY" ]]; then
@@ -148,7 +167,36 @@ if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
 
   log ""
   log "--update: publishing a new DEFAULT version of an in-use boundary."
-  log "          Every role attached to it is re-capped immediately."
+  log "          Every role attached to it is re-capped IMMEDIATELY."
+  log ""
+  log "          $POLICY_DOC is maintained by hand. If it has never been"
+  log "          reconciled against this account, run --verify first — otherwise"
+  log "          this republishes an unreviewed ceiling over every attached role."
+  log ""
+  # Typed confirmation, not y/N: the cost of a wrong --update is every role in the
+  # account silently re-capped, and there is no dry-run for it once published.
+  if [[ -z "${BOUNDARY_UPDATE_YES:-}" ]]; then
+    read -rp "Type the policy name to confirm ($NAME): " _confirm
+    [[ "$_confirm" == "$NAME" ]] || { log "aborted: confirmation did not match"; exit 1; }
+  fi
+
+  # AWS caps a managed policy at 5 versions. Nothing prunes them, so repeated
+  # --update eventually dies on LimitExceeded — at the worst possible moment,
+  # since by then someone is mid-incident republishing a boundary. Drop the
+  # oldest non-default version when at the cap. Never the default: it is what
+  # every attached role is currently capped by.
+  VERSIONS="$(aws iam list-policy-versions --policy-arn "$POLICY_ARN" \
+                --query 'Versions[?IsDefaultVersion==`false`].[VersionId,CreateDate]' \
+                --output text | sort -k2 | awk '{print $1}')"
+  VERSION_COUNT="$(aws iam list-policy-versions --policy-arn "$POLICY_ARN" \
+                     --query 'length(Versions)' --output text)"
+  if [[ "$VERSION_COUNT" -ge 5 ]]; then
+    OLDEST="$(printf '%s\n' "$VERSIONS" | head -n1)"
+    [[ -n "$OLDEST" ]] || { log "ERROR: at the 5-version cap but no non-default version to prune"; exit 1; }
+    log "          at the 5-version cap — deleting oldest non-default version $OLDEST"
+    aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$OLDEST"
+  fi
+
   aws iam create-policy-version --policy-arn "$POLICY_ARN" \
     --policy-document "$RENDERED" --set-as-default >/dev/null
   log "done: new default version published"

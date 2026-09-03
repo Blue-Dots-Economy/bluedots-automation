@@ -36,22 +36,41 @@ output "storage_bucket_public" {
 
   precondition {
     condition     = contains(keys(var.buckets), var.app_bucket_key)
-    error_message = "app_bucket_key = \"${var.app_bucket_key}\" is not a key in `buckets` (have: ${join(", ", keys(var.buckets))}). It selects the application bucket; a wrong value renders an empty global.s3.bucket and breaks uploads at runtime, not at deploy."
+    error_message = local.app_bucket_key_error
   }
 }
 
 output "storage_bucket_public_arn" {
   description = "ARN of the application bucket (the `var.app_bucket_key` entry in `buckets`)"
   value       = aws_s3_bucket.this[var.app_bucket_key].arn
+
+  # Same guard on all three: without it a bad key still produces the friendly
+  # message from the output above PLUS two raw "Invalid index" errors from here,
+  # which bury it.
+  precondition {
+    condition     = contains(keys(var.buckets), var.app_bucket_key)
+    error_message = local.app_bucket_key_error
+  }
 }
 
 output "storage_bucket_public_domain" {
   description = "Regional domain of the application bucket (the `var.app_bucket_key` entry)"
   value       = aws_s3_bucket.this[var.app_bucket_key].bucket_regional_domain_name
+
+  precondition {
+    condition     = contains(keys(var.buckets), var.app_bucket_key)
+    error_message = local.app_bucket_key_error
+  }
 }
 
+# Kept for the `iam` module's variable, which declares but does not use them.
+# Still keyed by the literal "private" — deliberately NOT app_bucket_key, or an
+# env that sets app_bucket_key = "private" would have both outputs resolve to the
+# same bucket and read like a bug. try(..., null) is right here: unlike the
+# application bucket, nothing downstream renders this into a chart value, so an
+# absent entry is a legitimate "not provisioned" rather than a silent empty.
 output "storage_bucket_private" {
-  description = "Name of the bucket whose logical key is 'private' (null if not provisioned)"
+  description = "Name of the bucket whose logical key is literally 'private' (null if absent)"
   value       = try(aws_s3_bucket.this["private"].id, null)
 }
 

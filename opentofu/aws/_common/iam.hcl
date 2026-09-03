@@ -49,5 +49,9 @@ inputs = {
   ])
   # Name of an IAM policy in this account attached as the permissions boundary on every role
   # this module creates. Optional: absent/empty attaches none. See modules/<m>/variables.tf.
-  permissions_boundary_policy_name = lookup(local.global_vars.global, "permissions_boundary_policy_name", "")
+  # try(..., null) not lookup(..., ""): null means the key is ABSENT (a
+  # global-values.yaml written before the boundary existed), "" means an
+  # operator deliberately chose no boundary. Both attach nothing, but only the
+  # first is a mistake — the module warns on it via a check block.
+  permissions_boundary_policy_name = try(local.global_vars.global.permissions_boundary_policy_name, null)
 }

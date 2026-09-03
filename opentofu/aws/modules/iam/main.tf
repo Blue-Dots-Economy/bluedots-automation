@@ -14,7 +14,7 @@ locals {
   # allows iam:CreateRole" — an unmatched conditional Allow, not a missing permission.
   # Account id and partition come from the caller so one name works in every account/partition.
   # The policy itself is never managed here; see scripts/create-permissions-boundary.sh.
-  permissions_boundary = var.permissions_boundary_policy_name != "" ? format(
+  permissions_boundary = var.permissions_boundary_policy_name != null && var.permissions_boundary_policy_name != "" ? format(
     "arn:%s:iam::%s:policy/%s",
     data.aws_partition.current.partition,
     data.aws_caller_identity.current.account_id,
@@ -88,3 +88,16 @@ resource "aws_iam_role_policy" "app_s3" {
 # Both were removed: the exporter now shares the public bucket and the app_sa
 # role above, so its ServiceAccount subject must be listed in
 # var.service_account_subjects or the pod cannot assume the role at all.
+
+# Warns (does not fail) when the key is absent from <env>/global-values.yaml, as it
+# is in every per-deployment branch written before the boundary existed. Absent
+# silently attaches no boundary, and in an account whose iam:CreateRole grant is
+# conditioned on one the next role creation fails with "no identity-based policy
+# allows..." — which reads like a missing permission. An explicit "" is silent:
+# that is a real choice for an account with no boundary requirement.
+check "permissions_boundary_configured" {
+  assert {
+    condition     = var.permissions_boundary_policy_name != null
+    error_message = "permissions_boundary_policy_name is not set in global-values.yaml — no permissions boundary will be attached. Set it to your account's boundary policy name, or to \"\" to state explicitly that this account needs none."
+  }
+}

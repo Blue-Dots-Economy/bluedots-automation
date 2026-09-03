@@ -62,5 +62,9 @@ variable "permissions_boundary_policy_name" {
     the policy with scripts/create-permissions-boundary.sh — this repo never manages it.
   EOT
   type        = string
-  default     = ""
+  # Nullable so "key absent from global-values.yaml" (null) is distinguishable from
+  # "operator chose no boundary" ("" ). Both attach nothing; only the first is a
+  # mistake, and the check block below warns on it.
+  default  = null
+  nullable = true
 }
