@@ -3,21 +3,32 @@ _building_block: &building_block "purple-dots"
 _environment:    &environment    "dev"
 _cloud_storage_region: &cloud_storage_region "ap-south-1"
 
-# ── IAM permissions boundary (per-account, optional) ───────────────────────────
-# Name of an IAM policy IN THIS ACCOUNT attached as the permissions boundary on
-# every role this repo creates. Leave EMPTY if your account does not gate role
-# creation on a boundary — the modules then omit the argument entirely.
+# ── IAM permissions boundary (per-account) ─────────────────────────────────────
+# PLACEHOLDER — replace with YOUR account's policy name, or blank it.
 #
-# Required in Sanketika accounts: the DevOpsEngineer permission set only grants
-# iam:CreateRole / PutRolePolicy / AttachRolePolicy / PassRole when the request
-# carries it, so an empty value there fails with "no identity-based policy allows
-# the iam:CreateRole action" — an unmatched condition, not a missing permission.
+# Name of an IAM policy IN THIS ACCOUNT attached as the permissions boundary on
+# every role this repo creates. Two valid answers, and a new environment has to
+# pick one rather than inherit somebody else's:
+#
+#   "<PolicyName>"  the boundary your account requires. Create it once per
+#                   account with (run by an account admin, not the deployer):
+#                     scripts/create-permissions-boundary.sh --name <PolicyName>
+#                   and put the same name here.
+#   ""              your account does not gate role creation on a boundary.
+#                   The modules then omit the argument entirely.
+#
+# Left as an example on purpose. Deploying with this value unchanged fails at the
+# first role with NoSuchEntity (no such policy) — loud, and obviously traceable to
+# this line. That is deliberate: the two failure modes are easy to confuse, so
+# note the difference. A WRONG name gives NoSuchEntity; an EMPTY value in an
+# account that DOES require a boundary gives "no identity-based policy allows the
+# iam:CreateRole action", which reads like a missing permission but is an
+# unmatched condition on a grant you already have.
 #
 # A NAME, not an ARN: the account id and partition are resolved from the caller,
-# so one value works in every account. Create the policy once per account with
-#   scripts/create-permissions-boundary.sh --name <YourWorkloadBoundary>
-# and put the same name here. This repo never creates or edits the policy.
-_permissions_boundary_policy_name: &permissions_boundary_policy_name "SanketikaWorkloadBoundary"
+# so one value works in every account and partition. This repo never creates or
+# edits the policy itself.
+_permissions_boundary_policy_name: &permissions_boundary_policy_name "ExampleWorkloadBoundary"
 _eks_cluster_version:    &eks_cluster_version    "1.35"
 _eks_node_instance_type: &eks_node_instance_type "m6a.xlarge"
 _eks_node_disk_size_gb:  &eks_node_disk_size_gb  40

@@ -160,10 +160,15 @@ an ARN. Each module composes the ARN from `data.aws_partition.current` +
 `data.aws_caller_identity.current.account_id`, so one name works in every account and partition and
 **no account id is ever hard-coded** (the same modules deploy into four).
 
-**Empty is valid and is the default.** The var defaults to `""`, the local resolves to `null`, and
-Terraform omits the argument — so these modules work unchanged in an account with no boundary
-requirement. The name is set in `template/global-values.yaml` because Sanketika accounts DO require
-it; another org sets its own name there, or blanks it.
+**Empty is valid.** The module var defaults to `""`, the local resolves to `null`, and Terraform omits
+the argument — so these modules work unchanged in an account with no boundary requirement.
+
+`template/global-values.yaml` ships the deliberately-wrong placeholder **`ExampleWorkloadBoundary`**,
+not a real name. A new environment has to choose: its account's real policy name, or `""`. Deploying
+the placeholder unchanged fails at the first role with `NoSuchEntity`, which is loud and traceable to
+that one line. **Distinguish the two failure modes** — a *wrong* name gives `NoSuchEntity`; an *empty*
+value in an account that does require a boundary gives `no identity-based policy allows the
+iam:CreateRole action`, which reads like a missing permission but is an unmatched condition.
 
 > **EXISTING ENVIRONMENTS MUST ADD THE KEY.** `_common/*.hcl` reads it with `lookup(..., "")`, so an
 > `<env>/global-values.yaml` written before this change silently resolves to empty, the boundary is
