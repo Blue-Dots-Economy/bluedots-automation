@@ -23,6 +23,7 @@
 */ -}}
 {{- $svc := include "api.serviceName" . -}}
 {{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
+{{- $isKong := eq .Values.ingress.className "kong" -}}
 {{- /* single source: global.apiRateLimit.defaultMinute (global-values.yaml), fallback to the chart default */ -}}
 {{- $default := dig "apiRateLimit" "defaultMinute" .Values.apiRateLimit.defaultMinute (.Values.global | default dict) -}}
 {{- $redis := .Values.apiRateLimit.redis -}}
@@ -39,6 +40,13 @@
        when the limit is retuned; override groups keep -<value> so distinct limits
        don't collide. The real limit is config.minute, not the name. */ -}}
 {{- $suffix := ternary "" (printf "-%v" $limit) (eq (int $limit) (int $default)) -}}
+{{- /* These per-group routes have a HIGHER regex-priority than the /backend
+   catch-all, so a request matching one is served here, NOT by the catch-all
+   ingress. HSTS + force-SSL must be re-applied on these routes too — otherwise
+   the rate-limited API paths (the sensitive ones) would carry no HSTS header and
+   accept plain http. Combine the per-IP rate-limit plugin with the HSTS plugin. */ -}}
+{{- $plugins := list (printf "%s-rl%s" $svc $suffix) -}}
+{{- if and $isKong $.Values.ingress.hsts.enabled }}{{ $plugins = append $plugins (printf "%s-hsts" $svc) }}{{ end -}}
 ---
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
@@ -66,7 +74,11 @@ metadata:
   annotations:
     konghq.com/rewrite: "/$1"
     konghq.com/regex-priority: "100"
-    konghq.com/plugins: {{ printf "%s-rl%s" $svc $suffix | quote }}
+    konghq.com/plugins: {{ join "," $plugins | quote }}
+    {{- if and $isKong $.Values.ingress.forceSSLRedirect }}
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: "301"
+    {{- end }}
 spec:
   {{- with $.Values.ingress.className }}
   ingressClassName: {{ . }}
