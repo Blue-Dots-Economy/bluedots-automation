@@ -12,6 +12,18 @@ ingress:
   clusterIssuer: ""           # e.g. letsencrypt-prod
   plugin: ""                  # KongClusterPlugin tier, e.g. rl-agg-web
   annotations: {}
+  # Kong route-level protocol restriction: only accept https, and 301-redirect
+  # a plain-http request to https instead of erroring (GITHUB-ISSUES #10).
+  # No-op unless className is "kong".
+  forceSSLRedirect: true
+  # HSTS via a per-chart KongPlugin (response-transformer), referenced alongside
+  # `plugin` above through the ingress's konghq.com/plugins annotation — see
+  # templates/kong-hsts-plugin.yaml. No-op unless className is "kong".
+  hsts:
+    enabled: true
+    maxAge: 31536000           # 1 year
+    includeSubDomains: true
+    preload: true
 
 replicaCount: 1
 image:

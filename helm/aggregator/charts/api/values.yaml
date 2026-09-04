@@ -10,6 +10,19 @@ ingress:
   className: ""        # e.g. kong
   plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-api
   annotations: {}
+  # Kong route-level protocol restriction: only accept https, and 301-redirect
+  # a plain-http request to https instead of erroring (GITHUB-ISSUES #10).
+  # No-op unless className is "kong".
+  forceSSLRedirect: true
+  # HSTS via a per-chart KongPlugin (response-transformer), referenced alongside
+  # `plugin` above through the ingress's konghq.com/plugins annotation — see
+  # templates/kong-hsts-plugin.yaml. The API route serves the approval HTML
+  # pages and the PII CSV export. No-op unless className is "kong".
+  hsts:
+    enabled: true
+    maxAge: 31536000           # 1 year
+    includeSubDomains: true
+    preload: true
 
 # Per-API (per-resource-group) rate limiting — see
 # templates/api-endpoint-groups-ingress.yaml. Each `groups` entry becomes its own
