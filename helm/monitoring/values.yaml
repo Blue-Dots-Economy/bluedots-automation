@@ -130,6 +130,18 @@ prometheus:
 
     # Loki datasource — kube-prometheus-stack doesn't know about Loki, so we add it here.
     additionalDataSources:
+      # Do NOT add `uid:` here. Grafana provisions datasources BY uid once one is
+      # specified, so adding it to a datasource that already exists under a
+      # generated uid makes every reload fail with
+      #   "Datasource provisioning error: data source not found"
+      # and that failure aborts the whole file - Prometheus and Alertmanager stop
+      # re-provisioning too. Verified on test-dev: the uid stayed
+      # P8E80F9AEF21F6940 across a full pod restart while the reload endpoint
+      # returned 500 in a loop.
+      #
+      # A dashboard that needs Loki must therefore NOT hardcode a uid either -
+      # use a `datasource`-type template variable, which resolves to whatever
+      # uid the install happens to have.
       - name: Loki
         type: loki
         url: http://monitoring-loki.monitoring.svc.cluster.local:3100
@@ -479,6 +491,26 @@ prometheus:
                 summary: "Deployment common-services/{{ $labels.deployment }} has 0 replicas"
                 description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 10 minutes"
 
+        # Per-minute request and real-client-error counts, recorded once so the
+        # 4xx alert below can reference them three times without becoming
+        # unreadable. rate(...[2m]) * 60 rather than increase(...[1m]): at the
+        # 30s scrapeInterval a [1m] range holds only two samples, so one missed
+        # scrape leaves increase() with a single point and NO RESULT AT ALL -
+        # which min_over_time cannot distinguish from a healthy minute.
+        - name: kong.recording
+          rules:
+            - record: kong:requests:per1m
+              expr: |
+                sum by(exported_service) (
+                  rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
+                ) * 60
+
+            - record: kong:client_errors:per1m
+              expr: |
+                sum by(exported_service) (
+                  rate(kong_http_requests_total{code=~"4..",code!~"404|405|410|429",exported_service!="",route!~".*-host-block.*"}[2m])
+                ) * 60
+
         - name: kong.alerts
           rules:
             # Traffic volume warning — early heads-up before the critical threshold.
@@ -575,92 +607,75 @@ prometheus:
                 summary: "High 5xx rate on {{ $labels.exported_service }}"
                 description: "Service {{ $labels.exported_service }} has held a 5xx error rate above 5% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: {{ $value | printf \"%.1f\" }}%). A short spike does NOT reach this alert."
 
-            # 4xx error rate — the SOLE 4xx alert (per backend service). Fires only
-            # when a service has held >25% 4xx (excluding 429) for 5 CONTINUOUS
-            # minutes WHILE actually serving traffic (>=30 req/min).
+            # ── Per-minute volume tiers, then a 5-minute sustain ──────────────
+            # Thresholds specified by the platform owner. Evaluated per MINUTE, and
+            # every one of the 5 minutes in the window must qualify:
             #
-            # Two defects this replaces, both observed in production:
+            #   1. total > 100 req/min      AND  >25% are 4xx
+            #   2. 25 < total <= 100 req/min AND 100% are 4xx
+            #   3. total < 50 req/min       AND  >25 actual 4xx in the minute
             #
-            # 1. `rate(...[5m])` + `for: 5m` did NOT mean "5 minutes of sustained
-            #    errors". `for` re-checks the expr each evaluation, and a [5m]
-            #    lookback keeps reporting a burst for 5 minutes after it ended — so
-            #    ONE ~3-minute spike satisfied `for: 5m`, paged, and self-resolved
-            #    exactly 1 minute later (the 1-minute FIRING/RESOLVED pairs on
-            #    Discord). min_over_time over a [5m:1m] subquery fixes this: the
-            #    ratio must exceed the threshold at EVERY 1-minute step, so a burst
-            #    shorter than 5 minutes can never satisfy it. `for` is now 0m
-            #    because the persistence requirement lives in the expression.
+            # Tier 1 trusts a ratio only once the sample is big enough for 25% to
+            # mean something. Tiers 2 and 3 cover lower volumes, where a ratio is
+            # statistically meaningless, by demanding either a total wipe-out or a
+            # real absolute count.
             #
-            # 2. The old floor counted ERRORS (>=50 4xx), not traffic. That does not
-            #    protect a near-idle service: with almost no 2xx to dilute it, the
-            #    ratio sits permanently above 25%, so any 50-request burst tripped
-            #    both clauses at once — "alerts while nobody is using the service".
-            #    The floor is now on TOTAL traffic, enforced at every step, so a
-            #    service nobody is using cannot page regardless of its ratio.
-            #    (>=10 req/min: measured to keep the one real incident in the last
-            #    7 days while dropping every bot burst.)
+            # WHY: the previous rule paged on 12 req/min of 100% 401 - a single
+            # browser tab polling /api/v1/action/fetch every ~5s with an expired
+            # token (app log: code=TOKEN_EXPIRED, "Access token has expired"). The
+            # API was healthy; answering 401 to an expired token is correct. No
+            # ratio-plus-floor combination separates one stale tab from an outage,
+            # so volume tiers replace the single floor.
             #
-            # 3. It counted BOT traffic as errors. Measured over 7 days on the
-            #    test cluster, 100% of the 4xx on signals-ui was automated
-            #    scanning: 6366x 410 (bots hitting the retired host, where the
-            #    request-termination plugin returns 410 BY DESIGN and Kong bills it
-            #    to the signals-ui service) and 1589x 405 (WordPress exploit POSTs,
-            #    which nginx rejects because POST to a static file is a 405). Kong
-            #    access logs confirm it: /backup/.env, /wordpress/index.php,
-            #    /wp-json/batch/v1 from 77 source IPs. aggregator-web was the same
-            #    campaign returning 404. 19 of the 21 firings that week were this
-            #    bot traffic; the only real one was signals-api on Aug 31 (below).
+            # Ratio tests are written as cross-multiplications - `err*4 > total`
+            # rather than `err/total > 25` - so a minute with no traffic yields 0
+            # instead of NaN. A NaN drops the sample, and a dropped sample is
+            # INVISIBLE to min_over_time, which would let a gap masquerade as five
+            # good minutes.
             #
-            #    So the numerator now excludes the codes bots generate — 404/405/410
-            #    are PATH errors (someone asked for something that isn't there) and
-            #    on a public host they are permanent background noise, not a fault.
-            #    What is left (400/401/403/409/422...) are AUTH and VALIDATION errors:
-            #    a real client failing against a real endpoint. `route!~"-host-block"`
-            #    drops the retired-host route from numerator AND denominator, since
-            #    its entire purpose is to return 410.
+            # The three tiers are summed and clamped to 1 (logical OR; `or` is a
+            # set operator in PromQL and would NOT do this), then min_over_time
+            # demands the result be 1 at every 1-minute step - the sustain.
             #
-            # Tuning, measured against 7 days of real traffic:
-            #   old rule                        21 firings, 100% bot noise
-            #   + persistence + traffic floor    5 firings
-            #   + route/bot-code exclusions      3 firings, 0 bots — all 3 are the
-            #                                    SAME real event (Aug 31: a client
-            #                                    polling signals-api at 12 req/min
-            #                                    with bad credentials, 100% 401 for
-            #                                    85 minutes).
+            # Tier 2's upper bound is <= 100, not < 100, on purpose: with tier 1 at
+            # > 100 a strict `<` would leave exactly 100 req/min matching NEITHER
+            # tier - a silent dead zone, the same shape of bug as the old
+            # 3000-5000 traffic band. The tiers must touch.
             #
-            # KNOWN TRADE-OFF: excluding 404 means "a bad deploy makes the app 404
-            # everything" will NOT page here. That case is covered elsewhere —
-            # KongConfigTranslationBroken catches a dropped KIC route, and a route
-            # Kong cannot match at all lands on exported_service="" (also excluded).
-            # 10 req/min is the floor knob; lower it and bot 404 floods return.
+            # 404/405/410 and the -host-block route stay excluded: they are bot
+            # path-scanning and the deliberate retired-host 410. 429 is excluded
+            # too and has its own rule (KongRateLimitSustained).
+            #
+            # Replayed against 7 days of real traffic: 0 firings, including the
+            # stale-tab incident. Not deaf - measured peaks are 339 req/min on
+            # aggregator-web (all three tiers reachable) and 120 on signals-api
+            # and signals-ui (tiers 1 and 2 reachable).
             - alert: KongCritical4xxRate
               expr: |
                 min_over_time(
-                  (
-                    sum by(exported_service) (
-                      rate(kong_http_requests_total{code=~"4..",code!="429",code!="404",code!="405",code!="410",exported_service!="",route!~".*-host-block.*"}[2m])
-                    )
-                    /
-                    sum by(exported_service) (
-                      rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
-                    )
-                  )[5m:1m]
-                ) * 100 > 25
-                and
-                min_over_time(
-                  (
-                    sum by(exported_service) (
-                      rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
-                    ) * 60
-                  )[5m:1m]
-                ) >= 10
+                  clamp_max(
+                      (
+                        (kong:requests:per1m > bool 100)
+                        * (kong:client_errors:per1m * 4 > bool kong:requests:per1m)
+                      )
+                    + (
+                        (kong:requests:per1m > bool 25)
+                        * (kong:requests:per1m <= bool 100)
+                        * (kong:client_errors:per1m >= bool kong:requests:per1m)
+                      )
+                    + (
+                        (kong:requests:per1m < bool 50)
+                        * (kong:client_errors:per1m > bool 25)
+                      )
+                  , 1)[5m:1m]
+                ) == 1
               for: 0m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "Critical 4xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has held an auth/validation 4xx rate above 25% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: {{ $value | printf \"%.1f\" }}%). Bot path-scanning (404/405/410), rate limiting (429) and idle-service noise are excluded and do NOT reach this alert."
+                description: "Service {{ $labels.exported_service }} has met a 4xx alert threshold for 5 CONTINUOUS minutes. Thresholds (per minute): >25% 4xx above 100 req/min, OR 100% 4xx between 25-100 req/min, OR more than 25 4xx below 50 req/min. Counts only real client errors - bot path-scanning (404/405/410), rate limiting (429) and the retired-host 410 are excluded. Open the 'Kong Status Codes' dashboard for the exact codes, hosts and failure reasons."
 
         - name: info.alerts
           rules:
