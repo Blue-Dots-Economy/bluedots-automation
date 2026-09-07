@@ -42,9 +42,9 @@ on:
     branches: [feature, develop, main]
   push:
     branches: [develop, main]
-  # Weekly sweep: new CVEs and new Trivy misconfig rules land against unchanged code.
+  # Monthly sweep: new CVEs and new Trivy misconfig rules land against unchanged code.
   schedule:
-    - cron: "0 3 * * 1"
+    - cron: "0 3 1 * *"
   workflow_dispatch:
 
 concurrency:

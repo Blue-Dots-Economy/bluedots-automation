@@ -38,7 +38,7 @@ updates:
     directory: "/"
     target-branch: "feature"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     cooldown:
       default-days: 7
     groups:
@@ -52,7 +52,7 @@ updates:
       - "/dockerfiles/keycloak"
     target-branch: "feature"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     cooldown:
       default-days: 7
     open-pull-requests-limit: 3
