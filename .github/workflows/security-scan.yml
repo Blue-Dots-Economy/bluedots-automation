@@ -149,7 +149,7 @@ jobs:
       # the whole multi-package layout (ai-diffusion = 12 uv packages) in one call.
       - name: Setup uv
         if: inputs.language == 'python'
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: uv-secure (uv.lock audit)
         if: inputs.language == 'python'
         run: |
@@ -231,7 +231,7 @@ jobs:
 
       # uvx, matching how uv-secure is already run above — no extra marketplace
       # action to trust in a job holding security-events: write.
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: zizmor
         # --offline ON PURPOSE. This run FEEDS the pinning gate below, so it must
