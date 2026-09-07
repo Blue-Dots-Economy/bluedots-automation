@@ -532,58 +532,135 @@ prometheus:
                 summary: "Kong Ingress Controller cannot translate {{ $value | printf \"%.0f\" }} resource(s)"
                 description: "KIC has {{ $value | printf \"%.0f\" }} resource(s) it cannot translate into Kong config for 2+ minutes — their routes/plugins are NOT live and traffic for the affected Service can silently drop. Find it: `kubectl get ingress -A` then `kubectl describe ingress <name>` and look for a KongConfigurationTranslationFailed event."
 
-            # 5xx error rate > 5% — critical, act fast.
-            # HARD guard (AND, not OR): requires BOTH >5% 5xx AND >=15 actual 5xx in
-            # 5m. The absolute floor of 15 stops low-volume noise (e.g. 6 5xx out of
-            # 100 requests = 6%) from paging — same anti-noise fix as the 4xx alerts.
-            # (was: >= 100 total req OR >= 15 5xx — the OR-total branch was noisy.)
+            # 5xx error rate > 5%, SUSTAINED for 5 continuous minutes.
+            #
+            # Why min_over_time and not `for: 5m`: `for` only requires the expr to
+            # be true at each evaluation, and with a [5m] lookback ONE burst keeps
+            # that window hot for 5 straight evaluations — so `rate(...[5m]) +
+            # for: 5m` fired on a ~3-minute spike and self-resolved 1 minute later.
+            # min_over_time over a [5m:1m] subquery instead demands the ratio be
+            # above threshold at EVERY 1-minute step, which is what "sustained"
+            # actually means. `for` is therefore 0m — the persistence is in the expr.
+            #
+            # The second clause is a TRAFFIC floor, not an error floor: the service
+            # must be serving >=10 req/min at every step. An idle service cannot
+            # page, no matter how ugly its ratio (see the 4xx rule for the full
+            # rationale — that is where this bit us).
             - alert: KongHigh5xxRate
               expr: |
-                (
-                  sum by(exported_service) (rate(kong_http_requests_total{code=~"5.."}[5m]))
-                  /
-                  sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                min_over_time(
+                  (
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{code=~"5..",exported_service!="",route!~".*-host-block.*"}[2m])
+                    )
+                    /
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
+                    )
+                  )[5m:1m]
                 ) * 100 > 5
                 and
-                sum by(exported_service) (
-                  increase(kong_http_requests_total{code=~"5.."}[5m])
-                ) >= 15
-              for: 5m
+                min_over_time(
+                  (
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
+                    ) * 60
+                  )[5m:1m]
+                ) >= 10
+              for: 0m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "High 5xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate AND ≥15 actual 5xx errors over the last 5 minutes (thresholds: >5% AND ≥15 errors — low-volume noise will NOT alert)."
+                description: "Service {{ $labels.exported_service }} has held a 5xx error rate above 5% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: {{ $value | printf \"%.1f\" }}%). A short spike does NOT reach this alert."
 
             # 4xx error rate — the SOLE 4xx alert (per backend service). Fires only
-            # when BOTH hold for 5m: >25% of the service's requests are 4xx AND there
-            # are >=50 actual 4xx (excluding 429). The absolute floor of 50 means a
-            # low-volume burst (e.g. 3 4xx out of 3 requests = 100%) never pages.
-            # (The 10–25% warning tier and the route-level per-API 4xx twin were
-            # removed — this per-service rule is the only 4xx alert.)
+            # when a service has held >25% 4xx (excluding 429) for 5 CONTINUOUS
+            # minutes WHILE actually serving traffic (>=30 req/min).
+            #
+            # Two defects this replaces, both observed in production:
+            #
+            # 1. `rate(...[5m])` + `for: 5m` did NOT mean "5 minutes of sustained
+            #    errors". `for` re-checks the expr each evaluation, and a [5m]
+            #    lookback keeps reporting a burst for 5 minutes after it ended — so
+            #    ONE ~3-minute spike satisfied `for: 5m`, paged, and self-resolved
+            #    exactly 1 minute later (the 1-minute FIRING/RESOLVED pairs on
+            #    Discord). min_over_time over a [5m:1m] subquery fixes this: the
+            #    ratio must exceed the threshold at EVERY 1-minute step, so a burst
+            #    shorter than 5 minutes can never satisfy it. `for` is now 0m
+            #    because the persistence requirement lives in the expression.
+            #
+            # 2. The old floor counted ERRORS (>=50 4xx), not traffic. That does not
+            #    protect a near-idle service: with almost no 2xx to dilute it, the
+            #    ratio sits permanently above 25%, so any 50-request burst tripped
+            #    both clauses at once — "alerts while nobody is using the service".
+            #    The floor is now on TOTAL traffic, enforced at every step, so a
+            #    service nobody is using cannot page regardless of its ratio.
+            #    (>=10 req/min: measured to keep the one real incident in the last
+            #    7 days while dropping every bot burst.)
+            #
+            # 3. It counted BOT traffic as errors. Measured over 7 days on the
+            #    test cluster, 100% of the 4xx on signals-ui was automated
+            #    scanning: 6366x 410 (bots hitting the retired host, where the
+            #    request-termination plugin returns 410 BY DESIGN and Kong bills it
+            #    to the signals-ui service) and 1589x 405 (WordPress exploit POSTs,
+            #    which nginx rejects because POST to a static file is a 405). Kong
+            #    access logs confirm it: /backup/.env, /wordpress/index.php,
+            #    /wp-json/batch/v1 from 77 source IPs. aggregator-web was the same
+            #    campaign returning 404. 19 of the 21 firings that week were this
+            #    bot traffic; the only real one was signals-api on Aug 31 (below).
+            #
+            #    So the numerator now excludes the codes bots generate — 404/405/410
+            #    are PATH errors (someone asked for something that isn't there) and
+            #    on a public host they are permanent background noise, not a fault.
+            #    What is left (400/401/403/409/422...) are AUTH and VALIDATION errors:
+            #    a real client failing against a real endpoint. `route!~"-host-block"`
+            #    drops the retired-host route from numerator AND denominator, since
+            #    its entire purpose is to return 410.
+            #
+            # Tuning, measured against 7 days of real traffic:
+            #   old rule                        21 firings, 100% bot noise
+            #   + persistence + traffic floor    5 firings
+            #   + route/bot-code exclusions      3 firings, 0 bots — all 3 are the
+            #                                    SAME real event (Aug 31: a client
+            #                                    polling signals-api at 12 req/min
+            #                                    with bad credentials, 100% 401 for
+            #                                    85 minutes).
+            #
+            # KNOWN TRADE-OFF: excluding 404 means "a bad deploy makes the app 404
+            # everything" will NOT page here. That case is covered elsewhere —
+            # KongConfigTranslationBroken catches a dropped KIC route, and a route
+            # Kong cannot match at all lands on exported_service="" (also excluded).
+            # 10 req/min is the floor knob; lower it and bot 404 floods return.
             - alert: KongCritical4xxRate
               expr: |
-                (
-                  sum by(exported_service) (
-                    rate(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                  )
-                  /
-                  sum by(exported_service) (
-                    rate(kong_http_requests_total[5m])
-                  )
+                min_over_time(
+                  (
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{code=~"4..",code!="429",code!="404",code!="405",code!="410",exported_service!="",route!~".*-host-block.*"}[2m])
+                    )
+                    /
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
+                    )
+                  )[5m:1m]
                 ) * 100 > 25
                 and
-                sum by(exported_service) (
-                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                ) >= 50
-              for: 5m
+                min_over_time(
+                  (
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
+                    ) * 60
+                  )[5m:1m]
+                ) >= 10
+              for: 0m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "Critical 4xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate AND ≥50 actual 4xx errors over the last 5 minutes (thresholds: >25% AND ≥50 errors — low-volume bot 4xx will NOT alert)."
+                description: "Service {{ $labels.exported_service }} has held an auth/validation 4xx rate above 25% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: {{ $value | printf \"%.1f\" }}%). Bot path-scanning (404/405/410), rate limiting (429) and idle-service noise are excluded and do NOT reach this alert."
 
         - name: info.alerts
           rules:

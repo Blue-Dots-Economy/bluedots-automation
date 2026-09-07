@@ -1,0 +1,154 @@
+rule_files:
+  - rules-fixed.yaml
+evaluation_interval: 1m
+tests:
+  # ── The exact incident shape from Discord (Sept 6, 08:22 -> 08:23) ─────
+  - name: "3-min 4xx burst on idle signals-ui — must stay SILENT now"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",code="200"}'
+        values: '0+2x40'
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",code="401"}'
+        values: '0x10 100 200 300 300x27'
+    alert_rule_test:
+      - {eval_time: 16m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - {eval_time: 30m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Permanent bad ratio, no traffic (bot / 410-retired-host baseline) ──
+  - name: "idle service pinned at 75% 4xx forever — must stay SILENT"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",code="200"}'
+        values: '0+1x40'
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",code="410"}'
+        values: '0+3x40'
+    alert_rule_test:
+      - {eval_time: 30m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Bot traffic: 410 on the retired-host route, 405 on live hosts ─────
+  # Real 7-day shape from the test cluster: 6366x 410 + 1589x 405, all bots.
+  - name: "bot 410 flood on the -host-block route — SILENT"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",route="signals.signals-ui-host-block.signals-ui.dev-signals.serveirc.com.80",code="410"}'
+        values: '0+200x40'
+    alert_rule_test:
+      - {eval_time: 30m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  - name: "bot 405 POST flood on a live portal host — SILENT"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",route="signals.signals-ui.signals-ui.signals-seeker.serveblog.net.80",code="405"}'
+        values: '0+120x40'
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",route="signals.signals-ui.signals-ui.signals-seeker.serveblog.net.80",code="200"}'
+        values: '0+20x40'
+    alert_rule_test:
+      - {eval_time: 30m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  - name: "bot 404 flood on aggregator-web — SILENT"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="aggregator.aggregator-web.3000",route="aggregator.aggregator-web.aggregator-web.host.80",code="404"}'
+        values: '0+120x40'
+      - series: 'kong_http_requests_total{exported_service="aggregator.aggregator-web.3000",route="aggregator.aggregator-web.aggregator-web.host.80",code="200"}'
+        values: '0+20x40'
+    alert_rule_test:
+      - {eval_time: 30m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── The one REAL incident in the 7-day window must still page ─────────
+  # Aug 31: a client polled signals-api at ~12 req/min, 100% 401, for 85 min.
+  - name: "real bad-credential poller (100% 401 at 12 req/min) — MUST fire"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-api.2742",route="signals.signals-api.signals-api.host.2742",code="401"}'
+        values: '0+12x40'
+    alert_rule_test:
+      - {eval_time: 4m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - eval_time: 20m
+        alertname: KongCritical4xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: "signals.signals-api.2742"}
+            exp_annotations:
+              summary: "Critical 4xx rate on signals.signals-api.2742"
+              description: "Service signals.signals-api.2742 has held an auth/validation 4xx rate above 25% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: 100.0%). Bot path-scanning (404/405/410), rate limiting (429) and idle-service noise are excluded and do NOT reach this alert."
+
+  # ── Unrouted traffic (service label empty) must never page ────────────
+  - name: "unrouted 404 flood with empty exported_service — SILENT"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="",code="401"}'
+        values: '0+200x40'
+    alert_rule_test:
+      - {eval_time: 30m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Real sustained 4xx outage on a busy service — MUST still fire ─────
+  - name: "busy service, 60% 4xx sustained — fires, but not before 5 min"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-api.2742",code="200"}'
+        values: '0+40x10 400+40x30'
+      - series: 'kong_http_requests_total{exported_service="signals.signals-api.2742",code="401"}'
+        values: '0x10 0+60x30'
+    alert_rule_test:
+      - {eval_time: 12m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - eval_time: 22m
+        alertname: KongCritical4xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: "signals.signals-api.2742"}
+            exp_annotations:
+              summary: "Critical 4xx rate on signals.signals-api.2742"
+              description: "Service signals.signals-api.2742 has held an auth/validation 4xx rate above 25% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: 60.0%). Bot path-scanning (404/405/410), rate limiting (429) and idle-service noise are excluded and do NOT reach this alert."
+
+  # ── 5xx: same defect, same fix ────────────────────────────────────────
+  - name: "5xx: 3-min burst on idle service — SILENT"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",code="200"}'
+        values: '0+2x40'
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",code="503"}'
+        values: '0x10 100 200 300 300x27'
+    alert_rule_test:
+      - {eval_time: 16m, alertname: KongHigh5xxRate, exp_alerts: []}
+      - {eval_time: 30m, alertname: KongHigh5xxRate, exp_alerts: []}
+
+  - name: "5xx: real sustained backend failure on busy service — fires"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="aggregator.aggregator-api.80",code="200"}'
+        values: '0+30x10 300+27x30'
+      - series: 'kong_http_requests_total{exported_service="aggregator.aggregator-api.80",code="502"}'
+        values: '0x10 0+3x30'
+    alert_rule_test:
+      - {eval_time: 12m, alertname: KongHigh5xxRate, exp_alerts: []}
+      - eval_time: 22m
+        alertname: KongHigh5xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: "aggregator.aggregator-api.80"}
+            exp_annotations:
+              summary: "High 5xx rate on aggregator.aggregator-api.80"
+              description: "Service aggregator.aggregator-api.80 has held a 5xx error rate above 5% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: 10.0%). A short spike does NOT reach this alert."
+
+  # ── Untouched rules must be unaffected ────────────────────────────────
+  - name: "rate-limit + translation-broken alerts still work"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc-c",code="429"}'
+        values: '0+500x20'
+      - series: 'ingress_controller_translation_broken_resource_count{pod="kic-0"}'
+        values: '0 0 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KongRateLimitSustained
+        exp_alerts:
+          - exp_labels: {severity: warning, group: kong, exported_service: svc-c}
+            exp_annotations:
+              summary: "Sustained rate limiting on svc-c"
+              description: "Service svc-c has been rate limiting more than 100 req/min for 5+ consecutive minutes (current: 500 req/min) — a client is not respecting the rate limit"
+      - eval_time: 6m
+        alertname: KongConfigTranslationBroken
+        exp_alerts:
+          - exp_labels: {severity: warning, group: kong}
+            exp_annotations:
+              summary: "Kong Ingress Controller cannot translate 1 resource(s)"
+              description: "KIC has 1 resource(s) it cannot translate into Kong config for 2+ minutes — their routes/plugins are NOT live and traffic for the affected Service can silently drop. Find it: `kubectl get ingress -A` then `kubectl describe ingress <name>` and look for a KongConfigurationTranslationFailed event."
