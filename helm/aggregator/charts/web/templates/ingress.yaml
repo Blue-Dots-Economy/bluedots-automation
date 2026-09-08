@@ -9,6 +9,13 @@
 {{- $svc := include "web.fullname" . -}}
 {{- $host := required "global.publicHost is required" .Values.global.publicHost -}}
 {{- $isKong := eq .Values.ingress.className "kong" -}}
+{{- /* Kong only accepts these on a route's https_redirect_status_code; anything
+   else is rejected by the controller at admission, which silently takes the
+   whole route out of service. Fail the render instead. */ -}}
+{{- if and $isKong .Values.ingress.forceSSLRedirect -}}
+{{- $code := .Values.ingress.httpsRedirectStatusCode | int -}}
+{{- if not (has $code (list 426 301 302 307 308)) }}{{ fail (printf "ingress.httpsRedirectStatusCode must be one of 426/301/302/307/308, got %v" $code) }}{{ end -}}
+{{- end -}}
 {{- /* konghq.com/plugins takes a comma-separated list — combine the existing
    rate-limit-tier reference (if any) with this chart's own HSTS plugin (if
    enabled), rather than clobbering one with the other. */ -}}
@@ -27,10 +34,10 @@ metadata:
     konghq.com/plugins: {{ join "," $plugins | quote }}
     {{- end }}
     {{- if and $isKong .Values.ingress.forceSSLRedirect }}
-    {{- /* Route-level protocol restriction: only match https, and 301-redirect
-       a plain-http request instead of erroring (GITHUB-ISSUES #10). */}}
+    {{- /* Route-level protocol restriction: only match https, and redirect a
+       plain-http request instead of erroring (GITHUB-ISSUES #10). */}}
     konghq.com/protocols: "https"
-    konghq.com/https-redirect-status-code: "301"
+    konghq.com/https-redirect-status-code: {{ .Values.ingress.httpsRedirectStatusCode | int | quote }}
     {{- end }}
     {{- if .Values.ingress.clusterIssuer }}
     cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer | quote }}

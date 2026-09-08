@@ -12,10 +12,15 @@ ingress:
   clusterIssuer: ""           # e.g. letsencrypt-prod
   plugin: ""                  # KongClusterPlugin tier, e.g. rl-agg-web
   annotations: {}
-  # Kong route-level protocol restriction: only accept https, and 301-redirect
-  # a plain-http request to https instead of erroring (GITHUB-ISSUES #10).
+  # Kong route-level protocol restriction: only accept https, and redirect a
+  # plain-http request to https (see httpsRedirectStatusCode) instead of erroring (GITHUB-ISSUES #10).
   # No-op unless className is "kong".
   forceSSLRedirect: true
+  # Status code Kong uses for the plain-http -> https redirect. 301 is right for
+  # a browser-facing route: it is the cacheable permanent redirect and this route
+  # serves GET navigations. API routes use 308 instead, to keep a redirected POST
+  # from being downgraded to GET. Kong accepts 426, 301, 302, 307, 308.
+  httpsRedirectStatusCode: 301
   # HSTS via a per-chart KongPlugin (response-transformer), referenced alongside
   # `plugin` above through the ingress's konghq.com/plugins annotation — see
   # templates/kong-hsts-plugin.yaml. No-op unless className is "kong".
@@ -23,7 +28,15 @@ ingress:
     enabled: true
     maxAge: 31536000           # 1 year
     includeSubDomains: true
-    preload: true
+    # `preload` is deliberately OFF. It is the one HSTS directive that cannot be
+    # walked back on browser timescales: combined with includeSubDomains, a
+    # preload-list submission commits EVERY subdomain to https-only, and removal
+    # ships with browser releases months later. Emitting the directive does not
+    # by itself enrol the domain (that needs a submission at hstspreload.org) —
+    # but it advertises the intent, and this org still has legacy hosts that
+    # would not survive it. Turn it on per environment, after auditing every
+    # subdomain of the public host, never as a chart default.
+    preload: false
 
 replicaCount: 1
 image:
