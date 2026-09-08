@@ -20,8 +20,16 @@
 {{- $redis := .Values.apiRateLimit.redis -}}
 {{- $isKong := eq .Values.api.ingress.className "kong" -}}
 {{- $byLimit := dict -}}
+{{- /* A group's `limit` is a CAP, not a free-standing value: the effective limit
+   is min(limit, default). An override exists to make one path TIGHTER than the
+   API baseline, and an absolute number cannot do that portably — an env that
+   lowers global.apiRateLimit.defaultMinute below a hardcoded override would
+   silently make the overridden path the LOOSEST route on the service, which is
+   the opposite of why the override was written. Clamping keeps the intent true
+   in every environment. To genuinely loosen one path, raise the default and
+   cap the others. */ -}}
 {{- range .Values.apiRateLimit.groups }}
-  {{- $n := .limit | default $default -}}
+  {{- $n := min (int (.limit | default $default)) (int $default) -}}
   {{- $k := printf "%v" $n -}}
   {{- $cur := index $byLimit $k | default (list) -}}
   {{- $_ := set $byLimit $k (append $cur .path) -}}

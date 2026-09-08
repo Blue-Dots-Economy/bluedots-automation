@@ -121,7 +121,7 @@ apiRateLimit:
     # better-auth's own mount (app.ts), NOT the same prefix as /api/v1/auth below
     # — Kong matches on path prefix, so this entry does not cover that one.
     - { path: /api/auth }
-    # ── Pre-login, unauthenticated: tightened below the default ──────────────
+    # ── Pre-login, unauthenticated: capped below the default ─────────────────
     # Both of these are reachable with no credential, and both are cheap to
     # script. 120/min is chosen against real usage, not against the attacker: a
     # login needs ~1-3 consent calls, so 120 still clears ~40 users sharing one
@@ -129,6 +129,12 @@ apiRateLimit:
     # against the /api catch-all tier these used to fall through to. Do NOT tune
     # these to single digits — they gate signing in, so a too-tight value is a
     # lockout, and the attacker just spreads across IPs.
+    #
+    # `limit` is a CAP (see the template): the effective value is
+    # min(120, defaultMinute), so in an environment that already runs a tighter
+    # baseline these inherit that baseline rather than becoming the loosest
+    # routes on the service. The dev cluster runs defaultMinute: 60, so there
+    # both of these are 60, not 120.
     #
     # /api/v1/consent/status-by-identifier answers "does this phone/email exist?"
     # unauthenticated, so uncounted it is an account-enumeration oracle.
