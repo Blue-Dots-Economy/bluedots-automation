@@ -1,0 +1,211 @@
+# Sampled every 30s to match the cluster's scrapeInterval.
+# To express N requests/min, the counter increments by N/2 per sample.
+rule_files:
+  - rules-fixed.yaml
+evaluation_interval: 30s
+tests:
+  # ── THE INCIDENT (Sep 7, 17:09-17:18 IST): 12 req/min, 100% 401, one stale tab
+  - name: "INCIDENT: 12 req/min 100% 401 -> SILENT (under all three volume gates)"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-api.2742",route="r",code="401"}'
+        values: '0+6x60'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Condition 1: total > 100/min AND >25% 4xx
+  - name: "cond 1: 200 req/min, 30% 401 -> FIRES"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="200"}'
+        values: '0+70x60'
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0+30x60'
+    alert_rule_test:
+      - {eval_time: 3m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - eval_time: 12m
+        alertname: KongCritical4xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: svc}
+            exp_annotations:
+              summary: "Critical 4xx rate on svc"
+              description: "Service svc has met a 4xx alert threshold for 5 CONTINUOUS minutes. Thresholds (per minute): >25% 4xx above 100 req/min, OR 100% 4xx between 25-100 req/min, OR more than 25 4xx below 50 req/min. Counts only real client errors - bot path-scanning (404/405/410), rate limiting (429) and the retired-host 410 are excluded. Open the 'Kong Status Codes' dashboard for the exact codes, hosts and failure reasons."
+  - name: "cond 1 boundary: 200 req/min, 20% 4xx -> SILENT"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="200"}'
+        values: '0+80x60'
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0+20x60'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Condition 2: 25 < total < 100 AND 100% 4xx
+  - name: "cond 2: 60 req/min, 100% 4xx -> FIRES"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="403"}'
+        values: '0+30x60'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KongCritical4xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: svc}
+            exp_annotations:
+              summary: "Critical 4xx rate on svc"
+              description: "Service svc has met a 4xx alert threshold for 5 CONTINUOUS minutes. Thresholds (per minute): >25% 4xx above 100 req/min, OR 100% 4xx between 25-100 req/min, OR more than 25 4xx below 50 req/min. Counts only real client errors - bot path-scanning (404/405/410), rate limiting (429) and the retired-host 410 are excluded. Open the 'Kong Status Codes' dashboard for the exact codes, hosts and failure reasons."
+  - name: "cond 2 boundary: 60 req/min, 50% 4xx -> SILENT (needs 100%)"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="200"}'
+        values: '0+15x60'
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="403"}'
+        values: '0+15x60'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Condition 3: total < 50 AND 4xx count > 25
+  - name: "cond 3: 40 req/min with 30 4xx -> FIRES"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="200"}'
+        values: '0+5x60'
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0+15x60'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KongCritical4xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: svc}
+            exp_annotations:
+              summary: "Critical 4xx rate on svc"
+              description: "Service svc has met a 4xx alert threshold for 5 CONTINUOUS minutes. Thresholds (per minute): >25% 4xx above 100 req/min, OR 100% 4xx between 25-100 req/min, OR more than 25 4xx below 50 req/min. Counts only real client errors - bot path-scanning (404/405/410), rate limiting (429) and the retired-host 410 are excluded. Open the 'Kong Status Codes' dashboard for the exact codes, hosts and failure reasons."
+  - name: "cond 3 boundary: 40 req/min with 20 4xx -> SILENT"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="200"}'
+        values: '0+10x60'
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Bot traffic stays excluded even at high volume
+  - name: "bot flood 400 req/min of 405 + host-block 410 -> SILENT"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",route="r",code="405"}'
+        values: '0+125x60'
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",route="signals.signals-ui-host-block.x.y.80",code="410"}'
+        values: '0+75x60'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Sustain: condition 1 met for only 3 minutes, then 4xx stops. Counter goes
+  #    flat (never decreases), so this is a clean stop, not a counter reset.
+  - name: "sustain: 3 minutes of cond-1 badness then clean -> SILENT (needs 5)"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="200"}'
+        values: '0+70x80'
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0x20 0+30x6 180x54'
+    alert_rule_test:
+      - {eval_time: 12m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - {eval_time: 14m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+
+  # ── Sustain: same badness held for 8 minutes -> FIRES
+  - name: "sustain: 8 minutes of cond-1 badness -> FIRES"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="200"}'
+        values: '0+70x80'
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0x20 0+30x16 480x44'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: KongCritical4xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: svc}
+            exp_annotations:
+              summary: "Critical 4xx rate on svc"
+              description: "Service svc has met a 4xx alert threshold for 5 CONTINUOUS minutes. Thresholds (per minute): >25% 4xx above 100 req/min, OR 100% 4xx between 25-100 req/min, OR more than 25 4xx below 50 req/min. Counts only real client errors - bot path-scanning (404/405/410), rate limiting (429) and the retired-host 410 are excluded. Open the 'Kong Status Codes' dashboard for the exact codes, hosts and failure reasons."
+  - name: "5xx: 3-min burst on idle service — SILENT"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",code="200"}'
+        values: '0+2x40'
+      - series: 'kong_http_requests_total{exported_service="signals.signals-ui.80",code="503"}'
+        values: '0x10 100 200 300 300x27'
+    alert_rule_test:
+      - {eval_time: 16m, alertname: KongHigh5xxRate, exp_alerts: []}
+      - {eval_time: 30m, alertname: KongHigh5xxRate, exp_alerts: []}
+  - name: "5xx: real sustained backend failure on busy service — fires"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="aggregator.aggregator-api.80",code="200"}'
+        values: '0+30x10 300+27x30'
+      - series: 'kong_http_requests_total{exported_service="aggregator.aggregator-api.80",code="502"}'
+        values: '0x10 0+3x30'
+    alert_rule_test:
+      - {eval_time: 12m, alertname: KongHigh5xxRate, exp_alerts: []}
+      - eval_time: 22m
+        alertname: KongHigh5xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: "aggregator.aggregator-api.80"}
+            exp_annotations:
+              summary: "High 5xx rate on aggregator.aggregator-api.80"
+              description: "Service aggregator.aggregator-api.80 has held a 5xx error rate above 5% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: 10.0%). A short spike does NOT reach this alert."
+
+  # ── Untouched rules must be unaffected ────────────────────────────────
+  - name: "rate-limit + translation-broken alerts still work"
+    interval: 1m
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc-c",code="429"}'
+        values: '0+500x20'
+      - series: 'ingress_controller_translation_broken_resource_count{pod="kic-0"}'
+        values: '0 0 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KongRateLimitSustained
+        exp_alerts:
+          - exp_labels: {severity: warning, group: kong, exported_service: svc-c}
+            exp_annotations:
+              summary: "Sustained rate limiting on svc-c"
+              description: "Service svc-c has been rate limiting more than 100 req/min for 5+ consecutive minutes (current: 500 req/min) — a client is not respecting the rate limit"
+      - eval_time: 6m
+        alertname: KongConfigTranslationBroken
+        exp_alerts:
+          - exp_labels: {severity: warning, group: kong}
+            exp_annotations:
+              summary: "Kong Ingress Controller cannot translate 1 resource(s)"
+              description: "KIC has 1 resource(s) it cannot translate into Kong config for 2+ minutes — their routes/plugins are NOT live and traffic for the affected Service can silently drop. Find it: `kubectl get ingress -A` then `kubectl describe ingress <name>` and look for a KongConfigurationTranslationFailed event."
+
+  # Exactly 100 req/min, 100% 4xx. Tier 1 needs >100 and tier 2 needs <=100, so
+  # this is the seam between them - it must be covered by tier 2, not fall through.
+  - name: "tier seam: exactly 100 req/min at 100% 4xx -> FIRES (tier 2)"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0+50x60'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KongCritical4xxRate
+        exp_alerts:
+          - exp_labels: {severity: critical, group: kong, exported_service: svc}
+            exp_annotations:
+              summary: "Critical 4xx rate on svc"
+              description: "Service svc has met a 4xx alert threshold for 5 CONTINUOUS minutes. Thresholds (per minute): >25% 4xx above 100 req/min, OR 100% 4xx between 25-100 req/min, OR more than 25 4xx below 50 req/min. Counts only real client errors - bot path-scanning (404/405/410), rate limiting (429) and the retired-host 410 are excluded. Open the 'Kong Status Codes' dashboard for the exact codes, hosts and failure reasons."
+
+  # The 25 req/min floor is deliberate (see values.yaml). This asserts it, so a
+  # future "let's cover low-volume services too" change trips a test rather than
+  # silently re-admitting the stale-tab page class this rule exists to stop.
+  - name: "floor: 20 req/min at 100% 4xx -> SILENT (below the deliberate 25 req/min floor)"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - {eval_time: 28m, alertname: KongCritical4xxRate, exp_alerts: []}

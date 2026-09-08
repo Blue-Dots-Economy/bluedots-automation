@@ -130,6 +130,18 @@ prometheus:
 
     # Loki datasource — kube-prometheus-stack doesn't know about Loki, so we add it here.
     additionalDataSources:
+      # Do NOT add `uid:` here. Grafana provisions datasources BY uid once one is
+      # specified, so adding it to a datasource that already exists under a
+      # generated uid makes every reload fail with
+      #   "Datasource provisioning error: data source not found"
+      # and that failure aborts the whole file - Prometheus and Alertmanager stop
+      # re-provisioning too. Verified on test-dev: the uid stayed
+      # P8E80F9AEF21F6940 across a full pod restart while the reload endpoint
+      # returned 500 in a loop.
+      #
+      # A dashboard that needs Loki must therefore NOT hardcode a uid either -
+      # use a `datasource`-type template variable, which resolves to whatever
+      # uid the install happens to have.
       - name: Loki
         type: loki
         url: http://monitoring-loki.monitoring.svc.cluster.local:3100
@@ -479,6 +491,26 @@ prometheus:
                 summary: "Deployment common-services/{{ $labels.deployment }} has 0 replicas"
                 description: "Deployment {{ $labels.deployment }} has had 0 available replicas for more than 10 minutes"
 
+        # Per-minute request and real-client-error counts, recorded once so the
+        # 4xx alert below can reference them three times without becoming
+        # unreadable. rate(...[2m]) * 60 rather than increase(...[1m]): at the
+        # 30s scrapeInterval a [1m] range holds only two samples, so one missed
+        # scrape leaves increase() with a single point and NO RESULT AT ALL -
+        # which min_over_time cannot distinguish from a healthy minute.
+        - name: kong.recording
+          rules:
+            - record: kong:requests:per1m
+              expr: |
+                sum by(exported_service) (
+                  rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
+                ) * 60
+
+            - record: kong:client_errors:per1m
+              expr: |
+                sum by(exported_service) (
+                  rate(kong_http_requests_total{code=~"4..",code!~"404|405|410|429",exported_service!="",route!~".*-host-block.*"}[2m])
+                ) * 60
+
         - name: kong.alerts
           rules:
             # Traffic volume warning — early heads-up before the critical threshold.
@@ -532,58 +564,140 @@ prometheus:
                 summary: "Kong Ingress Controller cannot translate {{ $value | printf \"%.0f\" }} resource(s)"
                 description: "KIC has {{ $value | printf \"%.0f\" }} resource(s) it cannot translate into Kong config for 2+ minutes — their routes/plugins are NOT live and traffic for the affected Service can silently drop. Find it: `kubectl get ingress -A` then `kubectl describe ingress <name>` and look for a KongConfigurationTranslationFailed event."
 
-            # 5xx error rate > 5% — critical, act fast.
-            # HARD guard (AND, not OR): requires BOTH >5% 5xx AND >=15 actual 5xx in
-            # 5m. The absolute floor of 15 stops low-volume noise (e.g. 6 5xx out of
-            # 100 requests = 6%) from paging — same anti-noise fix as the 4xx alerts.
-            # (was: >= 100 total req OR >= 15 5xx — the OR-total branch was noisy.)
+            # 5xx error rate > 5%, SUSTAINED for 5 continuous minutes.
+            #
+            # Why min_over_time and not `for: 5m`: `for` only requires the expr to
+            # be true at each evaluation, and with a [5m] lookback ONE burst keeps
+            # that window hot for 5 straight evaluations — so `rate(...[5m]) +
+            # for: 5m` fired on a ~3-minute spike and self-resolved 1 minute later.
+            # min_over_time over a [5m:1m] subquery instead demands the ratio be
+            # above threshold at EVERY 1-minute step, which is what "sustained"
+            # actually means. `for` is therefore 0m — the persistence is in the expr.
+            #
+            # The second clause is a TRAFFIC floor, not an error floor: the service
+            # must be serving >=10 req/min at every step. An idle service cannot
+            # page, no matter how ugly its ratio (see the 4xx rule for the full
+            # rationale — that is where this bit us).
             - alert: KongHigh5xxRate
               expr: |
-                (
-                  sum by(exported_service) (rate(kong_http_requests_total{code=~"5.."}[5m]))
-                  /
-                  sum by(exported_service) (rate(kong_http_requests_total[5m]))
+                min_over_time(
+                  (
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{code=~"5..",exported_service!="",route!~".*-host-block.*"}[2m])
+                    )
+                    /
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
+                    )
+                  )[5m:1m]
                 ) * 100 > 5
                 and
-                sum by(exported_service) (
-                  increase(kong_http_requests_total{code=~"5.."}[5m])
-                ) >= 15
-              for: 5m
+                min_over_time(
+                  (
+                    sum by(exported_service) (
+                      rate(kong_http_requests_total{exported_service!="",route!~".*-host-block.*"}[2m])
+                    ) * 60
+                  )[5m:1m]
+                ) >= 10
+              for: 0m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "High 5xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 5xx error rate AND ≥15 actual 5xx errors over the last 5 minutes (thresholds: >5% AND ≥15 errors — low-volume noise will NOT alert)."
+                description: "Service {{ $labels.exported_service }} has held a 5xx error rate above 5% for 5 CONTINUOUS minutes while serving at least 10 req/min (lowest 1-minute ratio in that window: {{ $value | printf \"%.1f\" }}%). A short spike does NOT reach this alert."
 
-            # 4xx error rate — the SOLE 4xx alert (per backend service). Fires only
-            # when BOTH hold for 5m: >25% of the service's requests are 4xx AND there
-            # are >=50 actual 4xx (excluding 429). The absolute floor of 50 means a
-            # low-volume burst (e.g. 3 4xx out of 3 requests = 100%) never pages.
-            # (The 10–25% warning tier and the route-level per-API 4xx twin were
-            # removed — this per-service rule is the only 4xx alert.)
+            # ── Per-minute volume tiers, then a 5-minute sustain ──────────────
+            # Thresholds specified by the platform owner. Evaluated per MINUTE, and
+            # every one of the 5 minutes in the window must qualify:
+            #
+            #   1. total > 100 req/min      AND  >25% are 4xx
+            #   2. 25 < total <= 100 req/min AND 100% are 4xx
+            #   3. total < 50 req/min       AND  >25 actual 4xx in the minute
+            #
+            # Tier 1 trusts a ratio only once the sample is big enough for 25% to
+            # mean something. Tiers 2 and 3 handle the 25-100 req/min band, where a
+            # ratio is statistically meaningless, by demanding either a total
+            # wipe-out or a real absolute count.
+            #
+            # THERE IS A HARD FLOOR AT 25 req/min, AND IT IS DELIBERATE.
+            # kong:client_errors:per1m is a strict subset of kong:requests:per1m,
+            # so E <= T always. Tier 1 needs T > 100; tier 2 needs T > 25; tier 3
+            # needs E > 25, which forces T >= E > 25. Every arm therefore requires
+            # T > 25, and a service under 25 req/min CANNOT fire this alert even at
+            # 100% errors.
+            #
+            # That is the point. Below 25 req/min there is no signal that separates
+            # "the service is broken" from "one client is stuck", because one stuck
+            # client IS most of the traffic. The rule this replaced paged on exactly
+            # that: 12 req/min of 100% 401 from a single browser tab polling with an
+            # expired token. Keying a low-volume arm on duration instead (say
+            # E >= T held for 15m) would re-admit it - that tab, and the 85-minute
+            # bad-credential poller seen on 2026-08-31, both sustain 100% 4xx
+            # indefinitely at ~12 req/min.
+            #
+            # So a genuinely dead low-traffic service is NOT covered here, by
+            # choice. Cover it with a signal that does not depend on error ratios:
+            # KongHigh5xxRate if the failure is server-side, DeploymentUnavailable
+            # if the pods are gone, or a blackbox probe if you need per-endpoint
+            # availability on a quiet service.
+            #
+            # WHY: the previous rule paged on 12 req/min of 100% 401 - a single
+            # browser tab polling /api/v1/action/fetch every ~5s with an expired
+            # token (app log: code=TOKEN_EXPIRED, "Access token has expired"). The
+            # API was healthy; answering 401 to an expired token is correct. No
+            # ratio-plus-floor combination separates one stale tab from an outage,
+            # so volume tiers replace the single floor.
+            #
+            # Ratio tests are written as cross-multiplications - `err*4 > total`
+            # rather than `err/total > 25` - so a minute with no traffic yields 0
+            # instead of NaN. A NaN drops the sample, and a dropped sample is
+            # INVISIBLE to min_over_time, which would let a gap masquerade as five
+            # good minutes.
+            #
+            # The three tiers are summed and clamped to 1 (logical OR; `or` is a
+            # set operator in PromQL and would NOT do this), then min_over_time
+            # demands the result be 1 at every 1-minute step - the sustain.
+            #
+            # Tier 2's upper bound is <= 100, not < 100, on purpose: with tier 1 at
+            # > 100 a strict `<` would leave exactly 100 req/min matching NEITHER
+            # tier - a silent dead zone, the same shape of bug as the old
+            # 3000-5000 traffic band. The tiers must touch.
+            #
+            # 404/405/410 and the -host-block route stay excluded: they are bot
+            # path-scanning and the deliberate retired-host 410. 429 is excluded
+            # too and has its own rule (KongRateLimitSustained).
+            #
+            # Replayed against 7 days of real traffic: 0 firings, including the
+            # stale-tab incident. Not deaf - measured peaks are 339 req/min on
+            # aggregator-web (all three tiers reachable) and 120 on signals-api
+            # and signals-ui (tiers 1 and 2 reachable).
             - alert: KongCritical4xxRate
               expr: |
-                (
-                  sum by(exported_service) (
-                    rate(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                  )
-                  /
-                  sum by(exported_service) (
-                    rate(kong_http_requests_total[5m])
-                  )
-                ) * 100 > 25
-                and
-                sum by(exported_service) (
-                  increase(kong_http_requests_total{code=~"4..",code!="429"}[5m])
-                ) >= 50
-              for: 5m
+                min_over_time(
+                  clamp_max(
+                      (
+                        (kong:requests:per1m > bool 100)
+                        * (kong:client_errors:per1m * 4 > bool kong:requests:per1m)
+                      )
+                    + (
+                        (kong:requests:per1m > bool 25)
+                        * (kong:requests:per1m <= bool 100)
+                        * (kong:client_errors:per1m >= bool kong:requests:per1m)
+                      )
+                    + (
+                        (kong:requests:per1m < bool 50)
+                        * (kong:client_errors:per1m > bool 25)
+                      )
+                  , 1)[5m:1m]
+                ) == 1
+              for: 0m
               labels:
                 severity: critical
                 group: kong
               annotations:
                 summary: "Critical 4xx rate on {{ $labels.exported_service }}"
-                description: "Service {{ $labels.exported_service }} has a {{ $value | printf \"%.1f\" }}% 4xx error rate AND ≥50 actual 4xx errors over the last 5 minutes (thresholds: >25% AND ≥50 errors — low-volume bot 4xx will NOT alert)."
+                description: "Service {{ $labels.exported_service }} has met a 4xx alert threshold for 5 CONTINUOUS minutes. Thresholds (per minute): >25% 4xx above 100 req/min, OR 100% 4xx between 25-100 req/min, OR more than 25 4xx below 50 req/min. Counts only real client errors - bot path-scanning (404/405/410), rate limiting (429) and the retired-host 410 are excluded. Open the 'Kong Status Codes' dashboard for the exact codes, hosts and failure reasons."
 
         - name: info.alerts
           rules:
