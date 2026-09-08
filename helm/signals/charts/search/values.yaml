@@ -14,6 +14,25 @@ api:
   resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { cpu: 1, memory: 512Mi } }
   ingress:
     enabled: false
+    # Kong route-level protocol restriction: only accept https, and redirect a
+    # plain-http request to https (see httpsRedirectStatusCode) instead of
+    # serving it in the clear. No-op unless className is "kong".
+    forceSSLRedirect: true
+    # 308, not 301: this is an API route, and a client that re-issues a 301'd
+    # POST as a GET silently drops the body. Kong accepts 426/301/302/307/308.
+    httpsRedirectStatusCode: 308
+    # HSTS via a per-chart KongPlugin (response-transformer), referenced
+    # alongside `plugin` through the ingress's konghq.com/plugins annotation —
+    # see templates/kong-hsts-plugin.yaml. Applied to the /signals-search
+    # catch-all AND to the more-specific generated routes in
+    # api-endpoint-groups-ingress.yaml, which Kong matches first and which would
+    # otherwise answer with no HSTS header. No-op unless className is "kong".
+    hsts:
+      enabled: true
+      maxAge: 31536000           # 1 year
+      includeSubDomains: true
+      # Opt-in only — see helm/signals/charts/ui/values.yaml for why.
+      preload: false
 serviceAccount:
   create: true
 

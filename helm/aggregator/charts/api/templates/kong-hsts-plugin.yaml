@@ -1,22 +1,21 @@
 {{- /*
 HSTS header via a namespaced KongPlugin (response-transformer), referenced
 only by this chart's own Ingress through konghq.com/plugins (see
-templates/ingress.yaml) — scoped to the signals UI route, not cluster-wide.
+templates/ingress.yaml) — scoped to the aggregator API route, not cluster-wide.
+The API route serves the admin approval HTML pages and the participant PII CSV
+export, so it must carry HSTS just like the web route.
 
 Kong has no dedicated "hsts" plugin; response-transformer's `add.headers` is
 the standard way to inject a static response header. Pairs with
-ingress.forceSSLRedirect (konghq.com/protocols: https +
-https-redirect-status-code), which handles the http->https redirect itself —
-this plugin only adds the header once a client is already on https.
-See GITHUB-ISSUES-COMPILATION.md Issue #10.
+ingress.forceSSLRedirect. Mirrors helm/signals/charts/ui/templates/kong-hsts-plugin.yaml.
 */ -}}
 {{- if and .Values.ingress.enabled (eq .Values.ingress.className "kong") .Values.ingress.hsts.enabled }}
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:
-  name: {{ include "dpg-ui.fullname" . }}-hsts
+  name: {{ include "api.serviceName" . }}-hsts
   labels:
-    {{- include "dpg-ui.labels" . | nindent 4 }}
+    {{- include "api.labels" . | nindent 4 }}
 plugin: response-transformer
 config:
   add:

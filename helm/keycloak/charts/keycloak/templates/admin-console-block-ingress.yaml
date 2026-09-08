@@ -20,6 +20,13 @@
 {{- /* Must match ingress.yaml, or this more-specific 403 route matches nothing
        and the admin console stays publicly reachable. */ -}}
 {{- $host := include "keycloak.authHost" . -}}
+{{- $isKong := eq .Values.ingress.className "kong" -}}
+{{- /* More specific than /auth, so this route carries its own plugin set.
+   request-termination answers in the access phase, so the response-transformer
+   header may not be added to the 403 itself — the force-SSL annotations below
+   are route-level and apply regardless, which is the part that matters here. */ -}}
+{{- $plugins := list (printf "%s-admin-console-block" $svc) -}}
+{{- if and $isKong .Values.ingress.hsts.enabled }}{{ $plugins = append $plugins (printf "%s-hsts" $svc) }}{{ end -}}
 ---
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
@@ -40,7 +47,11 @@ metadata:
     {{- include "keycloak.labels" . | nindent 4 }}
   annotations:
     konghq.com/strip-path: "false"
-    konghq.com/plugins: {{ printf "%s-admin-console-block" $svc | quote }}
+    konghq.com/plugins: {{ join "," $plugins | quote }}
+    {{- if and $isKong .Values.ingress.forceSSLRedirect }}
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: {{ .Values.ingress.httpsRedirectStatusCode | int | quote }}
+    {{- end }}
 spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
