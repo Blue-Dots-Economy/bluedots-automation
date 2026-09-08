@@ -25,10 +25,17 @@ ingress:
   # admin-console-block-ingress.yaml), which Kong matches first and which would
   # otherwise answer with no HSTS header. No-op unless className is "kong".
   #
-  # NOTE on the shared-host case (global.keycloak.host unset): the aggregator's
-  # web Ingress already sets HSTS for that hostname, and HSTS is host-scoped, so
-  # a browser that has loaded the portal is already pinned. This exists for the
-  # dedicated-host case and for a client whose FIRST request is to /auth.
+  # NOTE — mostly a backstop here, and deliberately so. Two things already cover
+  # the common cases: on a shared host the aggregator's web Ingress sets HSTS for
+  # that hostname (HSTS is host-scoped), and Keycloak itself emits
+  # Strict-Transport-Security from its own browserSecurityHeaders default,
+  # verified live on the dev auth host. response-transformer's `add` does not
+  # overwrite an existing header, so this never duplicates Keycloak's — it only
+  # fills in responses Keycloak did not generate (Kong-level 429/503, for
+  # instance). The part of this block that is NOT redundant is forceSSLRedirect:
+  # `sslRequired: external` makes Keycloak REFUSE plain http with a 403, which
+  # protects the credential but leaves the user on an error page instead of
+  # bouncing them to https.
   hsts:
     enabled: true
     maxAge: 31536000           # 1 year
