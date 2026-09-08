@@ -10,7 +10,7 @@ standard way to inject a static response header. Pairs with
 api.ingress.forceSSLRedirect, which handles the http->https redirect itself.
 Mirrors helm/signals/charts/ui/templates/kong-hsts-plugin.yaml.
 */ -}}
-{{- if and (eq .Values.api.ingress.className "kong") .Values.api.ingress.hsts.enabled }}
+{{- if and .Values.api.ingress.enabled (eq .Values.api.ingress.className "kong") .Values.api.ingress.hsts.enabled }}
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:

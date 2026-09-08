@@ -9,7 +9,7 @@ Kong has no dedicated "hsts" plugin; response-transformer's `add.headers` is
 the standard way to inject a static response header. Pairs with
 ingress.forceSSLRedirect. Mirrors helm/signals/charts/ui/templates/kong-hsts-plugin.yaml.
 */ -}}
-{{- if and (eq .Values.ingress.className "kong") .Values.ingress.hsts.enabled }}
+{{- if and .Values.ingress.enabled (eq .Values.ingress.className "kong") .Values.ingress.hsts.enabled }}
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:

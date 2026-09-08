@@ -13,7 +13,7 @@ this plugin only adds the header once a client is already on https.
 Mirrors helm/signals/charts/ui/templates/kong-hsts-plugin.yaml.
 See GITHUB-ISSUES-COMPILATION.md Issue #10.
 */ -}}
-{{- if and (eq .Values.ingress.className "kong") .Values.ingress.hsts.enabled }}
+{{- if and .Values.ingress.enabled (eq .Values.ingress.className "kong") .Values.ingress.hsts.enabled }}
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
 metadata:
