@@ -12,6 +12,20 @@
 */ -}}
 {{- $fullName := include "search.fullname" . -}}
 {{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
+{{- $isKong := eq .Values.api.ingress.className "kong" -}}
+{{- /* Kong only accepts these on a route's https_redirect_status_code; anything
+   else is rejected by the controller at admission, which silently takes the
+   whole route out of service. Fail the render instead. */ -}}
+{{- if and $isKong .Values.api.ingress.forceSSLRedirect -}}
+{{- $code := .Values.api.ingress.httpsRedirectStatusCode | int -}}
+{{- if not (has $code (list 426 301 302 307 308)) }}{{ fail (printf "api.ingress.httpsRedirectStatusCode must be one of 426/301/302/307/308, got %v" $code) }}{{ end -}}
+{{- end -}}
+{{- /* konghq.com/plugins takes a comma-separated list — combine the existing
+   rate-limit-tier reference (if any) with this chart's own HSTS plugin (if
+   enabled), rather than clobbering one with the other. */ -}}
+{{- $plugins := list -}}
+{{- if .Values.api.ingress.plugin }}{{ $plugins = append $plugins .Values.api.ingress.plugin }}{{ end -}}
+{{- if and $isKong .Values.api.ingress.hsts.enabled }}{{ $plugins = append $plugins (printf "%s-hsts" $fullName) }}{{ end -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -20,8 +34,14 @@ metadata:
     {{- include "search.labels" . | nindent 4 }}
   annotations:
     konghq.com/strip-path: "true"
-    {{- if .Values.api.ingress.plugin }}
-    konghq.com/plugins: {{ .Values.api.ingress.plugin | quote }}
+    {{- if $plugins }}
+    konghq.com/plugins: {{ join "," $plugins | quote }}
+    {{- end }}
+    {{- if and $isKong .Values.api.ingress.forceSSLRedirect }}
+    {{- /* Route-level protocol restriction: only match https, and redirect a
+       plain-http request instead of erroring (GITHUB-ISSUES #10). */}}
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: {{ .Values.api.ingress.httpsRedirectStatusCode | int | quote }}
     {{- end }}
 spec:
   {{- with .Values.api.ingress.className }}

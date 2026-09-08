@@ -10,6 +10,31 @@ ingress:
   className: ""        # e.g. kong
   plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-auth
   annotations: {}
+  # Kong route-level protocol restriction: only accept https, and redirect a
+  # plain-http request to https (see httpsRedirectStatusCode) instead of serving
+  # the login pages in the clear. No-op unless className is "kong".
+  forceSSLRedirect: true
+  # 308, not 301: /auth carries the OTP-submit and token POSTs, and a client
+  # that re-issues a 301'd POST as a GET drops the body and turns a login into a
+  # silent failure. Kong accepts 426/301/302/307/308.
+  httpsRedirectStatusCode: 308
+  # HSTS via a per-chart KongPlugin (response-transformer), referenced alongside
+  # `plugin` through the ingress's konghq.com/plugins annotation — see
+  # templates/kong-hsts-plugin.yaml. Applied to the /auth catch-all AND to the
+  # more-specific generated routes (otp-ratelimit-ingress.yaml,
+  # admin-console-block-ingress.yaml), which Kong matches first and which would
+  # otherwise answer with no HSTS header. No-op unless className is "kong".
+  #
+  # NOTE on the shared-host case (global.keycloak.host unset): the aggregator's
+  # web Ingress already sets HSTS for that hostname, and HSTS is host-scoped, so
+  # a browser that has loaded the portal is already pinned. This exists for the
+  # dedicated-host case and for a client whose FIRST request is to /auth.
+  hsts:
+    enabled: true
+    maxAge: 31536000           # 1 year
+    includeSubDomains: true
+    # Opt-in only — see helm/signals/charts/ui/values.yaml for why.
+    preload: false
   # OFF by default — see the long note in templates/ingress.yaml. Keycloak shares
   # the aggregator's public host, whose certificate is owned by the aggregator
   # release's web Ingress in ANOTHER namespace; tls.secretName cannot cross

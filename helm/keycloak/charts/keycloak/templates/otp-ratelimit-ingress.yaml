@@ -20,6 +20,13 @@
 {{- /* Must match ingress.yaml, or this more-specific route matches nothing and
        the per-IP OTP limit fails OPEN. */ -}}
 {{- $host := include "keycloak.authHost" . -}}
+{{- $isKong := eq .Values.ingress.className "kong" -}}
+{{- /* This route is more specific than /auth, so Kong serves it here and the
+   catch-all's plugin set never applies. Re-attach HSTS + force-SSL, or the OTP
+   submit endpoint — the one carrying the login credential — is the single auth
+   path still answering over plain http with no HSTS header. */ -}}
+{{- $plugins := list (printf "%s-rl-login" $svc) -}}
+{{- if and $isKong .Values.ingress.hsts.enabled }}{{ $plugins = append $plugins (printf "%s-hsts" $svc) }}{{ end -}}
 {{- $rl := .Values.loginRateLimit -}}
 {{- /* single source: global.otpRateLimit.aggregatorMinute (global-values.yaml), fallback to the chart default */ -}}
 {{- $minute := dig "otpRateLimit" "aggregatorMinute" $rl.minute (.Values.global | default dict) -}}
@@ -49,7 +56,11 @@ metadata:
     {{- include "keycloak.labels" . | nindent 4 }}
   annotations:
     konghq.com/strip-path: "false"
-    konghq.com/plugins: {{ printf "%s-rl-login" $svc | quote }}
+    konghq.com/plugins: {{ join "," $plugins | quote }}
+    {{- if and $isKong .Values.ingress.forceSSLRedirect }}
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: {{ .Values.ingress.httpsRedirectStatusCode | int | quote }}
+    {{- end }}
 spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
