@@ -197,3 +197,15 @@ tests:
             exp_annotations:
               summary: "Critical 4xx rate on svc"
               description: "Service svc has met a 4xx alert threshold for 5 CONTINUOUS minutes. Thresholds (per minute): >25% 4xx above 100 req/min, OR 100% 4xx between 25-100 req/min, OR more than 25 4xx below 50 req/min. Counts only real client errors - bot path-scanning (404/405/410), rate limiting (429) and the retired-host 410 are excluded. Open the 'Kong Status Codes' dashboard for the exact codes, hosts and failure reasons."
+
+  # The 25 req/min floor is deliberate (see values.yaml). This asserts it, so a
+  # future "let's cover low-volume services too" change trips a test rather than
+  # silently re-admitting the stale-tab page class this rule exists to stop.
+  - name: "floor: 20 req/min at 100% 4xx -> SILENT (below the deliberate 25 req/min floor)"
+    interval: 30s
+    input_series:
+      - series: 'kong_http_requests_total{exported_service="svc",route="r",code="401"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: KongCritical4xxRate, exp_alerts: []}
+      - {eval_time: 28m, alertname: KongCritical4xxRate, exp_alerts: []}

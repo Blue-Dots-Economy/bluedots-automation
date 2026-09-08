@@ -616,9 +616,31 @@ prometheus:
             #   3. total < 50 req/min       AND  >25 actual 4xx in the minute
             #
             # Tier 1 trusts a ratio only once the sample is big enough for 25% to
-            # mean something. Tiers 2 and 3 cover lower volumes, where a ratio is
-            # statistically meaningless, by demanding either a total wipe-out or a
-            # real absolute count.
+            # mean something. Tiers 2 and 3 handle the 25-100 req/min band, where a
+            # ratio is statistically meaningless, by demanding either a total
+            # wipe-out or a real absolute count.
+            #
+            # THERE IS A HARD FLOOR AT 25 req/min, AND IT IS DELIBERATE.
+            # kong:client_errors:per1m is a strict subset of kong:requests:per1m,
+            # so E <= T always. Tier 1 needs T > 100; tier 2 needs T > 25; tier 3
+            # needs E > 25, which forces T >= E > 25. Every arm therefore requires
+            # T > 25, and a service under 25 req/min CANNOT fire this alert even at
+            # 100% errors.
+            #
+            # That is the point. Below 25 req/min there is no signal that separates
+            # "the service is broken" from "one client is stuck", because one stuck
+            # client IS most of the traffic. The rule this replaced paged on exactly
+            # that: 12 req/min of 100% 401 from a single browser tab polling with an
+            # expired token. Keying a low-volume arm on duration instead (say
+            # E >= T held for 15m) would re-admit it - that tab, and the 85-minute
+            # bad-credential poller seen on 2026-08-31, both sustain 100% 4xx
+            # indefinitely at ~12 req/min.
+            #
+            # So a genuinely dead low-traffic service is NOT covered here, by
+            # choice. Cover it with a signal that does not depend on error ratios:
+            # KongHigh5xxRate if the failure is server-side, DeploymentUnavailable
+            # if the pods are gone, or a blackbox probe if you need per-endpoint
+            # availability on a quiet service.
             #
             # WHY: the previous rule paged on 12 req/min of 100% 401 - a single
             # browser tab polling /api/v1/action/fetch every ~5s with an expired
