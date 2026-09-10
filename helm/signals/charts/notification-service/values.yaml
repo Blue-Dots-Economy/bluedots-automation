@@ -83,8 +83,23 @@ affinity: {}
 config:
   NODE_ENV: production
   SERVER_PORT: "3000"
-  SMTP_GMAIL: "true"
+  # ── Mail transport ────────────────────────────────────────────────────────
+  # The service picks one, in this order: SMTP_AWS_SES, then SMTP_HOST, then
+  # SMTP_GMAIL. Empty keys are omitted from the ConfigMap entirely (see the
+  # range guard in templates/configmap.yaml), so an unset value here is unset in
+  # the pod, not an empty env var.
   SMTP_AWS_SES: ""
+  # Point this at any relay — Zoho, Mailgun, a corporate mail server, an SES
+  # SMTP endpoint — and it wins over SMTP_GMAIL below. Left empty, the chart
+  # behaves exactly as it did before this key existed. The environment sets it
+  # from the shared _smtp_host anchor in global-values.yaml.
+  SMTP_HOST: ""
+  SMTP_PORT: ""      # default 587 when SMTP_HOST is set
+  SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
+  SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
+  # Shorthand for smtp.gmail.com:465 with implicit TLS. Kept true so a
+  # chart-only install with GMAIL_USER/GMAIL_PASS still works untouched.
+  SMTP_GMAIL: "true"
   SEND_WHATSAPP_NOTIFICATION: ""
   MAIL_LOG: "true"
   LOG_ACTIVITY: "true"
@@ -99,6 +114,11 @@ secrets:
   existingSecret: ""
   data:
     REDIS_PASSWORD: ""
+    # Generic SMTP credentials. GMAIL_USER/GMAIL_PASS below are the legacy names
+    # and the service still falls back to them on every transport, so leaving
+    # these empty keeps an existing values file working as-is.
+    SMTP_USER: ""
+    SMTP_PASS: ""
     GMAIL_USER: ""
     GMAIL_PASS: ""
     # MSG91 SMS provider — required for mobile OTP login flow.

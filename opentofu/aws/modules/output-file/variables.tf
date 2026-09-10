@@ -89,8 +89,9 @@ variable "raya_voice_bot_api_key" {
 
 # ─── Signals notification service ─────────────────────────────────────────
 variable "notification_gmail_user" {
-  type    = string
-  default = ""
+  description = "Sending mailbox for the notification service. Feeds SMTP_USER and, for rollback safety, the legacy GMAIL_USER. Name kept for compatibility with existing global-values.yaml files, which set global.notification_gmail_user."
+  type        = string
+  default     = ""
 }
 
 # ─── Aggregator mail ───────────────────────────────────────────────────────
@@ -117,7 +118,7 @@ variable "raya_api_key" {
 }
 
 variable "smtp_password" {
-  description = "Gmail App Password. Feeds notification-service GMAIL_PASS, aggregator secrets.smtpPassword, monitoring alerting.email.smtpAuthPassword."
+  description = "SMTP account password (a Gmail App Password when the relay is Gmail). Feeds notification-service SMTP_PASS/GMAIL_PASS, aggregator secrets.smtpPassword, monitoring alerting.email.smtpAuthPassword."
   type        = string
   sensitive   = true
   default     = "UPDATE_THIS_VALUE"

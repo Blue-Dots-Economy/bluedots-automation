@@ -716,6 +716,22 @@ ui:
     targetPort: 80
 
 notification-service:
+  # ── Mail transport ─────────────────────────────────────────────────────────
+  # The service picks one, in this order: SMTP_AWS_SES, then SMTP_HOST, then the
+  # SMTP_GMAIL shorthand. Before notification-service#112 the non-SES path was
+  # hardcoded to smtp.gmail.com:465 and no SMTP_HOST was read at all, so
+  # changing providers meant changing code. These three keys come off the SAME
+  # _smtp_host/_smtp_port anchors that keycloak (`smtp:` above) and the
+  # aggregator (`mail.smtp` above) already use — set the anchor once at the top
+  # of this file and all three releases follow.
+  #
+  # NOTE this moves the notification service onto 587 + STARTTLS where it used
+  # to dial 465 with implicit TLS. Gmail serves both, and it is the port the
+  # other two releases have been using against the same account.
+  config:
+    SMTP_HOST: *smtp_host
+    SMTP_PORT: *smtp_port
+    SMTP_SECURE: "false"   # STARTTLS on 587; set "true" only for a 465 endpoint
   secrets:
     create: true
     existingSecret: ""
