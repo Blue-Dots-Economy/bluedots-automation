@@ -248,8 +248,8 @@ global:
   #   - "private-eks-a"
 
   # ── EKS API endpoint access ──────────────────────────────────────────────────
-  eks_endpoint_public_access:  true
-  eks_endpoint_private_access: false
+  eks_endpoint_public_access:  false
+  eks_endpoint_private_access: true
 
 # ── Pritunl VPN  & bastion host ────────────────────────────────────────────────────────
   pritunl_enabled: true
