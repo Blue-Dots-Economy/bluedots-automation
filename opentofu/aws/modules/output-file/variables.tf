@@ -87,15 +87,13 @@ variable "raya_voice_bot_api_key" {
   description = "API key the raya voice bot sends to the signals api as x-api-key (signals RAYA_VOICE_BOT_API_KEY)"
 }
 
-# ─── Signals notification service ─────────────────────────────────────────
-variable "notification_gmail_user" {
-  description = "Sending mailbox for the notification service. Feeds SMTP_USER and, for rollback safety, the legacy GMAIL_USER. Name kept for compatibility with existing global-values.yaml files, which set global.notification_gmail_user."
-  type        = string
-  default     = ""
-}
-
-# ─── Aggregator mail ───────────────────────────────────────────────────────
-variable "aggregator_smtp_user" {
+# ─── Mail ──────────────────────────────────────────────────────────────────
+# The one sending mailbox, shared by notification-service (SMTP_USER),
+# aggregator (secrets.smtpUser) and keycloak (SMTP_USER). Pairs with
+# smtp_password below, which was already a single variable feeding all three —
+# this used to be two variables (notification_gmail_user, aggregator_smtp_user)
+# that every global-values.yaml bound to the same _smtp_user anchor anyway.
+variable "smtp_user" {
   type    = string
   default = ""
 }

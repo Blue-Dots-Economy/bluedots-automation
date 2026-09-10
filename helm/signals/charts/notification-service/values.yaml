@@ -97,8 +97,9 @@ config:
   SMTP_PORT: ""      # default 587 when SMTP_HOST is set
   SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
   SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
-  # Shorthand for smtp.gmail.com:465 with implicit TLS. Kept true so a
-  # chart-only install with GMAIL_USER/GMAIL_PASS still works untouched.
+  # Legacy shorthand for smtp.gmail.com:465 with implicit TLS. Inert whenever
+  # SMTP_HOST is set, which every real deploy does; kept true so a chart-only
+  # install with no SMTP_HOST still resolves a transport.
   SMTP_GMAIL: "true"
   SEND_WHATSAPP_NOTIFICATION: ""
   MAIL_LOG: "true"
@@ -114,13 +115,12 @@ secrets:
   existingSecret: ""
   data:
     REDIS_PASSWORD: ""
-    # Generic SMTP credentials. GMAIL_USER/GMAIL_PASS below are the legacy names
-    # and the service still falls back to them on every transport, so leaving
-    # these empty keeps an existing values file working as-is.
+    # The sending mailbox, whatever SMTP_HOST names. opentofu fills both from
+    # the single smtp_user/smtp_password pair that also feeds the aggregator and
+    # keycloak. The service still reads GMAIL_USER/GMAIL_PASS as a fallback if a
+    # values file sets those older names, but nothing here ships them.
     SMTP_USER: ""
     SMTP_PASS: ""
-    GMAIL_USER: ""
-    GMAIL_PASS: ""
     # MSG91 SMS provider — required for mobile OTP login flow.
     MSG91_AUTH_KEY: ""
     MSG91_TEMPLATE_ID: ""

@@ -321,12 +321,14 @@ global:
     - "system:serviceaccount:aggregator:aggregator-worker"
     - "system:serviceaccount:signals:signals-s3-export"
 
-  # Read by terragrunt and passed through to the output-file module, which
-  # bakes them into the generated global-secrets.yaml (GMAIL_USER / smtpUser).
-  # The corresponding passwords/keys are UPDATE_THIS_VALUE placeholders set
-  # directly in that generated file — not here.
-  notification_gmail_user: *smtp_user
-  aggregator_smtp_user:    *smtp_user
+  # Read by terragrunt and passed through to the output-file module, which bakes
+  # it into the generated global-secrets.yaml as notification-service SMTP_USER,
+  # aggregator secrets.smtpUser and keycloak SMTP_USER — one mailbox for all
+  # three. The matching password is smtp_password in the env's secrets.yaml,
+  # already a single value; this key used to be two (notification_gmail_user and
+  # aggregator_smtp_user) that both pointed at the same anchor. Terragrunt still
+  # reads those older names if an env's file has not been updated.
+  smtp_user: *smtp_user
 
   # CloudWatch observability (Container Insights add-on)
   enable_cloudwatch_observability: false

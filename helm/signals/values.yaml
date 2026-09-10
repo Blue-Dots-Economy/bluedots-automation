@@ -157,13 +157,11 @@ credentials:
     existingSecret: ""
     data:
       REDIS_PASSWORD: *redis_password
-      # Generic SMTP credentials, used by whichever host SMTP_HOST names.
+      # The sending mailbox, whatever SMTP_HOST names — the same pair opentofu
+      # gives the aggregator and keycloak. GMAIL_USER/GMAIL_PASS are the older
+      # names, still read as a fallback by the service but no longer shipped.
       SMTP_USER: ""          # e.g. notify@yourdomain.com
       SMTP_PASS: ""
-      # Legacy names for the pair above. The service still falls back to them on
-      # every transport, so a values file that ships only these keeps working.
-      GMAIL_USER: ""         # e.g. notify@yourdomain.com
-      GMAIL_PASS: ""    # 16-char App Password (2FA required)
       MSG91_AUTH_KEY: ""     # MSG91 API key for SMS OTP
       MSG91_TEMPLATE_ID: ""  # MSG91 template ID for OTP message
 

@@ -43,14 +43,13 @@ resource "local_sensitive_file" "global_secrets" {
     aggregator_session_key                  = var.aggregator_session_key
     aggregator_oidc_client_secret           = var.aggregator_oidc_client_secret
     signalstack_admin_key                   = var.signalstack_admin_key
-    aggregator_smtp_user                    = var.aggregator_smtp_user
     signals_auth_secret                     = var.signals_auth_secret
     signals_pii_key                         = var.signals_pii_key
     signals_notification_secret             = var.signals_notification_secret
     signals_search_api_key                  = var.signals_search_api_key
     raya_voice_bot_api_key                  = var.raya_voice_bot_api_key
     signals_instance_shared_secret          = var.signals_instance_shared_secret
-    notification_gmail_user                 = var.notification_gmail_user
+    smtp_user                               = var.smtp_user
 
     # Hand-entered secrets from the env's gitignored secrets.yaml. Each is
     # templated into every chart that needs it, so copies can't drift.
