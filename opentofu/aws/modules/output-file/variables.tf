@@ -88,11 +88,7 @@ variable "raya_voice_bot_api_key" {
 }
 
 # ─── Mail ──────────────────────────────────────────────────────────────────
-# The one sending mailbox, shared by notification-service (SMTP_USER),
-# aggregator (secrets.smtpUser) and keycloak (SMTP_USER). Pairs with
-# smtp_password below, which was already a single variable feeding all three —
-# this used to be two variables (notification_gmail_user, aggregator_smtp_user)
-# that every global-values.yaml bound to the same _smtp_user anchor anyway.
+# One sending mailbox for notification-service, aggregator and keycloak; pairs with smtp_password.
 variable "smtp_user" {
   type    = string
   default = ""

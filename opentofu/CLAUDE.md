@@ -92,7 +92,7 @@ Nine keys. Most are **one per distinct secret**, fanned out to every consumer so
 
 | `secrets.yaml` key | Rendered into |
 |---|---|
-| `smtp_password` | notification-service `SMTP_PASS`, aggregator `secrets.smtpPassword`, keycloak `SMTP_PASSWORD`, monitoring `alerting.email.smtpAuthPassword`. Pairs with `global.smtp_user` in global-values.yaml, which fans out the same way |
+| `smtp_password` | notification-service `SMTP_PASS`, aggregator `secrets.smtpPassword`, keycloak `SMTP_PASSWORD`, monitoring `alerting.email.smtpAuthPassword` |
 | `raya_api_key` | aggregator `secrets.rayaApiKey` — the **outbound** worker→Raya voice key. Not the generated `raya_voice_bot_api_key` (inbound, raya→signals api) and not `voice_dpg_signals_secret` (that bot's Keycloak client secret). Left as the placeholder, the aggregator chart omits the Secret key rather than shipping a bogus credential |
 | `msg91_auth_key` | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
 | `msg91_template_id` | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |

@@ -1,14 +1,5 @@
 {{- $email := .Values.alerting.email }}
-{{- /*
-  Alertmanager wants ONE smtp_smarthost string, which is why this chart used to
-  take a literal "host:port". YAML cannot concatenate, so an environment could
-  not point it at the _smtp_host/_smtp_port anchors every other release reads,
-  and the value had to be hand-edited on every relay change — silently, since
-  alerting.email defaults to disabled.
-  Joining them here lets global-values.yaml pass the anchors instead. A value
-  that already carries its own ":port" is left alone, so existing "host:port"
-  values keep rendering byte-identically.
-*/ -}}
+{{- /* Join host+port for smtp_smarthost, so values can use anchors. A value with its own ":port" is left as-is. */ -}}
 {{- $smtpHost := $email.smtpHost | toString }}
 {{- if and $email.smtpPort (not (contains ":" $smtpHost)) }}
 {{- $smtpHost = printf "%s:%v" $smtpHost $email.smtpPort }}

@@ -83,17 +83,8 @@ affinity: {}
 config:
   NODE_ENV: production
   SERVER_PORT: "3000"
-  # ── Mail transport ────────────────────────────────────────────────────────
-  # The service picks SMTP_AWS_SES if set, else SMTP_HOST. Empty keys are
-  # omitted from the ConfigMap entirely (see the range guard in
-  # templates/configmap.yaml), so an unset value here is unset in the pod
-  # rather than an empty env var, and neither one set is a hard error at the
-  # first send.
+  # Transport: SMTP_AWS_SES if set, else SMTP_HOST (any relay). One is required.
   SMTP_AWS_SES: ""
-  # Any relay: Gmail, Zoho, Mailgun, a corporate mail server, an SES SMTP
-  # endpoint. The environment sets it from the shared _smtp_host anchor in
-  # global-values.yaml. There is no Gmail-specific flag — that was the bug
-  # notification-service#112 fixed.
   SMTP_HOST: ""
   SMTP_PORT: ""      # default 587 when SMTP_HOST is set
   SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
@@ -112,9 +103,7 @@ secrets:
   existingSecret: ""
   data:
     REDIS_PASSWORD: ""
-    # The sending mailbox, whatever SMTP_HOST names. opentofu fills both from
-    # the single smtp_user/smtp_password pair that also feeds the aggregator and
-    # keycloak.
+    # Sending mailbox; opentofu fills both from the shared smtp_user/smtp_password.
     SMTP_USER: ""
     SMTP_PASS: ""
     # MSG91 SMS provider — required for mobile OTP login flow.

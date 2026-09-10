@@ -28,9 +28,7 @@
 alerting:
   email:
     enabled: false
-    # Either "host:port" in smtpHost, or the host here and the port in smtpPort
-    # below — the template joins them. Two keys so an environment can feed both
-    # from its shared _smtp_host/_smtp_port anchors.
+    # Split so an env can pass its _smtp_host/_smtp_port anchors; template joins them.
     smtpHost: "smtp.gmail.com"
     smtpPort: 587
     smtpFrom: "alerts@example.com"

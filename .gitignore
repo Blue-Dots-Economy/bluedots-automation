@@ -43,9 +43,7 @@ opentofu/aws/**/tf.sh
 *.swp
 *~
 
-# Per-developer Claude Code notes (cluster access exports, local scratch).
-# CLAUDE.md itself IS tracked — it is the shared repo guide. Only the .local.
-# variant is personal, and it holds machine-specific paths and profile names.
+# Per-developer Claude Code notes; the shared CLAUDE.md stays tracked.
 CLAUDE.local.md
 
 # devops/

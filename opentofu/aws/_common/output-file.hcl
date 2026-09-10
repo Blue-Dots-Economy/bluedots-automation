@@ -13,11 +13,7 @@ locals {
   network = try(local.global_vars.global.network, "orange_dot")
   # CORS origins: localhost dev + https://<each served host>.
   signals_allowed_origins = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
-  # The one sending mailbox, for notification-service, aggregator and keycloak
-  # alike. Was two keys (notification_gmail_user, aggregator_smtp_user) that
-  # every global-values.yaml bound to the same _smtp_user anchor; both are still
-  # read so an env whose global-values.yaml predates the rename keeps resolving
-  # a username instead of silently generating an empty one.
+  # One sending mailbox for all three releases. Old key names still read, for envs not yet renamed.
   smtp_user = try(
     local.global_vars.global.smtp_user,
     local.global_vars.global.aggregator_smtp_user,
