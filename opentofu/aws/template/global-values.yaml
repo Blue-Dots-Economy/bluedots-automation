@@ -719,10 +719,11 @@ ui:
 
 notification-service:
   # ── Mail transport ─────────────────────────────────────────────────────────
-  # The service picks one, in this order: SMTP_AWS_SES, then SMTP_HOST, then the
-  # SMTP_GMAIL shorthand. Before notification-service#112 the non-SES path was
-  # hardcoded to smtp.gmail.com:465 and no SMTP_HOST was read at all, so
-  # changing providers meant changing code. These three keys come off the SAME
+  # The service picks SMTP_AWS_SES if set, else SMTP_HOST. Before
+  # notification-service#112 the non-SES path was hardcoded to
+  # smtp.gmail.com:465, selected by an SMTP_GMAIL flag, and no SMTP_HOST was
+  # read at all — so changing providers meant changing code. Gmail is now just
+  # another relay. These three keys come off the SAME
   # _smtp_host/_smtp_port anchors that keycloak (`smtp:` above) and the
   # aggregator (`mail.smtp` above) already use — set the anchor once at the top
   # of this file and all three releases follow.

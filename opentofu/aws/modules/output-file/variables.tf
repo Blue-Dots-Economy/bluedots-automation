@@ -116,7 +116,7 @@ variable "raya_api_key" {
 }
 
 variable "smtp_password" {
-  description = "SMTP account password (a Gmail App Password when the relay is Gmail). Feeds notification-service SMTP_PASS/GMAIL_PASS, aggregator secrets.smtpPassword, monitoring alerting.email.smtpAuthPassword."
+  description = "SMTP account password (a Gmail App Password when the relay is Gmail). Feeds notification-service SMTP_PASS, aggregator secrets.smtpPassword, keycloak SMTP_PASSWORD, monitoring alerting.email.smtpAuthPassword."
   type        = string
   sensitive   = true
   default     = "UPDATE_THIS_VALUE"

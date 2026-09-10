@@ -84,23 +84,20 @@ config:
   NODE_ENV: production
   SERVER_PORT: "3000"
   # ── Mail transport ────────────────────────────────────────────────────────
-  # The service picks one, in this order: SMTP_AWS_SES, then SMTP_HOST, then
-  # SMTP_GMAIL. Empty keys are omitted from the ConfigMap entirely (see the
-  # range guard in templates/configmap.yaml), so an unset value here is unset in
-  # the pod, not an empty env var.
+  # The service picks SMTP_AWS_SES if set, else SMTP_HOST. Empty keys are
+  # omitted from the ConfigMap entirely (see the range guard in
+  # templates/configmap.yaml), so an unset value here is unset in the pod
+  # rather than an empty env var, and neither one set is a hard error at the
+  # first send.
   SMTP_AWS_SES: ""
-  # Point this at any relay — Zoho, Mailgun, a corporate mail server, an SES
-  # SMTP endpoint — and it wins over SMTP_GMAIL below. Left empty, the chart
-  # behaves exactly as it did before this key existed. The environment sets it
-  # from the shared _smtp_host anchor in global-values.yaml.
+  # Any relay: Gmail, Zoho, Mailgun, a corporate mail server, an SES SMTP
+  # endpoint. The environment sets it from the shared _smtp_host anchor in
+  # global-values.yaml. There is no Gmail-specific flag — that was the bug
+  # notification-service#112 fixed.
   SMTP_HOST: ""
   SMTP_PORT: ""      # default 587 when SMTP_HOST is set
   SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
   SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
-  # Legacy shorthand for smtp.gmail.com:465 with implicit TLS. Inert whenever
-  # SMTP_HOST is set, which every real deploy does; kept true so a chart-only
-  # install with no SMTP_HOST still resolves a transport.
-  SMTP_GMAIL: "true"
   SEND_WHATSAPP_NOTIFICATION: ""
   MAIL_LOG: "true"
   LOG_ACTIVITY: "true"
@@ -117,8 +114,7 @@ secrets:
     REDIS_PASSWORD: ""
     # The sending mailbox, whatever SMTP_HOST names. opentofu fills both from
     # the single smtp_user/smtp_password pair that also feeds the aggregator and
-    # keycloak. The service still reads GMAIL_USER/GMAIL_PASS as a fallback if a
-    # values file sets those older names, but nothing here ships them.
+    # keycloak.
     SMTP_USER: ""
     SMTP_PASS: ""
     # MSG91 SMS provider — required for mobile OTP login flow.

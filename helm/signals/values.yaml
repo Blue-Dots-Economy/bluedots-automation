@@ -158,8 +158,7 @@ credentials:
     data:
       REDIS_PASSWORD: *redis_password
       # The sending mailbox, whatever SMTP_HOST names — the same pair opentofu
-      # gives the aggregator and keycloak. GMAIL_USER/GMAIL_PASS are the older
-      # names, still read as a fallback by the service but no longer shipped.
+      # gives the aggregator and keycloak.
       SMTP_USER: ""          # e.g. notify@yourdomain.com
       SMTP_PASS: ""
       MSG91_AUTH_KEY: ""     # MSG91 API key for SMS OTP
@@ -387,17 +386,16 @@ notification-service:
   config:
     NODE_ENV: production
     SERVER_PORT: "3000"
-    # Mail transport, chosen in this order: SMTP_AWS_SES, then SMTP_HOST, then
-    # SMTP_GMAIL. Empty keys never reach the pod — the ConfigMap template skips
-    # them — so the defaults below are the pre-SMTP_HOST behaviour unchanged.
+    # Mail transport: SMTP_AWS_SES if set, else SMTP_HOST. Empty keys never
+    # reach the pod — the ConfigMap template skips them.
     SMTP_AWS_SES: ""
-    # Any relay (Zoho, Mailgun, corporate mail server, SES SMTP endpoint); wins
-    # over SMTP_GMAIL. opentofu sets it from the shared _smtp_host anchor.
+    # Any relay: Gmail, Zoho, Mailgun, corporate mail server, SES SMTP endpoint.
+    # opentofu sets it from the shared _smtp_host anchor. No Gmail-specific flag
+    # — that was the bug notification-service#112 fixed.
     SMTP_HOST: ""
     SMTP_PORT: ""      # default 587 when SMTP_HOST is set
     SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
     SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
-    SMTP_GMAIL: "true" # shorthand for smtp.gmail.com:465 with implicit TLS
     SEND_WHATSAPP_NOTIFICATION: ""
     MAIL_LOG: "true"
     LOG_ACTIVITY: "true"

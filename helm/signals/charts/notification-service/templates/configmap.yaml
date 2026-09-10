@@ -1,3 +1,17 @@
+{{- /*
+  A mail transport is mandatory: the service throws on the first send without
+  one, which in this stack means login OTP silently stops working until a user
+  reports it. notification-service#112 removed the SMTP_GMAIL flag that used to
+  make `smtp.gmail.com:465` an implicit default, so a values file that predates
+  it now resolves NOTHING — fail the render instead of shipping that.
+
+  Set config.SMTP_HOST (opentofu does, from the _smtp_host anchor in
+  global-values.yaml) or config.SMTP_AWS_SES. Static renders with chart defaults
+  only can pass --set notification-service.config.SMTP_HOST=ci-smoke.invalid.
+*/}}
+{{- if and (not .Values.config.SMTP_HOST) (ne (.Values.config.SMTP_AWS_SES | toString) "true") }}
+{{- fail "notification-service: no mail transport configured. Set config.SMTP_HOST (with SMTP_PORT/SMTP_SECURE and the SMTP_USER/SMTP_PASS secrets) or config.SMTP_AWS_SES=true." }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
