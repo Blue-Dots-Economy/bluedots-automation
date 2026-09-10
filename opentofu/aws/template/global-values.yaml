@@ -588,12 +588,11 @@ prometheus:
 alerting:
   email:
     enabled: false
-    # host:port combined, so it CANNOT reference _smtp_host/_smtp_port —
-    # Alertmanager takes one smtp_smarthost string. This is the only mail
-    # setting in this file that does not follow the anchors, so changing relay
-    # means editing it BY HAND; every other release picks the change up on its
-    # own. Silent when it drifts, because enabled is false by default.
-    smtpHost: "smtp.gmail.com:587"
+    # Split host/port so these follow the shared anchors like every other
+    # release. Alertmanager wants one smtp_smarthost string; the monitoring
+    # chart joins these two (a literal "host:port" in smtpHost still works).
+    smtpHost: *smtp_host
+    smtpPort: *smtp_port
     smtpFrom: *smtp_user
     smtpAuthUsername: *smtp_user
     to: "CHANGE-ME"
