@@ -588,7 +588,12 @@ prometheus:
 alerting:
   email:
     enabled: false
-    smtpHost: "smtp.gmail.com:587"  # host:port combined — keep in sync with _smtp_host/_smtp_port
+    # host:port combined, so it CANNOT reference _smtp_host/_smtp_port —
+    # Alertmanager takes one smtp_smarthost string. This is the only mail
+    # setting in this file that does not follow the anchors, so changing relay
+    # means editing it BY HAND; every other release picks the change up on its
+    # own. Silent when it drifts, because enabled is false by default.
+    smtpHost: "smtp.gmail.com:587"
     smtpFrom: *smtp_user
     smtpAuthUsername: *smtp_user
     to: "CHANGE-ME"
@@ -735,6 +740,15 @@ notification-service:
     SMTP_HOST: *smtp_host
     SMTP_PORT: *smtp_port
     SMTP_SECURE: "false"   # STARTTLS on 587; set "true" only for a 465 endpoint
+    # Pin the sender. Most relays (Zoho, Mailgun, SES, a corporate server)
+    # accept only the authenticated mailbox or a verified alias in From and
+    # reject anything else — Zoho answers 553, which the worker retries and
+    # then dead-letters. Without this the service uses the CALLER's
+    # variables.fromEmail, which is correct only as long as every caller
+    # happens to send this same address. Set it and the relay's own identity
+    # always wins. `replyTo` is untouched, so a caller can still route
+    # replies elsewhere.
+    SMTP_FROM: *smtp_user
   secrets:
     create: true
     existingSecret: ""
