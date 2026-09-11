@@ -130,8 +130,14 @@ NO_AGG_ID = {"attribute_name": "aggregator_id", "attribute_expected_value": ".+"
              "regex": "true", "include_group_attributes": "false", "not": "true"}
 NOT_APPROVED = {"attribute_name": "decision_made", "attribute_expected_value": "approved",
                 "regex": "false", "include_group_attributes": "false", "not": "true"}
-DENY_COORD = "This account does not have access to the Aggregator portal."
-DENY_APPROVED = "Your Aggregator registration has not been approved yet."
+# Message-BUNDLE KEYS, not literals: deny-access-authenticator resolves the
+# configured string against the login theme's bundle and falls back to printing
+# it verbatim when there is no match, so a realm applied before the theme ships
+# degrades to the key rather than breaking. Copy lives in
+# themes/otp/login/messages/messages_en.properties, next to the escape hatch on
+# error.ftl that these denies now land on.
+DENY_COORD = "portalDenyNotCoordinator"
+DENY_APPROVED = "portalDenyNotApproved"
 OTP_CHOICE = {"otpChoice.codeLength": "6", "otpChoice.ttl": "300",
               "otpChoice.maxRetries": "3", "otpChoice.phoneAttribute": "phoneNumber"}
 
