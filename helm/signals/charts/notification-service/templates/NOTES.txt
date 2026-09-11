@@ -11,7 +11,7 @@ Port-forward to access locally:
 {{- end }}
 
 Required Secret keys ({{ include "dpg-notification-service.secretName" . }}):
-  REDIS_PASSWORD, GMAIL_USER, GMAIL_PASS
+  REDIS_PASSWORD, SMTP_USER, SMTP_PASS
 
 internal-secrets.json mounted at {{ .Values.internalSecrets.mountPath }}/{{ .Values.internalSecrets.fileName }}.
 Override the JSON contents with:

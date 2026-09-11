@@ -43,7 +43,7 @@ Eight keys. Most are **one per distinct secret**, fanned out to every consumer s
 
 | `secrets.yaml` key | Rendered into |
 |---|---|
-| `smtp_password` | notification-service `GMAIL_PASS`, aggregator `secrets.smtpPassword`, monitoring `alerting.email.smtpAuthPassword` |
+| `smtp_password` | notification-service `SMTP_PASS`, aggregator `secrets.smtpPassword`, keycloak `SMTP_PASSWORD`, monitoring `alerting.email.smtpAuthPassword` |
 | `msg91_auth_key` | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
 | `msg91_template_id` | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
 | `google_maps_api_key` | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` (browser) |

@@ -122,8 +122,9 @@ credentials:
     existingSecret: ""
     data:
       REDIS_PASSWORD: *redis_password
-      GMAIL_USER: ""         # e.g. notify@yourdomain.com
-      GMAIL_PASS: ""    # 16-char App Password (2FA required)
+      # Sending mailbox; same pair opentofu gives the aggregator and keycloak.
+      SMTP_USER: ""          # e.g. notify@yourdomain.com
+      SMTP_PASS: ""
       MSG91_AUTH_KEY: ""     # MSG91 API key for SMS OTP
       MSG91_TEMPLATE_ID: ""  # MSG91 template ID for OTP message
 
@@ -304,8 +305,12 @@ notification-service:
   config:
     NODE_ENV: production
     SERVER_PORT: "3000"
-    SMTP_GMAIL: "true"
+    # Transport: SMTP_AWS_SES if set, else SMTP_HOST (any relay). One is required.
     SMTP_AWS_SES: ""
+    SMTP_HOST: ""
+    SMTP_PORT: ""      # default 587 when SMTP_HOST is set
+    SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
+    SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
     SEND_WHATSAPP_NOTIFICATION: ""
     MAIL_LOG: "true"
     LOG_ACTIVITY: "true"
