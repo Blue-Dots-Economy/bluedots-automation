@@ -80,3 +80,11 @@ data:
   {{- if $internalBase }}
   KEYCLOAK_INTERNAL_BASE_URL: {{ $internalBase | quote }}
   {{- end }}
+  {{- with .Values.global.signalsRealmRoles }}
+  # Roles a token must carry to be a Signals participant. Shares
+  # global.signalsRealmRoles with the aggregator web pod's SIGNALS_REALM_ROLES —
+  # the aggregator recognises exactly the roles this side requires. Rendered
+  # only when the global is set: an empty value here would fail closed for every
+  # participant, so absence leaves the api on its own default.
+  KEYCLOAK_REQUIRED_REALM_ROLES: {{ . | quote }}
+  {{- end }}

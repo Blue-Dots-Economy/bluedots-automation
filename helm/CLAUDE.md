@@ -285,6 +285,35 @@ The worker deployment's `secretKeyRef` carries `optional: true`, and **that only
 
 `global.orgHierarchyEnabled` (in `global-values.yaml`, default `true`) is emitted as `ORG_HIERARCHY_ENABLED` to the aggregator **web + api** pods via their ConfigMaps (`helm/aggregator/charts/{web,api}/templates/configmap.yaml`). There's no default in the aggregator chart's own `values.yaml`, so the global value must be present (it is) — set it identically for web and api or the two halves disagree.
 
+## Signals participant roles are ONE global, read by both DPGs
+
+`global.signalsRealmRoles` (in `global-values.yaml`, default
+`signals_participant,signals_admin`) feeds **two different env vars in two
+different charts**, on purpose:
+
+| Chart | Env var | Meaning |
+| --- | --- | --- |
+| `helm/signals/charts/api` | `KEYCLOAK_REQUIRED_REALM_ROLES` | roles a token MUST carry to be a participant |
+| `helm/aggregator/charts/web` | `SIGNALS_REALM_ROLES` | roles the portal RECOGNISES as "this is a Signals account" |
+
+One realm serves both DPGs, so signing into either creates an SSO session the
+other silently reuses. The aggregator portal correctly refuses such a token
+(no `aggregator_id`) and uses this list to tell the user *which* account they
+are signed in as, instead of showing everyone the org-owner message
+(aggregator-dpg#753/#758). The two lists therefore have to name the same roles —
+hence one key, not two.
+
+The two renders differ deliberately:
+
+- **aggregator web renders it unconditionally.** Empty is legal: the classifier
+  returns `unknown` and the login screen falls back to generic copy. That fails
+  *safe* but also *inert*, so the key is emitted even when empty — an operator
+  sees `SIGNALS_REALM_ROLES: ""` in `kubectl get cm` rather than wondering why
+  the copy never appears.
+- **signals api renders it only `{{- with }}` set.** An empty value there would
+  fail *closed* — no token would satisfy the role requirement — so an unset
+  global leaves the api on its own in-code default instead of clobbering it.
+
 ## Shared Redis runs `noeviction`, not `allkeys-lru`
 
 The single shared Redis (`common-services/values.yaml`, `redis.commonConfiguration`) backs **BullMQ job/queue state** and **Kong rate-limit counters** — not a disposable cache. Its `maxmemory-policy` is **`noeviction`** on purpose: `allkeys-lru` would silently evict live jobs and rate-limit counters under memory pressure (rate-limiting then fails *open*). With `noeviction` a full instance fails writes loudly instead. Two things follow: (1) every producer must bound its own keys — the Signals item-events stream is trimmed with `XADD MAXLEN` (`INGEST_STREAM_MAXLEN`); (2) `maxmemory` (512mb) must stay **below** the container memory limit in `helm/global-resources.yaml` (1Gi) so there's headroom before the pod OOMs. `replica.replicaCount` is `0` in the shared default because the 1-node dev cluster can't schedule a second pod — **prod deployment branches should set it ≥ 1** (noeviction makes a lost master more disruptive).

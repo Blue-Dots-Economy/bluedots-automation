@@ -26,3 +26,9 @@ data:
   # Brand skin over the network (UI/config skin). Empty = standard dots.
   AGGREGATOR_BRAND: "{{ .Values.global.aggregatorBrand }}"
   ORG_HIERARCHY_ENABLED: "{{ .Values.global.orgHierarchyEnabled }}"
+  # Realm roles that mark a Signals participant, so a cross-app sign-in gets
+  # told which account it is signed in as. MUST equal the signals api's
+  # KEYCLOAK_REQUIRED_REALM_ROLES — both render from global.signalsRealmRoles
+  # for that reason. Empty ⇒ the classifier reports "unknown" and the login
+  # screen falls back to generic copy (fails safe, but also inert).
+  SIGNALS_REALM_ROLES: "{{ .Values.global.signalsRealmRoles }}"

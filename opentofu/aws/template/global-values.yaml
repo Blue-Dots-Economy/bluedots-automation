@@ -347,6 +347,17 @@ global:
   publicHosts: *signals_public_hosts
   orgHierarchyEnabled: true
 
+  # Realm roles that mark a Signals participant. Consumed by BOTH DPGs from
+  # this one key, because they have to name the same roles:
+  #   - signals  api → KEYCLOAK_REQUIRED_REALM_ROLES (the roles it requires)
+  #   - aggregator web → SIGNALS_REALM_ROLES (the roles it RECOGNISES, to tell a
+  #     Signals participant who landed on the coordinator portal what happened
+  #     instead of showing them the org-owner message — aggregator-dpg#758/#753)
+  # Two keys would drift, and the aggregator half fails inert when they do: its
+  # classifier returns "unknown" and the user gets the generic copy. Matches
+  # Signals' own in-code default.
+  signalsRealmRoles: signals_participant,signals_admin
+
   publicHost:         *aggregator_host
 
   # ── Shared Keycloak (the `keycloak` release, common-services namespace) ────
