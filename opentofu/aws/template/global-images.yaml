@@ -33,7 +33,9 @@ ui:
 notification-service:
   image:
     repository: ghcr.io/blue-dots-economy/notification-service
-    tag: "202608-s2-rc1"
+    # Must stay >= the image that reads SMTP_HOST (notification-service#114);
+    # this chart no longer renders SMTP_GMAIL/GMAIL_*, which older images need.
+    tag: "sha-9861edc"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
