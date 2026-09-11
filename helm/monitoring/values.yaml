@@ -28,7 +28,9 @@
 alerting:
   email:
     enabled: false
-    smtpHost: "smtp.gmail.com:587"
+    # Split so an env can pass its _smtp_host/_smtp_port anchors; template joins them.
+    smtpHost: "smtp.gmail.com"
+    smtpPort: 587
     smtpFrom: "alerts@example.com"
     smtpAuthUsername: "alerts@example.com"
     smtpAuthPassword: "changeme"

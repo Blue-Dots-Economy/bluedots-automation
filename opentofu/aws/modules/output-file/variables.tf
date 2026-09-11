@@ -87,14 +87,9 @@ variable "raya_voice_bot_api_key" {
   description = "API key the raya voice bot sends to the signals api as x-api-key (signals RAYA_VOICE_BOT_API_KEY)"
 }
 
-# ─── Signals notification service ─────────────────────────────────────────
-variable "notification_gmail_user" {
-  type    = string
-  default = ""
-}
-
-# ─── Aggregator mail ───────────────────────────────────────────────────────
-variable "aggregator_smtp_user" {
+# ─── Mail ──────────────────────────────────────────────────────────────────
+# One sending mailbox for notification-service, aggregator and keycloak; pairs with smtp_password.
+variable "smtp_user" {
   type    = string
   default = ""
 }
@@ -117,7 +112,7 @@ variable "raya_api_key" {
 }
 
 variable "smtp_password" {
-  description = "Gmail App Password. Feeds notification-service GMAIL_PASS, aggregator secrets.smtpPassword, monitoring alerting.email.smtpAuthPassword."
+  description = "SMTP account password (a Gmail App Password when the relay is Gmail). Feeds notification-service SMTP_PASS, aggregator secrets.smtpPassword, keycloak SMTP_PASSWORD, monitoring alerting.email.smtpAuthPassword."
   type        = string
   sensitive   = true
   default     = "UPDATE_THIS_VALUE"

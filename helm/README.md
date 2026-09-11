@@ -51,7 +51,7 @@ committed `secrets.example.yaml`. Tofu **reads** it on every
 apply and templates the values into `global-secrets.yaml`, which means
 re-running `apply_tf_output_file` re-renders the same values — **nothing to
 re-enter after a regenerate.** One key per secret, fanned out to every chart
-that needs it (e.g. `smtp_password` → notification-service `GMAIL_PASS` +
+that needs it (e.g. `smtp_password` → notification-service `SMTP_PASS` +
 aggregator `secrets.smtpPassword` + monitoring `alerting.email.smtpAuthPassword`),
 so the copies can't drift. Edit `secrets.yaml`, never `global-secrets.yaml`.
 

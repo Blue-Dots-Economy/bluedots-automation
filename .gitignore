@@ -43,6 +43,9 @@ opentofu/aws/**/tf.sh
 *.swp
 *~
 
+# Per-developer Claude Code notes; the shared CLAUDE.md stays tracked.
+CLAUDE.local.md
+
 # devops/
 support-scripts/
 

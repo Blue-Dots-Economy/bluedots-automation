@@ -321,12 +321,8 @@ global:
     - "system:serviceaccount:aggregator:aggregator-worker"
     - "system:serviceaccount:signals:signals-s3-export"
 
-  # Read by terragrunt and passed through to the output-file module, which
-  # bakes them into the generated global-secrets.yaml (GMAIL_USER / smtpUser).
-  # The corresponding passwords/keys are UPDATE_THIS_VALUE placeholders set
-  # directly in that generated file — not here.
-  notification_gmail_user: *smtp_user
-  aggregator_smtp_user:    *smtp_user
+  # One mailbox for notification-service, aggregator and keycloak; password is smtp_password.
+  smtp_user: *smtp_user
 
   # CloudWatch observability (Container Insights add-on)
   enable_cloudwatch_observability: false
@@ -586,7 +582,9 @@ prometheus:
 alerting:
   email:
     enabled: false
-    smtpHost: "smtp.gmail.com:587"  # host:port combined — keep in sync with _smtp_host/_smtp_port
+    # Split host/port so these follow the anchors; the chart joins them.
+    smtpHost: *smtp_host
+    smtpPort: *smtp_port
     smtpFrom: *smtp_user
     smtpAuthUsername: *smtp_user
     to: "CHANGE-ME"
@@ -716,6 +714,13 @@ ui:
     targetPort: 80
 
 notification-service:
+  # Mail transport, off the same anchors keycloak and the aggregator use. NOTE 587 + STARTTLS, not 465.
+  config:
+    SMTP_HOST: *smtp_host
+    SMTP_PORT: *smtp_port
+    SMTP_SECURE: "false"   # STARTTLS on 587; set "true" only for a 465 endpoint
+    # Pin the sender; most relays reject a From that is not the authenticated mailbox.
+    SMTP_FROM: *smtp_user
   secrets:
     create: true
     existingSecret: ""

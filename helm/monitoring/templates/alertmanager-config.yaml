@@ -1,4 +1,9 @@
 {{- $email := .Values.alerting.email }}
+{{- /* Join host+port for smtp_smarthost, so values can use anchors. A value with its own ":port" is left as-is. */ -}}
+{{- $smtpHost := $email.smtpHost | toString }}
+{{- if and $email.smtpPort (not (contains ":" $smtpHost)) }}
+{{- $smtpHost = printf "%s:%v" $smtpHost $email.smtpPort }}
+{{- end }}
 {{- $discord := .Values.alerting.discord }}
 {{- $emailOn := $email.enabled }}
 {{- $discordOn := $discord.enabled }}
@@ -14,7 +19,7 @@ stringData:
     global:
       resolve_timeout: 5m
       {{- if $emailOn }}
-      smtp_smarthost: '{{ $email.smtpHost }}'
+      smtp_smarthost: '{{ $smtpHost }}'
       smtp_from: '{{ $email.smtpFrom }}'
       smtp_auth_username: '{{ $email.smtpAuthUsername }}'
       smtp_auth_password: '{{ $email.smtpAuthPassword }}'
