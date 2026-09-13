@@ -36,6 +36,11 @@ inputs = {
   # because it is NOT prefix-scoped and is unrelated to PII retention — see the storage module.
   abort_incomplete_multipart_days = lookup(local.global_vars.global, "abortIncompleteMultipartDays", 7)
 
+  # Which `buckets` entry is THE application bucket (feeds global.s3.bucket and the
+  # app_sa S3 policy). Default "public" for backward compatibility; set
+  # global.app_bucket_key to match whatever key this environment actually uses.
+  app_bucket_key = lookup(local.global_vars.global, "app_bucket_key", "public")
+
   # Bucket definitions — override in global-values.yaml under global.buckets
   # Each entry: { type = "public"|"private", versioning_enabled = bool, cors_enabled = bool }
   buckets = lookup(local.global_vars.global, "buckets", {

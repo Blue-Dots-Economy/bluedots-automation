@@ -13,9 +13,13 @@ locals {
   network = try(local.global_vars.global.network, "orange_dot")
   # CORS origins: localhost dev + https://<each served host>.
   signals_allowed_origins = join(",", concat(["http://localhost:8080", "http://127.0.0.1:8080"], [for h in local.signals_public_hosts : "https://${h}"]))
-  notification_gmail_user = try(local.global_vars.global.notification_gmail_user, "")
-
-  aggregator_smtp_user = try(local.global_vars.global.aggregator_smtp_user, "")
+  # One sending mailbox for all three releases. Old key names still read, for envs not yet renamed.
+  smtp_user = try(
+    local.global_vars.global.smtp_user,
+    local.global_vars.global.aggregator_smtp_user,
+    local.global_vars.global.notification_gmail_user,
+    "",
+  )
 
   # ── Hand-entered secrets (env's gitignored secrets.yaml) ───────────────────
   # Provider credentials no human-free source can supply: SMTP/MSG91/Maps keys,
@@ -161,9 +165,7 @@ inputs = {
   aggregator_session_key                  = dependency.random_passwords.outputs.aggregator_session_key
   aggregator_oidc_client_secret           = dependency.random_passwords.outputs.aggregator_oidc_client_secret
 
-  notification_gmail_user = local.notification_gmail_user
-
-  aggregator_smtp_user = local.aggregator_smtp_user
+  smtp_user = local.smtp_user
 
   # Hand-entered secrets from the env's secrets.yaml
   smtp_password            = local.smtp_password

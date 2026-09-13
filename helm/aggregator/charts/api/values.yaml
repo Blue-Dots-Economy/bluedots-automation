@@ -10,6 +10,33 @@ ingress:
   className: ""        # e.g. kong
   plugin: ""           # KongClusterPlugin tier, e.g. rl-agg-api
   annotations: {}
+  # Kong route-level protocol restriction: only accept https, and redirect a
+  # plain-http request to https (see httpsRedirectStatusCode) instead of erroring (GITHUB-ISSUES #10).
+  # No-op unless className is "kong".
+  forceSSLRedirect: true
+  # Status code Kong uses for the plain-http -> https redirect. 308 on API
+  # routes, NOT 301: this route carries POSTs (e.g. the aggregator-registration
+  # decision endpoint), and clients have historically re-issued a 301'd POST as
+  # a GET, which turns a rejected registration into a silent no-op. 308 requires
+  # the method and body to be preserved. Kong accepts 426, 301, 302, 307, 308.
+  httpsRedirectStatusCode: 308
+  # HSTS via a per-chart KongPlugin (response-transformer), referenced alongside
+  # `plugin` above through the ingress's konghq.com/plugins annotation — see
+  # templates/kong-hsts-plugin.yaml. The API route serves the approval HTML
+  # pages and the PII CSV export. No-op unless className is "kong".
+  hsts:
+    enabled: true
+    maxAge: 31536000           # 1 year
+    includeSubDomains: true
+    # `preload` is deliberately OFF. It is the one HSTS directive that cannot be
+    # walked back on browser timescales: combined with includeSubDomains, a
+    # preload-list submission commits EVERY subdomain to https-only, and removal
+    # ships with browser releases months later. Emitting the directive does not
+    # by itself enrol the domain (that needs a submission at hstspreload.org) —
+    # but it advertises the intent, and this org still has legacy hosts that
+    # would not survive it. Turn it on per environment, after auditing every
+    # subdomain of the public host, never as a chart default.
+    preload: false
 
 # Per-API (per-resource-group) rate limiting — see
 # templates/api-endpoint-groups-ingress.yaml. Each `groups` entry becomes its own

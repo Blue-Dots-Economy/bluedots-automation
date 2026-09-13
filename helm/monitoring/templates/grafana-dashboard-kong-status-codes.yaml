@@ -1,0 +1,27 @@
+{{- /*
+Per-status-code Kong dashboard, companion to grafana-dashboard-kong.yaml.
+
+That dashboard buckets responses with code=~"4.." / "5..", which hides WHICH
+code was returned — a 410 from the retired-host request-termination plugin, a
+405 from nginx refusing a POST to a static file and a genuine 401 all look
+identical there. `kong_http_requests_total` has always carried the exact `code`,
+plus `source` (kong = the gateway or a plugin answered; service = the app did)
+and `route` (which embeds the hostname), so no metric or plugin change was
+needed — only queries that stop collapsing those labels.
+
+The dashboard JSON is loaded from files/ rather than inlined here ON PURPOSE:
+Grafana legend formats use {{"{{"}}code{{"}}"}} syntax, which Helm would try to
+evaluate as a template action and fail with `function "code" not defined`.
+.Files.Get hands the bytes over untouched. Same reason the alertmanager
+templates live in files/ (see alertmanager-templates-cm.yaml).
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-kong-status-codes
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  kong-status-codes.json: |-
+{{ .Files.Get "files/kong-status-codes.json" | indent 4 }}
