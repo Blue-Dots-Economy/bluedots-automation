@@ -1,3 +1,7 @@
+{{- /* Without a transport the service throws on first send, breaking login OTP. Fail the render instead. */}}
+{{- if and (not .Values.config.SMTP_HOST) (ne (.Values.config.SMTP_AWS_SES | toString) "true") }}
+{{- fail "notification-service: no mail transport configured. Set config.SMTP_HOST (with SMTP_PORT/SMTP_SECURE and the SMTP_USER/SMTP_PASS secrets) or config.SMTP_AWS_SES=true." }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

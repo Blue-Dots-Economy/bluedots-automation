@@ -8,7 +8,24 @@ data:
   KC_DB: "postgres"
   KC_DB_URL: "jdbc:postgresql://{{ if .Values.global.dataPlatform.postgresHost }}{{ .Values.global.dataPlatform.postgresHost }}{{ else }}{{ .Values.global.dataPlatform.postgresService }}.{{ .Values.global.dataPlatform.namespace }}.svc.cluster.local{{ end }}:5432/keycloak"
   # Keycloak's OWN host, not the aggregator app's. Drives the `iss` claim.
-  KC_HOSTNAME: "{{ include "keycloak.authHost" . }}"
+  #
+  # A FULL URL, not a bare host. With a bare host Keycloak resolves the scheme
+  # and port from each request (`KC_PROXY_HEADERS: xforwarded` below), so it
+  # answers with a DIFFERENT issuer depending on which door the caller used:
+  #   via Kong        X-Forwarded-Proto: https  -> https://<host>/auth/realms/…
+  #   via the ClusterIP  no forwarded headers   -> http://<host>:8080/auth/realms/…
+  # Tokens are stamped with the first, but a refresh_token grant is validated
+  # against the second, so any in-cluster caller refreshing a token gets
+  # `invalid_grant — Invalid token issuer` and its session is ended. An
+  # authorization code carries no issuer, which is why login was unaffected and
+  # only refresh failed. Pinning the URL makes both doors agree.
+  #
+  # `/auth` is hardcoded to match KC_HTTP_RELATIVE_PATH below; the two must stay
+  # in step or the issuer stops matching the tokens already in circulation.
+  # `authHost` itself stays a BARE host because it also feeds the Ingress
+  # `host:` field, which only accepts a DNS name — putting a URL there fails the
+  # hostname validator and Keycloak will not start.
+  KC_HOSTNAME: "https://{{ include "keycloak.authHost" . }}/auth"
   KC_HOSTNAME_STRICT: "false"
   KC_HTTP_ENABLED: "true"
   KC_HEALTH_ENABLED: "true"

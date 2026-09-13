@@ -60,7 +60,7 @@
 # a bump here is a deliberate change to validate against the realm, not a
 # floating tag. Keep in step with the app repos' local-dev compose so local and
 # deployed behaviour match.
-ARG KEYCLOAK_VERSION=26.5.5
+ARG KEYCLOAK_VERSION=26.7.3
 # Docker Hardened Image (bluedots-automation#136). This was
 # quay.io/keycloak/keycloak — upstream, unhardened — which made it the last image
 # that was OURS and still on an upstream base.
