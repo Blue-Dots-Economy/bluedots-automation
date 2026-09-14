@@ -11,6 +11,11 @@ Everything in this directory is copied to `/opt/keycloak/providers/` by
 
 `sha256:05719f4e050e8a671100b6b822f83694890e8192bea67133b546eca6d3f64b0b`
 
+> The hash identifies the **committed file**, not a target to reproduce: a jar
+> is a zip and carries build timestamps, so a fresh `mvn package` of the same
+> source yields different bytes. Use it to verify what is in this directory,
+> and update it whenever the jar is replaced.
+
 > The source repo moved to the `Blue-Dots-Economy` org; the old
 > `sanketika-labs` URL recorded here was stale. Note also that the SMS vendor
 > providers live on the **`enhancements`** branch, not `main` — `main` carries
@@ -100,11 +105,6 @@ order. When bumping, **replace** the old jar — never leave both.
 git clone https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator
 cd keycloak-otp-authenticator && git switch enhancements
 ./mvnw clean package -DskipTests
-# NOTE: the jar committed here is built from Blue-Dots-Economy/keycloak-otp-authenticator#1,
-# which adds HttpSmsProviderFactory and is not yet merged into `enhancements`.
-# Until it is, `git switch enhancements` reproduces a jar WITHOUT the http
-# provider and a sha256 that does not match the file here. Check out the PR
-# branch (`feat/http-sms-provider`) to reproduce this artefact exactly.
 
 # 2. Replace the jar here (delete the old one — see above)
 rm dockerfiles/keycloak/providers/keycloak-otp-*.jar
