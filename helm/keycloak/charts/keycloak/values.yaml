@@ -116,9 +116,32 @@ bootstrapAdminUsername: admin
 # long-standing setting and was inverted when the subchart moved here; flipping
 # it back. Only set true once `kc.sh build` in aggregator-dpg bakes the option.
 optimized: false
+# One of: log | twilio | sns | msg91 | http.
+#
+# `http` is the preferred setting: it posts the OTP to notification-service,
+# which owns the vendor. Every vendor after MSG91 is then an NS-only change
+# instead of a Java PR + jar swap + image rebuild + tag pin here. It also
+# collapses the login-OTP template id, which currently exists twice (this
+# chart's msg91TemplateId and NS's SMS_LOGIN_OTP_TEMPLATE_ID).
+#
+# Trade-off: login OTP gains a hard dependency on notification-service being
+# reachable from this namespace.
 smsProvider: log
 msg91TemplateId: ''
 msg91OtpVarName: ''
+
+# Only read when smsProvider=http. The shared secret is a Secret key
+# (SMS_HTTP_SECRET), not a value here.
+smsHttp:
+  url: http://signals-notification-service.signals.svc.cluster.local:3000/notify
+  # NS-named template. NS owns both its vendor id and its body, which is why
+  # nothing here carries message text.
+  templateId: login_otp
+  # Variable name the body's placeholder expects. NS's login_otp body uses
+  # `{{message}}`; every existing OTP caller already sends that key.
+  otpVarName: message
+  keyId: keycloak
+  timeoutMs: 5000
 awsRegion: ap-south-1
 service:
   port: 8080

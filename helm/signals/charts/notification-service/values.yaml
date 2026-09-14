@@ -92,6 +92,26 @@ config:
   SEND_WHATSAPP_NOTIFICATION: ""
   MAIL_LOG: "true"
   LOG_ACTIVITY: "true"
+  # SMS vendor for this deployment: "msg91" (default) or "pinnacle". One vendor
+  # per deployment; both register as channel `sms`, so no caller changes. The
+  # app THROWS at boot on an unknown value rather than falling back, because the
+  # wrong vendor means the wrong sender id and DLT entity.
+  SMS_PROVIDER: "msg91"
+  # Pinnacle DLT config — read only when SMS_PROVIDER=pinnacle. Unlike MSG91,
+  # Pinnacle renders nothing: it takes final text plus the DLT ids the operator
+  # matches on, so each template needs an id AND a body.
+  PINNACLE_SENDER_ID: ""        # registered DLT header, 6 alpha chars or numeric
+  PINNACLE_DLT_ENTITY_ID: ""    # DLT principal-entity id, one per adopter
+  PINNACLE_DLT_HEADER_ID: ""    # optional; omitted from the request when empty
+  PINNACLE_DLT_TAG_ID: ""       # optional
+  PINNACLE_TMID: ""             # optional
+  # Pinnacle's DLT template id for `login_otp`. Blank until approval lands; a
+  # blank id dead-letters the job with an explicit "not configured yet".
+  PINNACLE_LOGIN_OTP_TEMPLATE_ID: ""
+  # The login_otp body, used by vendors that cannot render. Must be
+  # BYTE-IDENTICAL to the DLT-approved text or the operator scrubs the message.
+  # `{{message}}` is the OTP code.
+  SMS_LOGIN_OTP_BODY: ""
   # Path the app reads for runtime secrets JSON (mounted from internalSecrets.json below).
   INTERNAL_SECRETS_JSON: /app/config/internal-secrets.json
 
@@ -109,6 +129,8 @@ secrets:
     # MSG91 SMS provider — required for mobile OTP login flow.
     MSG91_AUTH_KEY: ""
     MSG91_TEMPLATE_ID: ""
+    # Pinnacle SMS provider — required when config.SMS_PROVIDER=pinnacle.
+    PINNACLE_API_KEY: ""
 
 # In-cluster Redis wiring. Injects REDIS_HOST/REDIS_PORT into the ConfigMap.
 redis:
@@ -132,3 +154,27 @@ internalSecrets:
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
+
+# Prometheus scraping and alerting. The app serves `/metrics` unauthenticated —
+# it is the only route that is, because Prometheus cannot produce the HMAC
+# signature the rest require, and the exposition carries counts and queue depths
+# only (never recipients, variables or message content).
+metrics:
+  serviceMonitor:
+    enabled: true
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    additionalLabels: {}
+  prometheusRule:
+    enabled: true
+    additionalLabels: {}
+    # Fraction of SMS sends failing over 10m before the critical alert fires.
+    smsFailureRatio: 0.25
+    # Vendor balance below this warns. Units are the vendor's own credits, so
+    # this needs setting per deployment once a real balance is observed.
+    balanceWarnThreshold: 1000
+    # DLQ entries added in an hour before warning.
+    dlqGrowthThreshold: 10
+    # Realtime (OTP) queue depth that means sends are lagging, not just busy.
+    realtimeBacklogThreshold: 50

@@ -25,8 +25,39 @@ being reachable from the runner.
 - `hr.delmisoft.keycloak.otp.sms.SmsOtpAuthenticatorFactory`
 
 Plus an SMS SPI (`hr.delmisoft.keycloak.otp.sms.SmsSpi`) configured at runtime
-via `KC_SPI_SMS_PROVIDER` (`log` / `twilio` / `sns` / `msg91`) and the matching
-credential env vars, which the chart wires from the release Secret.
+via `KC_SPI_SMS_PROVIDER` (`log` / `twilio` / `sns` / `msg91` / `http`) and the
+matching credential env vars, which the chart wires from the release Secret.
+
+### `http` — the preferred provider
+
+`http` posts the OTP to **notification-service** rather than calling a vendor
+from inside Keycloak. Prefer it: every SMS vendor after MSG91 then becomes an
+NS-only change, instead of repeating this whole chain (Java PR → jar → image →
+tag pin → chart values) per vendor. It also collapses the login-OTP template id,
+which currently exists twice — `msg91TemplateId` here and
+`SMS_LOGIN_OTP_TEMPLATE_ID` in NS.
+
+It must send NS's HMAC envelope (`X-NS-Key`, `X-NS-Timestamp`, `X-NS-Nonce`,
+`X-NS-Signature` over `METHOD\nPATH\nTIMESTAMP\nNONCE`) and a body of:
+
+```json
+{"channel":"sms","to":"+9190...","template_id":"login_otp",
+ "priority":"realtime","variables":{"message":"123456"}}
+```
+
+No message text: `login_otp` is a template NS *names*, so NS owns both the
+vendor's template id and the body. Env wired by the chart when
+`smsProvider: http`: `SMS_HTTP_URL`, `SMS_HTTP_TEMPLATE_ID`,
+`SMS_HTTP_OTP_VAR_NAME`, `SMS_HTTP_KEY_ID`, `SMS_HTTP_TIMEOUT_MS`, plus
+`SMS_HTTP_SECRET` from the Secret.
+
+The trade-off is that login OTP gains a hard dependency on notification-service
+being reachable from `common-services`.
+
+> **Not yet built.** The chart wiring is in place; the Java provider itself is
+> tracked separately. Until the jar ships a factory for `http`, setting
+> `smsProvider: http` fails realm import on an unknown provider id — it does not
+> silently degrade.
 
 The two **bolded** provider ids are referenced by name in
 `helm/keycloak/charts/keycloak/files/realm.json` and asserted by

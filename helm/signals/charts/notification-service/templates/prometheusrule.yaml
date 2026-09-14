@@ -1,0 +1,117 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "dpg-notification-service.fullname" . }}
+  labels:
+    {{- include "dpg-notification-service.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: notification-service-sms
+      rules:
+        {{- /*
+        Login OTP is the only SMS path with live traffic, so a sustained SMS
+        failure rate means nobody new can log in. This fires before the DLQ
+        alert does, because a permanent failure now dead-letters on the first
+        attempt rather than after five.
+        */}}
+        - alert: NotificationSmsFailureRate
+          expr: |
+            sum by (provider) (rate(ns_sms_send_total{result="failed"}[10m]))
+              /
+            clamp_min(sum by (provider) (rate(ns_sms_send_total[10m])), 0.001)
+              > {{ .Values.metrics.prometheusRule.smsFailureRatio }}
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "SMS failures on {{ `{{ $labels.provider }}` }} above {{ .Values.metrics.prometheusRule.smsFailureRatio }}"
+            description: >-
+              More than {{ .Values.metrics.prometheusRule.smsFailureRatio }} of SMS sends are
+              failing. Login OTP rides this path, so new logins are likely broken.
+              Check ns_sms_provider_error_total for the code.
+
+        {{- /*
+        A specific code rather than a generic failure alert: EC1003 means the
+        vendor account is out of credit, which fails every send permanently and
+        looks identical to a bad template id from the outside.
+        */}}
+        - alert: NotificationSmsInsufficientBalance
+          expr: increase(ns_sms_provider_error_total{code="EC1003"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "SMS provider {{ `{{ $labels.provider }}` }} reports insufficient balance"
+            description: "Every send is failing permanently until the account is topped up."
+
+        - alert: NotificationSmsBalanceLow
+          expr: ns_provider_balance < {{ .Values.metrics.prometheusRule.balanceWarnThreshold }}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SMS provider {{ `{{ $labels.provider }}` }} balance is low"
+            description: >-
+              Balance is below {{ .Values.metrics.prometheusRule.balanceWarnThreshold }}.
+              Top up before it reaches zero and every send starts failing.
+
+        {{- /*
+        An unregistered DLT template or sender id. Expected while approvals are
+        pending, which is why it is a warning — but it must be visible, because
+        the placeholder-template state is indistinguishable from a real outage
+        without it.
+        */}}
+        - alert: NotificationSmsTemplateRejected
+          expr: |
+            increase(ns_sms_provider_error_total{code=~"EC1011|EC1012|EC1013|EC1004"}[30m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SMS provider {{ `{{ $labels.provider }}` }} rejected a template or sender"
+            description: >-
+              Code {{ `{{ $labels.code }}` }}. The DLT template id or sender header is not
+              registered for this entity. Expected while approvals are pending.
+
+    - name: notification-service-queues
+      rules:
+        - alert: NotificationDlqGrowing
+          expr: increase(ns_queue_depth{queue="dlq"}[1h]) > {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Notification DLQ grew by more than {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }} in an hour"
+            description: "Messages are being dropped. Inspect via GET /metrics/queue and /failed/retry."
+
+        {{- /*
+        A backlog on the realtime queue is an OTP latency problem specifically:
+        an OTP that arrives after the user has given up is a failed login even
+        though nothing errored.
+        */}}
+        - alert: NotificationRealtimeBacklog
+          expr: ns_queue_depth{queue="realtime"} > {{ .Values.metrics.prometheusRule.realtimeBacklogThreshold }}
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Realtime notification queue is backed up"
+            description: "OTPs are delayed. Check that the worker process is alive."
+
+        {{- /*
+        Absent, not zero: if the scrape stops the send path is unobservable, and
+        the failure-rate alerts above silently stop evaluating.
+        */}}
+        - alert: NotificationMetricsAbsent
+          expr: absent(ns_queue_depth)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "notification-service is not reporting metrics"
+            description: "The scrape is failing, so every other notification alert is blind."
+{{- end }}

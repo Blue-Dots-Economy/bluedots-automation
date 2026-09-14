@@ -108,6 +108,9 @@ secrets:
   twilioAuthToken: ''
   twilioFromNumber: ''
   msg91AuthKey: ''
+  # HMAC secret for the notification-service /notify call (smsProvider=http).
+  # Must match the `keycloak` entry in NS's internal-secrets.json.
+  smsHttpSecret: ''
   # AWS — empty under IRSA / Pod Identity
   awsAccessKeyId: ''
   awsSecretAccessKey: ''

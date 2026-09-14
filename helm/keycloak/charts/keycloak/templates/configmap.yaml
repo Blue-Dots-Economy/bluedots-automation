@@ -36,4 +36,17 @@ data:
   KC_SPI_SMS_PROVIDER: "{{ .Values.smsProvider }}"
   MSG91_TEMPLATE_ID: "{{ .Values.msg91TemplateId }}"
   MSG91_OTP_VAR_NAME: "{{ .Values.msg91OtpVarName }}"
+  {{- /*
+  smsProvider=http routes login OTP through notification-service instead of a
+  vendor SDK inside Keycloak. That is what lets a new SMS vendor be an NS-only
+  change: Keycloak stops learning vendor names, and the login-OTP template id
+  stops being duplicated between here and NS.
+  */}}
+  {{- if eq .Values.smsProvider "http" }}
+  SMS_HTTP_URL: "{{ .Values.smsHttp.url }}"
+  SMS_HTTP_TEMPLATE_ID: "{{ .Values.smsHttp.templateId }}"
+  SMS_HTTP_OTP_VAR_NAME: "{{ .Values.smsHttp.otpVarName }}"
+  SMS_HTTP_KEY_ID: "{{ .Values.smsHttp.keyId }}"
+  SMS_HTTP_TIMEOUT_MS: "{{ .Values.smsHttp.timeoutMs }}"
+  {{- end }}
   AWS_REGION: "{{ .Values.awsRegion }}"
