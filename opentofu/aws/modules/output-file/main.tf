@@ -53,10 +53,17 @@ resource "local_sensitive_file" "global_secrets" {
 
     # Hand-entered secrets from the env's gitignored secrets.yaml. Each is
     # templated into every chart that needs it, so copies can't drift.
-    smtp_password            = var.smtp_password
-    raya_api_key             = var.raya_api_key
-    msg91_auth_key           = var.msg91_auth_key
-    msg91_template_id        = var.msg91_template_id
+    smtp_password     = var.smtp_password
+    raya_api_key      = var.raya_api_key
+    msg91_auth_key    = var.msg91_auth_key
+    msg91_template_id = var.msg91_template_id
+
+    pinnacle_api_key               = var.pinnacle_api_key
+    pinnacle_sender_id             = var.pinnacle_sender_id
+    pinnacle_dlt_entity_id         = var.pinnacle_dlt_entity_id
+    pinnacle_login_otp_template_id = var.pinnacle_login_otp_template_id
+    sms_login_otp_body             = var.sms_login_otp_body
+
     google_maps_api_key      = var.google_maps_api_key
     google_geocoding_api_key = var.google_geocoding_api_key
     discord_critical_webhook = var.discord_critical_webhook

@@ -131,6 +131,41 @@ variable "msg91_template_id" {
   default     = "UPDATE_THIS_VALUE"
 }
 
+# Pinnacle — the alternative SMS vendor, selected per deployment by
+# notification-service's SMS_PROVIDER. Only the API key is secret; the sender id
+# and DLT entity id are not credentials, but they live here so that all the
+# vendor's settings are entered in one place rather than split across two files.
+variable "pinnacle_api_key" {
+  description = "Pinnacle API key. Feeds notification-service PINNACLE_API_KEY. Only used when SMS_PROVIDER=pinnacle."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
+variable "pinnacle_sender_id" {
+  description = "Pinnacle sender id — the DLT-registered header, 6 alpha chars or numeric. Feeds notification-service PINNACLE_SENDER_ID."
+  type        = string
+  default     = "UPDATE_THIS_VALUE"
+}
+
+variable "pinnacle_dlt_entity_id" {
+  description = "DLT principal-entity id for the sending organisation. Feeds notification-service PINNACLE_DLT_ENTITY_ID."
+  type        = string
+  default     = "UPDATE_THIS_VALUE"
+}
+
+variable "pinnacle_login_otp_template_id" {
+  description = "Pinnacle DLT template id for login_otp. Blank/UPDATE_THIS_VALUE until the DLT approval lands; NS dead-letters those jobs with an explicit 'not configured yet'."
+  type        = string
+  default     = "UPDATE_THIS_VALUE"
+}
+
+variable "sms_login_otp_body" {
+  description = "The login_otp message body, for vendors that cannot render (Pinnacle). Must be BYTE-IDENTICAL to the DLT-approved text or the operator scrubs the message. {{message}} is the OTP code."
+  type        = string
+  default     = "UPDATE_THIS_VALUE"
+}
+
 # Two separate Google keys: a Google API key takes only ONE application
 # restriction (HTTP referrers OR IP addresses), so the browser key and the
 # server key must be distinct to be restrictable at all.
