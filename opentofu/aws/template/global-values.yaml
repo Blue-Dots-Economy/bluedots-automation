@@ -550,8 +550,21 @@ keycloak:
 
   # OTP delivery. The subchart defaults to `log`, which writes the code to the
   # pod log and sends nothing — Keycloak stays healthy and no OTP ever arrives.
-  # Credentials come from secrets.msg91AuthKey + keycloak.msg91TemplateId.
-  # Values: msg91 | twilio | log.
+  # Values: http | msg91 | twilio | sns | log.
+  #
+  # `http` is preferred: it hands the OTP to notification-service, which owns
+  # the vendor, so a vendor change stops needing a jar rebuild + image + tag pin
+  # here. It also removes the duplicate login-OTP template id (this chart's
+  # msg91TemplateId AND notification-service's own). Credentials for it come
+  # from secrets.smsHttpSecret, whose counterpart is the `keycloak` key id in
+  # notification-service's internal-secrets.json — both generated from the one
+  # `sms_http_secret` input so they cannot drift into a permanent 401.
+  #
+  # Requires an image carrying keycloak-otp >= 1.2.0-SNAPSHOT: an unknown SPI
+  # provider id CrashLoopBackOffs the pod rather than degrading.
+  #
+  # For msg91/twilio/sns, credentials come from secrets.msg91AuthKey +
+  # keycloak.msg91TemplateId and the matching TWILIO_*/AWS_* values.
   smsProvider: msg91
 
   ingress:
@@ -716,6 +729,16 @@ ui:
 notification-service:
   # Mail transport, off the same anchors keycloak and the aggregator use. NOTE 587 + STARTTLS, not 465.
   config:
+    # Which SMS vendor this deployment sends through: msg91 (default) or
+    # pinnacle. One vendor per deployment; both register as channel `sms`, so
+    # no caller changes. An unknown value THROWS AT BOOT — and because the SMS
+    # provider is selected at module load, a typo crashloops the whole
+    # notification service, email and WhatsApp included, not just SMS.
+    #
+    # The vendor's credentials and DLT settings are NOT here: they are entered
+    # in <env>/secrets.yaml as pinnacle_* and land in the generated
+    # global-secrets.yaml, so all of one vendor's configuration lives together.
+    SMS_PROVIDER: msg91
     SMTP_HOST: *smtp_host
     SMTP_PORT: *smtp_port
     SMTP_SECURE: "false"   # STARTTLS on 587; set "true" only for a 465 endpoint

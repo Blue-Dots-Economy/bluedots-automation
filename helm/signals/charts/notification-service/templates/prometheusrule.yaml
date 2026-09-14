@@ -1,0 +1,171 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "dpg-notification-service.fullname" . }}
+  labels:
+    {{- include "dpg-notification-service.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: notification-service-sms
+      rules:
+        {{- /*
+        Login OTP is the only SMS path with live traffic, so a sustained failure
+        rate here means nobody new can log in. Two things it has to get right.
+
+        `namespace` is kept in the grouping: Alertmanager's group_by and its
+        `equal: [namespace, alertname]` inhibit rules both reference it, and a
+        label dropped here is a label those cannot match on.
+
+        The volume floor is not optional. The denominator counts ATTEMPTS, so on
+        this low-traffic path one transient failure retried to success is
+        already 0.5, and the 5-attempt ladder reaches 0.8 — two blips would page
+        `critical` with "new logins are likely broken" while everything actually
+        delivered. (The old clamp_min was dead code: the numerator is a subset
+        of the denominator, so the denominator can only be zero when the
+        numerator is too, and 0/0 drops the series anyway.)
+        */}}
+        - alert: NotificationSmsFailureRate
+          expr: |
+            (
+              sum by (namespace, provider) (rate(ns_sms_send_total{result="failed"}[10m]))
+                /
+              sum by (namespace, provider) (rate(ns_sms_send_total[10m]))
+            ) > {{ .Values.metrics.prometheusRule.smsFailureRatio }}
+            and
+            sum by (namespace, provider) (rate(ns_sms_send_total[10m]))
+              > {{ .Values.metrics.prometheusRule.smsMinRatePerSecond }}
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "SMS failures on {{ `{{ $labels.provider }}` }} above {{ .Values.metrics.prometheusRule.smsFailureRatio }}"
+            description: >-
+              More than {{ .Values.metrics.prometheusRule.smsFailureRatio }} of SMS sends are
+              failing. Login OTP rides this path, so new logins are likely broken.
+              Check ns_sms_provider_error_total for the code.
+
+        {{- /*
+        A specific code rather than a generic failure alert: EC1003 means the
+        vendor account is out of credit, which fails every send permanently and
+        looks identical to a bad template id from the outside.
+        */}}
+        - alert: NotificationSmsInsufficientBalance
+          expr: increase(ns_sms_provider_error_total{code="EC1003"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "SMS provider {{ `{{ $labels.provider }}` }} reports insufficient balance"
+            description: "Every send is failing permanently until the account is topped up."
+
+        - alert: NotificationSmsBalanceLow
+          expr: ns_provider_balance < {{ .Values.metrics.prometheusRule.balanceWarnThreshold }}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SMS provider {{ `{{ $labels.provider }}` }} balance is low"
+            description: >-
+              Balance is below {{ .Values.metrics.prometheusRule.balanceWarnThreshold }}.
+              Top up before it reaches zero and every send starts failing.
+
+        {{- /*
+        An unregistered DLT template or sender id. Expected while approvals are
+        pending, which is why it is a warning — but it must be visible, because
+        the placeholder-template state is indistinguishable from a real outage
+        without it.
+        */}}
+        - alert: NotificationSmsTemplateRejected
+          expr: |
+            increase(ns_sms_provider_error_total{code=~"EC1011|EC1012|EC1013|EC1004"}[30m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SMS provider {{ `{{ $labels.provider }}` }} rejected a template or sender"
+            description: >-
+              Code {{ `{{ $labels.code }}` }}. The DLT template id or sender header is not
+              registered for this entity. Expected while approvals are pending.
+
+    - name: notification-service-queues
+      rules:
+        {{- /*
+        `delta()`, not `increase()`. ns_queue_depth is a GAUGE, and increase()
+        applies counter-reset correction: every DLQ drain via /failed/retry
+        reads as a reset and gets extrapolated upward, so draining the DLQ could
+        itself fire this alert.
+        */}}
+        - alert: NotificationDlqGrowing
+          expr: delta(ns_queue_depth{queue="dlq"}[1h]) > {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Notification DLQ grew by more than {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }} in an hour"
+            description: "Messages are being dropped. Inspect via GET /metrics/queue and /failed/retry."
+
+        {{- /*
+        The DLQ counter, not just its depth. A job dead-lettered and then
+        drained leaves no trace in ns_queue_depth, so the depth alone cannot
+        distinguish "nothing failed" from "failures were cleaned up".
+        */}}
+        - alert: NotificationJobsDeadLettered
+          expr: sum by (namespace, channel, reason) (increase(ns_job_dlq_total[30m])) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Notifications dead-lettering on {{ `{{ $labels.channel }}` }} ({{ `{{ $labels.reason }}` }})"
+            description: >-
+              Jobs are being discarded. `template_not_configured` is expected while DLT
+              approvals are pending; anything else is not.
+
+        {{- /*
+        A balance gauge with no freshness check is worse than none: it reports
+        the last healthy number forever if the poller dies, right up until every
+        send starts failing on EC1003.
+        */}}
+        - alert: NotificationBalanceGaugeStale
+          expr: time() - ns_provider_balance_updated_at > {{ .Values.metrics.prometheusRule.balanceStaleSeconds }}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SMS provider {{ `{{ $labels.provider }}` }} balance has not been polled recently"
+            description: "NotificationSmsBalanceLow is reading a stale value and cannot be trusted."
+
+        {{- /*
+        A backlog on the realtime queue is an OTP latency problem specifically:
+        an OTP that arrives after the user has given up is a failed login even
+        though nothing errored.
+        */}}
+        - alert: NotificationRealtimeBacklog
+          expr: ns_queue_depth{queue="realtime"} > {{ .Values.metrics.prometheusRule.realtimeBacklogThreshold }}
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Realtime notification queue is backed up"
+            description: "OTPs are delayed. Check that the worker process is alive."
+
+        {{- /*
+        Absent, not zero: if the scrape stops, the send path is unobservable and
+        every rule above silently stops evaluating.
+
+        Scoped to this release's namespace: unscoped, a second notification
+        service anywhere in the cluster silently satisfies the series and this
+        alert stops being able to fire.
+        */}}
+        - alert: NotificationMetricsAbsent
+          expr: absent(ns_queue_depth{namespace="{{ .Release.Namespace }}"})
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "notification-service is not reporting metrics"
+            description: "The scrape is failing, so every other notification alert is blind."
+{{- end }}
