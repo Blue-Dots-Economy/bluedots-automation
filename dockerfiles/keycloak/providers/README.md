@@ -9,7 +9,7 @@ Everything in this directory is copied to `/opt/keycloak/providers/` by
 |-----|---------|--------|
 | `keycloak-otp-1.2.0-SNAPSHOT.jar` | 1.2.0-SNAPSHOT | <https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator> |
 
-`sha256:fcd607e1bea7e8fcd7c9bc1081622f47f226127bdc82e33b7a002c47bcca4425`
+`sha256:05719f4e050e8a671100b6b822f83694890e8192bea67133b546eca6d3f64b0b`
 
 > The source repo moved to the `Blue-Dots-Economy` org; the old
 > `sanketika-labs` URL recorded here was stale. Note also that the SMS vendor
@@ -68,8 +68,17 @@ notification-service holds the authoritative text and the string Keycloak's
 theme renders is discarded.
 
 > Setting `smsProvider: http` on an image built from a jar older than
-> `1.2.0-SNAPSHOT` fails realm import on an unknown provider id — it does not
-> silently degrade. Pin the new image tag before flipping the value.
+> `1.2.0-SNAPSHOT` fails at **session-factory init** — the pod CrashLoopBackOffs
+> on an unknown SPI provider id. It is not a realm-import failure, so look in
+> the container log rather than the realm-init Job. Either way it does not
+> silently degrade to another vendor.
+>
+> **Pin an immutable image tag before flipping the value.** The chart defaults to
+> `image.tag: develop` with `pullPolicy: IfNotPresent`, so a node holding a
+> cached `develop` layer keeps serving the OLD jar even after the config change
+> rolls the pods — the flip then looks applied and is not. Publish a
+> `sha-xxxxxxx` tag and set it in `<env>/global-images.yaml`, or set
+> `pullPolicy: Always` for the cutover.
 
 The two **bolded** provider ids are referenced by name in
 `helm/keycloak/charts/keycloak/files/realm.json` and asserted by
@@ -91,6 +100,11 @@ order. When bumping, **replace** the old jar — never leave both.
 git clone https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator
 cd keycloak-otp-authenticator && git switch enhancements
 ./mvnw clean package -DskipTests
+# NOTE: the jar committed here is built from Blue-Dots-Economy/keycloak-otp-authenticator#1,
+# which adds HttpSmsProviderFactory and is not yet merged into `enhancements`.
+# Until it is, `git switch enhancements` reproduces a jar WITHOUT the http
+# provider and a sha256 that does not match the file here. Check out the PR
+# branch (`feat/http-sms-provider`) to reproduce this artefact exactly.
 
 # 2. Replace the jar here (delete the old one — see above)
 rm dockerfiles/keycloak/providers/keycloak-otp-*.jar

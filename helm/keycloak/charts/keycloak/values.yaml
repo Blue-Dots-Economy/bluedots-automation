@@ -133,7 +133,10 @@ msg91OtpVarName: ''
 # Only read when smsProvider=http. The shared secret is a Secret key
 # (SMS_HTTP_SECRET), not a value here.
 smsHttp:
-  url: http://signals-notification-service.signals.svc.cluster.local:3000/notify
+  # Left empty so the template derives it from global.signalsNamespace, the way
+  # every other cross-namespace reference in this chart does. Set explicitly
+  # only to point at something other than this cluster's notification service.
+  url: ''
   # NS-named template. NS owns both its vendor id and its body, which is why
   # nothing here carries message text.
   templateId: login_otp

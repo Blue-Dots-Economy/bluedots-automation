@@ -13,17 +13,31 @@ spec:
     - name: notification-service-sms
       rules:
         {{- /*
-        Login OTP is the only SMS path with live traffic, so a sustained SMS
-        failure rate means nobody new can log in. This fires before the DLQ
-        alert does, because a permanent failure now dead-letters on the first
-        attempt rather than after five.
+        Login OTP is the only SMS path with live traffic, so a sustained failure
+        rate here means nobody new can log in. Two things it has to get right.
+
+        `namespace` is kept in the grouping: Alertmanager's group_by and its
+        `equal: [namespace, alertname]` inhibit rules both reference it, and a
+        label dropped here is a label those cannot match on.
+
+        The volume floor is not optional. The denominator counts ATTEMPTS, so on
+        this low-traffic path one transient failure retried to success is
+        already 0.5, and the 5-attempt ladder reaches 0.8 — two blips would page
+        `critical` with "new logins are likely broken" while everything actually
+        delivered. (The old clamp_min was dead code: the numerator is a subset
+        of the denominator, so the denominator can only be zero when the
+        numerator is too, and 0/0 drops the series anyway.)
         */}}
         - alert: NotificationSmsFailureRate
           expr: |
-            sum by (provider) (rate(ns_sms_send_total{result="failed"}[10m]))
-              /
-            clamp_min(sum by (provider) (rate(ns_sms_send_total[10m])), 0.001)
-              > {{ .Values.metrics.prometheusRule.smsFailureRatio }}
+            (
+              sum by (namespace, provider) (rate(ns_sms_send_total{result="failed"}[10m]))
+                /
+              sum by (namespace, provider) (rate(ns_sms_send_total[10m]))
+            ) > {{ .Values.metrics.prometheusRule.smsFailureRatio }}
+            and
+            sum by (namespace, provider) (rate(ns_sms_send_total[10m]))
+              > {{ .Values.metrics.prometheusRule.smsMinRatePerSecond }}
           for: 10m
           labels:
             severity: critical
@@ -79,14 +93,50 @@ spec:
 
     - name: notification-service-queues
       rules:
+        {{- /*
+        `delta()`, not `increase()`. ns_queue_depth is a GAUGE, and increase()
+        applies counter-reset correction: every DLQ drain via /failed/retry
+        reads as a reset and gets extrapolated upward, so draining the DLQ could
+        itself fire this alert.
+        */}}
         - alert: NotificationDlqGrowing
-          expr: increase(ns_queue_depth{queue="dlq"}[1h]) > {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }}
+          expr: delta(ns_queue_depth{queue="dlq"}[1h]) > {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }}
           for: 15m
           labels:
             severity: warning
           annotations:
             summary: "Notification DLQ grew by more than {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }} in an hour"
             description: "Messages are being dropped. Inspect via GET /metrics/queue and /failed/retry."
+
+        {{- /*
+        The DLQ counter, not just its depth. A job dead-lettered and then
+        drained leaves no trace in ns_queue_depth, so the depth alone cannot
+        distinguish "nothing failed" from "failures were cleaned up".
+        */}}
+        - alert: NotificationJobsDeadLettered
+          expr: sum by (namespace, channel, reason) (increase(ns_job_dlq_total[30m])) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Notifications dead-lettering on {{ `{{ $labels.channel }}` }} ({{ `{{ $labels.reason }}` }})"
+            description: >-
+              Jobs are being discarded. `template_not_configured` is expected while DLT
+              approvals are pending; anything else is not.
+
+        {{- /*
+        A balance gauge with no freshness check is worse than none: it reports
+        the last healthy number forever if the poller dies, right up until every
+        send starts failing on EC1003.
+        */}}
+        - alert: NotificationBalanceGaugeStale
+          expr: time() - ns_provider_balance_updated_at > {{ .Values.metrics.prometheusRule.balanceStaleSeconds }}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "SMS provider {{ `{{ $labels.provider }}` }} balance has not been polled recently"
+            description: "NotificationSmsBalanceLow is reading a stale value and cannot be trusted."
 
         {{- /*
         A backlog on the realtime queue is an OTP latency problem specifically:
@@ -103,11 +153,15 @@ spec:
             description: "OTPs are delayed. Check that the worker process is alive."
 
         {{- /*
-        Absent, not zero: if the scrape stops the send path is unobservable, and
-        the failure-rate alerts above silently stop evaluating.
+        Absent, not zero: if the scrape stops, the send path is unobservable and
+        every rule above silently stops evaluating.
+
+        Scoped to this release's namespace: unscoped, a second notification
+        service anywhere in the cluster silently satisfies the series and this
+        alert stops being able to fire.
         */}}
         - alert: NotificationMetricsAbsent
-          expr: absent(ns_queue_depth)
+          expr: absent(ns_queue_depth{namespace="{{ .Release.Namespace }}"})
           for: 15m
           labels:
             severity: warning

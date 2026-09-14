@@ -160,6 +160,10 @@ podDisruptionBudget:
 # signature the rest require, and the exposition carries counts and queue depths
 # only (never recipients, variables or message content).
 metrics:
+  # ServiceMonitor and PrometheusRule are prometheus-operator CRDs. Default ON
+  # because every full install.sh run deploys the monitoring stack first, but a
+  # targeted `install.sh deploy_signals` against a cluster without those CRDs
+  # needs `--set notification-service.metrics.serviceMonitor.enabled=false`.
   serviceMonitor:
     enabled: true
     path: /metrics
@@ -171,6 +175,21 @@ metrics:
     additionalLabels: {}
     # Fraction of SMS sends failing over 10m before the critical alert fires.
     smsFailureRatio: 0.25
+    # Volume floor for that ratio, in ATTEMPTS/second over the same window.
+    # Without it the ratio is meaningless on a low-traffic path: the denominator
+    # counts attempts, so a single message walking the 5-attempt ladder is
+    # already a ratio of 0.8 on its own.
+    #
+    # 0.02/s is ~12 attempts per 10 minutes — above two fully-retried messages,
+    # so isolated blips cannot page while a genuine outage (which produces far
+    # more attempts than that) still does. A lower value does NOT filter the
+    # case this exists for: one retried message is ~5/600 = 0.008/s, so any
+    # floor at or below that is decorative. Verified by the promtool tests in
+    # helm/signals/tests/.
+    smsMinRatePerSecond: 0.02
+    # How long ns_provider_balance may go unrefreshed before the balance alert
+    # is treated as reading a stale value.
+    balanceStaleSeconds: 5400
     # Vendor balance below this warns. Units are the vendor's own credits, so
     # this needs setting per deployment once a real balance is observed.
     balanceWarnThreshold: 1000

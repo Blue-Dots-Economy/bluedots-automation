@@ -104,6 +104,19 @@ jobs:
             echo "::endgroup::"
           done
 
+      # PromQL is not covered by `helm lint` or `helm template`: both of the
+      # alert defects found in review (increase() on a gauge, a failure ratio
+      # with no volume floor) render as perfectly valid YAML. promtool is the
+      # only thing here that evaluates the expressions.
+      - name: promtool — alert rule unit tests
+        run: |
+          set -euo pipefail
+          for suite in helm/monitoring/tests helm/signals/tests; do
+            echo "::group::promtool $suite"
+            bash "$suite/run.sh"
+            echo "::endgroup::"
+          done
+
       # Renders all 5 charts once, shared by both drift checks below. Layers
       # the template env's own committed global-images.yaml/global-values.yaml
       # (non-secret, no cluster needed) rather than chart defaults only:

@@ -1,0 +1,123 @@
+rule_files:
+  - rules-fixed.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # ── The volume floor ────────────────────────────────────────────────────────
+  # Without it the ratio is meaningless on a low-traffic path: the denominator
+  # counts ATTEMPTS, so one transient failure retried to success is already 0.5
+  # and the 5-attempt ladder reaches 0.8.
+  - interval: 1m
+    name: a trickle of failures does not page
+    # ~1 attempt/min = 0.017/s, below the 0.02/s floor. This is the shape the
+    # floor exists for: a couple of messages walking the retry ladder, which
+    # produces a 100% failure RATIO while nothing is actually wrong.
+    input_series:
+      - series: 'ns_sms_send_total{namespace="signals",provider="pinnacle",result="failed"}'
+        values: '0+1x40'
+      - series: 'ns_sms_send_total{namespace="signals",provider="pinnacle",result="ok"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: NotificationSmsFailureRate
+        exp_alerts: []
+
+  - interval: 1m
+    name: a real outage at volume does page
+    input_series:
+      - series: 'ns_sms_send_total{namespace="signals",provider="pinnacle",result="failed"}'
+        values: '0+10x40'
+      - series: 'ns_sms_send_total{namespace="signals",provider="pinnacle",result="ok"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: NotificationSmsFailureRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: signals
+              provider: pinnacle
+            exp_annotations:
+              summary: "SMS failures on pinnacle above 0.25"
+              description: "More than 0.25 of SMS sends are failing. Login OTP rides this path, so new logins are likely broken. Check ns_sms_provider_error_total for the code."
+
+  - interval: 1m
+    name: healthy traffic at volume does not page
+    input_series:
+      - series: 'ns_sms_send_total{namespace="signals",provider="pinnacle",result="failed"}'
+        values: '0+0x40'
+      - series: 'ns_sms_send_total{namespace="signals",provider="pinnacle",result="ok"}'
+        values: '0+10x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: NotificationSmsFailureRate
+        exp_alerts: []
+
+  # ── delta() vs increase() on the DLQ gauge ──────────────────────────────────
+  # The regression this pins: with increase(), a DLQ that fills and is then
+  # DRAINED reads as a counter reset and gets extrapolated upward, so the act of
+  # clearing the DLQ fires the "DLQ growing" alert.
+  - interval: 1m
+    name: draining the DLQ does not itself fire the DLQ alert
+    input_series:
+      - series: 'ns_queue_depth{namespace="signals",queue="dlq"}'
+        values: '0+2x30 60 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: NotificationDlqGrowing
+        exp_alerts: []
+
+  - interval: 1m
+    name: a genuinely growing DLQ still fires
+    input_series:
+      - series: 'ns_queue_depth{namespace="signals",queue="dlq"}'
+        values: '0+2x70'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: NotificationDlqGrowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: signals
+              queue: dlq
+            exp_annotations:
+              summary: "Notification DLQ grew by more than 10 in an hour"
+              description: "Messages are being dropped. Inspect via GET /metrics/queue and /failed/retry."
+
+  # ── Balance staleness ───────────────────────────────────────────────────────
+  # A balance gauge with no freshness check reports the last healthy number
+  # forever if the poller dies — right up until every send fails on EC1003.
+  - interval: 5m
+    name: a stalled balance poller is reported
+    input_series:
+      - series: 'ns_provider_balance_updated_at{namespace="signals",provider="pinnacle"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 120m
+        alertname: NotificationBalanceGaugeStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: signals
+              provider: pinnacle
+            exp_annotations:
+              summary: "SMS provider pinnacle balance has not been polled recently"
+              description: "NotificationSmsBalanceLow is reading a stale value and cannot be trusted."
+
+  # ── Scrape loss ─────────────────────────────────────────────────────────────
+  - interval: 1m
+    name: a dead scrape is reported rather than read as silence
+    input_series:
+      - series: 'ns_queue_depth{namespace="signals",queue="dlq"}'
+        values: '0x5 _x40'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: NotificationMetricsAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: signals
+            exp_annotations:
+              summary: "notification-service is not reporting metrics"
+              description: "The scrape is failing, so every other notification alert is blind."

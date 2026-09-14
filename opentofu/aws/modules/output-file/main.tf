@@ -63,6 +63,7 @@ resource "local_sensitive_file" "global_secrets" {
     pinnacle_dlt_entity_id         = var.pinnacle_dlt_entity_id
     pinnacle_login_otp_template_id = var.pinnacle_login_otp_template_id
     sms_login_otp_body             = var.sms_login_otp_body
+    sms_http_secret                = var.sms_http_secret
 
     google_maps_api_key      = var.google_maps_api_key
     google_geocoding_api_key = var.google_geocoding_api_key

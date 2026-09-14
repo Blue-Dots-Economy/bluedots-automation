@@ -99,6 +99,54 @@ added to a deliberately stale realm, idempotent on re-run
 (`added=0 skipped=10`), existing client id, service-account user id and client
 secret all unchanged.
 
+## notification-service SMS vendor + alerting
+
+**`SMS_PROVIDER` is read at module load, so a typo crashloops the whole service.**
+`src/lib/providers/sms/index.ts` selects the vendor at import time and throws on an
+unknown value — deliberately, because falling back would send through the wrong
+vendor with the wrong sender id and DLT entity. The blast radius is *not* just SMS:
+the throw happens before the app serves anything, so email and WhatsApp go down too.
+Values are `msg91` (default) or `pinnacle`.
+
+**One vendor's settings live in one file.** Pinnacle's credentials *and* its
+non-secret DLT settings (sender id, entity id, template id, message body) are all
+entered in `<env>/secrets.yaml` as `pinnacle_*` and rendered into the generated
+`global-secrets.yaml` — including a `config:` block, which is unusual for that file.
+Splitting them across `global-values.yaml` and `secrets.yaml` is how half of a
+vendor's configuration goes stale.
+
+**Those inputs default to `""`, not `UPDATE_THIS_VALUE`.** The charts filter empty
+values out of the ConfigMap/Secret, so an unfilled `secrets.yaml` leaves them
+genuinely *unset* and every "not configured" guard downstream fires. A non-empty
+placeholder passes all of them instead: the app sees each key present, does not
+dead-letter, finds no template tokens to fail on, and sends a message whose text is
+literally `UPDATE_THIS_VALUE` with no OTP in it.
+
+**Keycloak → notification-service HMAC is one input rendering two halves.**
+`sms_http_secret` produces both `keycloak.secrets.smsHttpSecret` and the `keycloak`
+key id inside notification-service's `internalSecrets.json`. Two separate inputs
+would drift into a permanent `401` that looks like a code bug. The same applies to
+`SMS_LOGIN_OTP_TEMPLATE_ID`: notification-service reads *that* name, not
+`MSG91_TEMPLATE_ID` (which is the Keycloak SPI's variable), and without it NS falls
+back to a hardcoded literal flow id that is not what any cluster is configured with.
+
+**Alert rules are unit-tested, because PromQL bugs render as valid YAML.**
+`helm/signals/tests/run.sh` (promtool, mirroring `helm/monitoring/tests/`) is wired
+into CI. Two defects it exists to catch, both of which passed `helm lint` and
+`helm template` cleanly:
+
+- **`increase()` on a gauge.** `ns_queue_depth` is a gauge; `increase()` applies
+  counter-reset correction, so draining the DLQ via `/failed/retry` reads as a reset
+  and extrapolates upward — the act of clearing the DLQ fires the DLQ alert. Use
+  `delta()`.
+- **A failure ratio with no volume floor.** The denominator counts *attempts*, so one
+  message walking the 5-attempt ladder is already a ratio of 0.8. The floor has to
+  sit above that (~0.008/s for a single retried message) or it is decorative —
+  0.02/s is the tested value.
+
+Keep `namespace` in every `sum by (...)`: Alertmanager's `group_by` and its
+`equal: [namespace, alertname]` inhibit rules both reference it.
+
 ## Cluster Autoscaler (#1.6)
 
 `common-services/templates/cluster-autoscaler.yaml` (first-party, not a vendored subchart) ships the Kubernetes Cluster Autoscaler as SA + cluster-wide RBAC + Deployment, gated by `clusterAutoscaler.enabled` (**default OFF**). It scales the EKS managed node group's ASG between the OpenTofu `node_count_min`/`node_count_max` (raised to **2 / 6** via the `_eks_node_count_min`/`_eks_node_count_max` anchors in `opentofu/aws/template/global-values.yaml` — was 1 / 2, which left no headroom; `_common/eks.hcl` reads these anchors directly, so the module defaults in `modules/eks/variables.tf` are shadowed under Terragrunt and were a no-op) via ASG auto-discovery (`--node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,...`; the node group carries those discovery tags, and EKS propagates them to the ASG). AWS access is **IRSA**, not node creds: `modules/eks/main.tf` adds a `cluster_autoscaler_irsa` role (scoped `attach_cluster_autoscaler_policy`, bound to `common-services:cluster-autoscaler`) and exports **`cluster_autoscaler_role_arn`**.

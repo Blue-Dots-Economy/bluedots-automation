@@ -43,7 +43,7 @@ data:
   stops being duplicated between here and NS.
   */}}
   {{- if eq .Values.smsProvider "http" }}
-  SMS_HTTP_URL: "{{ .Values.smsHttp.url }}"
+  SMS_HTTP_URL: "{{ .Values.smsHttp.url | default (printf "http://%s-notification-service.%s.svc.cluster.local:3000/notify" (.Values.global.signalsRelease | default "signals") (.Values.global.signalsNamespace | default "signals")) }}"
   SMS_HTTP_TEMPLATE_ID: "{{ .Values.smsHttp.templateId }}"
   SMS_HTTP_OTP_VAR_NAME: "{{ .Values.smsHttp.otpVarName }}"
   SMS_HTTP_KEY_ID: "{{ .Values.smsHttp.keyId }}"
