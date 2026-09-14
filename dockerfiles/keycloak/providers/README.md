@@ -7,9 +7,15 @@ Everything in this directory is copied to `/opt/keycloak/providers/` by
 
 | Jar | Version | Source |
 |-----|---------|--------|
-| `keycloak-otp-1.1.0-SNAPSHOT.jar` | 1.1.0-SNAPSHOT | <https://github.com/sanketika-labs/keycloak-otp-authenticator> |
+| `keycloak-otp-1.2.0-SNAPSHOT.jar` | 1.2.0-SNAPSHOT | <https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator> |
 
-`sha256:418cba6d9fb783bfe8f52df16cee01f5e80fda7a26b91352ac2c5457aa68295f`
+`sha256:fcd607e1bea7e8fcd7c9bc1081622f47f226127bdc82e33b7a002c47bcca4425`
+
+> The source repo moved to the `Blue-Dots-Economy` org; the old
+> `sanketika-labs` URL recorded here was stale. Note also that the SMS vendor
+> providers live on the **`enhancements`** branch, not `main` — `main` carries
+> no msg91 provider at all, so a jar built from it would break every cluster
+> running `smsProvider: msg91`.
 
 The jar is committed rather than fetched at build time so an image build is
 reproducible from a checkout alone, with no dependency on a second private repo
@@ -37,6 +43,8 @@ tag pin → chart values) per vendor. It also collapses the login-OTP template i
 which currently exists twice — `msg91TemplateId` here and
 `SMS_LOGIN_OTP_TEMPLATE_ID` in NS.
 
+Shipped in `1.2.0-SNAPSHOT` (`HttpSmsProviderFactory`).
+
 It must send NS's HMAC envelope (`X-NS-Key`, `X-NS-Timestamp`, `X-NS-Nonce`,
 `X-NS-Signature` over `METHOD\nPATH\nTIMESTAMP\nNONCE`) and a body of:
 
@@ -54,10 +62,14 @@ vendor's template id and the body. Env wired by the chart when
 The trade-off is that login OTP gains a hard dependency on notification-service
 being reachable from `common-services`.
 
-> **Not yet built.** The chart wiring is in place; the Java provider itself is
-> tracked separately. Until the jar ships a factory for `http`, setting
-> `smsProvider: http` fails realm import on an unknown provider id — it does not
-> silently degrade.
+Only the OTP code is forwarded, never the rendered SMS text. Under Indian DLT
+the delivered copy must match the template registered with the operator, so
+notification-service holds the authoritative text and the string Keycloak's
+theme renders is discarded.
+
+> Setting `smsProvider: http` on an image built from a jar older than
+> `1.2.0-SNAPSHOT` fails realm import on an unknown provider id — it does not
+> silently degrade. Pin the new image tag before flipping the value.
 
 The two **bolded** provider ids are referenced by name in
 `helm/keycloak/charts/keycloak/files/realm.json` and asserted by
@@ -74,9 +86,11 @@ order. When bumping, **replace** the old jar — never leave both.
 ## Bumping the version
 
 ```bash
-# 1. Build the jar from its own repo (Java 17+, uses the bundled wrapper)
-git clone https://github.com/sanketika-labs/keycloak-otp-authenticator
-cd keycloak-otp-authenticator && ./mvnw clean package -DskipTests
+# 1. Build the jar from its own repo (Java 17+, uses the bundled wrapper).
+#    Build from `enhancements`, NOT `main` — see the note above.
+git clone https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator
+cd keycloak-otp-authenticator && git switch enhancements
+./mvnw clean package -DskipTests
 
 # 2. Replace the jar here (delete the old one — see above)
 rm dockerfiles/keycloak/providers/keycloak-otp-*.jar
@@ -108,5 +122,6 @@ Those trees are developer-local and are not upstream of this one; the same
 relationship `scripts/build-realm.sh` documents for the realm JSON.
 
 They currently sit on **1.0.0-SNAPSHOT** while this directory ships
-**1.1.0-SNAPSHOT**. Bumping them is a separate change in those repos and is not
-required for a deployment.
+**1.2.0-SNAPSHOT**. Bumping them is a separate change in those repos and is not
+required for a deployment — but note the 1.0.0 jar has no `http` provider, so
+local dev cannot exercise the notification-service path until it is bumped.
