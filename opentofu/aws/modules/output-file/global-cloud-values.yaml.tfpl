@@ -9,7 +9,20 @@ global:
   s3:
     region: ${cloud_storage_region}
     bucket: ${storage_bucket_public}
-    forcePathStyle: false
+    # AWS S3 uses virtual-host addressing; S3-compatible stores (MinIO, Ceph RGW)
+    # need path-style. Driven by global.s3_force_path_style, default false.
+    forcePathStyle: ${s3_force_path_style}
+%{ if s3_endpoint != "" ~}
+    # S3-COMPATIBLE endpoint. Emitted only when set: unset leaves the AWS SDK to
+    # resolve the real regional endpoint, so AWS deployments are unaffected.
+    endpoint: ${s3_endpoint}
+%{ endif ~}
+%{ if s3_public_endpoint != "" ~}
+    # Browser-reachable endpoint, used ONLY for pre-signing. A pre-signed URL
+    # encodes the host it was signed against, so a link minted against the
+    # in-cluster address is unreachable from a recipient's browser.
+    publicEndpoint: ${s3_public_endpoint}
+%{ endif ~}
 %{ if postgres_host != "" ~}
   # Managed Postgres (RDS). Full endpoint takes precedence over the in-cluster
   # postgresService FQDN in the aggregator.postgresHost helper + keycloak KC_DB_URL.
@@ -31,13 +44,17 @@ postgresBootstrap:
 aggregator-api:
   serviceAccount:
     create: true
+%{ if app_sa_role_arn != "" ~}
     annotations:
       eks.amazonaws.com/role-arn: ${app_sa_role_arn}
+%{ endif ~}
 worker:
   serviceAccount:
     create: true
+%{ if app_sa_role_arn != "" ~}
     annotations:
       eks.amazonaws.com/role-arn: ${app_sa_role_arn}
+%{ endif ~}
 
 # signals s3-export subchart — SAME app_sa role and SAME public bucket as the
 # aggregator worker above. There is no dedicated exporter role or export bucket
@@ -49,8 +66,10 @@ s3-export:
   serviceAccount:
     create: true
     name: signals-s3-export
+%{ if app_sa_role_arn != "" ~}
     annotations:
       eks.amazonaws.com/role-arn: ${app_sa_role_arn}
+%{ endif ~}
   s3:
     bucket: ${storage_bucket_public}
     region: ${cloud_storage_region}
