@@ -190,7 +190,20 @@ global:
   s3:
     region: ap-south-1
     bucket: aggregator-bulk-uploads
+    # AWS S3 uses virtual-host addressing (bucket.s3.amazonaws.com); MinIO and
+    # Ceph RGW need path-style (endpoint/bucket) — set true for those.
     forcePathStyle: false
+    # Endpoint overrides for S3-COMPATIBLE stores (MinIO, Ceph RGW). Leave BOTH
+    # empty on AWS: the keys are then omitted from the ConfigMap entirely and the
+    # SDK resolves the real AWS endpoint, exactly as before.
+    #   endpoint        in-cluster address the api/worker call, e.g.
+    #                   http://minio.minio.svc.cluster.local:9000
+    #   publicEndpoint  browser-reachable address used ONLY for pre-signing.
+    #                   A pre-signed URL encodes its host, so a link minted
+    #                   against the in-cluster address is unreachable from a
+    #                   user's browser. Unset -> the app falls back to endpoint.
+    endpoint: ""
+    publicEndpoint: ""
 
   # ── Signals non-PII dump download API (api-only) ──────────────────────────
   # `GET /v1/campaign/dump` hands the campaign manager pre-signed URLs for the
