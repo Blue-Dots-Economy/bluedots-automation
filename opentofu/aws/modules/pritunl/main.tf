@@ -11,6 +11,11 @@ locals {
   # only — private keys stay with each owner and never enter Terraform state.
   authorized_keys_block = join("\n", var.authorized_keys)
 
+  # The VPC CIDR is always an admin source: once you are on the VPN the Pritunl host's private
+  # IP is routed to your laptop, so SSH and the admin UI stay reachable from home without any
+  # public CIDR on the list. distinct() keeps the rule clean if someone also lists the VPC.
+  admin_cidrs = distinct(concat(var.admin_ingress_cidrs, [var.vpc_cidr]))
+
   # Permissions boundary attached to every role below. Empty var = null = argument omitted, so
   # the modules work unchanged in an account with no boundary requirement. Where the deploying
   # principal's IAM grants ARE conditioned on it, omitting it fails as "no identity-based policy
@@ -45,19 +50,34 @@ data "aws_ami" "ubuntu" {
 # ── Security Group ──────────────────────────────────────────────────────────────
 
 resource "aws_security_group" "pritunl" {
-  name        = "${local.name}-sg"
+  name = "${local.name}-sg"
+  # DO NOT EDIT this description to reflect the split below. `description` on an
+  # aws_security_group is ForceNew — AWS has no API to change it — so touching the string
+  # plans a destroy+create of the SG, which fails with DependencyViolation while the Pritunl
+  # instance still references it. The ingress rules are the only thing that should ever change
+  # here, and rule changes are pure in-place updates.
   description = "Pritunl VPN: SSH 22 + OpenVPN 1194 (UDP+TCP) + web admin TCP 443"
   vpc_id      = var.vpc_id
 
-  # All inbound sources are gated by var.ingress_cidrs. Default ["0.0.0.0/0"] (open); set to
-  # office/home CIDRs in global-values.yaml (pritunl_ingress_cidrs) to restrict who can even
-  # reach the VPN — which gates ALL downstream cluster access (bastion + EKS are VPN-only).
+  # Two separate source lists, because these ports are two different things.
+  #
+  # 1194 (var.vpn_ingress_cidrs, default open) is the VPN front door. Pritunl authenticates
+  # every connection with a per-user client certificate, so the source IP is not what keeps
+  # strangers out — the certificate is. Gating it on a source IP stops nobody holding a stolen
+  # cert and locks out everyone on a home/mobile/hotel connection, whose ISP lease moves. Even
+  # a fixed "office" IP drifts; this repo had three different ones across three env dirs.
+  #
+  # 22 and 443 (var.admin_ingress_cidrs, default: VPC only) are the admin surface — a shell on
+  # the VPN host and the UI that mints user certificates. Those stay closed. var.vpc_cidr is
+  # always appended, so an admin already on the VPN reaches both on the instance's PRIVATE IP;
+  # the only reason to list a public CIDR is the one-time bootstrap before the first VPN user
+  # exists (or recover by widening the SG in the AWS console, which is not VPN-gated).
   ingress {
     description = "SSH for one-time Pritunl setup (pritunl setup-key / default-password). Key-auth only."
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = var.ingress_cidrs
+    cidr_blocks = local.admin_cidrs
   }
 
   ingress {
@@ -65,7 +85,7 @@ resource "aws_security_group" "pritunl" {
     from_port   = 1194
     to_port     = 1194
     protocol    = "udp"
-    cidr_blocks = var.ingress_cidrs
+    cidr_blocks = var.vpn_ingress_cidrs
   }
 
   ingress {
@@ -73,7 +93,7 @@ resource "aws_security_group" "pritunl" {
     from_port   = 1194
     to_port     = 1194
     protocol    = "tcp"
-    cidr_blocks = var.ingress_cidrs
+    cidr_blocks = var.vpn_ingress_cidrs
   }
 
   ingress {
@@ -81,7 +101,7 @@ resource "aws_security_group" "pritunl" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = var.ingress_cidrs
+    cidr_blocks = local.admin_cidrs
   }
 
   egress {

@@ -260,11 +260,21 @@ global:
   # MongoDB needs ~1 GB RAM; t3.nano will be unstable).
   pritunl_instance_type: "t3.small"
   #
-  # Restrict WHO can reach the VPN (office, home, etc.) — the bastion host is in a private subnet and only reachable after connecting to the VPN. Add/remove lines + re-apply (pritunl) to grant
-  pritunl_ingress_cidrs:
-    - "106.51.118.115/32"       # office (baseline — always allowed)
-    # - "198.51.100.20/32"    # per-env: add home/other IPs, then apply_tf_pritunl
-    # - "192.0.2.30/32"
+  # WHO can reach the OpenVPN port 1194. Open by default, and that is the intended setting:
+  # Pritunl issues every user their own client certificate, so the certificate is what keeps
+  # strangers out — not the source IP. An IP allowlist here stops nobody holding a stolen cert
+  # and locks out anyone on a home/mobile/hotel connection the moment their ISP changes their
+  # address. Leave it open and turn on per-user 2FA in the Pritunl admin UI instead.
+  pritunl_vpn_ingress_cidrs:
+    - "0.0.0.0/0"
+
+  # WHO can reach the admin surface: SSH 22 and the Pritunl web admin UI on 443. The VPC CIDR is
+  # always allowed on top of this list, so anyone already connected to the VPN reaches both on the
+  # host's PRIVATE IP — an empty list is a perfectly workable setting. List a public CIDR only for
+  # the one-time bootstrap, before the first VPN user exists. If the entry below goes stale, widen
+  # the security group from the AWS console (not VPN-gated), then fix it here and re-apply.
+  pritunl_admin_ingress_cidrs:
+    - "106.51.118.115/32"       # office — bootstrap/admin only; does NOT gate the VPN itself
 
   # Access = SSH public keys. Each dev runs `ssh-keygen -t ed25519` and pastes their
   # Add/remove a line + re-apply (bastion/pritunl) to grant/revoke a developer.
