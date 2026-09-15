@@ -20,6 +20,11 @@ output "signals_redis_password" {
   sensitive = true
 }
 
+output "minio_root_password" {
+  value     = random_id.minio_root_password.hex
+  sensitive = true
+}
+
 output "signals_auth_secret" {
   value     = random_id.signals_auth_secret.hex
   sensitive = true

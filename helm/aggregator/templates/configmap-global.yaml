@@ -28,6 +28,26 @@ data:
   S3_BUCKET: {{ .Values.global.s3.bucket | quote }}
   S3_FORCE_PATH_STYLE: {{ .Values.global.s3.forcePathStyle | quote }}
   AWS_REGION: {{ .Values.global.s3.region | quote }}
+  {{- /*
+    S3-compatible object stores (MinIO, Ceph RGW) need an explicit endpoint —
+    without one the AWS SDK resolves the real AWS regional endpoint and every
+    call leaves the cluster. Emitted ONLY when set, so an AWS deployment renders
+    exactly as before and keeps using the SDK's default resolution.
+
+    Two endpoints, because a pre-signed URL encodes the host it was signed for:
+      S3_ENDPOINT         server-side calls (in-cluster service address)
+      S3_PUBLIC_ENDPOINT  presigning only; must be BROWSER-reachable, or an
+                          export/upload link 404s for the recipient. Falls back
+                          to S3_ENDPOINT in the app when unset (single-host dev).
+    Credentials are NOT here — AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY come
+    from the umbrella Secret and the SDK's default chain picks them up.
+  */}}
+  {{- with .Values.global.s3.endpoint }}
+  S3_ENDPOINT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.global.s3.publicEndpoint }}
+  S3_PUBLIC_ENDPOINT: {{ . | quote }}
+  {{- end }}
   # Campaign PII export download-link TTL (seconds), derived from the shared
   # global.campaignExportExpiryDays so the pre-signed link expires at the same time the
   # S3 lifecycle rule deletes the file (opentofu storage module). Default 1 day.

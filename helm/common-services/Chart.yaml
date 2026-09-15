@@ -45,3 +45,11 @@ dependencies:
     version: 3.14.0
     repository: file://charts/metrics-server
     condition: metrics-server.enabled
+
+  # Self-hosted S3-compatible object storage. OFF by default: AWS deployments
+  # use real S3 (the opentofu `storage` module). Turned on only where no managed
+  # object store exists — see values.yaml `minio:` for the rationale.
+  - name: minio
+    version: 5.4.0
+    repository: file://charts/minio
+    condition: minio.enabled

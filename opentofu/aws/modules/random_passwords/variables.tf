@@ -27,6 +27,11 @@ variable "signals_redis_password_bytes" {
   default = 16
 }
 
+variable "minio_root_password_bytes" {
+  type    = number
+  default = 24
+}
+
 variable "signals_auth_secret_bytes" {
   type    = number
   default = 32
