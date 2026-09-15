@@ -83,6 +83,9 @@ resource "local_sensitive_file" "global_cloud_values" {
   content = templatefile("${path.module}/global-cloud-values.yaml.tfpl", {
     cloud_storage_region    = var.cloud_storage_region
     storage_bucket_public   = var.storage_bucket_public
+    s3_endpoint             = var.s3_endpoint
+    s3_public_endpoint      = var.s3_public_endpoint
+    s3_force_path_style     = var.s3_force_path_style
     app_sa_role_arn         = var.app_sa_role_arn
     signals_public_hosts    = var.signals_public_hosts
     signals_allowed_origins = var.signals_allowed_origins

@@ -13,7 +13,10 @@
 set -euo pipefail
 
 USER="${GHCR_USER:-vinodbhorge}"
-SERVER="ghcr.io"
+# Overridable so the same Secret name can front a non-GHCR registry (e.g. a
+# customer's private registry on a platform with no internet egress). The charts
+# reference the Secret by NAME (ghcr-pull), never by server, so only this changes.
+SERVER="${GHCR_SERVER:-ghcr.io}"
 NAMESPACES=("${@:2}")
 [[ ${#NAMESPACES[@]} -eq 0 ]] && NAMESPACES=(signals aggregator)
 
