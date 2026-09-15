@@ -271,10 +271,10 @@ global:
   # WHO can reach the admin surface: SSH 22 and the Pritunl web admin UI on 443. The VPC CIDR is
   # always allowed on top of this list, so anyone already connected to the VPN reaches both on the
   # host's PRIVATE IP — an empty list is a perfectly workable setting. List a public CIDR only for
-  # the one-time bootstrap, before the first VPN user exists. If the entry below goes stale, widen
+  # the one-time bootstrap, before the first VPN user exists. If an entry here goes stale, widen
   # the security group from the AWS console (not VPN-gated), then fix it here and re-apply.
-  pritunl_admin_ingress_cidrs:
-    - "106.51.118.115/32"       # office — bootstrap/admin only; does NOT gate the VPN itself
+  pritunl_admin_ingress_cidrs: []
+    # - "203.0.113.10/32"       # a bootstrap/admin address — does NOT gate the VPN itself
 
   # Access = SSH public keys. Each dev runs `ssh-keygen -t ed25519` and pastes their
   # Add/remove a line + re-apply (bastion/pritunl) to grant/revoke a developer.
