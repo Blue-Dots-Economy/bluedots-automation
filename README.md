@@ -296,7 +296,7 @@ _aggregator_host:        &aggregator_host        "aggregator.domain.com"
 _grafana_host:           &grafana_host           "monitoring.domain.com"
 # plus _signals_public_hosts, _network, _brand, SMTP, MSG91, alert emails, RDS sizing, IRSA subjects
 # global.orgHierarchyEnabled (default true) and api.schemas.consentNetwork/consentBrand also live here
-# bastion_enabled / pritunl_enabled (default true), pritunl_ingress_cidrs, bastion_authorized_keys also live here
+# bastion_enabled / pritunl_enabled (default true), pritunl_vpn_ingress_cidrs / pritunl_admin_ingress_cidrs, bastion_authorized_keys also live here
 ```
 
 The file is heavily commented — read it before applying.
@@ -359,10 +359,17 @@ any public-facing box you deploy from:
   is the single front door for all cluster access. Set `pritunl_enabled` (default
   `true`), `pritunl_instance_type` (default `t3.small` — MongoDB needs ~1 GB), and
   `bastion_authorized_keys` (the SSH keys used for the one-time setup shell). The
-  security group opens **SSH 22, OpenVPN 1194 (UDP+TCP), and web-admin 443** to
-  `pritunl_ingress_cidrs` — which **defaults to `0.0.0.0/0` (open to the
-  internet)**. Restrict it to office/home CIDRs and re-apply, since this SG gates
-  all downstream cluster access.
+  security group splits its two inbound surfaces:
+  - **OpenVPN 1194 (UDP+TCP)** → `pritunl_vpn_ingress_cidrs`, **open to the
+    internet by default, and meant to stay that way**. Pritunl authenticates each
+    connection with a per-user client certificate, so the certificate is the access
+    control. An IP allowlist here stops nobody holding a stolen cert and locks out
+    everyone on a home/mobile connection whose ISP lease moved. Enable per-user 2FA
+    in the Pritunl admin UI instead.
+  - **SSH 22 + web-admin 443** → `pritunl_admin_ingress_cidrs`, plus the VPC CIDR,
+    which is always allowed. So the admin surface stays closed to the internet yet
+    reachable on the host's **private** IP to anyone already on the VPN; list a
+    public CIDR only for the one-time bootstrap before the first VPN user exists.
 - **`bastion`** — an Amazon-Linux-2023 deploy workstation in a **private** subnet
   with **no public IP** (reachable only over the VPN). Its SG allows SSH from the
   VPC CIDR only. It ships kubectl/helm/aws-cli/k9s/git/yq and, because it applies
