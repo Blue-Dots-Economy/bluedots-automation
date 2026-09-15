@@ -52,6 +52,24 @@ variable "app_sa_role_arn" {
 # -----------------------------------------------------------------------------
 # Single public bucket, shared by the aggregator and the signals s3-export
 # CronJob (which no longer has a dedicated private export bucket).
+variable "s3_endpoint" {
+  description = "S3-compatible endpoint the api/worker call server-side (MinIO, Ceph RGW). Empty on AWS."
+  type        = string
+  default     = ""
+}
+
+variable "s3_public_endpoint" {
+  description = "Browser-reachable S3 endpoint, used only for pre-signing. Empty falls back to s3_endpoint in the app."
+  type        = string
+  default     = ""
+}
+
+variable "s3_force_path_style" {
+  description = "Path-style bucket addressing. MUST be true for MinIO/Ceph; false for real AWS S3."
+  type        = bool
+  default     = false
+}
+
 variable "storage_bucket_public" {
   type    = string
   default = ""

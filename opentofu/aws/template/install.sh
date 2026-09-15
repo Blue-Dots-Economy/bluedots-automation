@@ -229,6 +229,15 @@ function create_namespaces() {
     echo -e "\nCreating namespaces: $CS_NS $SIGNALS_NS $AGG_NS"
     for ns in "$CS_NS" "$SIGNALS_NS" "$AGG_NS"; do
         kubectl get ns "$ns" >/dev/null 2>&1 || kubectl create ns "$ns"
+        # Some managed platforms bind a tenant's RBAC to namespaces carrying a
+        # specific label, so an unlabelled namespace is created but unusable.
+        # NAMESPACE_LABELS is a space-separated list of key=value pairs; unset on
+        # AWS, where it is a no-op. Applied on every run, not just on create, so
+        # a namespace made by hand or by the platform team is corrected too.
+        if [[ -n "${NAMESPACE_LABELS:-}" ]]; then
+            # shellcheck disable=SC2086
+            kubectl label ns "$ns" $NAMESPACE_LABELS --overwrite
+        fi
     done
 }
 
