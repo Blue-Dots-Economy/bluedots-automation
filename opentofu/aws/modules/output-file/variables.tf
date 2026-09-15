@@ -250,6 +250,13 @@ variable "signals_redis_password" {
   sensitive = true
 }
 
+# MinIO root password. Rendered into credentials.minioRootPassword and consumed
+# ONLY where the self-hosted MinIO subchart is enabled; inert on AWS (real S3).
+variable "minio_root_password" {
+  type      = string
+  sensitive = true
+}
+
 variable "signals_auth_secret" {
   type      = string
   sensitive = true
