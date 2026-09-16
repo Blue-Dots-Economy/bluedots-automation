@@ -140,6 +140,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8085"
     spec:
+      {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $sa }}
       priorityClassName: system-cluster-critical
       securityContext:
