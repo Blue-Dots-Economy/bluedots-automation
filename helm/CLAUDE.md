@@ -78,6 +78,17 @@ never CREATE a client — `ensure_acting_org_mapper` and `ensure_login_theme` bo
 predating a realm.json change keeps its missing clients while the Job still exits 0:
 a silent no-op. Reconciling clients first is what makes the rest effective.
 
+**Realm EVENT logging ships in realm.json only — an existing realm does not get
+it (#217).** `realm.json` now sets `eventsEnabled` + `adminEventsEnabled`
+(30-day event expiry, 90-day admin-event expiry via the `adminEventsExpiration`
+attribute, 14 login/registration event types). Nothing in the init Job
+reconciles those fields, and realm import applies only to an **empty** realm — so
+a freshly bootstrapped cluster records who changed what and who could log in,
+while every realm that already exists keeps whatever it was set to by hand. The
+gap it closes cost about a day during the 2026-09-11 login incident (`event_entity`
+empty on KA-Dharwad). Turn it on manually on existing realms, or add it to
+`apply-realm-config.py` if this needs to stop being a bootstrap-only property.
+
 It uses Keycloak's own `partialImport` with `ifResourceExists: SKIP`, never
 OVERWRITE — re-creating an existing client changes its service-account user id, and
 those ids are referenced from the aggregator database. It also grants the
