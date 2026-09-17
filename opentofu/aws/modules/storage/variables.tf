@@ -166,3 +166,22 @@ variable "campaign_export_prefix" {
     error_message = "campaign_export_prefix must not be empty — an empty prefix expires the ENTIRE bucket, not just campaign exports."
   }
 }
+
+variable "app_bucket_key" {
+  description = <<-EOT
+    Which entry in `buckets` is THE application bucket — the one whose name flows out as
+    `storage_bucket_public` and reaches the charts as `global.s3.bucket`, and whose ARN the iam
+    module writes into the app_sa S3 policy.
+
+    This exists because the map key does double duty: it is both the bucket's NAME suffix
+    (<building_block>-<environment>-<account_id>-<key>) and the lookup these outputs use. Hardcoding
+    the lookup to "public" meant an operator who wanted a private-sounding name had to either accept
+    a bucket called "-public" or rename the key and get a SILENTLY EMPTY `global.s3.bucket` — the
+    charts have no guard on it, so the pods start healthy and the first upload fails at runtime.
+
+    Default "public" keeps every existing environment working unchanged. Set it to the key you
+    actually use ("private", say) and nothing about access changes — that is `type`, not this.
+  EOT
+  type        = string
+  default     = "public"
+}

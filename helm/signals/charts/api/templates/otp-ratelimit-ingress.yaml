@@ -18,6 +18,14 @@
 {{- $rl := .Values.otpRateLimit -}}
 {{- /* single source: global.otpRateLimit.signalsMinute (global-values.yaml), fallback to the chart default */ -}}
 {{- $minute := dig "otpRateLimit" "signalsMinute" $rl.minute (.Values.global | default dict) -}}
+{{- $isKong := eq .Values.ingress.className "kong" -}}
+{{- /* Same reasoning as api-endpoint-groups-ingress.yaml: this route is more
+   specific than the /api and /api/auth routes, so Kong serves it here and the
+   catch-all's plugin set never applies. Re-attach HSTS + force-SSL, otherwise
+   the OTP-send endpoint — the one carrying a login identifier — would be the
+   single API path still answering over plain http with no HSTS header. */ -}}
+{{- $plugins := list (printf "%s-rl-otp" $fullName) -}}
+{{- if and $isKong .Values.ingress.hsts.enabled }}{{ $plugins = append $plugins (printf "%s-hsts" $fullName) }}{{ end -}}
 ---
 apiVersion: configuration.konghq.com/v1
 kind: KongPlugin
@@ -44,7 +52,11 @@ metadata:
     {{- include "dpg-api.labels" . | nindent 4 }}
   annotations:
     konghq.com/strip-path: "false"
-    konghq.com/plugins: {{ printf "%s-rl-otp" $fullName | quote }}
+    konghq.com/plugins: {{ join "," $plugins | quote }}
+    {{- if and $isKong .Values.ingress.forceSSLRedirect }}
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: {{ .Values.ingress.httpsRedirectStatusCode | int | quote }}
+    {{- end }}
 spec:
   {{- with $.Values.ingress.className }}
   ingressClassName: {{ . }}

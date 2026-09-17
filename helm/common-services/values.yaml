@@ -230,9 +230,33 @@ kong:
   # needed. It selects the proxy Service (labelled enable-metrics: "true" by
   # default) and scrapes the pods behind it. The CRD ships with the monitoring
   # chart, which deploy_all_services installs before common-services.
+  #
+  # trustCRDsExist makes that ordering requirement STOP MATTERING, which is why
+  # it is on. The subchart guards the ServiceMonitor with
+  #   enabled AND (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1"
+  #                OR trustCRDsExist)
+  # so without this flag the ServiceMonitor renders only if the CRD already
+  # existed when THIS chart was last deployed. Deploy common-services before
+  # monitoring and it is skipped — correctly, but SILENTLY: the release installs
+  # clean, Kong keeps exporting metrics on its status listener, and nothing ever
+  # scrapes them. Every Kong dashboard reads "No data" and every Kong alert sits
+  # inactive forever, which is indistinguishable from healthy.
+  #
+  # This happened on ka-blue-dots-prod. common-services went in at 12:53 and
+  # 14:48 IST; the CRD did not exist until 18:26 IST, when monitoring was
+  # installed. common-services was never re-deployed afterwards (signals and
+  # aggregator were, the next day), so the ServiceMonitor was never created and
+  # the cluster ran 5 days with zero Kong metrics and zero Kong alerting.
+  # Re-running `helm upgrade` on common-services is enough to fix a cluster in
+  # that state; this flag stops it happening on the next fresh build.
+  #
+  # `helm template helm/common-services | grep -c "^kind: ServiceMonitor"` must
+  # print 1. It prints 0 without this flag, because `helm template` has no live
+  # discovery at all — the same code path that failed on KA.
   serviceMonitor:
     enabled: true
     interval: 30s
+    trustCRDsExist: true
 
 # ─── cert-manager subchart values (consumed verbatim) ────────────────────────
 # See: https://artifacthub.io/packages/helm/cert-manager/cert-manager

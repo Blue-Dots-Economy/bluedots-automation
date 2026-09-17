@@ -905,12 +905,36 @@ validated against another:
 
 | Chart | Consumes it as |
 |---|---|
-| keycloak | `KC_HOSTNAME` + **all three** auth Ingresses (`keycloak.authHost`) |
+| keycloak | `KC_HOSTNAME` (as a **full URL**, see below) + **all three** auth Ingresses (`keycloak.authHost`, a bare host) |
 | aggregator | `OIDC_ISSUER`, `KEYCLOAK_URL` (`aggregator.authBaseUrl`, `web.authBaseUrl`) |
 | signals | `KEYCLOAK_BASE_URL` (resolution chain in the api configmap) |
 
 Unset, every chart falls back to `global.publicHost` byte-for-byte, so existing
 environments are unaffected until they opt in.
+
+> **`KC_HOSTNAME` is a full URL, not a bare host (#210).** The chart renders it
+> as `https://{{ include "keycloak.authHost" . }}/auth` — scheme **and** the
+> `/auth` path. Do not set it, or copy it forward, as a bare hostname.
+>
+> With `KC_PROXY_HEADERS: xforwarded` and a bare host, Keycloak resolves the
+> scheme and port from each individual request, so it answers with a *different
+> issuer depending on which door it was reached through*: via Kong
+> (`X-Forwarded-Proto: https`) it returns `https://<host>/auth/realms/…`, while
+> a caller dialling the ClusterIP directly sends no forwarded headers and gets
+> `http://<host>:8080/auth/realms/…`. Tokens are stamped with the first but a
+> refresh_token grant is validated against the second, so any in-cluster service
+> refreshing a token is refused with `invalid_grant — Invalid token issuer` and
+> its session ends. **Logins keep working**, which is what makes this hard to
+> spot: an authorization code carries no issuer, so only refresh fails.
+>
+> Pinning the value to a full URL makes both doors report the same issuer.
+> Verified on Keycloak 26.7.3 with this chart's exact env; note that
+> `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=false` was also tested and does **not** fix
+> it.
+>
+> `keycloak.authHost` stays a **bare host** on purpose — it also feeds the
+> Ingress `host:` field, which accepts only a DNS name. The two are not
+> interchangeable.
 
 **Choosing the name.** It must be **per-environment** — each cluster has its own
 Kong LoadBalancer and its own certificate, so one shared `auth.<zone>` cannot

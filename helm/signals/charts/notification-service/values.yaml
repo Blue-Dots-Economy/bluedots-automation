@@ -83,8 +83,12 @@ affinity: {}
 config:
   NODE_ENV: production
   SERVER_PORT: "3000"
-  SMTP_GMAIL: "true"
+  # Transport: SMTP_AWS_SES if set, else SMTP_HOST (any relay). One is required.
   SMTP_AWS_SES: ""
+  SMTP_HOST: ""
+  SMTP_PORT: ""      # default 587 when SMTP_HOST is set
+  SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
+  SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
   SEND_WHATSAPP_NOTIFICATION: ""
   MAIL_LOG: "true"
   LOG_ACTIVITY: "true"
@@ -99,8 +103,9 @@ secrets:
   existingSecret: ""
   data:
     REDIS_PASSWORD: ""
-    GMAIL_USER: ""
-    GMAIL_PASS: ""
+    # Sending mailbox; opentofu fills both from the shared smtp_user/smtp_password.
+    SMTP_USER: ""
+    SMTP_PASS: ""
     # MSG91 SMS provider — required for mobile OTP login flow.
     MSG91_AUTH_KEY: ""
     MSG91_TEMPLATE_ID: ""
