@@ -1,0 +1,30 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- /*
+No `release: <prometheus>` label is needed: the monitoring chart sets
+serviceMonitorSelectorNilUsesHelmValues=false, so Prometheus discovers
+ServiceMonitors in every namespace regardless of labels.
+
+The scrape target is the app's `/metrics`, which is the service's ONLY
+unauthenticated route — Prometheus cannot produce the HMAC signature the other
+routes require. It exposes counts and queue depths only, never recipients or
+message content.
+*/}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "dpg-notification-service.fullname" . }}
+  labels:
+    {{- include "dpg-notification-service.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "dpg-notification-service.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.metrics.serviceMonitor.path }}
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.metrics.serviceMonitor.scrapeTimeout }}
+{{- end }}

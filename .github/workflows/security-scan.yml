@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload Trivy fs SARIF
         if: always()   # still publish findings even when block mode fails the step
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
@@ -149,7 +149,7 @@ jobs:
       # the whole multi-package layout (ai-diffusion = 12 uv packages) in one call.
       - name: Setup uv
         if: inputs.language == 'python'
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: uv-secure (uv.lock audit)
         if: inputs.language == 'python'
         run: |
@@ -191,7 +191,7 @@ jobs:
 
       - name: Upload Trivy image SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: trivy-image.sarif
           # Distinct category per image so alerts don't overwrite each other.
@@ -213,7 +213,7 @@ jobs:
             --exit-code ${{ inputs.block && '1' || '0' }} || true
       - name: Upload gitleaks SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
@@ -231,7 +231,7 @@ jobs:
 
       # uvx, matching how uv-secure is already run above — no extra marketplace
       # action to trust in a job holding security-events: write.
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: zizmor
         # --offline ON PURPOSE. This run FEEDS the pinning gate below, so it must
@@ -267,7 +267,7 @@ jobs:
 
       - name: Upload zizmor SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -321,7 +321,7 @@ jobs:
       - name: Upload zizmor online SARIF
         if: always() && steps.zizmor_online.outputs.ok == 'true'
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: zizmor-online.sarif
           category: zizmor-online

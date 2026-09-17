@@ -26,3 +26,38 @@ data:
   # Brand skin over the network (UI/config skin). Empty = standard dots.
   AGGREGATOR_BRAND: "{{ .Values.global.aggregatorBrand }}"
   ORG_HIERARCHY_ENABLED: "{{ .Values.global.orgHierarchyEnabled }}"
+
+  # ── Address autocomplete + college/institute picker ───────────────────────
+  # Both are RUNTIME env vars and both are deliberately un-prefixed. A
+  # NEXT_PUBLIC_* name would be inlined into the bundle at `next build`, which
+  # is how ENABLED_LANGUAGES silently baked a wrong value into the prod image
+  # (aggregator-dpg#752) — CI never passed the build arg. The web server reads
+  # these per request and hands them to the client through a context provider,
+  # so a plain env var is all they need.
+
+  # Which state's college/institute list backs the reference-autocomplete field:
+  # "ka" | "up". THE SINGLE KNOB — it picks both the dataset the form requests
+  # and the one file reference-configmap.yaml ships, so the file served can
+  # never disagree with the file requested.
+  COLLEGE_DATASET: "{{ .Values.collegeDataset | default "ka" }}"
+  # Base URL the reference datasets are fetched from. Empty = the app's own
+  # /reference/ path, served out of public/ (shadowed by the ConfigMap below).
+  # Set to an absolute URL only to host the lists off-cluster — that host must
+  # then send permissive CORS headers, since the browser fetches it directly.
+  REFERENCE_BASE_URL: "{{ .Values.referenceBaseUrl | default "" }}"
+{{- /*
+  Google Maps browser key. OMITTED when unset or left at the house
+  UPDATE_THIS_VALUE placeholder, rather than rendered empty/bogus: the app
+  treats an absent key as "no autocomplete configured" and falls back to a plain
+  text address input, whereas a placeholder key would load the Maps script and
+  fail with InvalidKeyMapError — a visibly broken widget instead of a graceful
+  one. Mirrors how templates/secrets.yaml handles rayaApiKey.
+
+  Signals expresses the same "absent means unconfigured" state by simply not
+  declaring the key in ui.runtimeConfig; this ConfigMap is a flat list of
+  explicit keys, so the absence has to be spelled out as a conditional.
+*/ -}}
+{{- $mapsKey := .Values.googleMapsApiKey | default "" }}
+{{- if and $mapsKey (ne $mapsKey "UPDATE_THIS_VALUE") }}
+  GOOGLE_MAPS_API_KEY: "{{ $mapsKey }}"
+{{- end }}

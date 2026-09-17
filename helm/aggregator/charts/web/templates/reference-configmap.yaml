@@ -1,0 +1,84 @@
+{{- /*
+  Reference dataset (college/institute picker) for the public registration form,
+  delivered as a ConfigMap so the list changes with a value edit + rollout and
+  never needs a web image rebuild — the same delivery model as the consent
+  config mounted alongside it in deployment.yaml.
+
+  Mirrors helm/signals/charts/ui/templates/reference-configmap.yaml, because the
+  aggregator form is meant to behave exactly as the signals one does. Keep the
+  two in step.
+
+  EXACTLY ONE dataset ships. files/reference/ is populated at deploy time by
+  scripts/fetch-configs.sh, which pulls colleges-<region>.json from
+  Blue-Dots-Economy/bluedots-schemas at apps/ui/public/reference/ for the region
+  in _college_dataset — fetched fresh, NOT committed, so it can't silently drift
+  (same model as the consent/network config). That single value is the ONLY
+  knob: the widget resolves source "colleges" to colleges-<COLLEGE_DATASET> and
+  fetches it from <REFERENCE_BASE_URL|/reference/>, and this template derives the
+  ConfigMap key from the same value — so the file served can never disagree with
+  the file requested.
+
+  Consequence for static checks: `helm template` on this chart finds no dataset
+  unless a deploy (or fetch-configs.sh) has run. `helm lint` only logs the
+  resulting `fail` as [INFO] and still exits 0, but `helm template` errors —
+  hence `--set web.reference.enabled=false` in .github/workflows/ci.yml's
+  template steps, matching the `ui.reference.enabled=false` already there for
+  signals.
+
+  This ConfigMap is the ONLY source of the dataset. aggregator-dpg used to commit
+  fallback copies at apps/web/public/reference/ and no longer does — that repo's
+  prettier pre-commit hook rewrote any JSON placed there, so a byte-faithful copy
+  of canonical was not a state it could hold. The mount is therefore load-bearing,
+  not an override: if it ever fails, the picker degrades visibly to a plain text
+  input rather than being masked by a stale baked list. That is the intended
+  trade — an obvious missing feature beats a silent wrong answer, and the copies
+  it replaced had in fact drifted.
+
+  (The signals ui chart still mounts over baked copies, because signals-dpg does
+  still commit its two. Its header describes that case.)
+
+  ── Why the JSON is minified at render (`fromJson | toJson`) ──────────────────
+  A ConfigMap is a single etcd object and CANNOT exceed 1 MiB (1,048,576 B).
+  colleges-up.json is 1,253,396 B pretty-printed — it does not fit raw. Minified
+  it is ~748 KB, and colleges-ka.json ~353 KB, so one region fits with headroom
+  (which is the other reason only one ships: both together are 1,101,321 B and
+  would be rejected by the apiserver). Minifying at render rather than
+  committing minified files keeps the fetched file byte-identical to canonical,
+  so re-syncing is a plain copy.
+
+  Round-tripping is lossless here because these datasets contain only strings —
+  no numbers, so no float reformatting. `toJson` does reorder object keys
+  alphabetically and HTML-escapes the three chars & < > into their JSON unicode
+  escape form (Go json.Marshal behaviour); both are semantically identical once
+  the browser runs JSON.parse.
+*/ -}}
+{{- if .Values.reference.enabled }}
+{{- $region := .Values.collegeDataset | default "ka" -}}
+{{- $id := printf "colleges-%s" $region -}}
+{{- $file := printf "files/reference/%s.json" $id -}}
+{{- $raw := $.Files.Get $file -}}
+{{- if not $raw }}
+{{- fail (printf "web.collegeDataset=%q needs %s, which is missing. It is fetched at deploy time — run `bash install.sh deploy_aggregator` (or scripts/fetch-configs.sh aggregator --global-values <env>/global-values.yaml), check the region exists at Blue-Dots-Economy/bluedots-schemas apps/ui/public/reference/ on the fetched ref, or set web.reference.enabled=false AND point web.referenceBaseUrl at a host that serves the dataset. Turning reference.enabled off on its own leaves NO list at all: the web image stopped committing fallback copies (aggregator-dpg removed apps/web/public/reference), so this ConfigMap is the only source." $region $file) }}
+{{- end }}
+{{- $json := $raw | fromJson | toJson -}}
+{{- $bytes := len $json -}}
+{{- $budget := int (.Values.reference.maxBytes | default 1000000) -}}
+{{- if gt $bytes $budget }}
+{{- fail (printf "reference dataset %s renders %d bytes, over the %d-byte budget (ConfigMaps are hard-capped at 1 MiB by etcd). Split the dataset or serve it off-cluster via web.referenceBaseUrl." $id $bytes $budget) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "web.fullname" . }}-reference
+  labels:
+    {{- include "web.labels" . | nindent 4 }}
+  annotations:
+    # Which region shipped, and its rendered size — for operators eyeballing
+    # headroom against the 1 MiB cap without decoding the payload.
+    dpg.bluedots.io/reference-dataset: {{ $id | quote }}
+    dpg.bluedots.io/reference-bytes: {{ $bytes | quote }}
+data:
+  # Key IS the filename the widget fetches: /reference/<id>.json
+  {{ $id }}.json: |-
+{{ $json | indent 4 }}
+{{- end }}
