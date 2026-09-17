@@ -61,9 +61,9 @@ spec:
                     {{- else }}
                     name: {{ include "dpg-s3-export.fullname" $ }}-db
                     {{- end }}
-                {{- if $.Values.s3.existingCredentialsSecret }}
+                {{- with (include "dpg-s3-export.credentialsSecretName" $) }}
                 - secretRef:
-                    name: {{ $.Values.s3.existingCredentialsSecret }}
+                    name: {{ . }}
                 {{- end }}
               volumeMounts:
                 - name: manifest
