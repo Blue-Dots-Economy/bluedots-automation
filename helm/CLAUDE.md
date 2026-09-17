@@ -231,6 +231,7 @@ The reference-autocomplete picker (schema marker `x-reference-source`) is backed
 | fetched into | `helm/signals/charts/ui/files/reference/` | `helm/aggregator/charts/web/files/reference/` |
 | template | `charts/ui/templates/reference-configmap.yaml` | `charts/web/templates/reference-configmap.yaml` |
 | mounted at | `/usr/share/nginx/html/reference` (nginx) | `/app/apps/web/public/reference` (Next `public/`) |
+| baked fallback under the mount | yes — signals-dpg commits both regions | **none** — aggregator-dpg removed its copies |
 | region knob | `ui.runtimeConfig.VITE_COLLEGE_DATASET` | `web.collegeDataset` |
 | base-URL knob | `ui.runtimeConfig.VITE_REFERENCE_BASE_URL` | `web.referenceBaseUrl` |
 | off switch | `ui.reference.enabled` | `web.reference.enabled` |
@@ -239,7 +240,14 @@ The reference-autocomplete picker (schema marker `x-reference-source`) is backed
 
 **Both halves read the same `_college_dataset` anchor** in `<env>/global-values.yaml` (default `ka`), which feeds signals' `VITE_COLLEGE_DATASET` *and* the aggregator's `web.collegeDataset`, *and* is what `fetch-configs.sh` reads to decide which file to pull for each chart. One deployment serves one region on both halves; splitting the anchor would let the aggregator form and the signals app offer different institute lists for the same user.
 
-**Canonical is `Blue-Dots-Economy/bluedots-schemas`, not the app repos.** `SIGNALS_REPO_DEFAULT` and `AGGREGATOR_REPO_DEFAULT` both point there, and the file lives at `apps/ui/public/reference/` inside it. The copies committed in signals-dpg and aggregator-dpg are **local-dev fallbacks and have already drifted** — `colleges-up.json` is byte-identical across the three, but signals-dpg's `colleges-ka.json` is not (582,461 vs 584,776 bytes). That drift is the argument for the ConfigMap route: whatever is baked in the image is shadowed by the fetched, canonical file.
+**Canonical is `Blue-Dots-Economy/bluedots-schemas`, not the app repos.** `SIGNALS_REPO_DEFAULT` and `AGGREGATOR_REPO_DEFAULT` both point there, and the file lives at `apps/ui/public/reference/` inside it.
+
+The two charts now differ in what sits *under* the mount, and it changes their failure modes:
+
+- **signals** still mounts over committed copies in signals-dpg, and those have **drifted**: `colleges-ka.json` is 582,461 B there against canonical's 584,776 B (different content). `colleges-up.json` is byte-identical at 1,253,396 B. So a failed mount on signals degrades to a *possibly stale* list — plausible-looking and easy to miss.
+- **aggregator** mounts over nothing. aggregator-dpg removed `apps/web/public/reference/` entirely, because that repo's prettier pre-commit hook rewrites any JSON committed there — a byte-faithful copy of canonical was not a state it could hold, which made the "copy the files across verbatim" instruction beside them impossible to follow. The ConfigMap is therefore **load-bearing**: a failed mount shows up as a missing picker and a plain text input, not as wrong data.
+
+The aggregator's shape is the better one — an obvious missing feature beats a silent wrong answer — but it means `web.reference.enabled=false` is not a safe standalone escape hatch there. Pair it with `web.referenceBaseUrl` or accept no list at all.
 
 **Static renders need the off switch.** `helm template` fails on the missing file (`helm lint` only logs it as [INFO] and exits 0 — see the note in `install.sh`'s `lint`). CI therefore passes `--set ui.reference.enabled=false` for signals and `--set web.reference.enabled=false` for the aggregator in its `helm template` steps. Add a third chart with this pattern and it needs the same flag.
 

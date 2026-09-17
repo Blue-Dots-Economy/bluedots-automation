@@ -97,17 +97,21 @@ spec:
               subPath: consent.json
               readOnly: true
             {{- if .Values.reference.enabled }}
-            # Whole-directory mount (NOT subPath, unlike consent above), so it
-            # SHADOWS the fallback datasets baked into the image at the same
-            # path. /app/apps/web/public is what apps/web/Dockerfile copies out
-            # of the build, and Next serves public/ at the site root, so this
-            # lands at /reference/<id>.json — the path the widget fetches.
+            # Whole-directory mount (NOT subPath, unlike consent above).
+            # /app/apps/web/public is what apps/web/Dockerfile copies out of the
+            # build, and Next serves public/ at the site root, so this lands at
+            # /reference/<id>.json — the path the widget fetches.
+            #
+            # This supplies the ONLY copy of the dataset: aggregator-dpg no
+            # longer commits fallbacks under apps/web/public/reference. So the
+            # mount is load-bearing, and a failure shows up as a missing picker
+            # rather than as a stale-but-plausible institute list.
             #
             # Only the single selected region (colleges-<collegeDataset>.json)
-            # is reachable while this is enabled — any other region 404s even
-            # though the image contains it. Intended: a release serves one
-            # region, and the ConfigMap is capped at 1 MiB so it could not carry
-            # them all anyway.
+            # ships — the ConfigMap is capped at 1 MiB and could not carry both.
+            # A request for any other region gets Next's catch-all app shell
+            # (HTTP 200, text/html), not a 404; the widget treats the failed
+            # JSON parse as an empty dataset and falls back to a text input.
             - name: reference-data
               mountPath: /app/apps/web/public/reference
               readOnly: true

@@ -98,10 +98,12 @@ referenceBaseUrl: ""
 # minified come to 1,101,321 B, so shipping both would be rejected by the
 # apiserver. One region is ~353 KB (ka) / ~748 KB (up).
 reference:
-  # false -> no ConfigMap, no mount; the web app falls back to the datasets
-  # baked into its image at build time. Use this if you instead point
-  # referenceBaseUrl at an external host — and note CI's `helm template` steps
-  # set it false, since the fetched file does not exist in a fresh checkout.
+  # false -> no ConfigMap, no mount, and NO dataset: aggregator-dpg no longer
+  # commits fallback copies under apps/web/public/reference, so this ConfigMap
+  # is the only source. Turn it off ONLY alongside referenceBaseUrl pointing at
+  # a host that serves the lists; on its own it leaves the picker permanently
+  # degraded to a plain text input. CI's `helm template` steps set it false on
+  # purpose, since the fetched file does not exist in a fresh checkout.
   enabled: true
   # Render-time size guard, kept under the 1 MiB etcd ceiling with room for
   # ConfigMap metadata. Raising it past ~1048576 only moves the failure from
