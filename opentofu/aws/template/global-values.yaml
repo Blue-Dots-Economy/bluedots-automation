@@ -624,6 +624,13 @@ alerting:
 # Keys match the aggregator chart's schema so no transformation is needed.
 # =============================================================================
 
+# Public registration form: the college/institute reference picker. Same anchor
+# the signals ui reads below, on purpose — one deployment serves one region on
+# both halves, and scripts/fetch-configs.sh reads this same anchor to decide
+# which colleges-<code>.json to fetch for each chart.
+web:
+  collegeDataset: *college_dataset
+
 aggregator-api:
   adminEmails: *aggregator_admin_emails
   supportEmail: *support_email

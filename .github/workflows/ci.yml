@@ -85,12 +85,15 @@ jobs:
           for chart in monitoring common-services keycloak aggregator; do
             echo "::group::helm template $chart"
             # aggregator: bypass the mandatory-secret guard + the fetched-config
-            # requirement (see helm lint step).
+            # requirement (see helm lint step). web.reference.enabled=false does
+            # the same for the college dataset, which fetch-configs.sh pulls at
+            # deploy time and never commits — exactly like signals' ui.
             case "$chart" in
               aggregator)
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
                   --set global.existingSecret=ci-smoke \
-                  --set global.networkConfigDelivery=false >/dev/null
+                  --set global.networkConfigDelivery=false \
+                  --set web.reference.enabled=false >/dev/null
                 ;;
               keycloak)
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
@@ -165,11 +168,15 @@ jobs:
                   >> /tmp/all-rendered.yaml
                 ;;
               aggregator)
+                # web.reference.enabled=false for the same reason as
+                # ui.reference.enabled=false above: the college dataset is
+                # fetched at deploy time and absent from a fresh checkout.
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
                   -f opentofu/aws/template/global-images.yaml \
                   -f opentofu/aws/template/global-values.yaml \
                   --set global.existingSecret=ci-smoke \
                   --set global.networkConfigDelivery=false \
+                  --set web.reference.enabled=false \
                   >> /tmp/all-rendered.yaml
                 ;;
               keycloak)

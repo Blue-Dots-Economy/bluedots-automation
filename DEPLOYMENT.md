@@ -270,6 +270,7 @@ the per-chart copies can never drift. Leave any you don't use as
 | `msg91_auth_key` | MSG91 key (SMS OTP; leave as placeholder if unused) | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
 | `msg91_template_id` | MSG91 OTP template id | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
 | `google_maps_api_key` | Google Maps **browser** key — API restriction: Maps JavaScript API; application restriction: **HTTP referrers** (`https://<each signals host>/*`) | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` |
+| `aggregator_google_maps_api_key` | Google Maps **browser** key for the aggregator — API restriction: **Maps JavaScript API + Places API (New)**; application restriction: **HTTP referrers** (`https://<the aggregator public host>/*`). A separate key from the signals one: referrer restrictions are per-origin | aggregator `web.googleMapsApiKey` → web pod `GOOGLE_MAPS_API_KEY` |
 | `google_geocoding_api_key` | Google Maps **server** key — API restriction: Geocoding API; application restriction: **IP addresses** (the env's NAT gateway Elastic IPs, **both** AZs) | signals `api.secrets.data.GOOGLE_GEOCODING_API_KEY` |
 | `discord_critical_webhook`<br>`discord_warning_webhook`<br>`discord_info_webhook` | Discord webhook URLs (Channel Settings → Integrations → Webhooks); enable via `alerting.discord.enabled` in `global-values.yaml` | monitoring `alerting.discord.*Webhook` |
 
