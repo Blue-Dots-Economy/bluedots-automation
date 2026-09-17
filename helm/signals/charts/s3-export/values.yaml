@@ -36,9 +36,21 @@ s3:
   endpointUrl: ""        # empty = real AWS; set for MinIO (e.g. http://minio:9000)
   region: "ap-south-1"
   forcePathStyle: false
-  # Static credentials ONLY for non-IRSA setups (MinIO/dev): name of an
-  # existing Secret with AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY keys.
+  # Static credentials ONLY for non-IRSA setups (MinIO/dev): name of a
+  # PRE-CREATED Secret with AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY keys.
+  # Takes precedence over `credentials` below.
   existingCredentialsSecret: ""
+  # Static credentials rendered BY THIS CHART into a <fullname>-s3 Secret, the
+  # same way `databaseUrl` renders <fullname>-db. Use on a cluster with no IRSA
+  # (the exporter then authenticates to MinIO/Ceph as an ordinary S3 user).
+  #
+  # Leave EMPTY on AWS. Empty means no Secret is rendered and no credential env
+  # is injected, so the SDK's default chain falls through to the IRSA role on
+  # the ServiceAccount — which is what makes IRSA work. Setting these on AWS
+  # would override the role with static keys.
+  credentials:
+    accessKeyId: ""
+    secretAccessKey: ""
 
 # ── export behaviour (instance-agnostic) ─────────────────────────────────────
 export:
