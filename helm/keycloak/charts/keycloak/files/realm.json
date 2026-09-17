@@ -15,6 +15,10 @@
   "enabledEventTypes": [
     "LOGIN",
     "LOGIN_ERROR",
+    "CODE_TO_TOKEN",
+    "CODE_TO_TOKEN_ERROR",
+    "USER_INFO_REQUEST",
+    "USER_INFO_REQUEST_ERROR",
     "LOGOUT",
     "LOGOUT_ERROR",
     "REGISTER",
