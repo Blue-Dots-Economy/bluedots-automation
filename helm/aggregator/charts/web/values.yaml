@@ -58,6 +58,56 @@ hpa:
   maxReplicas: 6
   targetCPU: 70
 
+# ── Public registration form: address autocomplete + college picker ─────────
+# Both reach the browser, and both are RUNTIME env vars rendered into the web
+# ConfigMap — never Docker build args, never NEXT_PUBLIC_* names (Next.js would
+# inline those at `next build`; see aggregator-dpg#752).
+
+# Google Maps JS browser key. NO DEFAULT HERE ON PURPOSE — it is hand-entered
+# per environment in <env>/secrets.yaml (`aggregator_google_maps_api_key`) and
+# arrives via the generated global-secrets.yaml at deploy time, exactly as
+# signals' ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY does. Unset (or left at the
+# UPDATE_THIS_VALUE placeholder) the ConfigMap omits the key and the form falls
+# back to a plain text address input geocoded server-side.
+
+# Which state's college/institute list backs the reference-autocomplete field:
+# "ka" | "up". THE SINGLE KNOB — it picks both the dataset the form requests and
+# the one file the reference ConfigMap ships (colleges-<code>.json), so the two
+# cannot disagree. Set per environment from the _college_dataset anchor in
+# <env>/global-values.yaml, the SAME anchor that drives signals' UI — one
+# deployment serves one region on both halves.
+collegeDataset: "ka"
+# Base URL the reference datasets are fetched from. Leave EMPTY to use the web
+# app's own /reference/ path (served out of public/, shadowed by the ConfigMap).
+# Set to an absolute URL only to host the lists off-cluster (CDN/registry) —
+# that host must then send permissive CORS headers, since the browser fetches it
+# directly. Setting this makes reference.enabled below redundant.
+referenceBaseUrl: ""
+
+# College/institute reference list delivered to the web pod as a ConfigMap
+# mounted at /app/apps/web/public/reference/, so the list updates with a value
+# edit + rollout instead of a web image rebuild — the same ConfigMap-delivery
+# model as consent config, and the same one signals' ui uses.
+#
+# EXACTLY ONE dataset ships, chosen by collegeDataset above. There is no list to
+# keep in sync: scripts/fetch-configs.sh pulls colleges-<region>.json from
+# Blue-Dots-Economy/bluedots-schemas at deploy time into files/reference/
+# (gitignored, fetched fresh so it can't drift), and this chart renders that
+# same region. One region is also a hard requirement, not just tidiness — a
+# ConfigMap is one etcd object capped at 1 MiB, and the two known datasets
+# minified come to 1,101,321 B, so shipping both would be rejected by the
+# apiserver. One region is ~353 KB (ka) / ~748 KB (up).
+reference:
+  # false -> no ConfigMap, no mount; the web app falls back to the datasets
+  # baked into its image at build time. Use this if you instead point
+  # referenceBaseUrl at an external host — and note CI's `helm template` steps
+  # set it false, since the fetched file does not exist in a fresh checkout.
+  enabled: true
+  # Render-time size guard, kept under the 1 MiB etcd ceiling with room for
+  # ConfigMap metadata. Raising it past ~1048576 only moves the failure from
+  # `helm template` to the apiserver, where the error is far less obvious.
+  maxBytes: 1000000
+
 podDisruptionBudget:
   enabled: false
   minAvailable: 1

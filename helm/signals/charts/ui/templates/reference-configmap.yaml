@@ -4,10 +4,12 @@
   as consent config (see helm/CLAUDE.md).
 
   EXACTLY ONE dataset ships. files/reference/ is populated at deploy time by
-  scripts/fetch-configs.sh, which pulls colleges-<region>.json from canonical
-  signals-dpg apps/ui/public/reference/ for the region in _college_dataset —
-  fetched fresh, NOT committed, so it can't silently drift (same model as the
-  network/consent config). That single value is the ONLY knob: the widget
+  scripts/fetch-configs.sh, which pulls colleges-<region>.json from
+  Blue-Dots-Economy/bluedots-schemas at apps/ui/public/reference/ for the region
+  in _college_dataset — fetched fresh, NOT committed, so it can't silently drift
+  (same model as the network/consent config). The SCHEMAS repo is canonical, not
+  signals-dpg: SIGNALS_REPO_DEFAULT in fetch-configs.sh is bluedots-schemas, and
+  signals-dpg's own committed colleges-ka.json has already drifted from it. That single value is the ONLY knob: the widget
   resolves source "colleges" to colleges-<VITE_COLLEGE_DATASET> and fetches it
   from <VITE_REFERENCE_BASE_URL|/reference/>, and this template derives the
   ConfigMap key from the same value — so the file served can never disagree with
@@ -42,7 +44,7 @@
 {{- $file := printf "files/reference/%s.json" $id -}}
 {{- $raw := $.Files.Get $file -}}
 {{- if not $raw }}
-{{- fail (printf "ui.runtimeConfig.VITE_COLLEGE_DATASET=%q needs %s, which is missing. It is fetched at deploy time — run `bash install.sh deploy_signals` (or scripts/fetch-configs.sh signals --global-values <env>/global-values.yaml), check the region exists at signals-dpg apps/ui/public/reference/ on the fetched ref, or set ui.reference.enabled=false to fall back to the datasets baked into the UI image." $region $file) }}
+{{- fail (printf "ui.runtimeConfig.VITE_COLLEGE_DATASET=%q needs %s, which is missing. It is fetched at deploy time — run `bash install.sh deploy_signals` (or scripts/fetch-configs.sh signals --global-values <env>/global-values.yaml), check the region exists at Blue-Dots-Economy/bluedots-schemas apps/ui/public/reference/ on the fetched ref, or set ui.reference.enabled=false to fall back to the datasets baked into the UI image." $region $file) }}
 {{- end }}
 {{- $json := $raw | fromJson | toJson -}}
 {{- $bytes := len $json -}}

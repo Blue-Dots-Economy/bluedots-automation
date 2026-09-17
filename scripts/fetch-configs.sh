@@ -580,6 +580,30 @@ case "$TARGET" in
     cands+=("${CFG_BASE}/${NETWORK}/${CFG_FILE}")
     try_fetch "$CFG_OUT" "${cands[@]}"
     echo "  aggregator config -> ${CFG_OUT}"
+
+    # Web college/institute reference list for the selected region, backing the
+    # public registration form's reference-autocomplete field. Mirrors the
+    # signals) fetch above, including its source: the list lives under
+    # apps/ui/public/ in the SCHEMAS repo (not examples/schemas/), hence its own
+    # RAW base. Only the one region in _college_dataset is fetched: the web
+    # reference ConfigMap ships exactly that file, and a ConfigMap can't hold
+    # both (1 MiB etcd cap).
+    #
+    # Uses this target's own REPO/REF, so the aggregator's dataset can be pinned
+    # independently of signals' — same as the consent doc. Both default to
+    # bluedots-schemas@main, so they agree unless deliberately pinned apart.
+    WEB_REF_DIR="$REPO_ROOT/helm/aggregator/charts/web/files/reference"
+    mkdir -p "$WEB_REF_DIR"
+    WEB_RAW="https://raw.githubusercontent.com/${REPO}/${REF}/apps/ui/public/reference"
+    try_fetch "${WEB_REF_DIR}/colleges-${COLLEGE_DATASET}.json" \
+      "${WEB_RAW}/colleges-${COLLEGE_DATASET}.json"
+    # Fail loudly on non-JSON (e.g. a GitHub 404 HTML page slipping through) rather
+    # than letting `helm template`'s fromJson produce a cryptic parse error.
+    if command -v jq >/dev/null 2>&1; then
+      jq -e . "${WEB_REF_DIR}/colleges-${COLLEGE_DATASET}.json" >/dev/null 2>&1 \
+        || { echo "ERROR: fetched colleges-${COLLEGE_DATASET}.json is not valid JSON" >&2; exit 1; }
+    fi
+    echo "  web reference (${COLLEGE_DATASET}) -> ${WEB_REF_DIR}/colleges-${COLLEGE_DATASET}.json"
     ;;
 
   *)

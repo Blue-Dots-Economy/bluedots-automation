@@ -407,6 +407,18 @@ web:
     minReplicas: 2
     maxReplicas: 6
     targetCPU: 70
+  # Public registration form: college/institute reference picker. Region is
+  # overridden per environment from the _college_dataset anchor in
+  # <env>/global-values.yaml — the SAME anchor signals' ui reads, so one
+  # deployment serves one region on both halves. See charts/web/values.yaml.
+  collegeDataset: "ka"
+  referenceBaseUrl: ""
+  reference:
+    enabled: true
+    maxBytes: 1000000
+  # googleMapsApiKey is deliberately absent: it is hand-entered per environment
+  # in <env>/secrets.yaml and layered in from the generated global-secrets.yaml,
+  # never committed. Absent => the form uses a plain text address input.
 
 aggregator-api:
   replicaCount: 1

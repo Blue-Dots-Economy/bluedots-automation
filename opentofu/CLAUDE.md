@@ -88,7 +88,9 @@ Some secrets can neither be committed (they're real credentials) nor generated (
 
 `_common/output-file.hcl` reads it every apply (`fileexists()` guard → `{}` when absent, then per-key `try()` → the placeholder), passes the values as module variables, and the `.tfpl` interpolates them. **That's what makes regeneration safe: `apply_tf_output_file` re-renders `global-secrets.yaml` from the same `secrets.yaml`, so hand-entered values are never lost** — the earlier "re-paste after every regenerate" footgun is gone.
 
-Nine keys. Most are **one per distinct secret**, fanned out to every consumer so per-chart copies can't drift. The two Google keys are the deliberate exception — a Google API key accepts only **one** application restriction (HTTP referrers *or* IP addresses), so the browser key and the server key have to be separate entries to be restrictable at all (`google_maps_api_key` → referrers on the signals hosts; `google_geocoding_api_key` → the env's NAT gateway EIPs, both AZs). They may hold the same value if unrestricted.
+Ten keys. Most are **one per distinct secret**, fanned out to every consumer so per-chart copies can't drift. The three Google keys are the deliberate exception — a Google API key accepts only **one** application restriction (HTTP referrers *or* IP addresses), and referrer restrictions are **per-origin**, so a browser key cannot be shared across two apps served from different hosts. Hence one server key plus one browser key *per app*: `google_maps_api_key` → referrers on the signals hosts; `aggregator_google_maps_api_key` → referrers on the aggregator host; `google_geocoding_api_key` → the env's NAT gateway EIPs, both AZs. They may hold the same value if unrestricted — but then there is no point having three.
+
+The two browser keys also need a **different API restriction** from the server one: **Maps JavaScript API *and* Places API (New)**, both. The browser loads `maps.googleapis.com/maps/api/js` and only then calls Places' `AutocompleteSuggestion`, so a Places-only restriction blocks the loader script itself.
 
 | `secrets.yaml` key | Rendered into |
 |---|---|
@@ -97,6 +99,7 @@ Nine keys. Most are **one per distinct secret**, fanned out to every consumer so
 | `msg91_auth_key` | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
 | `msg91_template_id` | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
 | `google_maps_api_key` | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` (browser) |
+| `aggregator_google_maps_api_key` | aggregator `web.googleMapsApiKey` → the web pod's `GOOGLE_MAPS_API_KEY` (browser). Left at the placeholder, the web ConfigMap omits the key and the registration form falls back to a plain text address input |
 | `google_geocoding_api_key` | signals `api.secrets.data.GOOGLE_GEOCODING_API_KEY` (server) |
 | `discord_{critical,warning,info}_webhook` | monitoring `alerting.discord.*Webhook` |
 

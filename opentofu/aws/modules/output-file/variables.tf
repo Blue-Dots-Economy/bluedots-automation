@@ -202,6 +202,16 @@ variable "google_geocoding_api_key" {
   default     = "UPDATE_THIS_VALUE"
 }
 
+# A THIRD Google key. Referrer restrictions are per-origin, so the aggregator web
+# app cannot share signals' browser key without either widening that key's
+# allowed referrers or breaking its restriction outright.
+variable "aggregator_google_maps_api_key" {
+  description = "Google Maps JS API key, BROWSER-side → aggregator web GOOGLE_MAPS_API_KEY. Restrict by HTTP referrers (the aggregator public host); API restriction must allow Maps JavaScript API AND Places API (New)."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
 # Discord webhooks stay URL-shaped: Alertmanager validates webhook_url as a URL
 # at config load, so a bare placeholder would break the alertmanager config.
 variable "discord_critical_webhook" {

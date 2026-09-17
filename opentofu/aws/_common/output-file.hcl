@@ -42,6 +42,11 @@ locals {
   google_maps_api_key      = try(local.manual_secrets.google_maps_api_key, "UPDATE_THIS_VALUE")
   google_geocoding_api_key = try(local.manual_secrets.google_geocoding_api_key, "UPDATE_THIS_VALUE")
 
+  # The aggregator web app's OWN browser key. A third key, not a copy of
+  # google_maps_api_key: referrer restrictions are per-origin and the aggregator
+  # is a different origin from every signals host.
+  aggregator_google_maps_api_key = try(local.manual_secrets.aggregator_google_maps_api_key, "UPDATE_THIS_VALUE")
+
   # Raya voice API key — aggregator WORKER -> Raya's hosted API (outbound). Same
   # shape as smtp_password/msg91_auth_key: a third-party credential no generator
   # can invent, so it is hand-entered in <env>/secrets.yaml and re-read on every
@@ -173,6 +178,9 @@ inputs = {
   msg91_template_id        = local.msg91_template_id
   google_maps_api_key      = local.google_maps_api_key
   google_geocoding_api_key = local.google_geocoding_api_key
+
+  aggregator_google_maps_api_key = local.aggregator_google_maps_api_key
+
   raya_api_key             = local.raya_api_key
   discord_critical_webhook = local.discord_critical_webhook
   discord_warning_webhook  = local.discord_warning_webhook

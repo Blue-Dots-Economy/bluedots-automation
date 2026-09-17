@@ -222,6 +222,29 @@ Consent text/versions ship via ConfigMap so they change with a file edit + rollo
 
 **Support-email placeholder:** consent JSON ships `__SUPPORT_EMAIL__` in its T&C/Privacy/Grievances copy; both renders substitute it at deploy time via Helm `replace` — signals from `.Values.schemas.consentSupportEmail`, aggregator from `.Values.global.consentSupportEmail`, each defaulting to `hello@bluedotseconomy.org`. **Change the value, never the consent content**, so a brand/network switch keeps the right contact.
 
+## College/institute reference lists — ConfigMap-delivered to BOTH UIs, one region only
+
+The reference-autocomplete picker (schema marker `x-reference-source`) is backed by `colleges-<region>.json`, delivered the same way consent is: fetched at deploy time by `scripts/fetch-configs.sh`, rendered into a ConfigMap, and mounted **over** the copies baked into the image. Both front-ends now do this, and they are deliberately symmetric:
+
+| | signals | aggregator |
+|---|---|---|
+| fetched into | `helm/signals/charts/ui/files/reference/` | `helm/aggregator/charts/web/files/reference/` |
+| template | `charts/ui/templates/reference-configmap.yaml` | `charts/web/templates/reference-configmap.yaml` |
+| mounted at | `/usr/share/nginx/html/reference` (nginx) | `/app/apps/web/public/reference` (Next `public/`) |
+| region knob | `ui.runtimeConfig.VITE_COLLEGE_DATASET` | `web.collegeDataset` |
+| base-URL knob | `ui.runtimeConfig.VITE_REFERENCE_BASE_URL` | `web.referenceBaseUrl` |
+| off switch | `ui.reference.enabled` | `web.reference.enabled` |
+
+**One region, and that is a hard cap, not tidiness.** A ConfigMap is a single etcd object capped at 1 MiB. Minified, `colleges-ka.json` is ~353 KB and `colleges-up.json` ~748 KB — together 1,101,321 B, which the apiserver rejects outright. Both templates minify at render (`fromJson | toJson`, lossless here because the datasets are all strings) and carry a `reference.maxBytes` guard that fails `helm template` with an actionable message rather than letting the apiserver reject the object later.
+
+**Both halves read the same `_college_dataset` anchor** in `<env>/global-values.yaml` (default `ka`), which feeds signals' `VITE_COLLEGE_DATASET` *and* the aggregator's `web.collegeDataset`, *and* is what `fetch-configs.sh` reads to decide which file to pull for each chart. One deployment serves one region on both halves; splitting the anchor would let the aggregator form and the signals app offer different institute lists for the same user.
+
+**Canonical is `Blue-Dots-Economy/bluedots-schemas`, not the app repos.** `SIGNALS_REPO_DEFAULT` and `AGGREGATOR_REPO_DEFAULT` both point there, and the file lives at `apps/ui/public/reference/` inside it. The copies committed in signals-dpg and aggregator-dpg are **local-dev fallbacks and have already drifted** — `colleges-up.json` is byte-identical across the three, but signals-dpg's `colleges-ka.json` is not (582,461 vs 584,776 bytes). That drift is the argument for the ConfigMap route: whatever is baked in the image is shadowed by the fetched, canonical file.
+
+**Static renders need the off switch.** `helm template` fails on the missing file (`helm lint` only logs it as [INFO] and exits 0 — see the note in `install.sh`'s `lint`). CI therefore passes `--set ui.reference.enabled=false` for signals and `--set web.reference.enabled=false` for the aggregator in its `helm template` steps. Add a third chart with this pattern and it needs the same flag.
+
+**Aggregator-specific: it is a directory mount, unlike the consent file next to it.** Consent uses `subPath` (single file, because the directory it lands in carries other image-baked files). The reference mount is a whole-directory mount at `/app/apps/web/public/reference`, which is exactly what makes it shadow the baked fallbacks — and it means only the one selected region is reachable while enabled, even though the image contains more. Directory mounts *do* hot-update, but the widget caches per page load, so a `checksum/reference` annotation still rolls the pods.
+
 ## Email copy rides the signals consent ConfigMap (optional, per-key)
 
 Per-network email wording (signals-dpg#540) ships the same way consent does and on the **same** `-schemas` ConfigMap, because the api resolves both from `dirname(NETWORK_CONFIG_LOCAL_FILE)`: `/app/schemas/messages.properties` and `/app/schemas/<brand>/messages.properties`. Canonical is `bluedots-schemas` `<network>/messages.properties` (+ `<network>/<brand>/`), fetched by `scripts/fetch-configs.sh signals` into the gitignored `helm/signals/charts/api/files/messages/`.

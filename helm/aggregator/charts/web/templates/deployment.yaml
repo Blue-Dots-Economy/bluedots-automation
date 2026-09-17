@@ -26,6 +26,14 @@ spec:
         {{- include "web.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.reference.enabled }}
+        # Rolls the pods when the reference dataset changes. The volume below is
+        # a whole-directory mount (not subPath), so kubelet DOES hot-update the
+        # files in place — but Next serves public/ from disk per request and the
+        # widget caches per page load, so a rollout is still the predictable way
+        # to guarantee every client sees the new list.
+        checksum/reference: {{ include (print $.Template.BasePath "/reference-configmap.yaml") . | sha256sum }}
+        {{- end }}
     spec:
       {{- include "web.imagePullSecrets" . | nindent 6 }}
       {{- include "web.hostAliases" . | nindent 6 }}
@@ -88,7 +96,30 @@ spec:
               mountPath: {{ $consentPath }}
               subPath: consent.json
               readOnly: true
+            {{- if .Values.reference.enabled }}
+            # Whole-directory mount (NOT subPath, unlike consent above), so it
+            # SHADOWS the fallback datasets baked into the image at the same
+            # path. /app/apps/web/public is what apps/web/Dockerfile copies out
+            # of the build, and Next serves public/ at the site root, so this
+            # lands at /reference/<id>.json — the path the widget fetches.
+            #
+            # Only the single selected region (colleges-<collegeDataset>.json)
+            # is reachable while this is enabled — any other region 404s even
+            # though the image contains it. Intended: a release serves one
+            # region, and the ConfigMap is capped at 1 MiB so it could not carry
+            # them all anyway.
+            - name: reference-data
+              mountPath: /app/apps/web/public/reference
+              readOnly: true
+            {{- end }}
       volumes:
         - name: consent
           configMap:
             name: {{ .Release.Name }}-consent
+        {{- if .Values.reference.enabled }}
+        - name: reference-data
+          configMap:
+            name: {{ include "web.fullname" . }}-reference
+            # No `items` filter needed: the ConfigMap holds exactly one key and
+            # that key already IS the filename the widget fetches.
+        {{- end }}
