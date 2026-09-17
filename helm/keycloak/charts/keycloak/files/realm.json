@@ -10,6 +10,8 @@
   "minimumQuickLoginWaitSeconds": 60,
   "maxFailureWaitSeconds": 900,
   "maxDeltaTimeSeconds": 43200,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
   "accessTokenLifespan": 300,
   "accessTokenLifespanForImplicitFlow": 900,
   "ssoSessionIdleTimeout": 1800,
