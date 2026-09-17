@@ -78,6 +78,17 @@ never CREATE a client — `ensure_acting_org_mapper` and `ensure_login_theme` bo
 predating a realm.json change keeps its missing clients while the Job still exits 0:
 a silent no-op. Reconciling clients first is what makes the rest effective.
 
+**Realm EVENT logging ships in realm.json only — an existing realm does not get
+it (#217).** `realm.json` now sets `eventsEnabled` + `adminEventsEnabled`
+(30-day event expiry, 90-day admin-event expiry via the `adminEventsExpiration`
+attribute, 14 login/registration event types). Nothing in the init Job
+reconciles those fields, and realm import applies only to an **empty** realm — so
+a freshly bootstrapped cluster records who changed what and who could log in,
+while every realm that already exists keeps whatever it was set to by hand. The
+gap it closes cost about a day during the 2026-09-11 login incident (`event_entity`
+empty on KA-Dharwad). Turn it on manually on existing realms, or add it to
+`apply-realm-config.py` if this needs to stop being a bootstrap-only property.
+
 It uses Keycloak's own `partialImport` with `ifResourceExists: SKIP`, never
 OVERWRITE — re-creating an existing client changes its service-account user id, and
 those ids are referenced from the aggregator database. It also grants the
@@ -98,6 +109,54 @@ and users are copied in with ids preserved. Verified on 26.5.5: 5 clients + 3 ro
 added to a deliberately stale realm, idempotent on re-run
 (`added=0 skipped=10`), existing client id, service-account user id and client
 secret all unchanged.
+
+## notification-service SMS vendor + alerting
+
+**`SMS_PROVIDER` is read at module load, so a typo crashloops the whole service.**
+`src/lib/providers/sms/index.ts` selects the vendor at import time and throws on an
+unknown value — deliberately, because falling back would send through the wrong
+vendor with the wrong sender id and DLT entity. The blast radius is *not* just SMS:
+the throw happens before the app serves anything, so email and WhatsApp go down too.
+Values are `msg91` (default) or `pinnacle`.
+
+**One vendor's settings live in one file.** Pinnacle's credentials *and* its
+non-secret DLT settings (sender id, entity id, template id, message body) are all
+entered in `<env>/secrets.yaml` as `pinnacle_*` and rendered into the generated
+`global-secrets.yaml` — including a `config:` block, which is unusual for that file.
+Splitting them across `global-values.yaml` and `secrets.yaml` is how half of a
+vendor's configuration goes stale.
+
+**Those inputs default to `""`, not `UPDATE_THIS_VALUE`.** The charts filter empty
+values out of the ConfigMap/Secret, so an unfilled `secrets.yaml` leaves them
+genuinely *unset* and every "not configured" guard downstream fires. A non-empty
+placeholder passes all of them instead: the app sees each key present, does not
+dead-letter, finds no template tokens to fail on, and sends a message whose text is
+literally `UPDATE_THIS_VALUE` with no OTP in it.
+
+**Keycloak → notification-service HMAC is one input rendering two halves.**
+`sms_http_secret` produces both `keycloak.secrets.smsHttpSecret` and the `keycloak`
+key id inside notification-service's `internalSecrets.json`. Two separate inputs
+would drift into a permanent `401` that looks like a code bug. The same applies to
+`SMS_LOGIN_OTP_TEMPLATE_ID`: notification-service reads *that* name, not
+`MSG91_TEMPLATE_ID` (which is the Keycloak SPI's variable), and without it NS falls
+back to a hardcoded literal flow id that is not what any cluster is configured with.
+
+**Alert rules are unit-tested, because PromQL bugs render as valid YAML.**
+`helm/signals/tests/run.sh` (promtool, mirroring `helm/monitoring/tests/`) is wired
+into CI. Two defects it exists to catch, both of which passed `helm lint` and
+`helm template` cleanly:
+
+- **`increase()` on a gauge.** `ns_queue_depth` is a gauge; `increase()` applies
+  counter-reset correction, so draining the DLQ via `/failed/retry` reads as a reset
+  and extrapolates upward — the act of clearing the DLQ fires the DLQ alert. Use
+  `delta()`.
+- **A failure ratio with no volume floor.** The denominator counts *attempts*, so one
+  message walking the 5-attempt ladder is already a ratio of 0.8. The floor has to
+  sit above that (~0.008/s for a single retried message) or it is decorative —
+  0.02/s is the tested value.
+
+Keep `namespace` in every `sum by (...)`: Alertmanager's `group_by` and its
+`equal: [namespace, alertname]` inhibit rules both reference it.
 
 ## Cluster Autoscaler (#1.6)
 
@@ -173,6 +232,37 @@ Consent text/versions ship via ConfigMap so they change with a file edit + rollo
 - **Aggregator** — source `helm/aggregator/files/consent/consent.json`, rendered into a `{release}-consent` ConfigMap, mounted single-file (subPath) into **both web and api** at `/app/config/<network>[/<brand>]/schemas/aggregator/consent.json`. Aggregator brand consent is a **FULL** document (not a partial). **subPath does NOT hot-update** → a consent change needs a rollout restart of web + api.
 
 **Support-email placeholder:** consent JSON ships `__SUPPORT_EMAIL__` in its T&C/Privacy/Grievances copy; both renders substitute it at deploy time via Helm `replace` — signals from `.Values.schemas.consentSupportEmail`, aggregator from `.Values.global.consentSupportEmail`, each defaulting to `hello@bluedotseconomy.org`. **Change the value, never the consent content**, so a brand/network switch keeps the right contact.
+
+## College/institute reference lists — ConfigMap-delivered to BOTH UIs, one region only
+
+The reference-autocomplete picker (schema marker `x-reference-source`) is backed by `colleges-<region>.json`, delivered the same way consent is: fetched at deploy time by `scripts/fetch-configs.sh`, rendered into a ConfigMap, and mounted **over** the copies baked into the image. Both front-ends now do this, and they are deliberately symmetric:
+
+| | signals | aggregator |
+|---|---|---|
+| fetched into | `helm/signals/charts/ui/files/reference/` | `helm/aggregator/charts/web/files/reference/` |
+| template | `charts/ui/templates/reference-configmap.yaml` | `charts/web/templates/reference-configmap.yaml` |
+| mounted at | `/usr/share/nginx/html/reference` (nginx) | `/app/apps/web/public/reference` (Next `public/`) |
+| baked fallback under the mount | yes — signals-dpg commits both regions | **none** — aggregator-dpg removed its copies |
+| region knob | `ui.runtimeConfig.VITE_COLLEGE_DATASET` | `web.collegeDataset` |
+| base-URL knob | `ui.runtimeConfig.VITE_REFERENCE_BASE_URL` | `web.referenceBaseUrl` |
+| off switch | `ui.reference.enabled` | `web.reference.enabled` |
+
+**One region, and that is a hard cap, not tidiness.** A ConfigMap is a single etcd object capped at 1 MiB. Minified, `colleges-ka.json` is ~353 KB and `colleges-up.json` ~748 KB — together 1,101,321 B, which the apiserver rejects outright. Both templates minify at render (`fromJson | toJson`, lossless here because the datasets are all strings) and carry a `reference.maxBytes` guard that fails `helm template` with an actionable message rather than letting the apiserver reject the object later.
+
+**Both halves read the same `_college_dataset` anchor** in `<env>/global-values.yaml` (default `ka`), which feeds signals' `VITE_COLLEGE_DATASET` *and* the aggregator's `web.collegeDataset`, *and* is what `fetch-configs.sh` reads to decide which file to pull for each chart. One deployment serves one region on both halves; splitting the anchor would let the aggregator form and the signals app offer different institute lists for the same user.
+
+**Canonical is `Blue-Dots-Economy/bluedots-schemas`, not the app repos.** `SIGNALS_REPO_DEFAULT` and `AGGREGATOR_REPO_DEFAULT` both point there, and the file lives at `apps/ui/public/reference/` inside it.
+
+The two charts now differ in what sits *under* the mount, and it changes their failure modes:
+
+- **signals** still mounts over committed copies in signals-dpg, and those have **drifted**: `colleges-ka.json` is 582,461 B there against canonical's 584,776 B (different content). `colleges-up.json` is byte-identical at 1,253,396 B. So a failed mount on signals degrades to a *possibly stale* list — plausible-looking and easy to miss.
+- **aggregator** mounts over nothing. aggregator-dpg removed `apps/web/public/reference/` entirely, because that repo's prettier pre-commit hook rewrites any JSON committed there — a byte-faithful copy of canonical was not a state it could hold, which made the "copy the files across verbatim" instruction beside them impossible to follow. The ConfigMap is therefore **load-bearing**: a failed mount shows up as a missing picker and a plain text input, not as wrong data.
+
+The aggregator's shape is the better one — an obvious missing feature beats a silent wrong answer — but it means `web.reference.enabled=false` is not a safe standalone escape hatch there. Pair it with `web.referenceBaseUrl` or accept no list at all.
+
+**Static renders need the off switch.** `helm template` fails on the missing file (`helm lint` only logs it as [INFO] and exits 0 — see the note in `install.sh`'s `lint`). CI therefore passes `--set ui.reference.enabled=false` for signals and `--set web.reference.enabled=false` for the aggregator in its `helm template` steps. Add a third chart with this pattern and it needs the same flag.
+
+**Aggregator-specific: it is a directory mount, unlike the consent file next to it.** Consent uses `subPath` (single file, because the directory it lands in carries other image-baked files). The reference mount is a whole-directory mount at `/app/apps/web/public/reference`, which is exactly what makes it shadow the baked fallbacks — and it means only the one selected region is reachable while enabled, even though the image contains more. Directory mounts *do* hot-update, but the widget caches per page load, so a `checksum/reference` annotation still rolls the pods.
 
 ## Email copy rides the signals consent ConfigMap (optional, per-key)
 

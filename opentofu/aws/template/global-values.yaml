@@ -260,11 +260,26 @@ global:
   # MongoDB needs ~1 GB RAM; t3.nano will be unstable).
   pritunl_instance_type: "t3.small"
   #
-  # Restrict WHO can reach the VPN (office, home, etc.) — the bastion host is in a private subnet and only reachable after connecting to the VPN. Add/remove lines + re-apply (pritunl) to grant
-  pritunl_ingress_cidrs:
-    - "106.51.118.115/32"       # office (baseline — always allowed)
-    # - "198.51.100.20/32"    # per-env: add home/other IPs, then apply_tf_pritunl
-    # - "192.0.2.30/32"
+  # WHO can reach the OpenVPN port 1194. Open by default, and that is the intended setting:
+  # Pritunl issues every user their own client certificate, so the certificate is what keeps
+  # strangers out — not the source IP. An IP allowlist here stops nobody holding a stolen cert
+  # and locks out anyone on a home/mobile/hotel connection the moment their ISP changes their
+  # address. Leave it open and turn on per-user 2FA in the Pritunl admin UI instead.
+  pritunl_vpn_ingress_cidrs:
+    - "0.0.0.0/0"
+
+  # WHO can reach the admin surface: SSH 22 and the Pritunl web admin UI on 443. The VPC CIDR is
+  # always allowed on top of this list, so anyone already connected to the VPN reaches both on the
+  # host's PRIVATE IP — empty is a working setting, not a blank to fill in. List a public CIDR only
+  # for the one-time bootstrap, before the first VPN user exists. If an entry here goes stale,
+  # widen the security group from the AWS console (not VPN-gated), then fix it here and re-apply.
+  #
+  # To add one, REPLACE the [] with a block list — do not uncomment a "- ..." line beneath it.
+  # A sequence indented under a flow-empty list is invalid YAML, and this file failing to parse
+  # takes out every terragrunt stack in the env, not just pritunl:
+  #   pritunl_admin_ingress_cidrs:
+  #     - "203.0.113.10/32"     # a bootstrap/admin address — does NOT gate the VPN itself
+  pritunl_admin_ingress_cidrs: []
 
   # Access = SSH public keys. Each dev runs `ssh-keygen -t ed25519` and pastes their
   # Add/remove a line + re-apply (bastion/pritunl) to grant/revoke a developer.
@@ -550,8 +565,21 @@ keycloak:
 
   # OTP delivery. The subchart defaults to `log`, which writes the code to the
   # pod log and sends nothing — Keycloak stays healthy and no OTP ever arrives.
-  # Credentials come from secrets.msg91AuthKey + keycloak.msg91TemplateId.
-  # Values: msg91 | twilio | log.
+  # Values: http | msg91 | twilio | sns | log.
+  #
+  # `http` is preferred: it hands the OTP to notification-service, which owns
+  # the vendor, so a vendor change stops needing a jar rebuild + image + tag pin
+  # here. It also removes the duplicate login-OTP template id (this chart's
+  # msg91TemplateId AND notification-service's own). Credentials for it come
+  # from secrets.smsHttpSecret, whose counterpart is the `keycloak` key id in
+  # notification-service's internal-secrets.json — both generated from the one
+  # `sms_http_secret` input so they cannot drift into a permanent 401.
+  #
+  # Requires an image carrying keycloak-otp >= 1.2.0-SNAPSHOT: an unknown SPI
+  # provider id CrashLoopBackOffs the pod rather than degrading.
+  #
+  # For msg91/twilio/sns, credentials come from secrets.msg91AuthKey +
+  # keycloak.msg91TemplateId and the matching TWILIO_*/AWS_* values.
   smsProvider: msg91
 
   ingress:
@@ -595,6 +623,13 @@ alerting:
 # Aggregator chart config (non-sensitive, passed directly via -f global-values.yaml)
 # Keys match the aggregator chart's schema so no transformation is needed.
 # =============================================================================
+
+# Public registration form: the college/institute reference picker. Same anchor
+# the signals ui reads below, on purpose — one deployment serves one region on
+# both halves, and scripts/fetch-configs.sh reads this same anchor to decide
+# which colleges-<code>.json to fetch for each chart.
+web:
+  collegeDataset: *college_dataset
 
 aggregator-api:
   adminEmails: *aggregator_admin_emails
@@ -716,6 +751,16 @@ ui:
 notification-service:
   # Mail transport, off the same anchors keycloak and the aggregator use. NOTE 587 + STARTTLS, not 465.
   config:
+    # Which SMS vendor this deployment sends through: msg91 (default) or
+    # pinnacle. One vendor per deployment; both register as channel `sms`, so
+    # no caller changes. An unknown value THROWS AT BOOT — and because the SMS
+    # provider is selected at module load, a typo crashloops the whole
+    # notification service, email and WhatsApp included, not just SMS.
+    #
+    # The vendor's credentials and DLT settings are NOT here: they are entered
+    # in <env>/secrets.yaml as pinnacle_* and land in the generated
+    # global-secrets.yaml, so all of one vendor's configuration lives together.
+    SMS_PROVIDER: msg91
     SMTP_HOST: *smtp_host
     SMTP_PORT: *smtp_port
     SMTP_SECURE: "false"   # STARTTLS on 587; set "true" only for a 465 endpoint

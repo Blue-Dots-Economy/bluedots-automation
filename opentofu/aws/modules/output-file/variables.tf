@@ -131,6 +131,60 @@ variable "msg91_template_id" {
   default     = "UPDATE_THIS_VALUE"
 }
 
+# Pinnacle — the alternative SMS vendor, selected per deployment by
+# notification-service's SMS_PROVIDER. Only the API key is secret; the sender id
+# and DLT entity id are not credentials, but they live here so that all the
+# vendor's settings are entered in one place rather than split across two files.
+#
+# These default to "" rather than UPDATE_THIS_VALUE on purpose. The charts drop
+# empty keys (configmap.yaml / secrets.yaml both filter ""), so an unfilled
+# secrets.yaml leaves the variables genuinely UNSET and every "not configured"
+# guard downstream fires. With a non-empty placeholder they all pass instead:
+# loadPinnacleConfig sees every key present, the worker does not dead-letter,
+# renderBody finds no tokens to fail on, and NS sends a message whose text is
+# literally UPDATE_THIS_VALUE with no OTP in it. Same convention as
+# helm/aggregator/templates/secrets.yaml.
+variable "pinnacle_api_key" {
+  description = "Pinnacle API key. Feeds notification-service PINNACLE_API_KEY. Only used when SMS_PROVIDER=pinnacle."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "pinnacle_sender_id" {
+  description = "Pinnacle sender id — the DLT-registered header, 6 alpha chars or numeric. Feeds notification-service PINNACLE_SENDER_ID."
+  type        = string
+  default     = ""
+}
+
+variable "pinnacle_dlt_entity_id" {
+  description = "DLT principal-entity id for the sending organisation. Feeds notification-service PINNACLE_DLT_ENTITY_ID."
+  type        = string
+  default     = ""
+}
+
+variable "pinnacle_login_otp_template_id" {
+  description = "Pinnacle DLT template id for login_otp. Blank/UPDATE_THIS_VALUE until the DLT approval lands; NS dead-letters those jobs with an explicit 'not configured yet'."
+  type        = string
+  default     = ""
+}
+
+# HMAC pair for Keycloak -> notification-service. BOTH halves are generated from
+# this one value: the Keycloak Secret key, and the `keycloak` entry in NS's
+# internal-secrets.json. Splitting them across two inputs is how they drift.
+variable "sms_http_secret" {
+  description = "Shared secret Keycloak signs /notify requests with (smsProvider=http). Feeds keycloak secrets.smsHttpSecret AND the `keycloak` key id in notification-service internal-secrets.json."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "sms_login_otp_body" {
+  description = "The login_otp message body, for vendors that cannot render (Pinnacle). Must be BYTE-IDENTICAL to the DLT-approved text or the operator scrubs the message. {{message}} is the OTP code."
+  type        = string
+  default     = ""
+}
+
 # Two separate Google keys: a Google API key takes only ONE application
 # restriction (HTTP referrers OR IP addresses), so the browser key and the
 # server key must be distinct to be restrictable at all.
@@ -143,6 +197,16 @@ variable "google_maps_api_key" {
 
 variable "google_geocoding_api_key" {
   description = "Google Geocoding API key, SERVER-side → signals api GOOGLE_GEOCODING_API_KEY. Restrict by IP (the env's NAT gateway Elastic IPs, both AZs)."
+  type        = string
+  sensitive   = true
+  default     = "UPDATE_THIS_VALUE"
+}
+
+# A THIRD Google key. Referrer restrictions are per-origin, so the aggregator web
+# app cannot share signals' browser key without either widening that key's
+# allowed referrers or breaking its restriction outright.
+variable "aggregator_google_maps_api_key" {
+  description = "Google Maps JS API key, BROWSER-side → aggregator web GOOGLE_MAPS_API_KEY. Restrict by HTTP referrers (the aggregator public host); API restriction must allow Maps JavaScript API AND Places API (New)."
   type        = string
   sensitive   = true
   default     = "UPDATE_THIS_VALUE"

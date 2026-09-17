@@ -244,6 +244,19 @@ spec:
                   name: {{ include "keycloak.secretName" . }}
                   key: MSG91_AUTH_KEY
                   optional: true
+            {{- /*
+            The five non-secret SMS_HTTP_* keys ride the ConfigMap; only the
+            signing key comes from the Secret, and without this entry it never
+            reaches the container. HttpSmsProviderFactory.init() merely WARNS on
+            missing config, so the pod stays Ready, health is green, the realm
+            imports — and every SMS OTP login fails.
+            */}}
+            - name: SMS_HTTP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: SMS_HTTP_SECRET
+                  optional: true
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:

@@ -179,6 +179,7 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
 - **Geocoding / maps** — **two** keys in `secrets.yaml`, because a Google API key
   accepts only one application restriction (HTTP referrers *or* IP addresses):
   - `google_maps_api_key` → `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY`
+  - `aggregator_google_maps_api_key` → aggregator `web.googleMapsApiKey` (the web pod's `GOOGLE_MAPS_API_KEY`). A **separate** browser key from the signals one — referrer restrictions are per-origin, and the aggregator is a different host. Restrict it to the aggregator public host and allow **Maps JavaScript API + Places API (New)**.
     (browser). Google Cloud Console: API restriction *Maps JavaScript API*,
     application restriction *HTTP referrers* = `https://<each signals host>/*`.
   - `google_geocoding_api_key` → `api.secrets.data.GOOGLE_GEOCODING_API_KEY`

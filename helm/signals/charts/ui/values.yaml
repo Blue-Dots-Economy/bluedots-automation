@@ -184,8 +184,9 @@ runtimeConfig:
 #
 # EXACTLY ONE dataset ships, chosen by VITE_COLLEGE_DATASET above. There is no
 # list to keep in sync: scripts/fetch-configs.sh pulls colleges-<region>.json
-# from canonical signals-dpg at deploy time into files/reference/ (gitignored,
-# fetched fresh so it can't drift), and this chart renders that same region.
+# from canonical Blue-Dots-Economy/bluedots-schemas at deploy time into
+# files/reference/ (gitignored, fetched fresh so it can't drift), and this chart
+# renders that same region.
 # One region is also a hard requirement, not just tidiness — a ConfigMap is one
 # etcd object capped at 1 MiB, and the two known datasets minified come to
 # 1,101,321 B, so shipping both would be rejected by the apiserver.

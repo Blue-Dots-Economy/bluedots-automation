@@ -41,10 +41,38 @@ variable "authorized_keys" {
   default     = []
 }
 
-variable "ingress_cidrs" {
-  description = "CIDRs allowed to reach the Pritunl VPN inbound ports (OpenVPN 1194 UDP/TCP, web 443, SSH 22). Default open to the internet; set to office/home CIDRs (e.g. [\"203.0.113.10/32\"]) to restrict who can even attempt to connect. This gates all downstream cluster access. NOTE: home ISP IPs are often dynamic — a changed IP locks the VPN out until you update this (recover by editing the SG via the AWS console/API, which is not VPN-gated)."
+variable "vpc_cidr" {
+  description = "CIDR of the VPC this host sits in. Always allowed to reach SSH 22 and the web admin UI, because the VPN routes it to connected laptops — that is what keeps the admin surface reachable from home without opening it to the internet."
+  type        = string
+}
+
+variable "vpn_ingress_cidrs" {
+  description = <<-EOT
+    CIDRs allowed to reach the OpenVPN port (1194 UDP + TCP). Defaults to the whole internet,
+    which is the intended posture: Pritunl authenticates every connection with a per-user client
+    certificate, so the certificate is the access control, not the source IP.
+
+    Narrow it only where every user genuinely has a static address. A source-IP gate on 1194
+    stops nobody who holds a stolen certificate, and it locks out everyone on a home, mobile or
+    hotel connection the moment their ISP hands out a new lease — including, eventually, the
+    office itself. Turn on per-user 2FA in Pritunl rather than reaching for this list.
+  EOT
   type        = list(string)
   default     = ["0.0.0.0/0"]
+}
+
+variable "admin_ingress_cidrs" {
+  description = <<-EOT
+    PUBLIC CIDRs allowed to reach the admin surface — SSH 22 and the Pritunl web admin UI on 443.
+    var.vpc_cidr is always allowed on top of whatever is listed here, so leaving this empty (the
+    default) still leaves both reachable on the host's PRIVATE IP to anyone already on the VPN.
+
+    The only reason to list a public CIDR is the one-time bootstrap, before any VPN user exists
+    to connect with. A stale entry here is recoverable without it: widen the security group from
+    the AWS console or API, neither of which is VPN-gated.
+  EOT
+  type        = list(string)
+  default     = []
 }
 
 variable "permissions_boundary_policy_name" {
