@@ -21,13 +21,13 @@ api:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
     # Must stay a post-DHI tag in step with ui and the migrate Job below —
     # a pre/post-DHI mismatch breaks the release in either direction.
-    tag: "202609-s1-rc2"
+    tag: "202609-s1-rc3"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "202609-s1-rc2"
+    tag: "202609-s1-rc3"
     pullPolicy: Always
 
 notification-service:
@@ -35,14 +35,14 @@ notification-service:
     repository: ghcr.io/blue-dots-economy/notification-service
     # Must stay >= the image that reads SMTP_HOST (notification-service#114);
     # this chart no longer renders SMTP_GMAIL/GMAIL_*, which older images need.
-    tag: "202609-s1-rc2"
+    tag: "202609-s1-rc3"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
 search:
   image:
     repository: ghcr.io/blue-dots-economy/signals-search
-    tag: "202609-s1-rc2"
+    tag: "202609-s1-rc3"
     pullPolicy: Always
 
 # search-embeddings: TEI model image with BAAI/bge-m3 baked in
@@ -64,19 +64,19 @@ s3-export:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "202609-s1-rc2"
+    tag: "202609-s1-rc3"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "202609-s1-rc2"
+    tag: "202609-s1-rc3"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "202609-s1-rc2"
+    tag: "202609-s1-rc3"
     pullPolicy: Always
 
 keycloak:
