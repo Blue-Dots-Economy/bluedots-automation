@@ -30,6 +30,7 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ include "worker.serviceAccountName" . }}
+      {{- include "worker.hostAliases" . | nindent 6 }}
       {{- include "worker.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
