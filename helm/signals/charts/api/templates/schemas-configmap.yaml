@@ -103,5 +103,45 @@ data:
 {{ . | indent 4 }}
 {{- end }}
 {{- end }}
+{{- /*
+  Per-network SMS templates (signals-dpg#595). Delivered exactly like the email
+  copy above and selected by the same consentNetwork/consentBrand values, for
+  the same reason: the api resolves consent, email copy and SMS templates all
+  from dirname(NETWORK_CONFIG_LOCAL_FILE), so one value has to pick them
+  together or a pod could serve one network's templates beside another's copy.
+
+  OPTIONAL and merged PER KEY over a complete bundled registry, so an absent
+  file means "keep the bundled templates", not a broken deploy — hence `with`
+  rather than `fail`.
+
+  Nothing here is message text the api sends. Each case carries a DLT template
+  id, a reference body and the variable contract; the delivered text is rendered
+  by the vendor from the DLT-approved template (MSG91) or posted verbatim by
+  notification-service (Pinnacle). A BLANK template_id means "not DLT-approved
+  yet" and the api skips that send — which is why this ships safely before any
+  template is registered.
+
+  Not templated: the bodies carry {{`{{likeThis}}`}} placeholders filled at send
+  time, so Helm must pass the file through byte-for-byte.
+
+  Source: files/sms/<net>.properties, fetched by scripts/fetch-configs.sh. The
+  search subchart reuses this ConfigMap and dir-scans /app/schemas for *.json,
+  so a .properties file is invisible to it.
+*/ -}}
+{{- with $.Files.Get (printf "files/sms/%s.properties" .Values.schemas.consentNetwork) }}
+  sms.properties: |
+{{ . | indent 4 }}
+{{- end }}
+{{- if .Values.schemas.consentBrand }}
+{{- /*
+  Brand SMS templates are a PARTIAL override merged over the network file, so
+  both must be delivered. Placed at /app/schemas/<brand>/sms.properties by the
+  deployment's volume `items`.
+*/ -}}
+{{- with $.Files.Get (printf "files/sms/%s.%s.properties" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
+  {{ $.Values.schemas.consentBrand }}-sms.properties: |
+{{ . | indent 4 }}
+{{- end }}
+{{- end }}
 {{- end }}
 {{- end }}

@@ -118,6 +118,22 @@ spec:
                 path: {{ .Values.schemas.consentBrand }}/messages.properties
               {{- end }}
               {{- end }}
+              {{- /*
+                Per-network SMS templates, on the same terms as the copy above:
+                gated on the SOURCE file, because an `items` entry naming a key
+                the ConfigMap doesn't carry leaves the volume unmountable and
+                the pod stuck in ContainerCreating.
+              */ -}}
+              {{- if .Files.Get (printf "files/sms/%s.properties" .Values.schemas.consentNetwork) }}
+              - key: sms.properties
+                path: sms.properties
+              {{- end }}
+              {{- if .Values.schemas.consentBrand }}
+              {{- if .Files.Get (printf "files/sms/%s.%s.properties" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
+              - key: {{ .Values.schemas.consentBrand }}-sms.properties
+                path: {{ .Values.schemas.consentBrand }}/sms.properties
+              {{- end }}
+              {{- end }}
             {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
