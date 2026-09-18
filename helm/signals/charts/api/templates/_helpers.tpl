@@ -115,3 +115,29 @@ the mount and the env var cannot disagree.
 {{- .Values.config.GEOCODING_COUNTRY | default "" | toString | trim | upper -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+Pod-level /etc/hosts entries, from `global.hostAliases`. Same shape and the same
+global key the aggregator web/api subcharts already use.
+
+WHY THIS EXISTS: a cluster whose firewall forbids hairpin NAT cannot reach its
+own public hostnames from inside. Server-side calls to Keycloak (OIDC discovery,
+JWKS, admin REST) then hang until they time out, while browser logins work fine
+because the browser is outside. Mapping the public hostname to the in-cluster
+ingress IP keeps the URL — and therefore the OIDC issuer, which tokens are
+validated against — unchanged.
+
+Renders nothing when the list is empty, so AWS is byte-identical.
+*/}}
+{{- define "dpg-api.hostAliases" -}}
+{{- with (.Values.global).hostAliases }}
+hostAliases:
+{{- range . }}
+  - ip: {{ .ip | quote }}
+    hostnames:
+{{- range .hostnames }}
+      - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end -}}
