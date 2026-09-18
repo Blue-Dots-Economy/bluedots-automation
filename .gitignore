@@ -57,6 +57,7 @@ opentofu/aws/dev/*
 helm/signals/charts/api/files/networks/*.json
 helm/signals/charts/api/files/consent/*.json
 helm/signals/charts/api/files/messages/*.properties
+helm/signals/charts/api/files/sms/*.properties
 helm/signals/charts/ui/files/reference/*.json
 helm/aggregator/charts/web/files/reference/*.json
 helm/aggregator/files/consent/consent.json

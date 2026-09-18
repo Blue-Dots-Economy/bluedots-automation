@@ -278,6 +278,16 @@ Three traps:
 
 No `__SUPPORT_EMAIL__`-style substitution happens here — the copy's own `{{likeThis}}` placeholders are filled by the api at send time, so Helm passes the file through byte-for-byte. The `checksum/schemas` annotation already covers it, so a copy change rolls the api pods. Brand copy is **inert today**: no email send resolves a brand yet, so the file loads and validates at boot but changes no wording.
 
+## SMS templates ride the same ConfigMap as the email copy
+
+Per-network SMS templates (signals-dpg#595) ship exactly like the email copy above, on the same `-schemas` ConfigMap and selected by the same `schemas.consentNetwork`/`consentBrand`: `/app/schemas/sms.properties` and `/app/schemas/<brand>/sms.properties`. Canonical is `bluedots-schemas` `<network>/sms.properties` (+ `<network>/<brand>/`), fetched into the gitignored `helm/signals/charts/api/files/sms/`. Optional and merged per key, so a network with no file keeps the api's bundled registry; the same three traps apply verbatim.
+
+**What is in the file is not message text the api sends.** Each case carries a DLT `template_id`, a reference `body` and a `vars` contract. The delivered text is rendered by the vendor from the DLT-approved template (MSG91) or posted verbatim by notification-service (Pinnacle, which renders nothing) — so on a Pinnacle deployment the `body` here *is* what reaches the handset and must stay byte-identical to the registered template, because the operator matches on it and scrubs a mismatch silently.
+
+**Shipping it is safe before any template is registered.** A blank `template_id` means "not DLT-approved yet" and `dispatchSms` skips that send. That is also why an empty value must never be treated the way the email copy treats one: email discards an empty value so a bad override cannot ship a blank subject, while for SMS the empty value is the signal. The api keeps the two loaders separate for exactly this reason.
+
+Boot logs the state — `sms templates: N cases loaded from M layer(s), K with a template_id` — so `K` going up is how a newly-approved id is confirmed to have shipped.
+
 ## `aggregator.config.yaml` is ConfigMap-delivered — fetched, not vendored
 
 Same freshness model as consent and signals' network.json: `scripts/fetch-configs.sh aggregator` pulls it on every deploy into `helm/aggregator/files/network-config/aggregator.config.yaml` (gitignored), and `templates/network-config-configmap.yaml` renders it into `{release}-network-config`, subPath-mounted into api + worker **over the image-baked copy**. Net effect: update canonical, redeploy, config is live — **no image rebuild**.
