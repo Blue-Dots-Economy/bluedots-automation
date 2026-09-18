@@ -31,6 +31,7 @@ spec:
         {{- end }}
     spec:
       {{- include "dpg-api.imagePullSecrets" . | nindent 6 }}
+      {{- include "dpg-api.hostAliases" . | nindent 6 }}
       serviceAccountName: {{ include "dpg-api.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
