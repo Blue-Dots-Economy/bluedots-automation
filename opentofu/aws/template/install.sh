@@ -51,6 +51,15 @@ IMAGES_PUBLIC="${IMAGES_PUBLIC:-true}"
 # `imagePullSecrets` in <env>/global-values.yaml — the Secret alone does nothing.
 PRIVATE_IMAGE_NAMESPACES="${PRIVATE_IMAGE_NAMESPACES:-}"
 
+# ── Storage ───────────────────────────────────────────────────────────────────
+# The StorageClass this environment runs on. apply_default_sc makes it the
+# CLUSTER DEFAULT, which is what common-services' postgres/redis bind to — they
+# name no class of their own — and deploy_monitoring pins its four PVCs to it.
+# Change it here for a non-AWS platform, and create that class on the platform
+# first: apply_default_sc adopts an existing class but refuses to invent one,
+# since the only definition shipped here (gp3-sc.yaml) is AWS-specific.
+STORAGE_CLASS_TYPE="${STORAGE_CLASS_TYPE:-gp3}"
+
 # Extra helm args appended to every app-chart upgrade, AFTER all the -f overlays,
 # so they win. This is the hook CI deployments use to override individual image
 # tags without editing global-images.yaml:
@@ -207,14 +216,45 @@ function apply_tf_bastion()          { _apply_tf_module "bastion"; }
 function destroy_tf_pritunl()        { _destroy_tf_module "pritunl"; }
 function destroy_tf_bastion()        { _destroy_tf_module "bastion"; }
 
-function apply_gp3_default_sc() {
-    echo -e "\nApplying gp3 StorageClass as cluster default"
-    kubectl apply -f "$SCRIPT_DIR/gp3-sc.yaml"
-    # Strip default annotation from gp2 if present, so only gp3 is default
-    if kubectl get sc gp2 >/dev/null 2>&1; then
-        kubectl patch storageclass gp2 \
-            -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+# Make $STORAGE_CLASS_TYPE the CLUSTER-DEFAULT StorageClass. That default is what
+# common-services' postgres/redis bind to -- they deliberately name no class of
+# their own -- so this function is the only thing deciding which disks they get.
+#
+# It will ADOPT a class the platform already provides but never INVENT one under
+# a new name: the only definition shipped here is gp3-sc.yaml, which is AWS-only
+# (`provisioner: ebs.csi.aws.com`). Creating that under, say, a Tata/VKS class
+# name would produce a cluster-default StorageClass that cannot provision
+# anything, and because it is the DEFAULT the damage is not limited to our
+# namespaces -- every PVC in the cluster that omits a class would hang Pending.
+function apply_default_sc() {
+    local sc="$STORAGE_CLASS_TYPE"
+
+    if kubectl get sc "$sc" >/dev/null 2>&1; then
+        echo -e "\nStorageClass \"$sc\" already exists -- marking it default (definition left untouched)"
+    elif [[ "$sc" == "gp3" ]]; then
+        echo -e "\nCreating AWS gp3 StorageClass"
+        kubectl apply -f "$SCRIPT_DIR/gp3-sc.yaml"
+    else
+        echo "ERROR: StorageClass \"$sc\" (STORAGE_CLASS_TYPE in this script) does not exist." >&2
+        echo "       Create it on this platform first -- the only class this repo can create is" >&2
+        echo "       gp3 (provisioner ebs.csi.aws.com), which would not work under that name." >&2
+        return 1
     fi
+
+    kubectl patch storageclass "$sc" \
+        -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+    # Demote every OTHER class still claiming default -- two defaults is an error
+    # state in which the apiserver picks arbitrarily. Covers AWS's built-in gp2
+    # and any default the target platform ships.
+    local other
+    for other in $(kubectl get sc \
+        -o jsonpath='{range .items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")]}{.metadata.name}{"\n"}{end}' 2>/dev/null); do
+        [[ "$other" == "$sc" ]] && continue
+        echo "Demoting previous default StorageClass \"$other\""
+        kubectl patch storageclass "$other" \
+            -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+    done
 }
 
 function destroy_tf_resources() {
@@ -296,12 +336,32 @@ function create_namespaces_and_secrets() {
 # Deployed before app charts so metrics and alerts are live from first deploy.
 function deploy_monitoring() {
     apply_prometheus_crds
+
+    # Monitoring's PVCs name their class explicitly instead of inheriting the
+    # cluster default the way postgres/redis do. That is not a preference: these
+    # four were ALREADY deployed with the name written into their StatefulSet
+    # volumeClaimTemplates and Grafana's PVC, and both are immutable, so a render
+    # that omits it is rejected on every existing cluster.
+    #
+    # Set here rather than in the chart so the value stays platform-neutral, and
+    # one path at a time because kube-prometheus-stack and loki expose no global
+    # storage key. These four are the whole set: jaeger and otelcollector are
+    # disabled, and alloy is a DaemonSet (it has a PVC only in statefulset mode).
+    local sc_args="" p
+    for p in prometheus.grafana.persistence.storageClassName \
+             prometheus.prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName \
+             prometheus.alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName \
+             loki.singleBinary.persistence.storageClass; do
+        sc_args+=" --set $p=$STORAGE_CLASS_TYPE"
+    done
+
     echo -e "\nDeploying monitoring"
     helm upgrade --install "$MON_REL" "$MON_DIR" \
         -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_SECRETS" \
         $IMAGE_PULL_HELM_ARGS \
+        $sc_args \
         --wait --timeout 10m
 }
 
@@ -342,10 +402,11 @@ function apply_prometheus_crds() {
 }
 
 # 2a) common-services (Kong + cert-manager + ClusterIssuer + Postgres + Redis)
-# Ensure gp3 is the cluster-default StorageClass first — common-services Postgres
-# and Redis provision PVCs that must bind to gp3.
+# Postgres and Redis name no StorageClass of their own, so their PVCs bind to the
+# cluster default. That default is set once at cluster creation by
+# apply_default_sc (the no-arg bootstrap), NOT here — run it by hand if PVCs come
+# up Pending on a cluster that never had one.
 function deploy_common_services() {
-    apply_gp3_default_sc
     apply_kong_crds
     echo -e "\nDeploying common-services"
     helm upgrade --install "$CS_REL" "$CS_DIR" \
@@ -732,7 +793,7 @@ if [ $# -eq 0 ]; then
     create_tf_backend
     # backup_configs
     create_tf_resources
-    apply_gp3_default_sc
+    apply_default_sc
 else
     invoke_functions "$@"
 fi

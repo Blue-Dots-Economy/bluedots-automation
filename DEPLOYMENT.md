@@ -96,7 +96,7 @@ Both run the identical functions in the identical order — pick whichever fits.
 
 ```bash
 # run the full infra bootstrap (no-arg install.sh)
-#    chains: create_tf_backend -> backup_configs -> create_tf_resources -> apply_gp3_default_sc
+#    chains: create_tf_backend -> backup_configs -> create_tf_resources -> apply_default_sc
 bash install.sh
 ```
 
@@ -116,11 +116,11 @@ bash install.sh create_tf_backend
 bash install.sh create_tf_resources
 
 # 3. make gp3 the cluster-default StorageClass (demote gp2)
-bash install.sh apply_gp3_default_sc
+bash install.sh apply_default_sc
 ```
 
 You can also chain several in one call (same as Option A):
-`bash install.sh create_tf_backend backup_configs create_tf_resources apply_gp3_default_sc`.
+`bash install.sh create_tf_backend backup_configs create_tf_resources apply_default_sc`.
 
 What the four functions do (run by both options):
 
@@ -131,7 +131,7 @@ What the four functions do (run by both options):
    (VPC → EKS → IAM → storage → random_passwords → rds → output-file), and writes the
    EKS kubeconfig. This also generates the three per-chart values files into the
    env directory.
-4. `apply_gp3_default_sc` — makes `gp3` the default StorageClass (demotes `gp2`).
+4. `apply_default_sc` — makes the class named by `STORAGE_CLASS_TYPE` (set at the top of `install.sh`, default `gp3`) the cluster-default StorageClass, demoting any other default. Adopts a class the platform already provides; only `gp3` can be created from scratch.
 
 > Regenerate **only** the values files later (e.g. after changing a host in
 > `global-values.yaml`):
@@ -403,7 +403,7 @@ bash install.sh deploy_all_services
 ```
 preflight
   → create_namespaces_and_secrets
-    → deploy_common_services   (gp3 + common-services)
+    → deploy_common_services   (Kong CRDs + common-services)
       → deploy_signals
         → deploy_aggregator
 ```
@@ -480,10 +480,10 @@ bash install.sh destroy_tf_resources       # terragrunt run --all destroy
 | `create_tf_backend`             | Create the S3 remote-state bucket |
 | `backup_configs`                | Back up `~/.kube/config`, set `KUBECONFIG` |
 | `create_tf_resources`           | `source tf.sh` + `terragrunt run --all apply` + write kubeconfig |
-| `apply_gp3_default_sc`          | Make gp3 the default StorageClass (demote gp2) |
+| `apply_default_sc`              | Make `STORAGE_CLASS_TYPE` the default StorageClass (demote others) |
 | `destroy_tf_resources`          | `terragrunt run --all destroy` |
 | `create_namespaces_and_secrets` | Create 3 namespaces + `ghcr-pull` secret in each |
-| `deploy_common_services`        | gp3 + helm install common-services |
+| `deploy_common_services`        | Kong CRDs + helm install common-services |
 | `deploy_signals`                | helm install signals |
 | `deploy_aggregator`             | helm install aggregator |
 | `deploy_all_services`           | preflight → ns/secrets → all 3 in order |
@@ -513,7 +513,7 @@ Run any function by name, chain several:
 | `preflight`: `values file not found` | run `terragrunt apply` on the `output-file` unit to generate the 3 files |
 | `preflight`: `cluster unreachable` | wrong kube-context → check `kubectl config current-context` |
 | Pods `ImagePullBackOff` | bad/missing `GHCR_PAT` → re-run `create_namespaces_and_secrets` with a valid PAT |
-| PVCs stuck `Pending` | gp3 not default → `bash install.sh apply_gp3_default_sc` |
+| PVCs stuck `Pending` | no default StorageClass → `bash install.sh apply_default_sc` |
 | Ingress host wrong / two ingresses collide | stale values file → fix host in `global-values.yaml`, regenerate, redeploy the release |
 | Namespace stuck `Terminating` | a resource finalizer is wedged — inspect with `kubectl get ns <ns> -o json` |
 

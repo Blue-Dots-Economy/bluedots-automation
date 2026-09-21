@@ -355,6 +355,15 @@ global:
   # via `.Values.global.*` (shared umbrella-chart values). Not read by
   # terragrunt.
   # ══════════════════════════════════════════════════════════════════════════
+
+  # NOTE: global.storageClass is deliberately NOT set. Bitnami's redis/postgresql
+  # subcharts would honour it, but naming a class writes it into their
+  # StatefulSet volumeClaimTemplates — an immutable field — so adding it breaks
+  # `helm upgrade` on every cluster already running without it. They instead bind
+  # to the cluster-default class that install.sh's apply_default_sc sets
+  # (STORAGE_CLASS_TYPE). Set it here only for a FRESH cluster whose desired
+  # class is not the default.
+
   publicHosts: *signals_public_hosts
   orgHierarchyEnabled: true
 

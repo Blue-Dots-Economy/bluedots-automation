@@ -214,7 +214,7 @@ All commands run from `opentofu/aws/<env>/`.
    random_passwords→rds→output-file, writes kubeconfig, and **generates**
    `global-secrets.yaml` + `global-cloud-values.yaml`):
    ```bash
-   bash install.sh                 # no-arg: create_tf_backend → create_tf_resources → apply_gp3_default_sc
+   bash install.sh                 # no-arg: create_tf_backend → create_tf_resources → apply_default_sc
    ```
    RDS is opt-in via `rds_*` anchors; when present its endpoint auto-overrides
    the in-cluster Postgres host (see CLAUDE.md → OpenTofu structure).
