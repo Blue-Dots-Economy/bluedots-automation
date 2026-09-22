@@ -1,7 +1,7 @@
 # Deployment Guide — Reference: New Network / Brand / Instance
 
-**This is a reference companion to [deployement_guide.md](deployement_guide.md),
-not a standalone runbook.** deployement_guide.md tells you **how to run each
+**This is a reference companion to [deployment_guide.md](deployment_guide.md),
+not a standalone runbook.** deployment_guide.md tells you **how to run each
 step** (the commands, in order); this file tells you **which extra values to
 set, and where**, for the two things it doesn't cover in depth: launching a
 **new environment** and launching a **new network / brand** on top of one.
@@ -11,14 +11,14 @@ values-file model, Kong ingress) before starting.
 > **Two axes of "new".** A launch is usually both at once, but they are separate:
 > - **New environment** — its own AWS infra + `opentofu/aws/<env>/` overlay +
 >   per-deployment git branch (§A). Provisioning and deploying it is
->   [deployement_guide.md Part A](deployement_guide.md#part-a--deploy-a-new-instance)
+>   [deployment_guide.md Part A](deployment_guide.md#part-a--deploy-a-new-instance)
 >   end to end — §D–§F below only add the values specific to naming a new
 >   network/brand into that flow.
 > - **New network / brand** — signals config: `network.json`, consent, brand
 >   skin (§B–§C). A network can be reused across environments.
 
 For tool prerequisites, see
-[deployement_guide.md → A1](deployement_guide.md#a1-prerequisites). Additionally
+[deployment_guide.md → A1](deployment_guide.md#a1-prerequisites). Additionally
 for a new network/brand you need:
 
 - The **canonical config source** in the unified schemas repo
@@ -29,7 +29,7 @@ for a new network/brand you need:
 
 > The knowledge in this reference used to be scattered across `install.sh`
 > comments, `CLAUDE.md`, `README.md`, and chart `values.yaml` comments — this is
-> the consolidated version. When in doubt, the code + deployement_guide.md win.
+> the consolidated version. When in doubt, the code + deployment_guide.md win.
 
 ---
 
@@ -164,7 +164,7 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
   - Leaving a key as `UPDATE_THIS_VALUE` is fine for anything this deployment
     doesn't use (MSG91 with SMS off, Discord when alerting is email-only) — it
     renders through and only matters to the service that reads it.
-    See [deployement_guide.md → A4](deployement_guide.md#a4-fill-in-secretsyaml).
+    See [deployment_guide.md → A4](deployment_guide.md#a4-fill-in-secretsyaml).
   - **Per-IP OTP rate limiting** — on by default (`_otp_rate_limit_enabled`),
     with `_signals_otp_per_minute` (5) / `_aggregator_otp_per_minute` (20)
     guarding the OTP login endpoints. See `helm/CLAUDE.md → Per-IP OTP-abuse
@@ -208,7 +208,7 @@ tag, §C). Prefer immutable SHAs for prod; dev may track a branch tag.
 By the point you reach this section, §A–§E above should already be reflected in
 `opentofu/aws/<env>/global-values.yaml`, `global-images.yaml`, and the network/
 consent/brand files. From here it's the **generic** flow — run
-[deployement_guide.md Part A5–A8](deployement_guide.md#a5-provision-the-infrastructure)
+[deployment_guide.md Part A5–A8](deployment_guide.md#a5-provision-the-infrastructure)
 exactly as written: provision infra, connect `kubectl`, deploy in order, set
 `actingOrgId` before `deploy_aggregator`. Nothing about a new network/brand
 changes those commands.
@@ -217,7 +217,7 @@ changes those commands.
 
 ## §G — Validate
 
-Run [deployement_guide.md → A10](deployement_guide.md#a10-verify) for platform
+Run [deployment_guide.md → A10](deployment_guide.md#a10-verify) for platform
 health and TLS. On top of that, for a new network/brand specifically:
 
 1. **Hostnames** resolve and serve over TLS: seeker + provider + UI +
@@ -225,7 +225,7 @@ health and TLS. On top of that, for a new network/brand specifically:
 2. **Functional end-to-end:** run the signals functional QA runbook
    (`signals-dpg/docs/operations/e2e-purple-dot-runbook.md`) — register two
    aggregators → seeker QR link → provider bulk upload → connect actions →
-   verify dashboards. (That runbook is the *functional* check; deployement_guide.md
+   verify dashboards. (That runbook is the *functional* check; deployment_guide.md
    A10 is the *platform-health* check.)
 
 **Acceptance:** a deployer following §A–§G stands up a fresh instance
@@ -248,10 +248,10 @@ config all set.
 | Domains / TLS | `global-values.yaml` | `_signals_public_hosts`, `_aggregator_host`, `_grafana_host` |
 | Auth channels | `global-values.yaml` | `_msg91_*`, `_smtp_*` |
 | Limits / rate | `global-values.yaml` / `api.config` | `ALLOW_EXTRA_SCHEMA_DATA`, `_api_rate_limit_*` (`BULK_MAX_ITEMS` = optional api env override) |
-| Peer auth (inter-instance) | `global-values.yaml` / `api.config` | `PEER_AUTH_MODE` — `enforced` (template default) requires a valid `INSTANCE_SHARED_SECRET`-signed token on every peer request. The template governs **new** environments only: each live environment keeps its own `global-values.yaml` in the private deployment repo (see deployement_guide.md, "Each live environment has its own values file in the private deployment repo"), and those must be updated separately or nothing changes there. Before enabling it anywhere, confirm every peer instance in the network carries the **same** `INSTANCE_SHARED_SECRET` — the value is generated per environment, so two instances provisioned by separate `install.sh` runs do **not** share one by default. |
+| Peer auth (inter-instance) | `global-values.yaml` / `api.config` | `PEER_AUTH_MODE` — `enforced` (template default) requires a valid `INSTANCE_SHARED_SECRET`-signed token on every peer request. The template governs **new** environments only: each live environment keeps its own `global-values.yaml` in the private deployment repo (see deployment_guide.md, "Each live environment has its own values file in the private deployment repo"), and those must be updated separately or nothing changes there. Before enabling it anywhere, confirm every peer instance in the network carries the **same** `INSTANCE_SHARED_SECRET` — the value is generated per environment, so two instances provisioned by separate `install.sh` runs do **not** share one by default. |
 | Image tags | `global-images.yaml` | per-service `repository`/`tag` |
 | Secrets | generated → `global-secrets.yaml` | `AUTH_SECRET`, DB/Redis passwords |
 | actingOrgId | `global-values.yaml` (post-deploy) | `global.signalstack.actingOrgId` |
 
-See [deployement_guide.md](deployement_guide.md) for the full `install.sh` command
+See [deployment_guide.md](deployment_guide.md) for the full `install.sh` command
 reference and the symptom→fix troubleshooting table.

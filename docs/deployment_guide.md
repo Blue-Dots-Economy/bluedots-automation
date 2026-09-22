@@ -606,7 +606,7 @@ worth of overrides from the same shell, or for CI.
 
 | Document | Covers |
 |---|---|
-| [`docs/deployement_guide_reference.md`](deployement_guide_reference.md) | Reference companion: which extra values to set (and where) for a new environment / network / brand — network.json, consent, brand skin, domains, image tags |
+| [`docs/deployment_guide_reference.md`](deployment_guide_reference.md) | Reference companion: which extra values to set (and where) for a new environment / network / brand — network.json, consent, brand skin, domains, image tags |
 | [`CLAUDE.md`](../CLAUDE.md) | Architecture: charts, deploy order, how the values files layer |
 | [`opentofu/CLAUDE.md`](../opentofu/CLAUDE.md) | Infrastructure detail: VPC, EKS, RDS, VPN, bastion |
 | [`helm/CLAUDE.md`](../helm/CLAUDE.md) | Chart detail: Kong ingress, Keycloak realm, certificates |
