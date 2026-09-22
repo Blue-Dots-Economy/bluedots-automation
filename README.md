@@ -16,7 +16,7 @@ Signals, and Aggregator.
 
 > **There is no Makefile.** `install.sh` is the only entrypoint for both infra
 > and Helm. For the full step-by-step runbook (with validation and
-> troubleshooting), see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+> troubleshooting), see **[docs/deployement_guide.md](docs/deployement_guide.md)**.
 
 ---
 
@@ -50,7 +50,9 @@ that means **Signals** (`helm/signals/`).
 │   ├── actions/pr-gate/      # composite action: docs + release-notes gate for develop PRs
 │   ├── workflows/            # develop-pr-gate.yml (gate), pr-gate-tests.yml (action unit tests)
 │   └── PULL_REQUEST_TEMPLATE.md  # Summary / Release Notes / Checklist
-├── DEPLOYMENT.md             # authoritative end-to-end runbook + troubleshooting
+├── docs/
+│   ├── deployement_guide.md  # authoritative end-to-end runbook + troubleshooting
+│   └── instance-setup.md     # per-instance checklist: new environment / network / brand
 ├── dockerfiles/              # Base images this repo builds (manual workflow_dispatch only)
 │   ├── postgres/             # Bitnami Postgres 17 + portable pgvector → ghcr.io/<owner>/postgres-pgvector
 │   └── keycloak/             # Keycloak + OTP authenticator SPI → ghcr.io/<owner>/keycloak-server
@@ -600,4 +602,4 @@ helm list -A
 ```
 
 For the full runbook with validation steps and a troubleshooting table, see
-**[DEPLOYMENT.md](DEPLOYMENT.md)**.
+**[docs/deployement_guide.md](docs/deployement_guide.md)**.

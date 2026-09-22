@@ -1,6 +1,6 @@
 # CLAUDE.md — opentofu (infra provisioning)
 
-Guidance for the OpenTofu/Terragrunt half of the repo. Read the root `CLAUDE.md` first (the install.sh dispatcher, the values-file architecture, the naming table). This file covers the infra layer specifically. `DEPLOYMENT.md` is the authoritative end-to-end runbook + `install.sh` function reference.
+Guidance for the OpenTofu/Terragrunt half of the repo. Read the root `CLAUDE.md` first (the install.sh dispatcher, the values-file architecture, the naming table). This file covers the infra layer specifically. `docs/deployement_guide.md` is the authoritative end-to-end runbook + `install.sh` command reference.
 
 ## Layout
 
