@@ -57,10 +57,10 @@ All commands run from the **environment directory** (`opentofu/aws/<env>/`). On 
 ### Infrastructure (OpenTofu/Terragrunt)
 
 ```bash
-bash install.sh                          # full bootstrap: create_tf_backend → create_tf_resources → apply_gp3_default_sc
+bash install.sh                          # full bootstrap: create_tf_backend → create_tf_resources → apply_default_sc
 bash install.sh create_tf_backend        # create S3 tfstate bucket, write tf.sh
 bash install.sh create_tf_resources      # source tf.sh + terragrunt run --all apply + write kubeconfig
-bash install.sh apply_gp3_default_sc      # make gp3 the default StorageClass (demote gp2)
+bash install.sh apply_default_sc         # make STORAGE_CLASS_TYPE the default StorageClass (demote the rest)
 bash install.sh destroy_tf_resources     # terragrunt run --all destroy
 bash install.sh plan_tf_eks              # plan/apply one module (network|eks|iam|storage|random_passwords|rds|output-file|bastion|pritunl)
 bash install.sh apply_tf_output_file     # regenerate just the generated values files
@@ -76,7 +76,7 @@ export IMAGES_PUBLIC=false                # and export GHCR_PAT=ghp_xxx
 bash install.sh deploy_all_services       # preflight → ns+secrets → monitoring → common-services → keycloak → signals → aggregator → fix_acme_issuer_uri
 bash install.sh create_namespaces_and_secrets   # namespaces + ghcr-pull secret in each
 bash install.sh deploy_monitoring
-bash install.sh deploy_common_services    # applies gp3 + Kong CRDs first, then helm --wait
+bash install.sh deploy_common_services    # applies Kong CRDs first, then helm --wait
 bash install.sh deploy_keycloak           # shared realm, into the common-services ns
 bash install.sh deploy_signals
 bash install.sh deploy_aggregator

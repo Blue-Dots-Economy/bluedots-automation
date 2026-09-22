@@ -162,8 +162,11 @@ kubectl logs daemonset/monitoring-alloy -n monitoring
 
 | Component | PVC Size | Retention |
 |-----------|----------|-----------|
-| Prometheus | 20Gi gp3 | 7 days |
-| Alertmanager | 2Gi gp3 | 7 days |
-| Loki | 10Gi gp3 | 7 days |
+| Prometheus | 20Gi | 7 days |
+| Alertmanager | 2Gi | 7 days |
+| Loki | 10Gi | 7 days |
+| Grafana | 5Gi | N/A (dashboards/db, not time-based) |
 
-StorageClass `gp3` supports online volume expansion.
+All four bind to `STORAGE_CLASS_TYPE` (`install.sh`, default `gp3`) — not hardcoded
+in this chart. On AWS the shipped `gp3` StorageClass supports online volume
+expansion; verify the same on any other platform's class before relying on it.

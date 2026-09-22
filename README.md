@@ -320,7 +320,7 @@ bash install.sh
    kubeconfig. This also generates `global-secrets.yaml` and
    `global-cloud-values.yaml`. The `bastion`/`pritunl` units are skipped from
    `run --all` when `bastion_enabled`/`pritunl_enabled` is `false`.
-3. **`apply_gp3_default_sc`** — makes `gp3` the default StorageClass (demotes `gp2`).
+3. **`apply_default_sc`** — makes the class named by `STORAGE_CLASS_TYPE` (set at the top of `install.sh`, default `gp3`) the cluster-default StorageClass, demoting any other default.
 
 Targeted re-runs are supported, e.g. `bash install.sh create_tf_resources`, or a
 single module: `bash install.sh apply_tf_output_file` (regenerate just the
@@ -459,7 +459,7 @@ cluster-wide.
 ```bash
 bash install.sh create_namespaces_and_secrets   # namespaces + ghcr-pull secret in each
 bash install.sh deploy_monitoring
-bash install.sh deploy_common_services           # applies gp3 + Kong CRDs, then helm --wait
+bash install.sh deploy_common_services           # applies Kong CRDs, then helm --wait
 bash install.sh deploy_signals
 bash install.sh deploy_aggregator
 ```
@@ -581,7 +581,7 @@ kubectl -n common-services get svc common-services-kong-proxy   # external hostn
 
 ```bash
 # Infra (from opentofu/aws/<env>)
-bash install.sh                          # provision EKS (backend → apply → gp3)
+bash install.sh                          # provision EKS (backend → apply → apply_default_sc)
 bash install.sh destroy_tf_resources
 
 # Apps (from opentofu/aws/<env>, kubeconfig pointed at the cluster)

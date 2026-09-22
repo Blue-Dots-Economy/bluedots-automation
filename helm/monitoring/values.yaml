@@ -125,9 +125,11 @@ prometheus:
       pathType: Prefix
       tls: []
 
+    # No storageClassName pin: install.sh sets it from STORAGE_CLASS_TYPE, and a
+    # standalone install falls back to the cluster's default class. Do not
+    # re-add "gp3" — it is an AWS-only name.
     persistence:
       enabled: true
-      storageClassName: gp3
       size: 5Gi
 
     # Loki datasource — kube-prometheus-stack doesn't know about Loki, so we add it here.
@@ -248,10 +250,13 @@ prometheus:
 
       retention: 7d
 
+      # storageClassName deliberately absent — see the grafana persistence note
+      # above. It must be OMITTED rather than set to "", because this spec is
+      # passed through toYaml into the Prometheus CR and an empty string there
+      # means "no dynamic provisioning" rather than "use the default class".
       storageSpec:
         volumeClaimTemplate:
           spec:
-            storageClassName: gp3
             accessModes: ["ReadWriteOnce"]
             resources:
               requests:
@@ -783,10 +788,11 @@ prometheus:
           mountPath: /etc/alertmanager/templates
           readOnly: true
       retention: 168h
+      # storageClassName deliberately absent, and omitted rather than "" — same
+      # toYaml-into-the-CR reason as the Prometheus storageSpec above.
       storage:
         volumeClaimTemplate:
           spec:
-            storageClassName: gp3
             accessModes: ["ReadWriteOnce"]
             resources:
               requests:
@@ -852,9 +858,9 @@ loki:
 
   singleBinary:
     replicas: 1
+    # storageClass deliberately absent — see the grafana persistence note above.
     persistence:
       enabled: true
-      storageClass: gp3
       size: 10Gi
 
   # Disable SimpleScalable components — not needed in SingleBinary mode.
