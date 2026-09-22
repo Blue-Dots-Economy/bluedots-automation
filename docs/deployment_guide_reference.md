@@ -1,38 +1,35 @@
-# New-Instance Deploy Runbook
+# Deployment Guide — Reference: New Network / Brand / Instance
 
-A single, repeatable checklist for standing up a **fresh Blue Dots instance**
-(a new environment and/or a new network/brand). It layers the *per-instance*
-decisions on top of the generic mechanics already documented in
-[DEPLOYMENT.md](../DEPLOYMENT.md) — this file tells you **what to change per
-instance**; DEPLOYMENT.md tells you **how to run each step**. Read
-[CLAUDE.md](../CLAUDE.md) once for the architecture (charts, deploy order,
+**This is a reference companion to [deployment_guide.md](deployment_guide.md),
+not a standalone runbook.** deployment_guide.md tells you **how to run each
+step** (the commands, in order); this file tells you **which extra values to
+set, and where**, for the two things it doesn't cover in depth: launching a
+**new environment** and launching a **new network / brand** on top of one.
+Read [CLAUDE.md](../CLAUDE.md) once for the architecture (charts, deploy order,
 values-file model, Kong ingress) before starting.
 
 > **Two axes of "new".** A launch is usually both at once, but they are separate:
 > - **New environment** — its own AWS infra + `opentofu/aws/<env>/` overlay +
->   per-deployment git branch (§A, §D–§F).
+>   per-deployment git branch (§A). Provisioning and deploying it is
+>   [deployment_guide.md Part A](deployment_guide.md#part-a--deploy-a-new-instance)
+>   end to end — §D–§F below only add the values specific to naming a new
+>   network/brand into that flow.
 > - **New network / brand** — signals config: `network.json`, consent, brand
 >   skin (§B–§C). A network can be reused across environments.
 
----
+For tool prerequisites, see
+[deployment_guide.md → A1](deployment_guide.md#a1-prerequisites). Additionally
+for a new network/brand you need:
 
-## Prerequisites
-
-Same as [DEPLOYMENT.md §1](../DEPLOYMENT.md): `aws` v2, `tofu` ≥1.6, `terragrunt`
-≥0.90, `kubectl` ≥1.24, `helm` ≥3.12, `bash` 4+. Plus:
-
-- AWS creds able to create VPC/EKS/IAM/S3.
-- A GHCR `read:packages` token exported as `GHCR_PAT` (image pulls).
-- DNS control for the instance's public hostnames.
 - The **canonical config source** in the unified schemas repo
   `Blue-Dots-Economy/bluedots-schemas` for the network you're
   deploying: `<network>/{network,brand,consent}.json` (+ per-brand
   `<network>/<brand>/{brand,consent}.json`), with underscore dir names
   (e.g. `blue_dot`, `orange_dot`, `upsdm`).
 
-> The knowledge in this runbook used to be scattered across `install.sh`
+> The knowledge in this reference used to be scattered across `install.sh`
 > comments, `CLAUDE.md`, `README.md`, and chart `values.yaml` comments — this is
-> the consolidated version. When in doubt, the code + DEPLOYMENT.md win.
+> the consolidated version. When in doubt, the code + deployment_guide.md win.
 
 ---
 
@@ -167,7 +164,7 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
   - Leaving a key as `UPDATE_THIS_VALUE` is fine for anything this deployment
     doesn't use (MSG91 with SMS off, Discord when alerting is email-only) — it
     renders through and only matters to the service that reads it.
-    See DEPLOYMENT.md §4.
+    See [deployment_guide.md → A4](deployment_guide.md#a4-fill-in-secretsyaml).
   - **Per-IP OTP rate limiting** — on by default (`_otp_rate_limit_enabled`),
     with `_signals_otp_per_minute` (5) / `_aggregator_otp_per_minute` (20)
     guarding the OTP login endpoints. See `helm/CLAUDE.md → Per-IP OTP-abuse
@@ -208,55 +205,28 @@ tag, §C). Prefer immutable SHAs for prod; dev may track a branch tag.
 
 ## §F — Provision infra, deploy, wire up
 
-All commands run from `opentofu/aws/<env>/`.
-
-1. **Infra** (creates the S3 backend, provisions VPC→EKS→IAM→storage→
-   random_passwords→rds→output-file, writes kubeconfig, and **generates**
-   `global-secrets.yaml` + `global-cloud-values.yaml`):
-   ```bash
-   bash install.sh                 # no-arg: create_tf_backend → create_tf_resources → apply_default_sc
-   ```
-   RDS is opt-in via `rds_*` anchors; when present its endpoint auto-overrides
-   the in-cluster Postgres host (see CLAUDE.md → OpenTofu structure).
-2. **Static checks (optional, no install):** `bash install.sh lint dry_run`.
-3. **Deploy the stack** (strict order monitoring → common-services → signals →
-   aggregator, then the ACME fix):
-   ```bash
-   export GHCR_PAT=ghp_xxx          # read:packages
-   bash install.sh deploy_all_services
-   ```
-   or step by step: `create_namespaces_and_secrets` → `deploy_monitoring` →
-   `deploy_common_services` → `deploy_signals` → `deploy_aggregator` →
-   `fix_acme_issuer_uri` (see [DEPLOYMENT.md §5](../DEPLOYMENT.md)). Confirm
-   common-services Postgres/Redis are Ready before signals/aggregator.
-4. **Post-deploy wiring — `actingOrgId`** (required, or aggregator login fails
-   with `SIGNALSTACK_ORG_NOT_REGISTERED`): after signals is up, the migrate-job
-   has seeded the `network_service` org. Run:
-   ```bash
-   ./get-signalstack-org-id.sh
-   ```
-   set the returned id at `global.signalstack.actingOrgId` in `global-values.yaml`,
-   then re-run `bash install.sh deploy_aggregator`.
+By the point you reach this section, §A–§E above should already be reflected in
+`opentofu/aws/<env>/global-values.yaml`, `global-images.yaml`, and the network/
+consent/brand files. From here it's the **generic** flow — run
+[deployment_guide.md Part A5–A8](deployment_guide.md#a5-provision-the-infrastructure)
+exactly as written: provision infra, connect `kubectl`, deploy in order, set
+`actingOrgId` before `deploy_aggregator`. Nothing about a new network/brand
+changes those commands.
 
 ---
 
 ## §G — Validate
 
-1. **Platform health:**
-   ```bash
-   helm list -A                                   # monitoring, common-services, signals, aggregator
-   kubectl -n common-services get pods,svc,pvc
-   kubectl -n signals get pods,svc,ingress
-   kubectl -n aggregator get pods,svc,ingress
-   kubectl get certificate -A                     # READY=True once ACME completes
-   ```
-2. **Hostnames** resolve and serve over TLS: seeker + provider + UI +
+Run [deployment_guide.md → A10](deployment_guide.md#a10-verify) for platform
+health and TLS. On top of that, for a new network/brand specifically:
+
+1. **Hostnames** resolve and serve over TLS: seeker + provider + UI +
    aggregator + grafana hosts match `global-values.yaml`.
-3. **Functional end-to-end:** run the signals functional QA runbook
+2. **Functional end-to-end:** run the signals functional QA runbook
    (`signals-dpg/docs/operations/e2e-purple-dot-runbook.md`) — register two
    aggregators → seeker QR link → provider bulk upload → connect actions →
-   verify dashboards. (That runbook is the *functional* check; this file is the
-   *provisioning* runbook.)
+   verify dashboards. (That runbook is the *functional* check; deployment_guide.md
+   A10 is the *platform-health* check.)
 
 **Acceptance:** a deployer following §A–§G stands up a fresh instance
 end-to-end, with the network, brand, terms/policies, domains, and per-instance
@@ -278,10 +248,10 @@ config all set.
 | Domains / TLS | `global-values.yaml` | `_signals_public_hosts`, `_aggregator_host`, `_grafana_host` |
 | Auth channels | `global-values.yaml` | `_msg91_*`, `_smtp_*` |
 | Limits / rate | `global-values.yaml` / `api.config` | `ALLOW_EXTRA_SCHEMA_DATA`, `_api_rate_limit_*` (`BULK_MAX_ITEMS` = optional api env override) |
-| Peer auth (inter-instance) | `global-values.yaml` / `api.config` | `PEER_AUTH_MODE` — `enforced` (template default) requires a valid `INSTANCE_SHARED_SECRET`-signed token on every peer request. The template governs **new** environments only: each live environment keeps its own `global-values.yaml` in the private deployment repo (see DEPLOYMENT.md, "Each live environment has its own values file in the private deployment repo"), and those must be updated separately or nothing changes there. Before enabling it anywhere, confirm every peer instance in the network carries the **same** `INSTANCE_SHARED_SECRET` — the value is generated per environment, so two instances provisioned by separate `install.sh` runs do **not** share one by default. |
+| Peer auth (inter-instance) | `global-values.yaml` / `api.config` | `PEER_AUTH_MODE` — `enforced` (template default) requires a valid `INSTANCE_SHARED_SECRET`-signed token on every peer request. The template governs **new** environments only: each live environment keeps its own `global-values.yaml` in the private deployment repo (see deployment_guide.md, "Each live environment has its own values file in the private deployment repo"), and those must be updated separately or nothing changes there. Before enabling it anywhere, confirm every peer instance in the network carries the **same** `INSTANCE_SHARED_SECRET` — the value is generated per environment, so two instances provisioned by separate `install.sh` runs do **not** share one by default. |
 | Image tags | `global-images.yaml` | per-service `repository`/`tag` |
 | Secrets | generated → `global-secrets.yaml` | `AUTH_SECRET`, DB/Redis passwords |
 | actingOrgId | `global-values.yaml` (post-deploy) | `global.signalstack.actingOrgId` |
 
-See [DEPLOYMENT.md](../DEPLOYMENT.md) for the full `install.sh` function
+See [deployment_guide.md](deployment_guide.md) for the full `install.sh` command
 reference and the symptom→fix troubleshooting table.

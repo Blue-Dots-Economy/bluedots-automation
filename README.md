@@ -16,7 +16,7 @@ Signals, and Aggregator.
 
 > **There is no Makefile.** `install.sh` is the only entrypoint for both infra
 > and Helm. For the full step-by-step runbook (with validation and
-> troubleshooting), see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+> troubleshooting), see **[docs/deployment_guide.md](docs/deployment_guide.md)**.
 
 ---
 
@@ -50,7 +50,9 @@ that means **Signals** (`helm/signals/`).
 │   ├── actions/pr-gate/      # composite action: docs + release-notes gate for develop PRs
 │   ├── workflows/            # develop-pr-gate.yml (gate), pr-gate-tests.yml (action unit tests)
 │   └── PULL_REQUEST_TEMPLATE.md  # Summary / Release Notes / Checklist
-├── DEPLOYMENT.md             # authoritative end-to-end runbook + troubleshooting
+├── docs/
+│   ├── deployment_guide.md  # authoritative end-to-end runbook + troubleshooting
+│   └── deployment_guide_reference.md  # reference: new network/brand/instance variables
 ├── dockerfiles/              # Base images this repo builds (manual workflow_dispatch only)
 │   ├── postgres/             # Bitnami Postgres 17 + portable pgvector → ghcr.io/<owner>/postgres-pgvector
 │   └── keycloak/             # Keycloak + OTP authenticator SPI → ghcr.io/<owner>/keycloak-server
@@ -347,7 +349,7 @@ basename), edit its `global-values.yaml`, and run its `install.sh`.
 
 For a full new-instance / new-network launch (network.json, brand, terms &
 policies, domains, auth channels, and all per-instance config as one checklist),
-follow **[docs/instance-setup.md](docs/instance-setup.md)**.
+follow **[docs/deployment_guide_reference.md](docs/deployment_guide_reference.md)**.
 
 ### Private-cluster access (Pritunl VPN + bastion)
 
@@ -600,4 +602,4 @@ helm list -A
 ```
 
 For the full runbook with validation steps and a troubleshooting table, see
-**[DEPLOYMENT.md](DEPLOYMENT.md)**.
+**[docs/deployment_guide.md](docs/deployment_guide.md)**.

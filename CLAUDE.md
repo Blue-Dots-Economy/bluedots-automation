@@ -9,9 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **Provisions AWS EKS infrastructure** using OpenTofu + Terragrunt (`opentofu/aws/`).
 2. **Deploys the application stack** to Kubernetes using Helm (`helm/`).
 
-Both are driven by a **single `install.sh`** in the per-environment directory (`opentofu/aws/<env>/install.sh`). See [DEPLOYMENT.md](DEPLOYMENT.md) for the end-to-end runbook.
+Both are driven by a **single `install.sh`** in the per-environment directory (`opentofu/aws/<env>/install.sh`). See [docs/deployment_guide.md](docs/deployment_guide.md) for the end-to-end runbook.
 
-> ⚠️ **There is no Makefile.** Older docs referenced `make install` / `make platform-install`; those targets are gone — `install.sh` is the only entrypoint. Treat any `make ...` in stray READMEs/comments as stale. **install.sh and DEPLOYMENT.md are the source of truth.**
+> ⚠️ **There is no Makefile.** Older docs referenced `make install` / `make platform-install`; those targets are gone — `install.sh` is the only entrypoint. Treat any `make ...` in stray READMEs/comments as stale. **install.sh and docs/deployment_guide.md are the source of truth.**
 
 **Subsystem docs** (auto-load when you work in that tree — read before making changes there):
 - **`opentofu/CLAUDE.md`** — Terragrunt module structure, provision order, network topology, EKS placement/capacity, RDS auto-wiring, private-cluster access (Pritunl + bastion), infra state.
@@ -32,7 +32,7 @@ Release name and namespace **match the directory name**. Only the Helm **chart n
 | `helm/signals/`        | `dpg`            | `signals`         | `signals`         | Signals stack (api, ui, notification-service, search, **s3-export** non-PII export CronJob) |
 | `helm/aggregator/`     | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal (web/BFF, api, worker) — Keycloak moved to its own release |
 
-Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`, `SIGNALS_NS`, `CS_REL`, `GLOBAL_VALUES`, …) — see the function reference in DEPLOYMENT.md.
+Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`, `SIGNALS_NS`, `CS_REL`, `GLOBAL_VALUES`, …) — see [docs/deployment_guide.md → Command reference](docs/deployment_guide.md#command-reference).
 
 ---
 
@@ -167,7 +167,7 @@ kubectl get challenge -A                        # if stuck, see cert-manager ACM
 kubectl -n common-services get secret data-postgres -o yaml
 ```
 
-See [DEPLOYMENT.md → Troubleshooting](DEPLOYMENT.md) for the symptom→fix table.
+See [docs/deployment_guide.md → Troubleshooting](docs/deployment_guide.md#troubleshooting) for the symptom→fix table.
 
 ---
 
@@ -177,14 +177,14 @@ See [DEPLOYMENT.md → Troubleshooting](DEPLOYMENT.md) for the symptom→fix tab
 2. Edit `opentofu/aws/<env>/global-values.yaml` (anchors at the top).
 3. `cd opentofu/aws/<env> && bash install.sh` (infra), then `bash install.sh deploy_all_services` (apps).
 
-For a full new-instance / new-network launch (network.json, brand assets, terms & policies, domains, auth channels), follow [docs/instance-setup.md](docs/instance-setup.md).
+For a full new-instance / new-network launch (network.json, brand assets, terms & policies, domains, auth channels), follow [docs/deployment_guide_reference.md](docs/deployment_guide_reference.md).
 
 ---
 
 ## Files to Know
 
-- `DEPLOYMENT.md` — authoritative end-to-end runbook + `install.sh` function reference + troubleshooting.
-- `docs/instance-setup.md` — per-instance checklist for a new environment / network / brand.
+- `docs/deployment_guide.md` — authoritative end-to-end runbook: first-time deploy, day-2 config/secret/infra changes, `install.sh` command reference, troubleshooting.
+- `docs/deployment_guide_reference.md` — reference companion to `docs/deployment_guide.md`: which extra values to set (and where) for a new environment / network / brand — network.json, consent, brand skin, domains, auth-channel secrets, image tags.
 - `docs/dhi/monitoring-dhi-verification.md` — the manifest-diff analysis behind the monitoring chart's DHI-driven version bump (kube-prometheus-stack, loki, alloy, metrics-server): what changed, what it fixed, what it broke, what it deliberately does not disturb, and why rollback is a chart downgrade, not a tag revert.
 - `opentofu/aws/<env>/install.sh` — single entrypoint for infra **and** Helm deploy (function dispatcher).
 - `opentofu/aws/<env>/global-values.yaml` — single source of truth for cluster + app config (edit anchors only).
