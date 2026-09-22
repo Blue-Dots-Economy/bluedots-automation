@@ -581,7 +581,7 @@ kubectl -n common-services get svc common-services-kong-proxy   # external hostn
 
 ```bash
 # Infra (from opentofu/aws/<env>)
-bash install.sh                          # provision EKS (backend → apply → gp3)
+bash install.sh                          # provision EKS (backend → apply → apply_default_sc)
 bash install.sh destroy_tf_resources
 
 # Apps (from opentofu/aws/<env>, kubeconfig pointed at the cluster)

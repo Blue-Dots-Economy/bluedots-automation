@@ -115,7 +115,7 @@ bash install.sh create_tf_backend
 #    the EKS kubeconfig, and generates the 3 per-chart values files
 bash install.sh create_tf_resources
 
-# 3. make gp3 the cluster-default StorageClass (demote gp2)
+# 3. make STORAGE_CLASS_TYPE (default gp3) the cluster-default StorageClass
 bash install.sh apply_default_sc
 ```
 
@@ -361,7 +361,7 @@ for ns in common-services signals aggregator; do kubectl -n $ns get secret ghcr-
 ```
 
 ```bash
-# 2. common-services (applies gp3 first, then helm --wait)
+# 2. common-services (Kong CRDs first, then helm --wait)
 bash install.sh deploy_common_services
 #    verify Postgres + Redis are Ready and PVCs bound BEFORE moving on:
 kubectl -n common-services get pods
@@ -476,7 +476,7 @@ bash install.sh destroy_tf_resources       # terragrunt run --all destroy
 
 | Function                        | What it does |
 |---------------------------------|--------------|
-| *(no args)*                     | Full infra bootstrap: backend → kubeconfig → `terragrunt apply` → gp3 |
+| *(no args)*                     | Full infra bootstrap: backend → kubeconfig → `terragrunt apply` → `apply_default_sc` |
 | `create_tf_backend`             | Create the S3 remote-state bucket |
 | `backup_configs`                | Back up `~/.kube/config`, set `KUBECONFIG` |
 | `create_tf_resources`           | `source tf.sh` + `terragrunt run --all apply` + write kubeconfig |

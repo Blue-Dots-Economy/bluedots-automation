@@ -332,28 +332,37 @@ function create_namespaces_and_secrets() {
 # opentofu-generated per-chart overlay (-f order = precedence). The overlay
 # already holds values at root level, so it feeds helm directly — no slicing.
 
-# 2a-pre) monitoring (Prometheus + Alertmanager + Loki + Alloy + Grafana)
-# Deployed before app charts so metrics and alerts are live from first deploy.
-function deploy_monitoring() {
-    apply_prometheus_crds
-
-    # Monitoring's PVCs name their class explicitly instead of inheriting the
-    # cluster default the way postgres/redis do. That is not a preference: these
-    # four were ALREADY deployed with the name written into their StatefulSet
-    # volumeClaimTemplates and Grafana's PVC, and both are immutable, so a render
-    # that omits it is rejected on every existing cluster.
-    #
-    # Set here rather than in the chart so the value stays platform-neutral, and
-    # one path at a time because kube-prometheus-stack and loki expose no global
-    # storage key. These four are the whole set: jaeger and otelcollector are
-    # disabled, and alloy is a DaemonSet (it has a PVC only in statefulset mode).
-    local sc_args="" p
+# Monitoring's PVCs name their class explicitly instead of inheriting the
+# cluster default the way postgres/redis do. That is not a preference: these
+# four were ALREADY deployed with the name written into their StatefulSet
+# volumeClaimTemplates and Grafana's PVC, and both are immutable, so a render
+# that omits it is rejected on every existing cluster.
+#
+# Set here rather than in the chart so the value stays platform-neutral, and
+# one path at a time because kube-prometheus-stack and loki expose no global
+# storage key. These four are the whole set: jaeger and otelcollector are
+# disabled, and alloy is a DaemonSet (it has a PVC only in statefulset mode).
+#
+# A FUNCTION, not inlined in deploy_monitoring, so dry_run's separate `helm
+# upgrade --dry-run` for monitoring (below) renders the SAME flags rather than
+# silently validating a manifest with no storageClassName on any of the four.
+function _monitoring_sc_args() {
+    local args="" p
     for p in prometheus.grafana.persistence.storageClassName \
              prometheus.prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName \
              prometheus.alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName \
              loki.singleBinary.persistence.storageClass; do
-        sc_args+=" --set $p=$STORAGE_CLASS_TYPE"
+        args+=" --set $p=$STORAGE_CLASS_TYPE"
     done
+    echo "$args"
+}
+
+# 2a-pre) monitoring (Prometheus + Alertmanager + Loki + Alloy + Grafana)
+# Deployed before app charts so metrics and alerts are live from first deploy.
+function deploy_monitoring() {
+    apply_prometheus_crds
+    local sc_args
+    sc_args="$(_monitoring_sc_args)"
 
     echo -e "\nDeploying monitoring"
     helm upgrade --install "$MON_REL" "$MON_DIR" \
@@ -750,8 +759,10 @@ function dry_run() {
     preflight
     fetch_signals_configs
     fetch_aggregator_configs
+    local mon_sc_args
+    mon_sc_args="$(_monitoring_sc_args)"
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
-        -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS --dry-run
+        -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $mon_sc_args --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$KC_REL" "$KC_DIR" -n "$KC_NS" --create-namespace \
