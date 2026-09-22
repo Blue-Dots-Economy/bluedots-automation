@@ -52,7 +52,7 @@ that means **Signals** (`helm/signals/`).
 │   └── PULL_REQUEST_TEMPLATE.md  # Summary / Release Notes / Checklist
 ├── docs/
 │   ├── deployement_guide.md  # authoritative end-to-end runbook + troubleshooting
-│   └── instance-setup.md     # per-instance checklist: new environment / network / brand
+│   └── deployement_guide_reference.md  # reference: new network/brand/instance variables
 ├── dockerfiles/              # Base images this repo builds (manual workflow_dispatch only)
 │   ├── postgres/             # Bitnami Postgres 17 + portable pgvector → ghcr.io/<owner>/postgres-pgvector
 │   └── keycloak/             # Keycloak + OTP authenticator SPI → ghcr.io/<owner>/keycloak-server
@@ -349,7 +349,7 @@ basename), edit its `global-values.yaml`, and run its `install.sh`.
 
 For a full new-instance / new-network launch (network.json, brand, terms &
 policies, domains, auth channels, and all per-instance config as one checklist),
-follow **[docs/instance-setup.md](docs/instance-setup.md)**.
+follow **[docs/deployement_guide_reference.md](docs/deployement_guide_reference.md)**.
 
 ### Private-cluster access (Pritunl VPN + bastion)
 

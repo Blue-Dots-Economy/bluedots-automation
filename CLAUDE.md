@@ -177,14 +177,14 @@ See [docs/deployement_guide.md → Troubleshooting](docs/deployement_guide.md#tr
 2. Edit `opentofu/aws/<env>/global-values.yaml` (anchors at the top).
 3. `cd opentofu/aws/<env> && bash install.sh` (infra), then `bash install.sh deploy_all_services` (apps).
 
-For a full new-instance / new-network launch (network.json, brand assets, terms & policies, domains, auth channels), follow [docs/instance-setup.md](docs/instance-setup.md).
+For a full new-instance / new-network launch (network.json, brand assets, terms & policies, domains, auth channels), follow [docs/deployement_guide_reference.md](docs/deployement_guide_reference.md).
 
 ---
 
 ## Files to Know
 
 - `docs/deployement_guide.md` — authoritative end-to-end runbook: first-time deploy, day-2 config/secret/infra changes, `install.sh` command reference, troubleshooting.
-- `docs/instance-setup.md` — per-instance checklist for a new environment / network / brand.
+- `docs/deployement_guide_reference.md` — reference companion to `docs/deployement_guide.md`: which extra values to set (and where) for a new environment / network / brand — network.json, consent, brand skin, domains, auth-channel secrets, image tags.
 - `docs/dhi/monitoring-dhi-verification.md` — the manifest-diff analysis behind the monitoring chart's DHI-driven version bump (kube-prometheus-stack, loki, alloy, metrics-server): what changed, what it fixed, what it broke, what it deliberately does not disturb, and why rollback is a chart downgrade, not a tag revert.
 - `opentofu/aws/<env>/install.sh` — single entrypoint for infra **and** Helm deploy (function dispatcher).
 - `opentofu/aws/<env>/global-values.yaml` — single source of truth for cluster + app config (edit anchors only).
