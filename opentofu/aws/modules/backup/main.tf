@@ -201,6 +201,11 @@ resource "aws_backup_selection" "eks" {
 resource "aws_sns_topic" "backup_alerts" {
   name = "${local.name}-alerts"
 
+  # AWS-managed key, not aws_kms_key.backup — that key's policy is scoped to the vault; reusing it
+  # here would need its own SNS/EventBridge grants. alias/aws/sns needs no key policy work and is
+  # already trusted for exactly this (SNS server-side encryption for AWS-service publishers).
+  kms_master_key_id = "alias/aws/sns"
+
   tags = local.common_tags
 }
 
