@@ -13,9 +13,11 @@ Everything lives at `opentofu/aws/<env>/`. On trunk branches only `template/` ex
 
 ## Module provision order
 
-`network → eks → iam → storage → random_passwords → rds → output-file`. Plus: `pritunl` depends on `network`; `bastion` depends on `network` + `eks`.
+`network → eks → iam → storage → random_passwords → rds → output-file`. Plus: `pritunl` depends on `network`; `bastion` depends on `network` + `eks`; `backup` depends on `eks` only (can run any time after it).
 
 `bastion`/`pritunl` carry a Terragrunt `exclude` block, so `terragrunt run --all` **skips** them when `bastion_enabled`/`pritunl_enabled` is `false` (both default `true`). The `apply_tf_bastion` / `apply_tf_pritunl` install.sh functions ignore that flag and always run — use them to bring up just the VPN/bastion.
+
+`backup` carries the same `exclude` pattern, gated on `backup_enabled` — the template ships this `true` with prod defaults (daily / 30-day retention), so a new or freshly-synced environment gets backup on out of the box; dev/UAT environments override `backup_schedule` (weekly) and `backup_retention_days` (7) in their own `global-values.yaml`. The `try(..., false)` fallback only protects an existing per-deployment branch that hasn't synced these keys in yet. `apply_tf_backup` follows the same `_apply_tf_module` pattern as the rest.
 
 ## Network topology (`network` module)
 
@@ -28,6 +30,20 @@ VPC split into **public** and **private** subnets. Public subnets host the IGW a
 ## Managed Postgres (`rds` module) — the auto-wiring is the non-obvious part
 
 `rds` is opt-in (`rds_*` sizing in `global-values.yaml`). Its SG allows `5432` only from the EKS cluster SG, and it shares the master password with the `random_passwords`-generated secret. **Pointing the charts at RDS is automated, not manual:** the `rds` module's `db_address` flows via `_common/output-file.hcl` → `postgres_host` into the `output-file` module, which — **only when the endpoint is non-empty** — emits `global.dataPlatform.postgresHost`, `api.postgres.host`, and `search.postgres.host` into the generated `global-cloud-values.yaml`. Since that file is layered after `global-values.yaml` via `-f` (see root `CLAUDE.md`'s values-file architecture), the RDS endpoint overrides the in-cluster Postgres default for signals + aggregator; with no RDS endpoint, the overrides are simply omitted and the in-cluster default stands. **Caveat:** app DB roles/databases must still exist on the RDS instance — the wiring points the charts at RDS but doesn't bootstrap the databases.
+
+## Cluster backup (`backup` module) — agent-free, whole-cluster, EBS-CSI-only
+
+AWS Backup for EKS, not Velero — no Helm release, no CRDs, no in-cluster agent. It calls the EKS API directly, which is why `authentication_mode = "API_AND_CONFIG_MAP"` on the `eks` module (already the default) is a hard prerequisite. Gated by `backup_enabled`, which the template ships `true` — unlike `pritunl`/`bastion`, whose `*_enabled` this repeats the *pattern* of, this one is a brand-new module landing with real prod-posture defaults already filled in (see below), not an inert placeholder.
+
+**Only backs up PVs on the EBS/EFS/S3 CSI driver, not the in-tree `kubernetes.io/aws-ebs` plugin.** A PV on the in-tree plugin still reports a "successful" backup — cluster-state only, silently missing all data. Check `kubectl get pv -o custom-columns=...DRIVER:.spec.csi.driver` before enabling on a new environment.
+
+Two IAM roles, deliberately not one: `eks_backup` (attached to the plan/selection, backup-only permissions, runs unattended every night) and `eks_restore` (carries `AWSBackupFullAccessPolicyForRestore` — cluster-admin-equivalent — and is **never** referenced by the plan/selection; assumed by hand only when performing an actual restore).
+
+The vault lock runs in **governance mode** — `aws_backup_vault_lock_configuration` deliberately omits `changeable_for_days`; setting that argument (to any value) switches to compliance mode, which is irreversible after a 72-hour cooling-off period. `backup_min_retention_days`/`backup_max_retention_days` bracket whatever `backup_retention_days` is for the environment (module-enforced by a `precondition`) — they're a floor/ceiling on what retention a plan may request, not the retention value itself.
+
+`backup_schedule` and `backup_retention_days` are required variables with **no default inside the module itself** — the template's `global-values.yaml` supplies the prod values (daily / 30 days); dev/UAT environments override both. If either is ever missing at apply time (e.g. an environment that set `backup_enabled: true` without the other two keys), the module's own `precondition` fails loudly at `tofu plan`, not silently.
+
+Does **not** cover prod Postgres — that's RDS, with its own backup via `rds_backup_retention_days` above; an RDS-backed cluster has no in-cluster Postgres PVC for this module to see in the first place. In-cluster Postgres (dev/test/UAT) is covered automatically, no per-workload opt-in, since AWS Backup captures the whole cluster's CSI-backed PVs — but note a snapshot of a live Postgres volume is crash-consistent (same guarantee as a power loss), not a WAL-aware backup.
 
 ## Generated service api keys (`random_passwords` → `output-file`)
 
