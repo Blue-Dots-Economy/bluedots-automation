@@ -300,6 +300,26 @@ global:
   # rds_skip_final_snapshot: false            # default false
   # rds_force_ssl: false                      # default false; true to require TLS
 
+  # ── AWS Backup (EKS) ─────────────────────────────────────────────────────────
+  # Agent-free: AWS Backup calls the EKS API directly, no Helm chart/CRD/in-cluster agent
+  # involved. Captures cluster state (K8s manifests) plus every PV provisioned through the
+  # EBS/EFS/S3 CSI driver as one composite recovery point per run. Does NOT cover prod RDS
+  # Postgres — that has its own backup via rds_backup_retention_days above.
+  #
+  # On by default — schedule/retention below ship as the PROD posture (daily, 30-day). Dev/UAT
+  # environments override backup_schedule to weekly and backup_retention_days to 7 in their own
+  # global-values.yaml.
+  backup_enabled: true
+  backup_schedule: "cron(30 18 ? * * *)"   # UTC = 00:00 IST daily (prod). Dev/UAT: "cron(30 18 ? * SUN *)" (weekly).
+  backup_retention_days: 30                # delete_after (prod). Dev/UAT: override to 7 in that env's global-values.yaml.
+  backup_min_retention_days: 7             # vault lock floor; must be <= backup_retention_days (7 also covers the dev/UAT override above)
+  backup_max_retention_days: 35            # vault lock ceiling; must be >= backup_retention_days
+  backup_start_window: 60                  # minutes before an unstarted job is marked failed
+  backup_completion_window: 300            # minutes before a running job is marked failed
+  backup_alert_emails:
+    - "security@example.in"
+  backup_enable_s3: false                  # only if an S3-backed PVC (not EBS) is in scope
+
   # Key becomes suffix: <building_block>-<environment>-<account_id>-<key>
   # The `public` bucket is the ONLY app bucket: the aggregator and the Signals
   # non-PII s3-export CronJob (helm/signals/charts/s3-export) both write to it.
