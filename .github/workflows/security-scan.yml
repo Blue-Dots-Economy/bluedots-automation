@@ -205,14 +205,61 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: { fetch-depth: 0, persist-credentials: false }   # full history so gitleaks scans past commits
+      # Pinned by digest, like every other tool in this file. `:latest` left the
+      # one check standing between a credential and a public history free to
+      # change under us between two runs of the same commit -- and to change
+      # what it scans, since the `detect` subcommand became a hidden
+      # backwards-compatibility alias in v8.19. Digest below is v8.30.1.
+      #
+      # v8.30.1 rather than the v8.18.4 the standalone workflows in
+      # bluedots-infra-deployments and test-dev-cluster pin, for one specific
+      # reason: v8.18.4 FAILS OPEN on the git path. Its cmd/detect.go does
+      # `gitCmd, err := sources.NewGitLogCmd(...)`, declaring an err scoped to
+      # that block, so the outer err -- still nil -- is what reaches
+      # findingSummaryAndExit and a failed `git log` prints "no leaks found"
+      # and exits 0. v8.30.1's cmd/git.go assigns with `=` and propagates the
+      # real error. (v8.30.1 also fixed .gitleaksignore, which at v8.18.4
+      # stored every line verbatim, so a `# reason` line became a bogus
+      # fingerprint.)
+      #
+      # `git /repo` is the modern spelling of `detect --source=/repo`.
       - name: gitleaks (OSS image — no marketplace licence)
         run: |
-          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
-            detect --source=/repo --redact \
-            --report-format sarif --report-path /repo/gitleaks.sarif \
-            --exit-code ${{ inputs.block && '1' || '0' }} || true
+          # `|| status=$?` rather than the previous `|| true`: that swallowed
+          # the exit code unconditionally, so --exit-code was dead and
+          # `block: true` could never fail this job. Findings reached the
+          # Security tab and the check stayed green regardless, which is not
+          # what block mode is for.
+          set -o pipefail
+          status=0
+          docker run --rm -v "$PWD:/repo" \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git /repo --redact --verbose \
+              --report-format sarif --report-path /repo/gitleaks.sarif \
+              --exit-code ${{ inputs.block && '1' || '0' }} \
+            2>&1 | tee "${RUNNER_TEMP}/gitleaks.log" || status=$?
+
+          # Belt and braces on top of the version bump: assert the scan
+          # actually walked commits. Catches a shallow clone (reports 0), a
+          # bind-mount or ownership failure, and any future regression of the
+          # fail-open class -- without needing to know which one happened.
+          if ! grep -qE '[1-9][0-9]* commits scanned' "${RUNNER_TEMP}/gitleaks.log"; then
+            echo "::error::gitleaks did not scan any commits -- treating as a failed scan, not a clean one."
+            exit 1
+          fi
+
+          exit "$status"
+
+      # continue-on-error because code scanning is not available everywhere:
+      # on a PRIVATE repository without Advanced Security this upload fails
+      # with "Advanced Security must be enabled for this repository to use code
+      # scanning", which would fail the job for a reason that has nothing to do
+      # with the scan. adhoc-scripts is exactly that case. Public callers are
+      # unaffected and still get their SARIF; private ones degrade to the job
+      # log rather than being locked out of the workflow entirely.
       - name: Upload gitleaks SARIF
         if: always()
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: gitleaks.sarif
