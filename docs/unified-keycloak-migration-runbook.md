@@ -146,7 +146,7 @@ Edit `opentofu/aws/<env>/global-values.yaml`.
 | `global.keycloak.publicBaseUrl` | `https://<aggregator-host>/auth` | The **Keycloak** host, not a signals host — the issuer string in a token is built from it. |
 | `keycloak.postgres.username` | **`keycloak`** everywhere — the stock value | On an existing cluster the `keycloak` database starts out owned by the `aggregator` role (the bootstrap Job's `CREATE DATABASE` guard is a no-op, so it never changes by itself). **Migrate the ownership in §6.5c rather than pinning this to `aggregator`** — that workaround also forces an edit to a shared, trunk-tracked module and is the more expensive path. Plan §11.4. |
 | `global.publicHosts` | the signals hostnames | Builds signals-ui's redirect / origin / post-logout allow-lists. Wrong or empty fails signals login with `invalid_redirect_uri` — and it looks fine locally, where everything is localhost. |
-| `api.config.AUTH_PROVIDER` | leave at **`betterauth`** | Do not flip signals in this window. §10. |
+| `api.config.AUTH_PROVIDER` | **`keycloak`** (the chart default) if the signals image includes signals-dpg#757; otherwise leave the environment's existing **`betterauth`** | A #757 image accepts only `keycloak` and crashloops on `betterauth`. A pre-#757 environment that is still on `betterauth` must not flip in this window, and must not upgrade its signals image until it has flipped. §10. |
 
 Static check before touching the cluster:
 
@@ -219,7 +219,8 @@ bash install.sh fix_acme_issuer_uri
 
 `keycloak` **must** follow `common-services` — its database is created by a
 post-install hook of that release — and precede `signals`, whose api asserts
-Keycloak config at boot once `AUTH_PROVIDER=keycloak`.
+Keycloak config at boot (`AUTH_PROVIDER=keycloak`, the only value since
+signals-dpg#757).
 
 ### 5.3 The manual step between signals and aggregator
 
@@ -254,8 +255,9 @@ From §7 run everything except *users preserved* — there is no prior state to
 compare. Then create your first coordinator through the normal registration +
 approval flow and confirm `/profile` renders.
 
-§8 and §9 do not apply (no old Keycloak, no legacy state). §10 applies as written,
-and a new environment can flip immediately since it has no signals users to
+§8 and §9 do not apply (no old Keycloak, no legacy state). Nor does §10: a new
+environment runs `AUTH_PROVIDER=keycloak` (the chart default, and the only value
+a signals-dpg#757+ image accepts) from its first deploy, with no signals users to
 provision.
 
 ---
@@ -603,7 +605,7 @@ kubectl -n aggregator exec deploy/<redis> -- \
 
 ```bash
 cd opentofu/aws/<env>
-bash install.sh deploy_signals      # AUTH_PROVIDER still betterauth — wiring lands inert
+bash install.sh deploy_signals      # AUTH_PROVIDER as set in §4 (keycloak on a #757+ image; see §10)
 bash install.sh deploy_aggregator
 bash install.sh fix_acme_issuer_uri
 ```
@@ -797,9 +799,19 @@ there is no divergence for a later operator to mistake for drift.
 
 **A separate window. Do not bundle it with §6.**
 
-`AUTH_PROVIDER` accepts only `betterauth` or `keycloak` — `dual` was removed
-upstream, so there is no mode that accepts both. The cutover is a **hard flip**,
-and every existing signals user must already exist in the shared realm.
+> **Since signals-dpg#757, `keycloak` is the only value.** That change removed
+> better-auth from the signals api image. An image that includes it rejects
+> `AUTH_PROVIDER=betterauth` with a `ConfigError` at startup (the pod
+> crashloops), and its migration `0018_drop_better_auth_tables.sql` drops
+> `account`, `verification`, `invitation`, `team` and `team_member`. The chart
+> default is `keycloak` too. So this section only applies to an environment still
+> running a **pre-#757** signals image on `betterauth`, and for that environment
+> the flip is a **prerequisite of upgrading the signals image**, not an optional
+> later step.
+
+`dual` was removed upstream, so there is no mode that accepts both providers. The
+cutover is a **hard flip**, and every existing signals user must already exist in
+the shared realm.
 
 Prerequisite, owned by signals-dpg and **not** satisfied by this runbook: provision
 every existing signals user into the realm. There is no just-in-time backfill.
@@ -817,8 +829,15 @@ Verify:
   shared, so without it an aggregator token would be honoured by signals.
 - The signals login page renders the **signals** brand.
 
-Rollback is setting `AUTH_PROVIDER` back to `betterauth` and redeploying, provided
-no user has been created Keycloak-only since the flip.
+Rollback depends on which image is running:
+
+- **Still on a pre-#757 image:** set `AUTH_PROVIDER` back to `betterauth` and
+  redeploy, provided no user has been created Keycloak-only since the flip.
+- **On a #757 or later image:** there is **no rollback provider**. Setting
+  `betterauth` crashloops the api. Rolling the image back as well does not
+  restore it cleanly, because migration 0018 has already dropped the better-auth
+  tables. Fix forward in Keycloak instead. This is why the flip is done, and
+  verified, on the pre-#757 image before that image is upgraded.
 
 ### 10.1 Two traps in the user-provisioning prerequisite
 

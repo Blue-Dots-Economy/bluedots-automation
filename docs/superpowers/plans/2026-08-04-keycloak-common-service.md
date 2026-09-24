@@ -4,6 +4,8 @@
 **Branch:** `unified-keycloak`
 **Repos touched by this plan:** `bluedots-automation` only (see §12 for what must already be true in the app repos)
 
+> **Historical record, partly superseded.** signals-dpg#757 later removed better-auth from signals entirely. Where this plan treats `AUTH_PROVIDER=betterauth` as a valid value, a hold state or a rollback target, that no longer holds: `keycloak` is the only accepted value and there is no rollback provider. Current guidance is in `docs/unified-keycloak-migration-runbook.md` §10.
+
 ## 1. Goal
 
 Move Keycloak out of the `aggregator` release and into `common-services`, so a
