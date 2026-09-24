@@ -662,6 +662,12 @@ api:
     NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
     NOTIFICATION_FROM_EMAIL: *smtp_user
     SERVED_DOMAINS: *signals_served_domains
+    # Chart default is "dpg". Set this to match the network/brand's
+    # EMAIL_SIGNOFF in aggregator-dpg/config/<network>/keycloak.env, or
+    # signals-api's own transactional emails (profile.update etc.) sign off
+    # differently from Keycloak's — left unset once, ALIMCO shipped "Team dpg"
+    # while Keycloak mail said "Team ALIMCO" (bluedots-infra-deployments#38).
+    INSTANCE_NAME: "dpg"
     # ── Auth provider ──────────────────────────────────
     # `betterauth` or `keycloak` ONLY. `dual` was REMOVED in signals #456 and the
     # api has a startup guard that rejects it with an actionable message.
