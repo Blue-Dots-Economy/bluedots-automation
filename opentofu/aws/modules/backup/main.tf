@@ -55,9 +55,6 @@ data "aws_partition" "current" {}
 # `eks_backup` is what the nightly job actually runs as: backup-only permissions, nothing else.
 # `eks_restore` carries the elevated policy and is NEVER referenced by the plan/selection below —
 # it exists purely to be assumed by hand when an actual restore is being performed.
-# AWSBackupFullAccessPolicyForRestore grants list/get/create on all Kubernetes resources plus
-# escalate/bind on roles and clusterroles (cluster-admin-equivalent); that must not sit attached
-# to anything that runs unattended every night.
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_iam_role" "eks_backup" {
@@ -94,10 +91,14 @@ resource "aws_iam_role_policy_attachment" "eks_restore" {
   policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
 }
 
-resource "aws_iam_role_policy_attachment" "eks_restore_eks_access" {
-  role       = aws_iam_role.eks_restore.name
-  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/AWSBackupFullAccessPolicyForRestore"
-}
+# No second attachment for EKS-specific restore access: "AWSBackupFullAccessPolicyForRestore" is
+# not an IAM managed policy (arn:aws:iam::aws:policy/... 404s — confirmed on a real apply) — it's
+# an EKS cluster access policy (arn:aws:eks::aws:cluster-access-policy/...), a different mechanism
+# entirely, granted via an EKS access entry. AWS's own "Restore an Amazon EKS cluster" doc lists
+# only AWSBackupServiceRolePolicyForRestores (above) as required for the restore role, and states
+# AWS Backup creates the access entries it needs itself during the restore job — the prerequisite
+# is authentication_mode = "API_AND_CONFIG_MAP" on the cluster (already set in modules/eks), not
+# anything pre-attached to this role.
 
 # ---------------------------------------------------------------------------------------------------------------------
 # KMS — customer-managed key encrypting the vault. Rotation on; deletion window gives a recovery
