@@ -30,17 +30,18 @@ data:
     against. KEYCLOAK_INTERNAL_BASE_URL is the in-cluster address used for JWKS +
     Admin REST so those calls do not egress through Kong.
 
-    Emitted unconditionally so the wiring is present and inert while
-    AUTH_PROVIDER=betterauth; signals only asserts these once the flag moves.
+    Emitted whenever they resolve. AUTH_PROVIDER=keycloak is the only value
+    signals accepts (signals-dpg#757), and the api asserts all three at boot;
+    the guard below makes a missing one a render-time error instead.
 
     RESOLUTION ORDER — this used to read .Values.keycloak alone, which the
     umbrella declares as empty strings and nothing ever populated: Helm exposes
     globals to a subchart at .Values.global.*, it does NOT map global.keycloak.*
     onto a subchart's own .Values.keycloak. So the realm and issuer silently
     rendered as NOTHING while only the umbrella's hardcoded internalBaseUrl
-    landed. Harmless under betterauth, but it fails the AUTH_PROVIDER=keycloak
-    cutover — which has no `dual` mode, so it fails closed for every user at
-    once. Hence an explicit chain, most specific first.
+    landed. Under AUTH_PROVIDER=keycloak, which has no `dual` or betterauth
+    fallback, that fails closed for every user at once. Hence an explicit
+    chain, most specific first.
   */}}
   {{- $kc := .Values.keycloak | default dict }}
   {{- $g := .Values.global | default dict }}

@@ -312,9 +312,9 @@ schemas:
 #                   > <global.publicProtocol|https>://<global.publicHost>/auth
 #   internalBaseUrl api.keycloak.internalBaseUrl > global.keycloak.internalBaseUrl
 #
-# They must match the `keycloak` release exactly. Empty resolves to nothing in
-# the ConfigMap while AUTH_PROVIDER=betterauth; once it is `keycloak` the render
-# FAILS instead, rather than shipping a silently broken cutover.
+# They must match the `keycloak` release exactly. With AUTH_PROVIDER=keycloak
+# (the only value signals accepts since signals-dpg#757) an empty one FAILS the
+# render, rather than shipping an api that cannot validate any token.
 keycloak:
   realm: ""
   publicBaseUrl: ""

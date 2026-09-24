@@ -201,12 +201,15 @@ api:
     AUTH_MIDDLEWARE_ENABLED: "true"
 
     # ── Auth provider ─────────────────────────────────────────────────────
-    # `betterauth` or `keycloak` ONLY. `dual` was REMOVED in signals Phase 4, so
-    # there is no mode that accepts both — the cutover per environment is a HARD
-    # flip, not a ramp, and every existing user must already be provisioned into
-    # the realm before flipping. Leave at betterauth until that is done; the
-    # KEYCLOAK_* wiring below is inert while it is.
-    AUTH_PROVIDER: "betterauth"
+    # `keycloak` is the only supported value. `dual` was REMOVED in signals
+    # Phase 4, and signals-dpg#757 retired `betterauth`: the api now rejects it
+    # with a ConfigError before config parsing, so an api given that value
+    # crashloops at startup instead of starting degraded. Do NOT set it here or
+    # in an environment's global-values.yaml. Because this is `keycloak`,
+    # charts/api/templates/configmap.yaml fails the render unless a realm,
+    # issuer and internal Keycloak URL all resolve — set global.keycloakRealm
+    # and global.keycloak.host (see global.keycloak above).
+    AUTH_PROVIDER: "keycloak"
 
     # ── Keycloak (shared realm; used when AUTH_PROVIDER=keycloak) ──────────
     # KEYCLOAK_BASE_URL / KEYCLOAK_INTERNAL_BASE_URL / KEYCLOAK_REALM are DERIVED
