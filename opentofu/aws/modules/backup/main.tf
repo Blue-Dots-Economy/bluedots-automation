@@ -100,46 +100,24 @@ resource "aws_iam_role_policy_attachment" "eks_restore_eks_access" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# KMS — customer-managed key, shared by the vault and the alerts SNS topic below. Rotation on;
-# deletion window gives a recovery buffer if the key is ever targeted for deletion by mistake.
+# KMS — customer-managed key encrypting the vault. Rotation on; deletion window gives a recovery
+# buffer if the key is ever targeted for deletion by mistake.
 #
-# Needs an explicit policy because it's used for SNS topic encryption: unlike the AWS-managed
-# alias/aws/sns key (which ships already trusting the SNS service), a customer-managed key must
-# explicitly grant sns.amazonaws.com — otherwise message publish/delivery fails at apply/runtime,
-# not just at plan. The root statement is the standard "Enable IAM User Permissions" default;
-# without it the key becomes unmanageable by any IAM policy, including Terraform's own.
+# Deliberately no explicit `policy` argument — same as modules/eks's aws_kms_key.eks_secrets. Some
+# deploying accounts permanently deny kms:PutKeyPolicy to the automation identity as a guardrail
+# (so that identity can never rewrite a key's resource policy to grant itself broader access), in
+# which case ANY explicit policy — including one that's functionally identical to AWS's own
+# default — fails CreateKey with "the new key policy will not allow you to update the key policy
+# in the future". Omitting the argument lets AWS attach its own default (root-only) policy, which
+# isn't sent as an explicit API parameter and so isn't subject to that check. AWS Backup itself
+# doesn't need a key-policy grant either — it uses kms:CreateGrant, a different, commonly-allowed
+# mechanism.
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_kms_key" "backup" {
-  description             = "${local.name} vault + alerts encryption key"
+  description             = "${local.name} vault encryption key"
   enable_key_rotation     = true
   deletion_window_in_days = 30
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "EnableIAMUserPermissions"
-        Effect    = "Allow"
-        Principal = { AWS = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root" }
-        Action    = "kms:*"
-        Resource  = "*"
-      },
-      {
-        Sid       = "AllowSNSToUseKey"
-        Effect    = "Allow"
-        Principal = { AWS = "*" }
-        Action    = ["kms:Decrypt", "kms:GenerateDataKey*"]
-        Resource  = "*"
-        Condition = {
-          StringEquals = {
-            "kms:ViaService"    = "sns.${var.aws_region}.amazonaws.com"
-            "kms:CallerAccount" = data.aws_caller_identity.current.account_id
-          }
-        }
-      }
-    ]
-  })
 
   tags = local.common_tags
 }
@@ -230,13 +208,16 @@ resource "aws_backup_selection" "eks" {
 # "<cluster-name> BACKUP_JOB_<STATE>" / "<cluster-name> RESTORE_JOB_<STATE>" before it reaches SNS.
 # ---------------------------------------------------------------------------------------------------------------------
 
+#trivy:ignore:AWS-0136 -- Trivy wants a customer-managed key here, but this account's deploying
+# identity has kms:PutKeyPolicy permanently denied (see aws_kms_key.backup above), so no CMK with
+# a custom policy can ever be created by it — any explicit key policy fails CreateKey outright,
+# not just this SNS grant. alias/aws/sns (AWS-managed) still gives real encryption at rest and
+# ships already trusting the SNS service, satisfying AWS-0095 without requiring a policy we can't
+# create. Messages here carry no secrets/PII — just alert text like "<cluster> BACKUP_JOB_FAILED".
 resource "aws_sns_topic" "backup_alerts" {
   name = "${local.name}-alerts"
 
-  # Customer-managed key (Trivy AWS-0136 requires a CMK, not the AWS-managed alias/aws/sns).
-  # Reuses aws_kms_key.backup rather than a second key — its policy above explicitly trusts
-  # sns.amazonaws.com via kms:ViaService, which is what a CMK needs for this to actually work.
-  kms_master_key_id = aws_kms_key.backup.id
+  kms_master_key_id = "alias/aws/sns"
 
   tags = local.common_tags
 }
