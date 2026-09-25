@@ -167,9 +167,9 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
     See [deployment_guide.md → A4](deployment_guide.md#a4-fill-in-secretsyaml).
   - **Per-IP OTP rate limiting** — on by default (`_otp_rate_limit_enabled`),
     with `_signals_otp_per_minute` (5) / `_aggregator_otp_per_minute` (20)
-    guarding the OTP login endpoints. The signals limit is currently inert:
-    its endpoint was removed with better-auth (signals-dpg#757), and login OTP
-    is now limited by the keycloak one. See `helm/CLAUDE.md → Per-IP OTP-abuse
+    guarding the OTP login endpoints. The signals limit goes inert once a
+    signals release containing signals-dpg#757 is deployed (its endpoint is
+    removed with better-auth); until then it is live. See `helm/CLAUDE.md → Per-IP OTP-abuse
     rate limiting`; tightening these too far can lock out legitimate logins.
 - **Fetch / data limits (signals api config):** `ALLOW_EXTRA_SCHEMA_DATA`
   (`"false"` = reject unknown fields) is set in the chart values. `BULK_MAX_ITEMS`

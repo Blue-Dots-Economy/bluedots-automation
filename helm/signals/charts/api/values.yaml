@@ -106,9 +106,8 @@ apiRateLimit:
   # missing here does not fail, it silently falls through to the per-service
   # catch-all tier (rl-signals-api, 10000/min) — i.e. effectively unlimited. The
   # source of truth is apps/api/src/routes/v1/v1_routes.ts (the `prefix:` on each
-  # register). The app-level /api/auth mount in apps/api/src/app.ts is gone
-  # with better-auth (signals-dpg#757), so it is no longer listed. When a route
-  # group is added there, add it here. An earlier revision of this comment
+  # register) plus the app-level /api/auth mount in apps/api/src/app.ts. When a
+  # route group is added there, add it here. An earlier revision of this comment
   # claimed "full coverage — every signals-api resource group", which is how four
   # prefixes stayed unlisted through review; do not restore that wording.
   groups:
@@ -119,6 +118,14 @@ apiRateLimit:
     - { path: /api/v1/network }
     - { path: /api/v1/admin }
     - { path: /api/v1/aggregator }
+    # better-auth's own mount (app.ts), NOT the same prefix as /api/v1/auth below
+    # — Kong matches on path prefix, so this entry does not cover that one.
+    # signals-dpg#757 removes this mount, but KEEP this entry until a signals
+    # release containing #757 is deployed to every environment: images before it
+    # still serve /api/auth/* (on a betterauth environment it is the live login
+    # surface), and dropping it early sends that traffic to the 10000/min
+    # catch-all. Remove it with OneTAC's cutover (bluedots-infra-deployments#32).
+    - { path: /api/auth }
     # ── Pre-login, unauthenticated: capped below the default ─────────────────
     # Both of these are reachable with no credential, and both are cheap to
     # script. 120/min is chosen against real usage, not against the attacker: a
@@ -148,13 +155,15 @@ apiRateLimit:
 # OTP-send endpoint of better-auth's unified-otp plugin. Renders when
 # ingress.enabled + otpRateLimit.enabled. See templates/otp-ratelimit-ingress.yaml.
 #
-# CURRENTLY INERT: signals-dpg#757 removed the /api/auth/* mount, so this path
-# answers 404 and the limiter protects nothing. Login OTP is now sent by the
-# Keycloak OTP SPI and limited by the keycloak chart's own otp-ratelimit-ingress.
-# signals still sends guardian OTPs (POST /api/v1/consent/u18/guardian and
-# /api/v1/consent/u18/signup/guardian), which today get only the 120/min
-# /api/v1/consent group above plus the app's own per-contact caps. Kept pending
-# a decision to repoint this limiter at those paths or remove it.
+# Still LIVE on images before signals-dpg#757, which removes the /api/auth/*
+# mount; on a betterauth environment this is the login OTP-send path. Once a
+# release containing #757 is deployed, this path 404s and the limiter goes
+# inert: login OTP is then sent by the Keycloak OTP SPI and limited by the
+# keycloak chart's own otp-ratelimit-ingress. signals still sends guardian OTPs
+# (POST /api/v1/consent/u18/guardian and /api/v1/consent/u18/signup/guardian),
+# which get only the 120/min /api/v1/consent group above plus the app's own
+# per-contact caps. After #757 is everywhere, decide whether to repoint this
+# limiter at those paths or remove it.
 otpRateLimit:
   enabled: true
   minute: 5            # per-IP OTP-send requests/min (a real login needs ~1–3)
