@@ -38,6 +38,10 @@ spec:
             - "--max-batch-tokens"
             - {{ .Values.embeddings.maxBatchTokens | quote }}
             {{- end }}
+            {{- if .Values.embeddings.pooling }}
+            - "--pooling"
+            - {{ .Values.embeddings.pooling | quote }}
+            {{- end }}
             - "--port"
             - {{ .Values.embeddings.port | quote }}
           ports:
