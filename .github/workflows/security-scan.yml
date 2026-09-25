@@ -71,7 +71,19 @@ on:
       run-gitleaks:
         description: "Run the gitleaks git-secret scan"
         type: boolean
-        default: false
+        # Defaults ON. It defaulted to false, and that is how four repositories
+        # ended up with a green `security` check and no git-history secret scan
+        # at all -- aggregator-dpg, signals-dpg, signals-search and
+        # notification-service each call this workflow without passing it. A
+        # repository with no security workflow is honestly uncovered; one whose
+        # scan is silently skipped looks covered on the Actions tab, in branch
+        # protection, and to anyone auditing by workflow name.
+        #
+        # Opting OUT is still one line and now has to be written down, which is
+        # the right way round for a control like this. The blast radius of the
+        # flip is small because `block` defaults to false: a newly-scanned repo
+        # gets findings in Security > Code scanning, not red pull requests.
+        default: true
       block:
         description: "true = fail the build on HIGH/CRITICAL; false = report-only"
         type: boolean
