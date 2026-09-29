@@ -9,6 +9,10 @@
   bill. This path is more specific than the /api and /api/auth routes, so Kong
   matches it first; the rest of /api/auth/* keeps its normal limit.
 
+  Still LIVE on signals images before signals-dpg#757; it goes inert (the path
+  404s) once a release containing #757 is deployed. See the otpRateLimit
+  comment in values.yaml for what sends OTPs after that.
+
   policy: redis + limit_by: ip + {vault://env/redis-password} mirror the other
   rate-limit plugins; Kong resolves the vault reference from its own pod env, so the
   plaintext never lands on the KongPlugin CR.
