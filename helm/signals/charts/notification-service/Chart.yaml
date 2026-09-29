@@ -9,6 +9,7 @@ keywords:
   - notification
   - email
   - sms
+  - whatsapp
 sources:
   - https://github.com/Sanketika-Obsrv/dpg-monorepo
 maintainers:
