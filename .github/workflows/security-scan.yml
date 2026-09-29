@@ -85,8 +85,39 @@ on:
         # gets findings in Security > Code scanning, not red pull requests.
         default: true
       block:
-        description: "true = fail the build on HIGH/CRITICAL; false = report-only"
+        description: "true = fail the build on HIGH/CRITICAL vulnerabilities; false = report-only"
         type: boolean
+        default: false
+      block-secrets:
+        description: "true = fail the build when gitleaks finds a secret. Leave unset to follow `block`."
+        type: boolean
+        # Split out from `block` because that one input was answering two
+        # questions with genuinely different answers:
+        #
+        #   "should a HIGH CVE in a dependency stop this pull request?"
+        #       -- often no, which is why every caller sets block: false. The
+        #          backlog is pre-existing and triaging it is its own piece of
+        #          work; blocking on it red-walls every PR in the meantime.
+        #
+        #   "should a committed credential stop this pull request?"
+        #       -- close to always yes. On a public repository the push IS the
+        #          disclosure, and a report-only secret scan tells you about a
+        #          leak you have already published.
+        #
+        # Conflating them meant the second answer had to follow the first, so
+        # consolidating a repo onto this workflow silently downgraded its secret
+        # scan to report-only. That is what happened to bluedots-e2e, whose
+        # bespoke workflow hardcoded --exit-code=1 (Blue-Dots-Economy/bluedots-e2e#39).
+        #
+        # Defaults false so nothing changes for existing callers: the gitleaks
+        # step ORs the two, so a caller that sets neither keeps following
+        # `block` exactly as before, and `block-secrets: true` strengthens the
+        # secret scan without dragging the CVE scanners along with it.
+        #
+        # Practical consequence worth knowing before you set it: a repository
+        # with findings already in its history will red-wall every pull request
+        # the moment this goes true. Triage first, then set it. A repo with a
+        # clean history can set it immediately.
         default: false
 
 permissions:
@@ -248,7 +279,7 @@ jobs:
             ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             git /repo --redact --verbose \
               --report-format sarif --report-path /repo/gitleaks.sarif \
-              --exit-code ${{ inputs.block && '1' || '0' }} \
+              --exit-code ${{ (inputs.block-secrets || inputs.block) && '1' || '0' }} \
             2>&1 | tee "${RUNNER_TEMP}/gitleaks.log" || status=$?
 
           # Belt and braces on top of the version bump: assert the scan
