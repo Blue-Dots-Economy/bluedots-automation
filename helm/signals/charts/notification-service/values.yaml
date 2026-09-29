@@ -89,6 +89,8 @@ config:
   SMTP_PORT: ""      # default 587 when SMTP_HOST is set
   SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
   SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
+  # WhatsApp notifications are not supported yet (planned). Keep empty so the
+  # service never enables the channel; a non-empty value may read as "on".
   SEND_WHATSAPP_NOTIFICATION: ""
   MAIL_LOG: "true"
   LOG_ACTIVITY: "true"

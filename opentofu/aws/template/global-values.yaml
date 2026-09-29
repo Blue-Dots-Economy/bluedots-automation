@@ -755,7 +755,7 @@ notification-service:
     # pinnacle. One vendor per deployment; both register as channel `sms`, so
     # no caller changes. An unknown value THROWS AT BOOT — and because the SMS
     # provider is selected at module load, a typo crashloops the whole
-    # notification service, email and WhatsApp included, not just SMS.
+    # notification service, email included, not just SMS.
     #
     # The vendor's credentials and DLT settings are NOT here: they are entered
     # in <env>/secrets.yaml as pinnacle_* and land in the generated
