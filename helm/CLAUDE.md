@@ -116,7 +116,9 @@ secret all unchanged.
 `src/lib/providers/sms/index.ts` selects the vendor at import time and throws on an
 unknown value — deliberately, because falling back would send through the wrong
 vendor with the wrong sender id and DLT entity. The blast radius is *not* just SMS:
-the throw happens before the app serves anything, so email goes down too.
+the throw happens before the app serves anything, so email and WhatsApp go down
+too — the provider registry `require`s every folder under `providers/` in one
+loop at import time, so one vendor's throw takes all channels with it.
 Values are `msg91` (default) or `pinnacle`.
 
 **One vendor's settings live in one file.** Pinnacle's credentials *and* its
