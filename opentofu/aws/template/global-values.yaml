@@ -316,8 +316,6 @@ global:
   backup_max_retention_days: 35            # vault lock ceiling; must be >= backup_retention_days
   backup_start_window: 60                  # minutes before an unstarted job is marked failed
   backup_completion_window: 300            # minutes before a running job is marked failed
-  backup_alert_emails:
-    - "security@example.in"
   backup_enable_s3: false                  # only if an S3-backed PVC (not EBS) is in scope
 
   # Key becomes suffix: <building_block>-<environment>-<account_id>-<key>

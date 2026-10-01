@@ -75,14 +75,8 @@ variable "backup_completion_window" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Notifications / optional extras
+# Optional extras
 # ---------------------------------------------------------------------------------------------------------------------
-
-variable "backup_alert_emails" {
-  description = "Email addresses subscribed to backup/restore job events (BACKUP_JOB_FAILED, BACKUP_JOB_COMPLETED, RESTORE_JOB_FAILED, RESTORE_JOB_COMPLETED). Each subscription needs a manual click to confirm — Terraform can't complete that step."
-  type        = list(string)
-  default     = []
-}
 
 variable "backup_enable_s3" {
   description = "Attach AWSBackupServiceRolePolicyForS3Backup to the backup role. Leave false unless an S3-backed PVC (not EBS) is actually in scope for this cluster."

@@ -37,6 +37,5 @@ inputs = {
   backup_max_retention_days = lookup(local.global_vars.global, "backup_max_retention_days", 35)
   backup_start_window       = lookup(local.global_vars.global, "backup_start_window", 60)
   backup_completion_window  = lookup(local.global_vars.global, "backup_completion_window", 300)
-  backup_alert_emails       = lookup(local.global_vars.global, "backup_alert_emails", [])
   backup_enable_s3          = lookup(local.global_vars.global, "backup_enable_s3", false)
 }

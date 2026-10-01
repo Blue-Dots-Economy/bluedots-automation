@@ -22,8 +22,3 @@ output "restore_role_arn" {
   description = "IAM role ARN to assume manually when actually performing a restore. Never used by the automated plan/selection — carries AWSBackupServiceRolePolicyForRestores, kept separate from the nightly backup role."
   value       = aws_iam_role.eks_restore.arn
 }
-
-output "sns_topic_arn" {
-  description = "SNS topic ARN that backup/restore job events are published to."
-  value       = aws_sns_topic.backup_alerts.arn
-}

@@ -205,7 +205,6 @@ way.
 | `FailedScheduling: ... bound to non-existent persistentvolume ... not found` | PVC restored but its PV didn't, or a stale PV from an earlier test is blocking it — see "Cleaning up" above. |
 | Restored pods crash-looping across several namespaces | Usually a cascade from one real problem (commonly Postgres/Redis not binding) — fix the root PV/PVC issue first and recheck. |
 | Namespace stuck in `Terminating` | `kubectl get namespace <ns> -o jsonpath='{.status.conditions}'` names the exact blocker — a dangling `metrics.k8s.io` APIService is the most common and is safe to delete directly. |
-| No email for a backup/restore event | Confirm the SNS subscription is actually confirmed (`aws sns list-subscriptions-by-topic --topic-arn ...` — look for a real `SubscriptionArn`). If confirmed and it's a *restore* job, see below — that path doesn't fire yet. |
 
 ---
 
@@ -215,8 +214,3 @@ way.
   backup and only has backup permissions. `<env>-eks-backup-restore-role` is
   what these scripts use for restores — a separate, more powerful policy,
   never attached to anything that runs unattended.
-- **Restore-job email notifications don't fire yet.** Backup-job
-  notifications are confirmed working; the restore-job EventBridge rule is
-  confirmed **not** to fire (checked via `AWS/Events` CloudWatch metrics —
-  zero invocations despite a completed restore job). Until `modules/backup/main.tf`
-  is fixed, always check restores manually with `restore-status.sh`.
