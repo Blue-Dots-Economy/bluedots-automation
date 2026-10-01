@@ -209,12 +209,13 @@ resource "aws_backup_selection" "eks" {
 # "<cluster-name> BACKUP_JOB_<STATE>" / "<cluster-name> RESTORE_JOB_<STATE>" before it reaches SNS.
 # ---------------------------------------------------------------------------------------------------------------------
 
-#trivy:ignore:AWS-0136 -- Trivy wants a customer-managed key here, but this account's deploying
-# identity has kms:PutKeyPolicy permanently denied (see aws_kms_key.backup above), so no CMK with
-# a custom policy can ever be created by it — any explicit key policy fails CreateKey outright,
-# not just this SNS grant. alias/aws/sns (AWS-managed) still gives real encryption at rest and
-# ships already trusting the SNS service, satisfying AWS-0095 without requiring a policy we can't
+# Trivy wants a customer-managed key here, but this account's deploying identity has
+# kms:PutKeyPolicy permanently denied (see aws_kms_key.backup above), so no CMK with a custom
+# policy can ever be created by it — any explicit key policy fails CreateKey outright, not just
+# this SNS grant. alias/aws/sns (AWS-managed) still gives real encryption at rest and ships
+# already trusting the SNS service, satisfying AWS-0095 without requiring a policy we can't
 # create. Messages here carry no secrets/PII — just alert text like "<cluster> BACKUP_JOB_FAILED".
+#trivy:ignore:AWS-0136
 resource "aws_sns_topic" "backup_alerts" {
   name = "${local.name}-alerts"
 
