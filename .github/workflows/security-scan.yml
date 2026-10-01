@@ -131,7 +131,7 @@ jobs:
     name: trivy-fs (deps + misconfig + secrets)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0, persist-credentials: false }
 
       - name: Trivy filesystem scan
@@ -163,7 +163,7 @@ jobs:
     if: inputs.language == 'ts' || inputs.language == 'python'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -246,7 +246,7 @@ jobs:
     if: inputs.run-gitleaks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0, persist-credentials: false }   # full history so gitleaks scans past commits
       # Pinned by digest, like every other tool in this file. `:latest` left the
       # one check standing between a credential and a public history free to
@@ -315,7 +315,7 @@ jobs:
     name: zizmor (workflow lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -378,7 +378,7 @@ jobs:
                  | select(.ruleId == "zizmor/unpinned-uses")
                  | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine)::unpinned action reference - pin it to a full 40-character commit SHA"' \
             zizmor.sarif
-          echo "::error::$count unpinned action reference(s). Pin each to a 40-character commit SHA with a trailing version comment, e.g. uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0"
+          echo "::error::$count unpinned action reference(s). Pin each to a 40-character commit SHA with a trailing version comment, e.g. uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0"
           exit 1
 
       # Online audits (impostor-commit, known-vulnerable-actions), best-effort.
