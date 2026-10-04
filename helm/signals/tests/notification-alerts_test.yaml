@@ -83,7 +83,7 @@ tests:
               queue: dlq
             exp_annotations:
               summary: "Notification DLQ grew by more than 10 in an hour"
-              description: "Messages are being dropped. Inspect via GET /metrics/queue and /failed/retry."
+              description: "Messages are being dropped. Inspect via GET /metrics/queue; replay with POST /failed/retry, which needs a templates:admin credential (an HMAC key whose internal-secrets.json entry has scopes [..., templates:admin])."
 
   # ── Balance staleness ───────────────────────────────────────────────────────
   # A balance gauge with no freshness check reports the last healthy number
