@@ -161,6 +161,7 @@ credentials:
     existingSecret: ""
     data:
       REDIS_PASSWORD: *redis_password
+      DATABASE_PASSWORD: ""  # == credentials.notificationPassword (common-services)
       # Sending mailbox; same pair opentofu gives the aggregator and keycloak.
       SMTP_USER: ""          # e.g. notify@yourdomain.com
       SMTP_PASS: ""
@@ -388,6 +389,10 @@ notification-service:
     enabled: true
     host: platform-redis-master.common-services.svc.cluster.local
     port: 6379
+
+  postgres:
+    enabled: true
+    host: ""   # set by opentofu (global-cloud-values.yaml) to the RDS endpoint
 
   config:
     NODE_ENV: production

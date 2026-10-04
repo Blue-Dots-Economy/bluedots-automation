@@ -143,6 +143,15 @@ would drift into a permanent `401` that looks like a code bug. The same applies 
 `MSG91_TEMPLATE_ID` (which is the Keycloak SPI's variable), and without it NS falls
 back to a hardcoded literal flow id that is not what any cluster is configured with.
 
+**notification-service needs its own Postgres database.** The `notification` database,
+role and `pg_partman` (schema `partman`) are created by the common-services
+`postgresBootstrap` job; NS reads `DATABASE_HOST/PORT/NAME/USER/SSL` from its ConfigMap
+(`postgres.host` is written by opentofu into `global-cloud-values.yaml`) and
+`DATABASE_PASSWORD` from its Secret — the same generated value as
+`credentials.notificationPassword`. NS migrates its own schema on boot, so deploy
+common-services before an NS image that carries persistence. ALIMCO-TCS must move its
+Ansible-Vault `global-values.yaml` to SOPS before this rolls out there.
+
 **Alert rules are unit-tested, because PromQL bugs render as valid YAML.**
 `helm/signals/tests/run.sh` (promtool, mirroring `helm/monitoring/tests/`) is wired
 into CI. Two defects it exists to catch, both of which passed `helm lint` and

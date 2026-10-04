@@ -90,3 +90,9 @@ search:
   postgres:
     host: ${postgres_host}
 %{ endif ~}
+%{ if postgres_host != "" ~}
+# notification-service subchart — managed Postgres (RDS) endpoint.
+notification-service:
+  postgres:
+    host: ${postgres_host}
+%{ endif ~}

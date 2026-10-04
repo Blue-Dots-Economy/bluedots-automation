@@ -18,3 +18,13 @@ data:
   REDIS_HOST: {{ .Values.redis.host | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
   {{- end }}
+  {{- if .Values.postgres.enabled }}
+  {{- if not .Values.postgres.host }}
+  {{- fail "notification-service: postgres.enabled but postgres.host is empty. Set it (opentofu writes it to global-cloud-values.yaml) or disable postgres." }}
+  {{- end }}
+  DATABASE_HOST: {{ .Values.postgres.host | quote }}
+  DATABASE_PORT: {{ .Values.postgres.port | quote }}
+  DATABASE_NAME: {{ .Values.postgres.database | quote }}
+  DATABASE_USER: {{ .Values.postgres.user | quote }}
+  DATABASE_SSL: {{ .Values.postgres.ssl | quote }}
+  {{- end }}

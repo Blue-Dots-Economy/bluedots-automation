@@ -143,6 +143,18 @@ redis:
   host: dpg-redis-master
   port: 6379
 
+# Shared per-cluster Postgres (RDS). Database + role are created by the
+# common-services postgresBootstrap job; the password arrives as the
+# DATABASE_PASSWORD secret. NS migrates its own schema on boot.
+postgres:
+  enabled: true
+  host: ""
+  port: 5432
+  database: notification
+  user: notification
+  # disable | require. Matches how the other services connect to the shared RDS.
+  ssl: disable
+
 # internal-secrets.json mounted at /app/config/internal-secrets.json.
 # Compose mounts a host file; in k8s we render the JSON into a Secret key and
 # mount it as a file. Provide the JSON string (or use existingSecret).
