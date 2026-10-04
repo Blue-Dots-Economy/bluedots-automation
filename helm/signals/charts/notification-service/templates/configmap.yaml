@@ -14,6 +14,9 @@ data:
   {{ $key }}: {{ $val | quote }}
   {{- end }}
   {{- end }}
+  {{- with (include "dpg-notification-service.keycloakEnv" . | trim) }}
+  {{- . | nindent 2 }}
+  {{- end }}
   {{- if .Values.redis.enabled }}
   REDIS_HOST: {{ .Values.redis.host | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
