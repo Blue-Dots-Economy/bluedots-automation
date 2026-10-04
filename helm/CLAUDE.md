@@ -32,6 +32,10 @@ not upstream of this repo and are *supposed* to differ from what deploys. Build
 with `scripts/build-realm.sh <app-repo realm.json>` (applies the hardening
 transform) and gate with `scripts/assert-realm.sh` — which CI runs. Do **not** add
 a "drift from upstream" diff; it would fail on the intentional differences.
+The deployment realm also carries edits made **here only** (event logging #217,
+campaign-manager's OTP browser binding), so a straight `build-realm.sh` run over the
+current app-repo realm reverts them — `assert-realm.sh` catches the binding, not the
+event settings. Diff the result and port back anything it drops.
 
 **Two hardening steps that are invisible when they regress:**
 - The local realms carry `localhost` entries in `redirectUris`, `webOrigins` and —
@@ -91,9 +95,18 @@ empty on KA-Dharwad). Turn it on manually on existing realms, or add it to
 
 It uses Keycloak's own `partialImport` with `ifResourceExists: SKIP`, never
 OVERWRITE — re-creating an existing client changes its service-account user id, and
-those ids are referenced from the aggregator database. It also grants the
-`realm-management` client roles each service account needs, because creating a
-client with `serviceAccountsEnabled` makes the SA user but grants it nothing.
+those ids are referenced from the aggregator database. The import carries
+`roles.client` too, so a new client arrives with its roles (notification-service's
+`notify:send` / `templates:admin`). It then grants every client role listed in a
+service account's `clientRoles` — `realm-management` or any other client — that
+the live SA user lacks: creating a client with `serviceAccountsEnabled` makes the
+SA user but grants it nothing, and import never updates an existing SA's
+mappings. Grants are add-only; a referenced client or role that does not exist
+after import fails the Job. Verified on 26.7.3 + OTP SPI against the pre-NS realm:
+run 1 added the client + 2 roles and granted signals-api `notify:send`, run 2
+`added=0 skipped=14`, signals-api client id/secret/SA user id unchanged, and its
+`client_credentials` token carried `aud` `notification-service` with role
+`notify:send`.
 
 It strips `authenticationFlowBindingOverrides` before importing: a binding
 references a flow by id, and importing a client whose flow does not exist yet fails
@@ -150,7 +163,9 @@ role and `pg_partman` (schema `partman`) are created by the common-services
 `DATABASE_PASSWORD` from its Secret — the same generated value as
 `credentials.notificationPassword`. NS migrates its own schema on boot, so deploy
 common-services before an NS image that carries persistence. ALIMCO-TCS must move its
-Ansible-Vault `global-values.yaml` to SOPS before this rolls out there. `NS_NETWORK` comes from opentofu's `signals_network`; to grant template/policy admin, add a key to the NS `internal-secrets.json` and list its id in `NS_ADMIN_KEY_IDS`.
+Ansible-Vault `global-values.yaml` to SOPS before this rolls out there. `NS_NETWORK` comes from opentofu's `signals_network`. To grant template/policy admin to an HMAC caller, give its `internal-secrets.json` entry `"scopes": ["notify:send", "templates:admin"]` (an entry without `scopes` can only send). Bearer callers need a `notification-service` client role in the realm (granted on their service account in `realm.json`) and their client id in `NS_AUTH_ALLOWED_AZP`.
+
+**NS bearer auth is derived, and optional.** `NS_KEYCLOAK_ISSUER` / `NS_KEYCLOAK_JWKS_URI` are not values: the `dpg-notification-service.keycloakEnv` helper builds them from the same realm/public-base/internal-base chain as the signals api ConfigMap (including the `global.keycloak.host` → `global.publicHost` fallbacks every environment relies on), so the issuer NS checks is the one signals validates. Unlike signals, an unresolved realm or public base is not a render failure: neither variable renders, bearer auth stays off and NS keeps serving HMAC callers. A token is accepted only with `aud: notification-service`, which Keycloak adds because the caller holds a `notification-service` role — no audience mapper on the calling client.
 
 **Alert rules are unit-tested, because PromQL bugs render as valid YAML.**
 `helm/signals/tests/run.sh` (promtool, mirroring `helm/monitoring/tests/`) is wired

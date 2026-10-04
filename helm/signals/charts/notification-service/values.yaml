@@ -116,9 +116,14 @@ config:
   # Network this deployment serves (e.g. blue_dot). Stamped on every template,
   # policy and audit row; never taken from a request. Set by opentofu.
   NS_NETWORK: ""
-  # HMAC key ids (from internal-secrets.json) allowed to call the template and
-  # policy admin API. Empty = nobody. Interim until Keycloak admin roles (#62).
-  NS_ADMIN_KEY_IDS: ""
+  # Serve the API docs and schema (`/`, `/openapi.json`). Off in deployments.
+  NS_DOCS_ENABLED: "false"
+  # Keycloak clients (token `azp`) allowed to call NS with a bearer token. Read
+  # only when bearer auth is on, i.e. when NS_KEYCLOAK_ISSUER renders (derived
+  # from the shared Keycloak coordinates in templates/_helpers.tpl, never set
+  # here). Each caller also needs a notification-service client role in the
+  # realm. Stage 2: add aggregator-dpg.
+  NS_AUTH_ALLOWED_AZP: "signals-api"
   # The login_otp body, used by vendors that cannot render. Must be
   # BYTE-IDENTICAL to the DLT-approved text or the operator scrubs the message.
   # `{{message}}` is the OTP code.
