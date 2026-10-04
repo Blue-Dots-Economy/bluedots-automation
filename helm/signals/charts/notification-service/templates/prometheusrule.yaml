@@ -106,7 +106,7 @@ spec:
             severity: warning
           annotations:
             summary: "Notification DLQ grew by more than {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }} in an hour"
-            description: "Messages are being dropped. Inspect via GET /metrics/queue and /failed/retry."
+            description: "Messages are being dropped. Inspect via GET /metrics/queue; replay with POST /failed/retry, which needs a templates:admin credential (an HMAC key whose internal-secrets.json entry has scopes [..., templates:admin])."
 
         {{- /*
         The DLQ counter, not just its depth. A job dead-lettered and then

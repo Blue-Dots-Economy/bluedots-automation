@@ -115,8 +115,9 @@ credentials:
     # chars), so removing it here crashloops the api. Drop it only after
     # signals-dpg removes it from packages/config/src/secrets.ts.
     authSecret: &api_auth_secret ""  # AUTH_SECRET
-    # API → notification-service auth. keyId+secret MUST match
-    # notification-service internalSecrets.json keys[] below.
+    # API → notification-service auth. notificationKeyId + notificationSecret
+    # MUST match an entry in notification-service's internal-secrets.json below:
+    # { "<keyId>": { "secret": "...", "scopes"?: [...] } }.
     notificationKeyId: &notification_key_id "dpg-api-client"
     notificationSecret: &notification_secret "" # openssl rand -hex 32
     # All keys here become env vars on api pod (envFrom secretRef).
@@ -415,9 +416,11 @@ notification-service:
 
   # internal-secrets.json mounted at /app/config/internal-secrets.json.
   # Override with: --set-file notificationService.internalSecrets.json=./internal-secrets.json
-  # keys[].keyId + keys[].secret MUST match credentials.api.notificationKeyId
-  # and credentials.api.notificationSecret above (API sends X-NS-Key + HMAC
-  # which notification-service validates against this file).
+  # Shape: { "<keyId>": { "secret": "...", "scopes"?: ["notify:send", "templates:admin"] } }.
+  # `scopes` defaults to ["notify:send"]; DLQ replay and template/policy admin
+  # need "templates:admin". The entry keyed credentials.api.notificationKeyId
+  # must carry credentials.api.notificationSecret (the API sends X-NS-Key + an
+  # HMAC signature, which notification-service verifies against this file).
   internalSecrets:
     create: true
     existingSecret: ""
