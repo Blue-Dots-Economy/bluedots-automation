@@ -37,6 +37,7 @@ opentofu/aws/**/secrets.yaml
 opentofu/aws/**/tf.sh
 
 # Editor / OS junk
+__pycache__/
 .DS_Store
 .idea/
 .vscode/
