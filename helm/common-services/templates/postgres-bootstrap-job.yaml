@@ -75,6 +75,12 @@ spec:
                   name: data-postgres
                   key: signals-export-ro-password
                   optional: true
+            - name: NOTIFICATION_PW
+              valueFrom:
+                secretKeyRef:
+                  name: data-postgres
+                  key: notification-password
+                  optional: true
           command:
             - sh
             - -ec
@@ -88,7 +94,7 @@ spec:
               echo "postgres ready; creating roles + databases"
               # Roles + databases on the default `postgres` db. Passwords passed as
               # psql variables (:'var') so they are safely quoted, never interpolated.
-              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" -v kc_pw="${KC_PW:-}" -v export_ro_pw="${EXPORT_RO_PW:-}" <<-'EOSQL'
+              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" -v kc_pw="${KC_PW:-}" -v export_ro_pw="${EXPORT_RO_PW:-}" -v notification_pw="${NOTIFICATION_PW:-}" <<-'EOSQL'
                 SELECT 'CREATE ROLE aggregator LOGIN'
                   WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aggregator')\gexec
                 SELECT 'CREATE ROLE dpg LOGIN'
@@ -115,6 +121,11 @@ spec:
                   WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{{ .Values.postgresBootstrap.signalsExportRole.name }}')\gexec
                 ALTER ROLE {{ .Values.postgresBootstrap.signalsExportRole.name }} WITH PASSWORD :'export_ro_pw';
                 ALTER ROLE {{ .Values.postgresBootstrap.signalsExportRole.name }} SET default_transaction_read_only = on;
+                {{- end }}
+                {{- if .Values.postgresBootstrap.notificationRole.enabled }}
+                SELECT 'CREATE ROLE {{ .Values.postgresBootstrap.notificationRole.name }} LOGIN'
+                  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{{ .Values.postgresBootstrap.notificationRole.name }}')\gexec
+                ALTER ROLE {{ .Values.postgresBootstrap.notificationRole.name }} WITH PASSWORD :'notification_pw';
                 {{- end }}
                 -- On RDS the master is not a true superuser: to CREATE DATABASE owned
                 -- by a role it must be a member of that role (PG16+ "must be able to
@@ -149,6 +160,18 @@ spec:
                 GRANT SELECT ON ALL TABLES IN SCHEMA public TO {{ .Values.postgresBootstrap.signalsExportRole.name }};
                 ALTER DEFAULT PRIVILEGES FOR ROLE {{ .Values.postgresBootstrap.signalsExportRole.owner }} IN SCHEMA public
                   GRANT SELECT ON TABLES TO {{ .Values.postgresBootstrap.signalsExportRole.name }};
+              EOSQL
+              {{- end }}
+              {{- if .Values.postgresBootstrap.notificationRole.enabled }}
+              echo "installing pg_partman on {{ .Values.postgresBootstrap.notificationRole.database }}"
+              psql -v ON_ERROR_STOP=1 -d {{ .Values.postgresBootstrap.notificationRole.database }} <<-'EOSQL'
+                CREATE SCHEMA IF NOT EXISTS partman;
+                CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman;
+                GRANT USAGE, CREATE ON SCHEMA partman TO {{ .Values.postgresBootstrap.notificationRole.name }};
+                GRANT ALL ON ALL TABLES IN SCHEMA partman TO {{ .Values.postgresBootstrap.notificationRole.name }};
+                GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA partman TO {{ .Values.postgresBootstrap.notificationRole.name }};
+                GRANT EXECUTE ON ALL PROCEDURES IN SCHEMA partman TO {{ .Values.postgresBootstrap.notificationRole.name }};
+                GRANT TEMPORARY ON DATABASE {{ .Values.postgresBootstrap.notificationRole.database }} TO {{ .Values.postgresBootstrap.notificationRole.name }};
               EOSQL
               {{- end }}
               echo "[common-services] postgres bootstrap complete"
