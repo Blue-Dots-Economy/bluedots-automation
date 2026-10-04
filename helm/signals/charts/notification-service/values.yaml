@@ -113,6 +113,12 @@ config:
   # Pinnacle's DLT template id for `login_otp`. Blank until approval lands; a
   # blank id dead-letters the job with an explicit "not configured yet".
   PINNACLE_LOGIN_OTP_TEMPLATE_ID: ""
+  # Network this deployment serves (e.g. blue_dot). Stamped on every template,
+  # policy and audit row; never taken from a request. Set by opentofu.
+  NS_NETWORK: ""
+  # HMAC key ids (from internal-secrets.json) allowed to call the template and
+  # policy admin API. Empty = nobody. Interim until Keycloak admin roles (#62).
+  NS_ADMIN_KEY_IDS: ""
   # The login_otp body, used by vendors that cannot render. Must be
   # BYTE-IDENTICAL to the DLT-approved text or the operator scrubs the message.
   # `{{message}}` is the OTP code.

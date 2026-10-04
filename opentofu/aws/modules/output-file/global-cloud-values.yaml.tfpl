@@ -90,9 +90,12 @@ search:
   postgres:
     host: ${postgres_host}
 %{ endif ~}
-%{ if postgres_host != "" ~}
-# notification-service subchart — managed Postgres (RDS) endpoint.
+# notification-service subchart — network identity (always) and the managed
+# Postgres (RDS) endpoint (when RDS exists).
 notification-service:
+  config:
+    NS_NETWORK: "${signals_network}"
+%{ if postgres_host != "" ~}
   postgres:
     host: ${postgres_host}
 %{ endif ~}

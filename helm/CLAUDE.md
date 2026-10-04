@@ -150,7 +150,7 @@ role and `pg_partman` (schema `partman`) are created by the common-services
 `DATABASE_PASSWORD` from its Secret — the same generated value as
 `credentials.notificationPassword`. NS migrates its own schema on boot, so deploy
 common-services before an NS image that carries persistence. ALIMCO-TCS must move its
-Ansible-Vault `global-values.yaml` to SOPS before this rolls out there.
+Ansible-Vault `global-values.yaml` to SOPS before this rolls out there. `NS_NETWORK` comes from opentofu's `signals_network`; to grant template/policy admin, add a key to the NS `internal-secrets.json` and list its id in `NS_ADMIN_KEY_IDS`.
 
 **Alert rules are unit-tested, because PromQL bugs render as valid YAML.**
 `helm/signals/tests/run.sh` (promtool, mirroring `helm/monitoring/tests/`) is wired
