@@ -63,6 +63,12 @@ output "keycloak_postgres_password" {
   sensitive   = true
 }
 
+output "notification_postgres_password" {
+  description = "notification-service's Postgres role password (credentials.notificationPassword == NS DATABASE_PASSWORD)"
+  value       = random_id.notification_postgres_password.hex
+  sensitive   = true
+}
+
 output "signals_api_client_secret" {
   description = "signals-api Keycloak client secret (keycloak secrets.signalsApiSecret == signals KEYCLOAK_API_CLIENT_SECRET)"
   value       = random_id.signals_api_client_secret.hex

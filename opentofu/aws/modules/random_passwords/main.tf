@@ -60,6 +60,13 @@ resource "random_id" "keycloak_postgres_password" {
   byte_length = var.keycloak_postgres_password_bytes
 }
 
+# notification-service's own Postgres role. Feeds BOTH
+# credentials.notificationPassword (common-services creates/syncs the role) AND
+# the NS subchart's DATABASE_PASSWORD (NS logs in) — one value, two consumers.
+resource "random_id" "notification_postgres_password" {
+  byte_length = var.notification_postgres_password_bytes
+}
+
 # `signals-api` confidential client. Feeds the realm render in the keycloak
 # release AND signals' KEYCLOAK_API_CLIENT_SECRET — must be one value.
 resource "random_id" "signals_api_client_secret" {

@@ -70,6 +70,12 @@ variable "keycloak_postgres_password_bytes" {
   default = 24
 }
 
+variable "notification_postgres_password_bytes" {
+  description = "Bytes of entropy for notification-service's Postgres role password (hex-encoded, so URL/YAML safe)."
+  type        = number
+  default     = 32
+}
+
 variable "signals_api_client_secret_bytes" {
   type    = number
   default = 32

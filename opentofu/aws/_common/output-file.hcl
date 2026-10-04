@@ -110,6 +110,7 @@ dependency "random_passwords" {
 
     aggregator_postgres_password            = "0000000000000000000000000000000000000000000000000000000000000006"
     keycloak_postgres_password              = "000000000000000000000000000000000000000000000000000000000000000f"
+    notification_postgres_password          = "000000000000000000000000000000000000000000000000000000000000000e"
     signals_api_client_secret               = "0000000000000000000000000000000000000000000000000000000000000010"
     signalstack_client_secret               = "0000000000000000000000000000000000000000000000000000000000000011"
     voice_dpg_signals_secret                = "0000000000000000000000000000000000000000000000000000000000000012"
@@ -160,6 +161,7 @@ inputs = {
 
   aggregator_postgres_password            = dependency.random_passwords.outputs.aggregator_postgres_password
   keycloak_postgres_password              = dependency.random_passwords.outputs.keycloak_postgres_password
+  notification_postgres_password          = dependency.random_passwords.outputs.notification_postgres_password
   signals_api_client_secret               = dependency.random_passwords.outputs.signals_api_client_secret
   signalstack_client_secret               = dependency.random_passwords.outputs.signalstack_client_secret
   voice_dpg_signals_secret                = dependency.random_passwords.outputs.voice_dpg_signals_secret

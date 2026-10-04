@@ -33,6 +33,7 @@ resource "local_sensitive_file" "global_secrets" {
     signals_redis_password                  = var.signals_redis_password
     monitoring_grafana_password             = var.monitoring_grafana_password
     keycloak_postgres_password              = var.keycloak_postgres_password
+    notification_postgres_password          = var.notification_postgres_password
     signals_api_client_secret               = var.signals_api_client_secret
     signalstack_client_secret               = var.signalstack_client_secret
     voice_dpg_signals_secret                = var.voice_dpg_signals_secret
