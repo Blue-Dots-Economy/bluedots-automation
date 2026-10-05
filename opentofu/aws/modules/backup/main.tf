@@ -40,7 +40,11 @@ data "aws_partition" "current" {}
 #
 # `eks_backup` is what the nightly job actually runs as: backup-only permissions, nothing else.
 # `eks_restore` carries the elevated policy and is NEVER referenced by the plan/selection below —
-# it exists purely to be assumed by hand when an actual restore is being performed.
+# nothing automated can ever pass it. Its trust policy (below) only allows backup.amazonaws.com
+# to assume it, so no human assumes this role either; a restore only happens when a human
+# explicitly calls start-restore-job --iam-role-arn <this-role>, and it's AWS Backup itself that
+# assumes the role at that point. Who's allowed to make that call is gated by account-level IAM
+# (backup:StartRestoreJob + iam:PassRole on this role's ARN), not by anything in this module.
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_iam_role" "eks_backup" {
