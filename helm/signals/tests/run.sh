@@ -20,7 +20,7 @@ CHART="../charts/notification-service"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
-helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true \
+helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true --set postgres.host=pg.test \
   --show-only templates/prometheusrule.yaml \
   | python3 -c "
 import sys, yaml
