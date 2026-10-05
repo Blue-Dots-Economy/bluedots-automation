@@ -20,7 +20,10 @@
 # (via --source-kubeconfig, defaulting to $KUBECONFIG if exported) to restore only the
 # volumes that actually belong to those namespaces -- AWS Backup's own recovery-point
 # metadata only gives you the PV name, never which namespace it belonged to, so this has
-# to be looked up on the live source cluster, not inferred from the backup alone.
+# to be looked up on the live source cluster, not inferred from the backup alone. A
+# namespace with no PVs at all (e.g. a stateless frontend) restores its Kubernetes objects
+# only -- that's a normal case, not an error, since AWS Backup's cluster-state recovery
+# point always covers every namespace regardless of whether it has any storage.
 #
 # A real (non-dry-run) restore requires typing the target cluster name back at an interactive
 # prompt before it executes -- --dry-run skips this entirely, since nothing is executed either
@@ -89,36 +92,53 @@ if [ -n "$NAMESPACES" ]; then
 
   MATCHED_IDS_JSON=$(echo "$VOLUME_NS_MAP" | jq -c '[.[].volumeId]')
   if [ "$(echo "$MATCHED_IDS_JSON" | jq 'length')" -eq 0 ]; then
-    echo "Error: no PVs found on the source cluster for namespace(s) $NAMESPACES" >&2
-    exit 1
+    echo "No PVs found on the source cluster for namespace(s) $NAMESPACES -- restoring Kubernetes objects only, no volumes." >&2
+    SELECTED_EBS='[]'
+  else
+    echo "$VOLUME_NS_MAP" | jq -r '.[] | "  \(.namespace): \(.volumeId)"' >&2
+    SELECTED_EBS=$(echo "$EBS_CHILDREN" | jq --argjson ids "$MATCHED_IDS_JSON" \
+      '[.[] | select(.ResourceArn as $arn | $ids | any(. as $id | $arn | endswith($id)))]')
   fi
-  echo "$VOLUME_NS_MAP" | jq -r '.[] | "  \(.namespace): \(.volumeId)"' >&2
-
-  SELECTED_EBS=$(echo "$EBS_CHILDREN" | jq --argjson ids "$MATCHED_IDS_JSON" \
-    '[.[] | select(.ResourceArn as $arn | $ids | any(. as $id | $arn | endswith($id)))]')
 else
   SELECTED_EBS="$EBS_CHILDREN"
 fi
 
 SELECTED_COUNT=$(echo "$SELECTED_EBS" | jq 'length')
 if [ "$SELECTED_COUNT" -eq 0 ]; then
-  echo "Error: no matching EBS volumes found to restore" >&2
-  exit 1
+  # A full-cluster restore with zero EBS children means the backup itself never captured any
+  # volume -- that's always worth stopping on. A namespace-scoped restore with zero EBS children
+  # just means that namespace has no PVs, which is normal (see the comment above) -- not an error.
+  if [ -z "$NAMESPACES" ]; then
+    echo "Error: no matching EBS volumes found to restore" >&2
+    exit 1
+  fi
+  NESTED_JOBS=""
+else
+  echo "Restoring $SELECTED_COUNT volume(s) into $TARGET_CLUSTER (AZ: $AZ)." >&2
+  NESTED_JOBS=$(echo "$SELECTED_EBS" | jq -r --arg az "$AZ" '
+    [.[] | {key: .RecoveryPointArn, value: ({AvailabilityZone: $az} | tojson)}]
+    | from_entries | tojson')
 fi
-echo "Restoring $SELECTED_COUNT volume(s) into $TARGET_CLUSTER (AZ: $AZ)." >&2
-
-NESTED_JOBS=$(echo "$SELECTED_EBS" | jq -r --arg az "$AZ" '
-  [.[] | {key: .RecoveryPointArn, value: ({AvailabilityZone: $az} | tojson)}]
-  | from_entries | tojson')
 
 if [ -n "$NAMESPACES" ]; then
-  METADATA=$(jq -n -r --arg cluster "$TARGET_CLUSTER" --arg nested "$NESTED_JOBS" --arg nsjson "$NS_JSON" '{
-    clusterName: $cluster,
-    newCluster: "false",
-    namespaceLevelRestore: "true",
-    namespaces: $nsjson,
-    nestedRestoreJobs: $nested
-  } | tojson')
+  if [ "$SELECTED_COUNT" -gt 0 ]; then
+    METADATA=$(jq -n -r --arg cluster "$TARGET_CLUSTER" --arg nested "$NESTED_JOBS" --arg nsjson "$NS_JSON" '{
+      clusterName: $cluster,
+      newCluster: "false",
+      namespaceLevelRestore: "true",
+      namespaces: $nsjson,
+      nestedRestoreJobs: $nested
+    } | tojson')
+  else
+    # No nestedRestoreJobs key at all -- there is nothing to restore at the volume level, so
+    # the field is omitted rather than sent as an empty object.
+    METADATA=$(jq -n -r --arg cluster "$TARGET_CLUSTER" --arg nsjson "$NS_JSON" '{
+      clusterName: $cluster,
+      newCluster: "false",
+      namespaceLevelRestore: "true",
+      namespaces: $nsjson
+    } | tojson')
+  fi
 else
   METADATA=$(jq -n -r --arg cluster "$TARGET_CLUSTER" --arg nested "$NESTED_JOBS" '{
     clusterName: $cluster,
