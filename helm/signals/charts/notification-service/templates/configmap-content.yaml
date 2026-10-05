@@ -1,5 +1,5 @@
 {{- if .Values.content }}
-{{- if not (hasKey .Values.content "version") }}
+{{- if or (not (hasKey .Values.content "version")) (kindIs "invalid" .Values.content.version) }}
 {{- fail "content.version is required when content is set (e.g. version: \"2026-10-01\")" }}
 {{- end }}
 {{- $c := deepCopy .Values.content }}
