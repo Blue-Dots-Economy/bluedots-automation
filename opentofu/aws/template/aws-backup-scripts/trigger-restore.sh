@@ -20,7 +20,16 @@
 # (via --source-kubeconfig, defaulting to $KUBECONFIG if exported) to restore only the
 # volumes that actually belong to those namespaces -- AWS Backup's own recovery-point
 # metadata only gives you the PV name, never which namespace it belonged to, so this has
-# to be looked up on the live source cluster, not inferred from the backup alone.
+# to be looked up on the live source cluster, not inferred from the backup alone. A
+# namespace with no PVs at all (e.g. a stateless frontend) restores its Kubernetes objects
+# only -- that's a normal case, not an error, since AWS Backup's cluster-state recovery
+# point always covers every namespace regardless of whether it has any storage.
+#
+# A real (non-dry-run) restore prints a summary of exactly what it is about to do (vault,
+# target cluster, AZ, namespaces, volume count) and requires an explicit "yes" at an
+# interactive prompt before it executes. --dry-run skips this entirely, since nothing is
+# executed either way. Run from a non-interactive context and it refuses to proceed rather
+# than skip the prompt.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -85,36 +94,53 @@ if [ -n "$NAMESPACES" ]; then
 
   MATCHED_IDS_JSON=$(echo "$VOLUME_NS_MAP" | jq -c '[.[].volumeId]')
   if [ "$(echo "$MATCHED_IDS_JSON" | jq 'length')" -eq 0 ]; then
-    echo "Error: no PVs found on the source cluster for namespace(s) $NAMESPACES" >&2
-    exit 1
+    echo "No PVs found on the source cluster for namespace(s) $NAMESPACES -- restoring Kubernetes objects only, no volumes." >&2
+    SELECTED_EBS='[]'
+  else
+    echo "$VOLUME_NS_MAP" | jq -r '.[] | "  \(.namespace): \(.volumeId)"' >&2
+    SELECTED_EBS=$(echo "$EBS_CHILDREN" | jq --argjson ids "$MATCHED_IDS_JSON" \
+      '[.[] | select(.ResourceArn as $arn | $ids | any(. as $id | $arn | endswith($id)))]')
   fi
-  echo "$VOLUME_NS_MAP" | jq -r '.[] | "  \(.namespace): \(.volumeId)"' >&2
-
-  SELECTED_EBS=$(echo "$EBS_CHILDREN" | jq --argjson ids "$MATCHED_IDS_JSON" \
-    '[.[] | select(.ResourceArn as $arn | $ids | any(. as $id | $arn | endswith($id)))]')
 else
   SELECTED_EBS="$EBS_CHILDREN"
 fi
 
 SELECTED_COUNT=$(echo "$SELECTED_EBS" | jq 'length')
 if [ "$SELECTED_COUNT" -eq 0 ]; then
-  echo "Error: no matching EBS volumes found to restore" >&2
-  exit 1
+  # A full-cluster restore with zero EBS children means the backup itself never captured any
+  # volume -- that's always worth stopping on. A namespace-scoped restore with zero EBS children
+  # just means that namespace has no PVs, which is normal (see the comment above) -- not an error.
+  if [ -z "$NAMESPACES" ]; then
+    echo "Error: no matching EBS volumes found to restore" >&2
+    exit 1
+  fi
+  NESTED_JOBS=""
+else
+  echo "Restoring $SELECTED_COUNT volume(s) into $TARGET_CLUSTER (AZ: $AZ)." >&2
+  NESTED_JOBS=$(echo "$SELECTED_EBS" | jq -r --arg az "$AZ" '
+    [.[] | {key: .RecoveryPointArn, value: ({AvailabilityZone: $az} | tojson)}]
+    | from_entries | tojson')
 fi
-echo "Restoring $SELECTED_COUNT volume(s) into $TARGET_CLUSTER (AZ: $AZ)." >&2
-
-NESTED_JOBS=$(echo "$SELECTED_EBS" | jq -r --arg az "$AZ" '
-  [.[] | {key: .RecoveryPointArn, value: ({AvailabilityZone: $az} | tojson)}]
-  | from_entries | tojson')
 
 if [ -n "$NAMESPACES" ]; then
-  METADATA=$(jq -n -r --arg cluster "$TARGET_CLUSTER" --arg nested "$NESTED_JOBS" --arg nsjson "$NS_JSON" '{
-    clusterName: $cluster,
-    newCluster: "false",
-    namespaceLevelRestore: "true",
-    namespaces: $nsjson,
-    nestedRestoreJobs: $nested
-  } | tojson')
+  if [ "$SELECTED_COUNT" -gt 0 ]; then
+    METADATA=$(jq -n -r --arg cluster "$TARGET_CLUSTER" --arg nested "$NESTED_JOBS" --arg nsjson "$NS_JSON" '{
+      clusterName: $cluster,
+      newCluster: "false",
+      namespaceLevelRestore: "true",
+      namespaces: $nsjson,
+      nestedRestoreJobs: $nested
+    } | tojson')
+  else
+    # No nestedRestoreJobs key at all -- there is nothing to restore at the volume level, so
+    # the field is omitted rather than sent as an empty object.
+    METADATA=$(jq -n -r --arg cluster "$TARGET_CLUSTER" --arg nsjson "$NS_JSON" '{
+      clusterName: $cluster,
+      newCluster: "false",
+      namespaceLevelRestore: "true",
+      namespaces: $nsjson
+    } | tojson')
+  fi
 else
   METADATA=$(jq -n -r --arg cluster "$TARGET_CLUSTER" --arg nested "$NESTED_JOBS" '{
     clusterName: $cluster,
@@ -132,6 +158,41 @@ echo >&2
 if [ "$DRY_RUN" = true ]; then
   echo "(dry run -- not executing)" >&2
   exit 0
+fi
+
+# Requires a TTY on purpose: there is no automated path to a restore, by design (see the IAM
+# note on eks_restore in modules/backup/main.tf). `echo yes | ./trigger-restore.sh` is a pipe,
+# not a terminal, so the prompt below cannot be fed from a script -- a non-interactive
+# invocation is refused outright rather than silently skipping the confirmation.
+if [ ! -t 0 ]; then
+  echo "Error: refusing to run a real restore non-interactively. Re-run with --dry-run to preview, or run this from a terminal so the confirmation prompt below can run." >&2
+  exit 1
+fi
+
+# Everything this restore is about to do, gathered in one block so it is read as a whole rather
+# than reconstructed from the raw command above. The expected answer is the fixed word "yes",
+# never a value echoed here -- printing the target is informational and cannot be read back as
+# the answer, so the operator still has to look at it and decide.
+echo "--- restore summary ---" >&2
+printf '  Source vault : %s\n' "$VAULT_NAME" >&2
+printf '  Target       : %s\n' "$TARGET_CLUSTER" >&2
+printf '  AZ           : %s\n' "$AZ" >&2
+if [ -n "$NAMESPACES" ]; then
+  printf '  Namespaces   : %s\n' "$NAMESPACES" >&2
+else
+  printf '  Namespaces   : ALL (full cluster restore)\n' >&2
+fi
+if [ "$SELECTED_COUNT" -eq 0 ]; then
+  printf '  Volumes      : 0 (Kubernetes objects only)\n' >&2
+else
+  printf '  Volumes      : %s\n' "$SELECTED_COUNT" >&2
+fi
+echo >&2
+
+read -r -p "Are you sure you want to restore into $TARGET_CLUSTER? [yes/no]: " CONFIRM
+if [ "$CONFIRM" != "yes" ]; then
+  echo "Aborted -- nothing was executed." >&2
+  exit 1
 fi
 
 aws backup start-restore-job \

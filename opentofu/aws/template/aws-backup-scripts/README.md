@@ -101,6 +101,14 @@ export KUBECONFIG=/path/to/source-cluster-kubeconfig.yaml
 > deleted workload); for testing the backup itself, point it at a separate
 > throwaway cluster instead.
 
+Without `--dry-run`, it prints a summary of exactly what it is about to do —
+source vault, target cluster, AZ, namespaces, and how many volumes — then
+asks you to confirm with `yes` before it calls `start-restore-job`. Read the
+summary, not just the prompt: the target cluster is the line that matters,
+and more than one cluster is usually reachable from the same credentials.
+Run from a script or any non-interactive shell and it refuses outright
+rather than skip the prompt.
+
 ---
 
 ## 4. Track it
