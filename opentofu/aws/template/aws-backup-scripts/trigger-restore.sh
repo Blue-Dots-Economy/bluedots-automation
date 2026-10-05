@@ -25,9 +25,11 @@
 # only -- that's a normal case, not an error, since AWS Backup's cluster-state recovery
 # point always covers every namespace regardless of whether it has any storage.
 #
-# A real (non-dry-run) restore requires typing the target cluster name back at an interactive
-# prompt before it executes -- --dry-run skips this entirely, since nothing is executed either
-# way. Run from a non-interactive context and it refuses to proceed rather than skip the prompt.
+# A real (non-dry-run) restore prints a summary of exactly what it is about to do (vault,
+# target cluster, AZ, namespaces, volume count) and requires an explicit "yes" at an
+# interactive prompt before it executes. --dry-run skips this entirely, since nothing is
+# executed either way. Run from a non-interactive context and it refuses to proceed rather
+# than skip the prompt.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -158,20 +160,38 @@ if [ "$DRY_RUN" = true ]; then
   exit 0
 fi
 
-# A typo in --target-cluster/--az above would otherwise fire for real on the first try, with
-# no chance to catch it -- this is the only thing standing between a mistyped flag and a real
-# restore. Requires a TTY on purpose: there is no automated path to a restore, by design (see the
-# IAM note on eks_restore in modules/backup/main.tf), so a non-interactive invocation is refused
-# rather than silently skipping the prompt.
+# Requires a TTY on purpose: there is no automated path to a restore, by design (see the IAM
+# note on eks_restore in modules/backup/main.tf). `echo yes | ./trigger-restore.sh` is a pipe,
+# not a terminal, so the prompt below cannot be fed from a script -- a non-interactive
+# invocation is refused outright rather than silently skipping the confirmation.
 if [ ! -t 0 ]; then
   echo "Error: refusing to run a real restore non-interactively. Re-run with --dry-run to preview, or run this from a terminal so the confirmation prompt below can run." >&2
   exit 1
 fi
 
-echo "About to start a REAL restore into cluster: $TARGET_CLUSTER (AZ: $AZ)" >&2
-read -r -p "Type the target cluster name to confirm: " CONFIRM_CLUSTER
-if [ "$CONFIRM_CLUSTER" != "$TARGET_CLUSTER" ]; then
-  echo "Error: confirmation did not match \"$TARGET_CLUSTER\" -- aborting, nothing was executed." >&2
+# Everything this restore is about to do, gathered in one block so it is read as a whole rather
+# than reconstructed from the raw command above. The expected answer is the fixed word "yes",
+# never a value echoed here -- printing the target is informational and cannot be read back as
+# the answer, so the operator still has to look at it and decide.
+echo "--- restore summary ---" >&2
+printf '  Source vault : %s\n' "$VAULT_NAME" >&2
+printf '  Target       : %s\n' "$TARGET_CLUSTER" >&2
+printf '  AZ           : %s\n' "$AZ" >&2
+if [ -n "$NAMESPACES" ]; then
+  printf '  Namespaces   : %s\n' "$NAMESPACES" >&2
+else
+  printf '  Namespaces   : ALL (full cluster restore)\n' >&2
+fi
+if [ "$SELECTED_COUNT" -eq 0 ]; then
+  printf '  Volumes      : 0 (Kubernetes objects only)\n' >&2
+else
+  printf '  Volumes      : %s\n' "$SELECTED_COUNT" >&2
+fi
+echo >&2
+
+read -r -p "Are you sure you want to restore into $TARGET_CLUSTER? [yes/no]: " CONFIRM
+if [ "$CONFIRM" != "yes" ]; then
+  echo "Aborted -- nothing was executed." >&2
   exit 1
 fi
 
