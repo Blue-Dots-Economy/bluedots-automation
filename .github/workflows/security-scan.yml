@@ -378,7 +378,7 @@ jobs:
                  | select(.ruleId == "zizmor/unpinned-uses")
                  | "::error file=\(.locations[0].physicalLocation.artifactLocation.uri),line=\(.locations[0].physicalLocation.region.startLine)::unpinned action reference - pin it to a full 40-character commit SHA"' \
             zizmor.sarif
-          echo "::error::$count unpinned action reference(s). Pin each to a 40-character commit SHA with a trailing version comment, e.g. uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0"
+          echo "::error::$count unpinned action reference(s). Pin each to a 40-character commit SHA with a trailing version comment, e.g. uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
           exit 1
 
       # Online audits (impostor-commit, known-vulnerable-actions), best-effort.
