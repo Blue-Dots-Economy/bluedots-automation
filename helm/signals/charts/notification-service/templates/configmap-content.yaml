@@ -1,0 +1,10 @@
+{{- if .Values.content }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dpg-notification-service.fullname" . }}-content
+  labels:
+    {{- include "dpg-notification-service.labels" . | nindent 4 }}
+data:
+  content.json: {{ .Values.content | toJson | quote }}
+{{- end }}

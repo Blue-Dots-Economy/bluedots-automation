@@ -179,6 +179,17 @@ internalSecrets:
   json: |
     {}
 
+# Shared public content (e.g. T&C urls/text) resolved by NS for `content_ref` template
+# variables. Empty = no ConfigMap, no mount, no NS_CONTENT_FILE. Shape:
+#   content:
+#     version: "2026-10-01"
+#     entries:
+#       tnc.in_force.url: { en: "https://...", hi-IN: "https://..." }
+# Keys are dotted lowercase (`tnc.in_force.url`, `tnc.on_offer.text`); locales look
+# like `en` or `hi-IN`. Mounted at /app/content (NOT /app/config, which is the
+# read-only internal-secrets mount); NS reloads the file every 30 s.
+content: {}
+
 podDisruptionBudget:
   enabled: false
   minAvailable: 1

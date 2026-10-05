@@ -14,6 +14,9 @@ data:
   {{ $key }}: {{ $val | quote }}
   {{- end }}
   {{- end }}
+  {{- if .Values.content }}
+  NS_CONTENT_FILE: "/app/content/content.json"
+  {{- end }}
   {{- with (include "dpg-notification-service.keycloakEnv" . | trim) }}
   {{- . | nindent 2 }}
   {{- end }}
