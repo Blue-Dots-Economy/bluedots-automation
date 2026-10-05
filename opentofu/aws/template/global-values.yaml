@@ -148,6 +148,19 @@ _s3_export_instance_id: &s3_export_instance_id ""
 # list is deployed — the two datasets together exceed the 1 MiB ConfigMap cap.
 _college_dataset: &college_dataset "ka"
 
+# Country every location is held to (signals-dpg#785), as an ISO 3166-1 alpha-2
+# code. ONE anchor, three consumers, so they cannot drift:
+#   - api.config.GEOCODING_COUNTRY   the server geocoder (Google components=country:)
+#                                    and the supplied-coordinate boundary check,
+#                                    which rejects a point outside the country
+#                                    with 400 LOCATION_OUTSIDE_COUNTRY (#789)
+#   - ui.runtimeConfig.VITE_GEO_COUNTRY  the signals address search
+#   - web.geoCountry                 the aggregator registration-form search
+# The boundary file is helm/signals/charts/api/files/geo/<CC>.geojson; only IN
+# ships. A country with no file fails the render (generate it with
+# scripts/build-geo-boundary.sh <CC>). Set "" for no restriction anywhere.
+_geo_country: &geo_country "IN"
+
 # ── SMTP Configuration ────────────────────────────────────────────────────
 _smtp_host:         &smtp_host         "smtp.gmail.com"
 _smtp_port:         &smtp_port         587
@@ -648,6 +661,7 @@ alerting:
 # which colleges-<code>.json to fetch for each chart.
 web:
   collegeDataset: *college_dataset
+  geoCountry: *geo_country
 
 aggregator-api:
   adminEmails: *aggregator_admin_emails
@@ -714,6 +728,7 @@ api:
     CONSENT_SUPPORT_EMAIL: "hello@bluedotseconomy.org"  # rendered into T&C/Privacy/Grievances consent copy at load
     PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
     PII_LOCATION_JITTER_MAX_METERS: "250"   # 50–1000
+    GEOCODING_COUNTRY: *geo_country         # see _geo_country above
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local
   redis:
@@ -744,6 +759,7 @@ ui:
     VITE_PROFILE_FETCH_LIMIT: "1000"
     VITE_ENABLED_LANGUAGES: "en,hi" # default: "en,hi" (English, Hindi). Add more codes for additional languages.
     VITE_COLLEGE_DATASET: *college_dataset
+    VITE_GEO_COUNTRY: *geo_country
   # College/institute reference list, delivered to the UI's nginx as a ConfigMap
   # (see helm/signals/charts/ui/values.yaml for the full rationale). The region
   # above selects the one file that ships; set enabled: false to fall back to

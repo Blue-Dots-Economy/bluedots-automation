@@ -18,6 +18,8 @@ spec:
         # Rolls the api when network schemas or consent.json change (consent is
         # cached in-process, so a restart is required to pick up ConfigMap edits).
         checksum/schemas: {{ include (print $.Template.BasePath "/schemas-configmap.yaml") . | sha256sum }}
+        # Rolls the api when the country boundary changes (read once at boot).
+        checksum/geo-boundary: {{ include (print $.Template.BasePath "/geo-boundary-configmap.yaml") . | sha256sum }}
         {{- if .Values.secrets.create }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
@@ -65,14 +67,30 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if .Values.schemas.networks }}
+          {{- $geoCountry := include "dpg-api.geoBoundaryCountry" . }}
+          {{- if or .Values.schemas.networks $geoCountry }}
           volumeMounts:
+            {{- if .Values.schemas.networks }}
             - name: schemas
               mountPath: /app/schemas
               readOnly: true
+            {{- end }}
+            {{- if $geoCountry }}
+            - name: geo-boundary
+              mountPath: /app/geo
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if .Values.schemas.networks }}
+      {{- $geoCountry := include "dpg-api.geoBoundaryCountry" . }}
+      {{- if or .Values.schemas.networks $geoCountry }}
       volumes:
+        {{- if $geoCountry }}
+        - name: geo-boundary
+          configMap:
+            name: {{ include "dpg-api.fullname" . }}-geo-boundary
+        {{- end }}
+      {{- end }}
+      {{- if .Values.schemas.networks }}
         - name: schemas
           configMap:
             name: {{ include "dpg-api.fullname" . }}-schemas
