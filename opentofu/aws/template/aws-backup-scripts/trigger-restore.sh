@@ -21,6 +21,10 @@
 # volumes that actually belong to those namespaces -- AWS Backup's own recovery-point
 # metadata only gives you the PV name, never which namespace it belonged to, so this has
 # to be looked up on the live source cluster, not inferred from the backup alone.
+#
+# A real (non-dry-run) restore requires typing the target cluster name back at an interactive
+# prompt before it executes -- --dry-run skips this entirely, since nothing is executed either
+# way. Run from a non-interactive context and it refuses to proceed rather than skip the prompt.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
@@ -132,6 +136,23 @@ echo >&2
 if [ "$DRY_RUN" = true ]; then
   echo "(dry run -- not executing)" >&2
   exit 0
+fi
+
+# A typo in --target-cluster/--az above would otherwise fire for real on the first try, with
+# no chance to catch it -- this is the only thing standing between a mistyped flag and a real
+# restore. Requires a TTY on purpose: there is no automated path to a restore, by design (see the
+# IAM note on eks_restore in modules/backup/main.tf), so a non-interactive invocation is refused
+# rather than silently skipping the prompt.
+if [ ! -t 0 ]; then
+  echo "Error: refusing to run a real restore non-interactively. Re-run with --dry-run to preview, or run this from a terminal so the confirmation prompt below can run." >&2
+  exit 1
+fi
+
+echo "About to start a REAL restore into cluster: $TARGET_CLUSTER (AZ: $AZ)" >&2
+read -r -p "Type the target cluster name to confirm: " CONFIRM_CLUSTER
+if [ "$CONFIRM_CLUSTER" != "$TARGET_CLUSTER" ]; then
+  echo "Error: confirmation did not match \"$TARGET_CLUSTER\" -- aborting, nothing was executed." >&2
+  exit 1
 fi
 
 aws backup start-restore-job \

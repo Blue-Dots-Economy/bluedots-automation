@@ -101,6 +101,12 @@ export KUBECONFIG=/path/to/source-cluster-kubeconfig.yaml
 > deleted workload); for testing the backup itself, point it at a separate
 > throwaway cluster instead.
 
+Without `--dry-run`, it stops to ask you to type the target cluster name
+back before actually calling `start-restore-job` — a plain yes/no is too easy
+to hit on reflex, typing the name forces you to actually read what you're
+about to restore into. Run from a script or any non-interactive shell and it
+refuses outright rather than skip the prompt.
+
 ---
 
 ## 4. Track it
