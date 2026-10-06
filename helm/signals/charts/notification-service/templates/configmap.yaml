@@ -2,6 +2,10 @@
 {{- if and (not .Values.config.SMTP_HOST) (ne (.Values.config.SMTP_AWS_SES | toString) "true") }}
 {{- fail "notification-service: no mail transport configured. Set config.SMTP_HOST (with SMTP_PORT/SMTP_SECURE and the SMTP_USER/SMTP_PASS secrets) or config.SMTP_AWS_SES=true." }}
 {{- end }}
+{{- /* Send API v1 sends every email from EMAIL_FROM_ADDRESS; without it each one fails permanently. */}}
+{{- if not .Values.config.EMAIL_FROM_ADDRESS }}
+{{- fail "notification-service: config.EMAIL_FROM_ADDRESS is required (the From address for every email)." }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -167,7 +167,6 @@ credentials:
       SMTP_USER: ""          # e.g. notify@yourdomain.com
       SMTP_PASS: ""
       MSG91_AUTH_KEY: ""     # MSG91 API key for SMS OTP
-      MSG91_TEMPLATE_ID: ""  # MSG91 template ID for OTP message
 
 # =============================================================================
 # Subchart pass-throughs — do NOT edit values here.
@@ -404,6 +403,10 @@ notification-service:
     SMTP_PORT: ""      # default 587 when SMTP_HOST is set
     SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
     SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
+    # From for every v1 email (required; see the subchart values). opentofu sets
+    # them from the _smtp_user / _smtp_from_display anchors.
+    EMAIL_FROM_ADDRESS: ""
+    EMAIL_FROM_NAME: ""
     # Inert: the service never reads this key (it appears only in the upstream
     # repo's docker-compose.yaml and example.env). WhatsApp is a supported
     # channel — `src/lib/providers/whatsapp` registers at boot like any other —

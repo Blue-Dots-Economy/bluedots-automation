@@ -21,6 +21,7 @@ OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
 helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true --set postgres.host=pg.test \
+  --set config.EMAIL_FROM_ADDRESS=from@example.test \
   --show-only templates/prometheusrule.yaml \
   | python3 -c "
 import sys, yaml

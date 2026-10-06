@@ -152,9 +152,18 @@ literally `UPDATE_THIS_VALUE` with no OTP in it.
 `sms_http_secret` produces both `keycloak.secrets.smsHttpSecret` and the `keycloak`
 key id inside notification-service's `internalSecrets.json`. Two separate inputs
 would drift into a permanent `401` that looks like a code bug. The same applies to
-`SMS_LOGIN_OTP_TEMPLATE_ID`: notification-service reads *that* name, not
-`MSG91_TEMPLATE_ID` (which is the Keycloak SPI's variable), and without it NS falls
-back to a hardcoded literal flow id that is not what any cluster is configured with.
+`SMS_LOGIN_OTP_TEMPLATE_ID`: notification-service reads *that* name (Keycloak's SPI
+reads its own `MSG91_TEMPLATE_ID`, rendered by the keycloak chart), and without it NS
+falls back to a hardcoded literal flow id that is not what any cluster is configured
+with. `msg91_template_id` feeds both.
+
+**NS sends every email as `EMAIL_FROM_NAME <EMAIL_FROM_ADDRESS>`.** opentofu sets the
+address from `_smtp_user` and the name from `_smtp_from_display`, the same identity
+Keycloak's emails show. The chart refuses to render without `EMAIL_FROM_ADDRESS`, since
+every v1 email would otherwise fail permanently. A cluster that wants a different NS
+From name (up-sdm uses "UP SDM") sets `notification-service.config.EMAIL_FROM_NAME` in
+its `global-values.yaml`. `SMTP_FROM` (also `_smtp_user`) still decides the mailbox in
+the From header when set, so the two stay on the same mailbox.
 
 **notification-service needs its own Postgres database.** The `notification` database,
 role and `pg_partman` (schema `partman`) are created by the common-services
