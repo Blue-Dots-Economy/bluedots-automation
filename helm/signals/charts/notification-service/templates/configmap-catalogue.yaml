@@ -1,0 +1,16 @@
+{{- /*
+  The cluster's NS catalogue (Plan F1), fetched by scripts/fetch-configs.sh.
+  Rendered on FILE PRESENCE: CI renders without fetching, and fetch-configs
+  is what makes a real deploy fail loudly when the file is missing.
+  Byte-for-byte: the catalogue's {{ "{{token}}" }} placeholders belong to NS.
+*/ -}}
+{{- with .Files.Get "files/catalogue/ns-catalogue.json" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dpg-notification-service.fullname" $ }}-catalogue
+  labels:
+    {{- include "dpg-notification-service.labels" $ | nindent 4 }}
+data:
+  ns-catalogue.json: {{ . | quote }}
+{{- end }}
