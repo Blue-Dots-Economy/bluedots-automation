@@ -160,11 +160,15 @@ jobs:
                 # ConfigMap block that would otherwise `fail()` on the first
                 # missing file; ui.reference.enabled=false does the same for
                 # the reference datasets. Neither flag hides an app image.
+                # notification-service.postgres.host is RDS-derived (written to
+                # global-cloud-values.yaml by opentofu), so it gets the same
+                # inert placeholder as common-services above.
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
                   -f opentofu/aws/template/global-images.yaml \
                   -f opentofu/aws/template/global-values.yaml \
                   --set-json 'api.schemas.networks=[]' \
                   --set ui.reference.enabled=false \
+                  --set notification-service.postgres.host=ci-smoke.invalid \
                   >> /tmp/all-rendered.yaml
                 ;;
               aggregator)
