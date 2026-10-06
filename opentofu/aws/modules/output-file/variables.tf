@@ -164,7 +164,7 @@ variable "pinnacle_dlt_entity_id" {
 }
 
 variable "pinnacle_login_otp_template_id" {
-  description = "Pinnacle DLT template id for login_otp. Blank/UPDATE_THIS_VALUE until the DLT approval lands; NS dead-letters those jobs with an explicit 'not configured yet'."
+  description = "Pinnacle DLT template id for login_otp, seeded by NS at boot (with sms_login_otp_body: active; without: a draft). Blank until the DLT approval lands; a blank id seeds no login_otp row, so login_otp sends answer 422 not_found until one is active."
   type        = string
   default     = ""
 }
