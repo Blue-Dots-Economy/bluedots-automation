@@ -31,11 +31,6 @@ output "signals_pii_key" {
   sensitive = true
 }
 
-output "signals_notification_secret" {
-  value     = random_id.signals_notification_secret.hex
-  sensitive = true
-}
-
 output "ns_admin_secret" {
   value     = random_id.ns_admin_secret.hex
   sensitive = true
