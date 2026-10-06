@@ -29,10 +29,6 @@ resource "random_id" "signals_pii_key" {
   byte_length = var.signals_pii_key_bytes
 }
 
-resource "random_id" "signals_notification_secret" {
-  byte_length = var.signals_notification_secret_bytes
-}
-
 # Operator HMAC key for the notification-service admin API (/v1/admin/*,
 # POST /failed/retry): the `ns-admin` entry in NS internal-secrets.json.
 resource "random_id" "ns_admin_secret" {

@@ -115,7 +115,6 @@ dependency "random_passwords" {
     signals_redis_password         = "00000000000000000000000000000002"
     signals_auth_secret            = "00000000000000000000000000000003"
     signals_pii_key                = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-    signals_notification_secret    = "00000000000000000000000000000004"
     ns_admin_secret                = ""
     signals_search_api_key         = "dummy-signals-search-api-key-00000000000000"
     raya_voice_bot_api_key         = "dummy-raya-voice-bot-api-key-0000000000000000"
@@ -167,7 +166,6 @@ inputs = {
   signals_redis_password         = dependency.random_passwords.outputs.signals_redis_password
   signals_auth_secret            = dependency.random_passwords.outputs.signals_auth_secret
   signals_pii_key                = dependency.random_passwords.outputs.signals_pii_key
-  signals_notification_secret    = dependency.random_passwords.outputs.signals_notification_secret
   ns_admin_secret                = dependency.random_passwords.outputs.ns_admin_secret
   signals_search_api_key         = dependency.random_passwords.outputs.signals_search_api_key
   raya_voice_bot_api_key         = dependency.random_passwords.outputs.raya_voice_bot_api_key

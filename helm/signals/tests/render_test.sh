@@ -109,25 +109,24 @@ signals() {
     --set notification-service.postgres.host=ci-smoke.invalid "$@"
 }
 # The generated secrets file, placeholders filled, layered the way a deploy
-# layers it; signals_notification_secret gets a value of its own.
+# layers it.
 TFPL=../../../opentofu/aws/modules/output-file/global-secrets.yaml.tfpl
 secrets_values="$(mktemp)"
-sed -E -e 's/\$\{yamlencode\([^}]*\)\}/"x"/' -e 's/\$\{signals_notification_secret\}/rt-ns-secret/g' \
+sed -E -e 's/\$\{yamlencode\([^}]*\)\}/"x"/' \
   -e 's/\$\{sms_http_secret\}/rt-kc-sign/g' -e 's/\$\{ns_admin_secret\}/rt-ns-admin/g' \
   -e 's/\$\{[a-z0-9_]+\}/x/g' "$TFPL" > "$secrets_values"
 api="$(signals -f "$secrets_values" --show-only charts/api/templates/secret.yaml --show-only charts/api/templates/configmap.yaml)"
 ns="$(signals -f "$secrets_values" --show-only charts/notification-service/templates/internal-secret.yaml)"
-grep -q 'SMS_TEMPLATE_ID' <<<"$api" && fail "Signals still gets SMS_TEMPLATE_ID"
+ns_default="$(signals --show-only charts/notification-service/templates/internal-secret.yaml)"
 grep -q 'NOTIFICATION_SERVICE_ENDPOINT' <<<"$api" || fail "Signals lost NOTIFICATION_SERVICE_ENDPOINT"
 grep -q 'KEYCLOAK_API_CLIENT_ID' <<<"$api" || fail "Signals lost KEYCLOAK_API_CLIENT_ID"
-# Present until Part B: the previous Signals image reads the HMAC pair and the
-# From address through envFrom, so they ride along for rollout and rollback,
-# and the pair matches the NS dpg-api-client entry.
-grep -q 'NOTIFICATION_SERVICE_KEY_ID: "dpg-api-client"' <<<"$api" || fail "HMAC key id must stay until Part B"
-grep -q 'NOTIFICATION_SERVICE_SECRET: "rt-ns-secret"' <<<"$api" || fail "HMAC secret must stay until Part B"
-grep -q 'NOTIFICATION_FROM_EMAIL: "sender@example.com"' <<<"$api" || fail "NOTIFICATION_FROM_EMAIL must stay until Part B"
-tr -d ' \n' <<<"$ns" | grep -q '"dpg-api-client":{"secret":"rt-ns-secret"}' \
-  || fail "NS dpg-api-client must carry the Signals HMAC secret until Part B"
+# Signals reaches NS with its Keycloak token only: no HMAC pair, no From address,
+# and NS internal-secrets holds no legacy dpg-api-client key.
+for k in SMS_TEMPLATE_ID NOTIFICATION_SERVICE_KEY_ID NOTIFICATION_SERVICE_SECRET NOTIFICATION_FROM_EMAIL; do
+  grep -q "$k" <<<"$api" && fail "Signals still gets $k"
+done
+grep -q 'dpg-api-client' <<<"$ns" && fail "NS internal-secrets (generated) still carries dpg-api-client"
+grep -q 'dpg-api-client' <<<"$ns_default" && fail "NS internal-secrets (chart default) still carries dpg-api-client"
 # The operator key for the NS admin API (/v1/admin/*, /failed/retry): its own
 # generated secret, admin scope only. Keycloak's entry keeps the send default.
 ns_json="$(python3 -c '
@@ -139,15 +138,12 @@ jq -e '."ns-admin" == {"secret": "rt-ns-admin", "scopes": ["templates:admin"]}' 
   || fail "NS internal secrets lack ns-admin with scopes [templates:admin]: $ns_json"
 jq -e '.keycloak == {"secret": "rt-kc-sign"}' <<<"$ns_json" >/dev/null \
   || fail "NS keycloak entry is not the sms_http_secret send key: $ns_json"
-jq -e 'has("dpg-api-client")' <<<"$ns_json" >/dev/null || fail "NS lost dpg-api-client: $ns_json"
-# Source values carry no SMS_TEMPLATE_ID, and keep the HMAC pair until Part B
+# Source files carry none of the retired keys or anchors.
 for f in ../values.yaml ../charts/api/values.yaml "$TPL/global-values.yaml" "$TFPL"; do
-  if grep -n 'SMS_TEMPLATE_ID' "$f"; then fail "$f still carries SMS_TEMPLATE_ID"; fi
+  if grep -nE 'SMS_TEMPLATE_ID|NOTIFICATION_SERVICE_KEY_ID|NOTIFICATION_SERVICE_SECRET|NOTIFICATION_FROM_EMAIL|notificationKeyId|notificationSecret|notification_key_id|notification_secret|dpg-api-client' "$f"; then
+    fail "$f still carries a retired legacy-HMAC setting"
+  fi
 done
-grep -q 'NOTIFICATION_SERVICE_KEY_ID: \*notification_key_id' ../values.yaml || fail "umbrella HMAC key id must stay until Part B"
-grep -q 'NOTIFICATION_SERVICE_SECRET: \*notification_secret' ../values.yaml || fail "umbrella HMAC secret must stay until Part B"
-grep -q 'notificationKeyId: "dpg-api-client"' "$TPL/global-values.yaml" || fail "template notificationKeyId must stay until Part B"
-grep -q 'notificationSecret: "${signals_notification_secret}"' "$TFPL" || fail "tfpl notificationSecret must stay until Part B"
 # msg91_template_id -> SMS_LOGIN_OTP_TEMPLATE_ID: NS publishes login_otp from it
 # once and never re-reads it, so the placeholder must never reach the ConfigMap.
 grep -q 'SMS_LOGIN_OTP_TEMPLATE_ID: "${msg91_template_id}"' "$TFPL" || fail "tfpl no longer feeds SMS_LOGIN_OTP_TEMPLATE_ID from msg91_template_id"
@@ -161,9 +157,4 @@ out="$(render --set config.SMS_LOGIN_OTP_TEMPLATE_ID=)"
 grep -q 'SMS_LOGIN_OTP_TEMPLATE_ID' <<<"$out" && fail "empty SMS_LOGIN_OTP_TEMPLATE_ID reached the ConfigMap"
 out="$(render --set config.SMS_LOGIN_OTP_TEMPLATE_ID=flow-123)"
 grep -q 'SMS_LOGIN_OTP_TEMPLATE_ID: "flow-123"' <<<"$out" || fail "a real SMS_LOGIN_OTP_TEMPLATE_ID was dropped"
-# Part A keeps dpg-api-client so old Signals pods keep delivering mid-rollout (F4-1)
-ns="$(signals --show-only charts/notification-service/templates/internal-secret.yaml)"
-grep -q 'dpg-api-client' <<<"$ns" || fail "Part A must keep dpg-api-client in internal-secrets"
-grep -q '"dpg-api-client"' ../../../opentofu/aws/modules/output-file/global-secrets.yaml.tfpl \
-  || fail "Part A must keep dpg-api-client in the generated internal-secrets"
 echo "render_test: ok"
