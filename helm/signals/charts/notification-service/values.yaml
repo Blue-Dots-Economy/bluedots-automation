@@ -89,6 +89,15 @@ config:
   SMTP_PORT: ""      # default 587 when SMTP_HOST is set
   SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
   SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
+  # From for every v1 email. The address must be a mailbox the relay accepts as
+  # sender, usually SMTP_USER; the render fails without it. The name is optional
+  # (NS shows the address when it is empty), and a cluster sets its own name by
+  # overriding this key in its values. When SMTP_FROM is set (or the relay is
+  # smtp.gmail.com, which uses SMTP_USER), that mailbox replaces the address in
+  # the From header and EMAIL_FROM_NAME stays as the display name, so keep
+  # SMTP_FROM and EMAIL_FROM_ADDRESS on the same mailbox.
+  EMAIL_FROM_ADDRESS: ""
+  EMAIL_FROM_NAME: ""
   # Inert: the service never reads this key (it appears only in the upstream
   # repo's docker-compose.yaml and example.env). WhatsApp is a supported
   # channel — `src/lib/providers/whatsapp` registers at boot like any other —
@@ -144,7 +153,6 @@ secrets:
     SMTP_PASS: ""
     # MSG91 SMS provider — required for mobile OTP login flow.
     MSG91_AUTH_KEY: ""
-    MSG91_TEMPLATE_ID: ""
     # Pinnacle SMS provider — required when config.SMS_PROVIDER=pinnacle.
     PINNACLE_API_KEY: ""
 

@@ -780,6 +780,12 @@ notification-service:
     SMTP_SECURE: "false"   # STARTTLS on 587; set "true" only for a 465 endpoint
     # Pin the sender; most relays reject a From that is not the authenticated mailbox.
     SMTP_FROM: *smtp_user
+    # Sender identity for every email NS sends (Plan F4, F4-2): the same
+    # display name and mailbox Keycloak's emails use. Keep the address equal to
+    # SMTP_FROM above. To give NS email its own From name on this cluster,
+    # replace *smtp_from_display with a literal (e.g. "UP SDM").
+    EMAIL_FROM_ADDRESS: *smtp_user
+    EMAIL_FROM_NAME: *smtp_from_display
   secrets:
     create: true
     existingSecret: ""

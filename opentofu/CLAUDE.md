@@ -117,7 +117,7 @@ The two browser keys also need a **different API restriction** from the server o
 | `smtp_password` | notification-service `SMTP_PASS`, aggregator `secrets.smtpPassword`, keycloak `SMTP_PASSWORD`, monitoring `alerting.email.smtpAuthPassword` |
 | `raya_api_key` | aggregator `secrets.rayaApiKey` — the **outbound** worker→Raya voice key. Not the generated `raya_voice_bot_api_key` (inbound, raya→signals api) and not `voice_dpg_signals_secret` (that bot's Keycloak client secret). Left as the placeholder, the aggregator chart omits the Secret key rather than shipping a bogus credential |
 | `msg91_auth_key` | notification-service `MSG91_AUTH_KEY`, aggregator `secrets.msg91AuthKey` |
-| `msg91_template_id` | notification-service `MSG91_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
+| `msg91_template_id` | notification-service `SMS_LOGIN_OTP_TEMPLATE_ID`, aggregator `keycloak.msg91TemplateId` |
 | `google_maps_api_key` | signals `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY` (browser) |
 | `aggregator_google_maps_api_key` | aggregator `web.googleMapsApiKey` → the web pod's `GOOGLE_MAPS_API_KEY` (browser). Left at the placeholder, the web ConfigMap omits the key and the registration form falls back to a plain text address input |
 | `google_geocoding_api_key` | signals `api.secrets.data.GOOGLE_GEOCODING_API_KEY` (server) |

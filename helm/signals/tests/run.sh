@@ -23,6 +23,7 @@ trap 'rm -rf "$OUT"' EXIT
 # The content rules only render while `content` is set, so the test render sets
 # it; the gate itself is asserted below.
 helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true --set postgres.host=pg.test \
+  --set config.EMAIL_FROM_ADDRESS=from@example.test \
   --set-json 'content={"version":"test","entries":{}}' \
   --show-only templates/prometheusrule.yaml \
   | python3 -c "
@@ -35,6 +36,7 @@ for d in yaml.safe_load_all(sys.stdin):
 # Without content there is nothing to load, so the content group must not render.
 # Rendered to a file first: inside an `if`, a failed render would read as "absent".
 helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true --set postgres.host=pg.test \
+  --set config.EMAIL_FROM_ADDRESS=from@example.test \
   --show-only templates/prometheusrule.yaml > "$OUT/rules-no-content.yaml"
 if grep -q 'notification-service-content' "$OUT/rules-no-content.yaml"; then
   echo "content alert group rendered without content configured" >&2

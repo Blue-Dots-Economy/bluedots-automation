@@ -126,7 +126,7 @@ variable "msg91_auth_key" {
 }
 
 variable "msg91_template_id" {
-  description = "MSG91 OTP template id. Feeds notification-service MSG91_TEMPLATE_ID and aggregator keycloak.msg91TemplateId."
+  description = "MSG91 OTP template id. Feeds notification-service SMS_LOGIN_OTP_TEMPLATE_ID and aggregator keycloak.msg91TemplateId."
   type        = string
   default     = "UPDATE_THIS_VALUE"
 }
