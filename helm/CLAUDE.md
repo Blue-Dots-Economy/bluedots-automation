@@ -307,29 +307,13 @@ The aggregator's shape is the better one — an obvious missing feature beats a 
 
 **Aggregator-specific: it is a directory mount, unlike the consent file next to it.** Consent uses `subPath` (single file, because the directory it lands in carries other image-baked files). The reference mount is a whole-directory mount at `/app/apps/web/public/reference`, which is exactly what makes it shadow the baked fallbacks — and it means only the one selected region is reachable while enabled, even though the image contains more. Directory mounts *do* hot-update, but the widget caches per page load, so a `checksum/reference` annotation still rolls the pods.
 
-## Email copy rides the signals consent ConfigMap (optional, per-key)
+## Email and SMS copy live in notification-service
 
-Per-network email wording (signals-dpg#540) ships the same way consent does and on the **same** `-schemas` ConfigMap, because the api resolves both from `dirname(NETWORK_CONFIG_LOCAL_FILE)`: `/app/schemas/messages.properties` and `/app/schemas/<brand>/messages.properties`. Canonical is `bluedots-schemas` `<network>/messages.properties` (+ `<network>/<brand>/`), fetched by `scripts/fetch-configs.sh signals` into the gitignored `helm/signals/charts/api/files/messages/`.
+All email and SMS copy (subjects, bodies, DLT template ids, the variable contract) lives in notification-service. NS seeds it from the cluster's `ns-catalogue.json` (see "NS catalogue rides fetch-configs" above), and live copy is edited through the NS admin API. The signals `-schemas` ConfigMap carries network configs and consent only, and `schemas.consentNetwork`/`consentBrand` select consent only.
 
-**It is optional, and that is the whole difference from consent.** The api bundles a complete set of email copy and merges these files **per key** (bundled defaults < `EMAIL_MESSAGES_PATH` < network < brand), so a network with no file — or a `--ref` predating the files — keeps the built-in wording. The fetch is therefore non-fatal (`try_fetch_optional`) and the render uses `with`, not `fail`. Consent has no in-app fallback, which is why it still fails hard.
+Signals authenticates to NS with a bearer token from its Keycloak `signals-api` client (`KEYCLOAK_API_CLIENT_ID`/`KEYCLOAK_API_CLIENT_SECRET`) and posts to `NOTIFICATION_SERVICE_ENDPOINT`. Sender identity is NS's own (`EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME`). `fetch-configs.sh signals` clears `charts/api/files/{messages,sms}/` left by earlier deploys, so the chart directory holds only what the current deploy fetched.
 
-Three traps:
-
-- **It is keyed off `schemas.consentNetwork`/`consentBrand`, not its own value.** Deliberate: one served network must select consent *and* copy, or a pod could serve one network's consent beside another's emails. Setting `consentNetwork: ""` to fall back to image-baked consent drops the network email copy too.
-- **`items` entries are conditional on the source file, not on the brand value.** An `items` entry naming a ConfigMap key that doesn't exist leaves the volume unmountable and the pod stuck in `ContainerCreating` — so the deployment template gates each entry on the same `Files.Get` the ConfigMap does.
-- **The fetch clears the network's files before fetching.** Rendering keys off file *presence* (there is no values flag to switch copy off), so a leftover from an earlier deploy of a different brand would silently override copy on this one.
-
-No `__SUPPORT_EMAIL__`-style substitution happens here — the copy's own `{{likeThis}}` placeholders are filled by the api at send time, so Helm passes the file through byte-for-byte. The `checksum/schemas` annotation already covers it, so a copy change rolls the api pods. Brand copy is **inert today**: no email send resolves a brand yet, so the file loads and validates at boot but changes no wording.
-
-## SMS templates ride the same ConfigMap as the email copy
-
-Per-network SMS templates (signals-dpg#595) ship exactly like the email copy above, on the same `-schemas` ConfigMap and selected by the same `schemas.consentNetwork`/`consentBrand`: `/app/schemas/sms.properties` and `/app/schemas/<brand>/sms.properties`. Canonical is `bluedots-schemas` `<network>/sms.properties` (+ `<network>/<brand>/`), fetched into the gitignored `helm/signals/charts/api/files/sms/`. Optional and merged per key, so a network with no file keeps the api's bundled registry; the same three traps apply verbatim.
-
-**What is in the file is not message text the api sends.** Each case carries a DLT `template_id`, a reference `body` and a `vars` contract. The delivered text is rendered by the vendor from the DLT-approved template (MSG91) or posted verbatim by notification-service (Pinnacle, which renders nothing) — so on a Pinnacle deployment the `body` here *is* what reaches the handset and must stay byte-identical to the registered template, because the operator matches on it and scrubs a mismatch silently.
-
-**Shipping it is safe before any template is registered.** A blank `template_id` means "not DLT-approved yet" and `dispatchSms` skips that send. That is also why an empty value must never be treated the way the email copy treats one: email discards an empty value so a bad override cannot ship a blank subject, while for SMS the empty value is the signal. The api keeps the two loaders separate for exactly this reason.
-
-Boot logs the state — `sms templates: N cases loaded from M layer(s), K with a template_id` — so `K` going up is how a newly-approved id is confirmed to have shipped.
+NS `internalSecrets` keeps the `dpg-api-client` entry for one more release: it serves legacy `/notify` for Signals pods on the previous image during the rolling upgrade, and leaves together with that route.
 
 ## `aggregator.config.yaml` is ConfigMap-delivered — fetched, not vendored
 

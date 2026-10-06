@@ -68,4 +68,62 @@ printf 'notification-service:\n  config:\n    EMAIL_FROM_NAME: "UP SDM"\n' > "$c
 out="$(umbrella -f "$cluster_values")"
 rm -f "$cluster_values"
 grep -q 'EMAIL_FROM_NAME: "UP SDM"' <<<"$out" || fail "cluster values cannot override EMAIL_FROM_NAME"
+
+# Signals reaches NS with its Keycloak signals-api client: no HMAC pair, no
+# SMS template id, no from-address, and no in-app email/SMS copy files. Copy
+# lives in notification-service, seeded from the cluster's catalogue.
+# Fixture files carry a name no network uses, and only they are removed on exit.
+API_FILES="../charts/api/files"
+FX=rtfx; FXB=rtbrand
+fx_files=("networks/$FX.json" "consent/$FX.json" "consent/$FX.$FXB.json"
+  "messages/$FX.properties" "messages/$FX.$FXB.properties"
+  "sms/$FX.properties" "sms/$FX.$FXB.properties")
+fx_new_dirs=()
+for d in networks consent messages sms; do
+  [ -d "$API_FILES/$d" ] || { mkdir -p "$API_FILES/$d"; fx_new_dirs+=("$API_FILES/$d"); }
+done
+restore_fixtures() {
+  for f in "${fx_files[@]}"; do rm -f "${API_FILES:?}/$f"; done
+  for d in "${fx_new_dirs[@]+"${fx_new_dirs[@]}"}"; do rmdir "$d" 2>/dev/null || true; done
+}
+trap 'restore; restore_fixtures' EXIT
+printf '{"id":"%s"}' "$FX" > "$API_FILES/networks/$FX.json"
+printf '{"documents":{}}' > "$API_FILES/consent/$FX.json"
+printf '{"documents":{}}' > "$API_FILES/consent/$FX.$FXB.json"
+# stale copy files on disk must not resurrect the delivery
+for f in messages/$FX.properties messages/$FX.$FXB.properties sms/$FX.properties sms/$FX.$FXB.properties; do
+  printf 'k=v\n' > "$API_FILES/$f"
+done
+apiw="$(helm template a ../charts/api --set global.publicHost=x.test \
+  --set-json "schemas.networks=[\"$FX\"]" --set schemas.consentNetwork=$FX --set schemas.consentBrand=$FXB \
+  --show-only templates/schemas-configmap.yaml --show-only templates/deployment.yaml)"
+grep -q 'consent.json' <<<"$apiw" || fail "Signals lost consent.json"
+grep -q "path: $FXB/consent.json" <<<"$apiw" || fail "Signals lost brand consent"
+grep -q 'messages.properties' <<<"$apiw" && fail "Signals still gets messages.properties"
+grep -q 'sms.properties' <<<"$apiw" && fail "Signals still gets sms.properties"
+signals() {
+  helm template signals .. --namespace signals -f ../../global-resources.yaml \
+    -f "$TPL/global-images.yaml" -f "$TPL/global-values.yaml" \
+    --set-json 'api.schemas.networks=[]' --set ui.reference.enabled=false \
+    --set notification-service.postgres.host=ci-smoke.invalid "$@"
+}
+api="$(signals --show-only charts/api/templates/secret.yaml --show-only charts/api/templates/configmap.yaml)"
+grep -q 'NOTIFICATION_SERVICE_SECRET' <<<"$api" && fail "Signals still gets the HMAC secret"
+grep -q 'NOTIFICATION_SERVICE_KEY_ID' <<<"$api" && fail "Signals still gets the HMAC key id"
+grep -q 'SMS_TEMPLATE_ID' <<<"$api" && fail "Signals still gets SMS_TEMPLATE_ID"
+grep -q 'NOTIFICATION_FROM_EMAIL' <<<"$api" && fail "Signals still gets NOTIFICATION_FROM_EMAIL"
+grep -q 'NOTIFICATION_SERVICE_ENDPOINT' <<<"$api" || fail "Signals lost NOTIFICATION_SERVICE_ENDPOINT"
+grep -q 'KEYCLOAK_API_CLIENT_ID' <<<"$api" || fail "Signals lost KEYCLOAK_API_CLIENT_ID"
+# Source values and the generated secrets carry none of the removed keys
+for f in ../values.yaml ../charts/api/values.yaml "$TPL/global-values.yaml" \
+  ../../../opentofu/aws/modules/output-file/global-secrets.yaml.tfpl; do
+  if grep -nE 'NOTIFICATION_SERVICE_(KEY_ID|SECRET)|notification(KeyId|Secret)|SMS_TEMPLATE_ID|NOTIFICATION_FROM_EMAIL|[&*]notification_(key_id|secret)\b' "$f"; then
+    fail "$f still carries a removed Signals notification key"
+  fi
+done
+# Part A keeps dpg-api-client so old Signals pods keep delivering mid-rollout (F4-1)
+ns="$(signals --show-only charts/notification-service/templates/internal-secret.yaml)"
+grep -q 'dpg-api-client' <<<"$ns" || fail "Part A must keep dpg-api-client in internal-secrets"
+grep -q '"dpg-api-client"' ../../../opentofu/aws/modules/output-file/global-secrets.yaml.tfpl \
+  || fail "Part A must keep dpg-api-client in the generated internal-secrets"
 echo "render_test: ok"
