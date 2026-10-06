@@ -14,6 +14,8 @@
 #   <network>/<brand>/consent.json
 #   <network>/messages.properties
 #   <network>/<brand>/messages.properties
+#   <network>/sms.properties
+#   <network>/<brand>/sms.properties
 # (network/brand dir names use underscores, e.g. blue_dot, orange_dot, upsdm).
 #
 # Subcommands:
@@ -33,6 +35,10 @@
 #               PLUS messages.properties (+ <brand>/messages.properties) — the
 #               per-network email copy (signals-dpg#540)
 #                 -> helm/signals/charts/api/files/messages/
+#               PLUS sms.properties (+ <brand>/sms.properties) — the per-network
+#               SMS template registry: DLT template ids, reference bodies and
+#               the variable contract (signals-dpg#595)
+#                 -> helm/signals/charts/api/files/sms/
 #               OPTIONAL, unlike consent: the api ships complete bundled email
 #               copy and merges these PER KEY, so a network with no file (or a
 #               ref predating them) keeps the built-in wording instead of
@@ -473,6 +479,35 @@ case "$TARGET" in
       fetch_optional "${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties" \
         "${RAW}/${NETWORK}/${BRAND}/messages.properties" \
         "brand email copy" "network/bundled copy only"
+    fi
+
+    # ── per-network SMS templates (signals-dpg#595) ───────────────────────────
+    # Same delivery as the email copy above: rides the schemas ConfigMap, read
+    # by the api from dirname(NETWORK_CONFIG_LOCAL_FILE). Optional per key — a
+    # missing file just keeps the api's bundled template registry.
+    #
+    # These files carry no message text that is ever sent by the api: the body
+    # is either rendered by the vendor from the DLT-approved template (MSG91) or
+    # posted verbatim by notification-service (Pinnacle). What ships here is the
+    # DLT template id, the reference body and the variable contract. A blank
+    # template_id means "not DLT-approved yet" and the api skips that send, so
+    # this is safe to deliver long before any template is registered.
+    #
+    # Cleared first for the same reason as the copy dir: the chart renders on
+    # file presence alone, so a leftover from a different network/brand would
+    # otherwise override this deploy's templates.
+    SMS_DIR="$REPO_ROOT/helm/signals/charts/api/files/sms"
+    mkdir -p "$SMS_DIR"
+    rm -f "$SMS_DIR"/*.properties
+
+    fetch_optional "${SMS_DIR}/${NETWORK}.properties" \
+      "${RAW}/${NETWORK}/sms.properties" \
+      "sms templates" "api keeps its bundled defaults"
+
+    if [ -n "$BRAND" ]; then
+      fetch_optional "${SMS_DIR}/${NETWORK}.${BRAND}.properties" \
+        "${RAW}/${NETWORK}/${BRAND}/sms.properties" \
+        "brand sms templates" "network/bundled templates only"
     fi
 
     # UI college/institute reference list for the selected region. Lives under
