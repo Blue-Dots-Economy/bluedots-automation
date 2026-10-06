@@ -97,4 +97,21 @@ for tr in smsProvider otpEmailProvider; do
 done
 err="$(own --set keycloak.otpEmailProvider=http 2>&1 >/dev/null || true)"
 grep -q 'signing secret' <<<"$err" || fail "blank-secret failure does not name the signing secret: $err"
+
+# The generated secrets file, layered the way a deploy layers it, carries
+# sms_http_secret into the keycloak release's root secrets: block. Placeholders
+# are filled; sms_http_secret gets a value of its own.
+TFPL=../../../opentofu/aws/modules/output-file/global-secrets.yaml.tfpl
+secrets_values="$(mktemp)"
+trap 'rm -f "$secrets_values"' EXIT
+sed -E -e 's/\$\{yamlencode\([^}]*\)\}/"x"/' -e 's/\$\{sms_http_secret\}/rt-tfpl-sign/g' \
+  -e 's/\$\{[a-z0-9_]+\}/x/g' "$TFPL" > "$secrets_values"
+deployed() {
+  helm template keycloak "$UMBRELLA" --namespace common-services -f ../../global-resources.yaml \
+    -f "$TPL/global-images.yaml" -f "$TPL/global-values.yaml" -f "$secrets_values" \
+    --show-only templates/secrets.yaml "$@"
+}
+out="$(deployed --set keycloak.otpEmailProvider=http 2>&1)" \
+  || fail "tfpl-layered otpEmailProvider=http stops the render: $out"
+has 'SMS_HTTP_SECRET: "rt-tfpl-sign"' || fail "the generated sms_http_secret does not reach keycloak SMS_HTTP_SECRET"
 echo "keycloak render_test: ok"

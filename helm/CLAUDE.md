@@ -149,8 +149,9 @@ dead-letter, finds no template tokens to fail on, and sends a message whose text
 literally `UPDATE_THIS_VALUE` with no OTP in it.
 
 **Keycloak → notification-service HMAC is one input rendering two halves.**
-`sms_http_secret` produces both `keycloak.secrets.smsHttpSecret` and the `keycloak`
-key id inside notification-service's `internalSecrets.json`. Two separate inputs
+`sms_http_secret` produces both the keycloak release's `secrets.smsHttpSecret` (root
+`secrets:` block of `global-secrets.yaml`) and the `keycloak` key id inside
+notification-service's `internalSecrets.json`. Two separate inputs
 would drift into a permanent `401` that looks like a code bug. The same applies to
 `SMS_LOGIN_OTP_TEMPLATE_ID`: notification-service reads *that* name (Keycloak's SPI
 reads its own `MSG91_TEMPLATE_ID`, rendered by the keycloak chart), and without it NS
