@@ -1,0 +1,89 @@
+# campaign-manager chart — skeleton values.
+# Review every line tagged `# UPDATE:` before deploying.
+
+global:
+  # UPDATE: public FQDN served by the ingress.
+  publicHost: campaign-manager.example.com
+  publicProtocol: https
+  # List of Secret NAMES used as imagePullSecrets.
+  imagePullSecrets:
+    - ghcr-pull
+
+replicaCount: 1
+
+image:
+  # UPDATE: set once the image build pipeline publishes the image.
+  repository: ghcr.io/blue-dots-economy/agg-campaign-manager-v2
+  # Empty = Chart.appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Optional: render a ghcr.io dockerconfigjson pull secret from these credentials.
+imagePullSecret:
+  create: false
+  name: ghcr-pull
+  registry: ghcr.io
+  username: ""
+  password: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  # Port the Node server listens on inside the container.
+  targetPort: 3000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Defaults to global.publicHost when empty.
+  host: ""
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: false
+    secretName: campaign-manager-tls
+
+# Non-secret runtime config, rendered into a ConfigMap and injected as env.
+config:
+  # UPDATE: Supabase project URLs (server-side).
+  SUPABASE_URL: ""
+  PURPLE_SUPABASE_URL: ""
+  PURPLE_CUTOVER: ""
+
+# Sensitive runtime config, rendered into a Secret unless existingSecret is set.
+secrets:
+  # Name of a pre-created Secret carrying the same keys as below.
+  existingSecret: ""
+  SUPABASE_PUBLISHABLE_KEY: ""
+  SUPABASE_SERVICE_ROLE_KEY: ""
+  PURPLE_SUPABASE_SERVICE_ROLE_KEY: ""
+  LOVABLE_CRON_SECRET: ""
+  LOVABLE_CRON_SECRET_PREVIOUS: ""
+  GOOGLE_SERVICE_ACCOUNT_JSON: ""
+  GOOGLE_SHEETS_API_KEY: ""
+  LOVABLE_API_KEY: ""
+  RAYA_API_KEY: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# UPDATE: confirm the health path once the container image exists.
+probes:
+  path: /
+  readiness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

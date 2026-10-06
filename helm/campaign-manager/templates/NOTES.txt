@@ -1,0 +1,9 @@
+campaign-manager {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+{{- if .Values.ingress.enabled }}
+
+URL: {{ .Values.global.publicProtocol }}://{{ default .Values.global.publicHost .Values.ingress.host }}
+{{- else }}
+
+Ingress is disabled. To reach the app locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "campaign-manager.fullname" . }} 8080:{{ .Values.service.port }}
+{{- end }}

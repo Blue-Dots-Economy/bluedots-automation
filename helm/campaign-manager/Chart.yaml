@@ -1,0 +1,15 @@
+apiVersion: v2
+name: campaign-manager
+description: Blue Dots Purple Dots Campaign Manager (TanStack Start SSR app backed by Supabase).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.24.0-0"
+keywords:
+  - campaign-manager
+  - bluedots
+  - aggregator
+home: https://github.com/Blue-Dots-Economy/agg-campaign-manager-v2
+maintainers:
+  - name: sanketika
+    email: ops@sanketika.in
