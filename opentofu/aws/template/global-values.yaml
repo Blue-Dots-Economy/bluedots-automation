@@ -593,12 +593,19 @@ keycloak:
   # notification-service's internal-secrets.json — both generated from the one
   # `sms_http_secret` input so they cannot drift into a permanent 401.
   #
-  # Requires an image carrying keycloak-otp >= 1.2.0-SNAPSHOT: an unknown SPI
-  # provider id CrashLoopBackOffs the pod rather than degrading.
+  # Requires an image carrying the OTP plugin that posts to /v1/notify with
+  # HMAC v2 (Plan F3; see dockerfiles/keycloak/providers/README.md), since the
+  # chart's NS URL is /v1/notify. An unknown SPI provider id CrashLoopBackOffs
+  # the pod rather than degrading.
   #
   # For msg91/twilio/sns, credentials come from secrets.msg91AuthKey +
   # keycloak.msg91TemplateId and the matching TWILIO_*/AWS_* values.
   smsProvider: msg91
+  # Email OTP transport: smtp (the realm's SMTP server, the default) or http
+  # (notification-service, sharing the connection and secret above). Same image
+  # requirement as smsProvider=http, plus the email login_otp template in the
+  # cluster's NS catalogue.
+  # otpEmailProvider: http
 
   ingress:
     # Enable BOTH of these only together with a dedicated _auth_host above.
