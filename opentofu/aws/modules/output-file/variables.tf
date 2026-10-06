@@ -173,7 +173,7 @@ variable "pinnacle_login_otp_template_id" {
 # this one value: the Keycloak Secret key, and the `keycloak` entry in NS's
 # internal-secrets.json. Splitting them across two inputs is how they drift.
 variable "sms_http_secret" {
-  description = "Shared secret Keycloak signs /notify requests with (smsProvider=http). Feeds keycloak secrets.smsHttpSecret AND the `keycloak` key id in notification-service internal-secrets.json."
+  description = "Shared secret Keycloak signs /v1/notify requests with (HMAC v2; smsProvider or otpEmailProvider = http). Feeds keycloak secrets.smsHttpSecret AND the `keycloak` key id in notification-service internal-secrets.json."
   type        = string
   sensitive   = true
   default     = ""

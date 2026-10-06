@@ -247,9 +247,10 @@ spec:
             {{- /*
             The five non-secret SMS_HTTP_* keys ride the ConfigMap; only the
             signing key comes from the Secret, and without this entry it never
-            reaches the container. HttpSmsProviderFactory.init() merely WARNS on
-            missing config, so the pod stays Ready, health is green, the realm
-            imports — and every SMS OTP login fails.
+            reaches the container. Both http transports (SMS and email OTP) sign
+            with it. The http providers merely WARN on missing config, so the pod
+            stays Ready, health is green, the realm imports — and every OTP sent
+            over http fails.
             */}}
             - name: SMS_HTTP_SECRET
               valueFrom:

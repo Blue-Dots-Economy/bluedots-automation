@@ -41,9 +41,25 @@ data:
   vendor SDK inside Keycloak. That is what lets a new SMS vendor be an NS-only
   change: Keycloak stops learning vendor names, and the login-OTP template id
   stops being duplicated between here and NS.
+
+  otpEmailProvider picks the email OTP transport the same way. `smtp` renders
+  nothing: the plugin selects smtp by provider order, so the default keeps the
+  realm's SMTP server without touching Keycloak's build-time options. `http`
+  renders KC_SPI_OTP_EMAIL__PROVIDER (double underscore: the current SPI option
+  format, which Keycloak reads without a legacy-format warning).
+
+  Either transport on http needs the one NS connection below (SMS_HTTP_* here,
+  SMS_HTTP_SECRET in the Deployment), so it renders when either is http.
   */}}
-  {{- if eq .Values.smsProvider "http" }}
-  SMS_HTTP_URL: "{{ .Values.smsHttp.url | default (printf "http://%s-notification-service.%s.svc.cluster.local:3000/notify" (.Values.global.signalsRelease | default "signals") (.Values.global.signalsNamespace | default "signals")) }}"
+  {{- $emailProvider := .Values.otpEmailProvider | default "smtp" }}
+  {{- if not (has $emailProvider (list "smtp" "http")) }}
+  {{- fail (printf "keycloak.otpEmailProvider must be smtp or http, got %q" $emailProvider) }}
+  {{- end }}
+  {{- if eq $emailProvider "http" }}
+  KC_SPI_OTP_EMAIL__PROVIDER: "http"
+  {{- end }}
+  {{- if or (eq .Values.smsProvider "http") (eq $emailProvider "http") }}
+  SMS_HTTP_URL: "{{ .Values.smsHttp.url | default (printf "http://%s-notification-service.%s.svc.cluster.local:3000/v1/notify" (.Values.global.signalsRelease | default "signals") (.Values.global.signalsNamespace | default "signals")) }}"
   SMS_HTTP_TEMPLATE_ID: "{{ .Values.smsHttp.templateId }}"
   SMS_HTTP_OTP_VAR_NAME: "{{ .Values.smsHttp.otpVarName }}"
   SMS_HTTP_KEY_ID: "{{ .Values.smsHttp.keyId }}"

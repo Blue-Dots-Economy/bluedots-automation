@@ -157,6 +157,15 @@ reads its own `MSG91_TEMPLATE_ID`, rendered by the keycloak chart), and without 
 falls back to a hardcoded literal flow id that is not what any cluster is configured
 with. `msg91_template_id` feeds both.
 
+**Keycloak has two OTP transports that can reach notification-service.**
+`keycloak.smsProvider: http` (SMS OTP) and `keycloak.otpEmailProvider: http` (email
+OTP; default `smtp`, which renders no env and keeps the realm's SMTP server). Either
+one on `http` renders the shared NS connection (`SMS_HTTP_*`, default URL
+`…/v1/notify`, HMAC v2, secret `SMS_HTTP_SECRET`); `http` email also renders
+`KC_SPI_OTP_EMAIL__PROVIDER`. Both need the OTP plugin jar built after Plan F3 in the
+image (`dockerfiles/keycloak/providers/README.md`). `helm/keycloak/tests/render_test.sh`
+(run in CI) asserts the combinations.
+
 **NS sends every email as `EMAIL_FROM_NAME <EMAIL_FROM_ADDRESS>`.** opentofu sets the
 address from `_smtp_user` and the name from `_smtp_from_display`, the same identity
 Keycloak's emails show. The chart refuses to render without `EMAIL_FROM_ADDRESS`, since
