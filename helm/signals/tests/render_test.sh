@@ -11,7 +11,10 @@ render() { helm template ns "$CHART" "${BASE[@]}" "$@"; }
 
 backup=""
 if [ -f "$CAT_DIR/ns-catalogue.json" ]; then backup="$(mktemp)"; cp "$CAT_DIR/ns-catalogue.json" "$backup"; fi
-restore() { rm -f "$CAT_DIR/ns-catalogue.json"; [ -n "$backup" ] && cp "$backup" "$CAT_DIR/ns-catalogue.json" || true; }
+restore() {
+  rm -f "$CAT_DIR/ns-catalogue.json"
+  if [ -n "$backup" ]; then cp "$backup" "$CAT_DIR/ns-catalogue.json"; rm -f "$backup"; fi
+}
 trap restore EXIT
 
 # no file: no ConfigMap, no mount, no NS_SEED_FILE
