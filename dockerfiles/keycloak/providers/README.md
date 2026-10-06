@@ -96,11 +96,17 @@ notification-service holds the authoritative text and the string Keycloak's
 theme renders is discarded.
 
 > Setting `smsProvider: http` on an image built from a jar older than
-> `1.2.0-SNAPSHOT`, or `otpEmailProvider: http` on one older than the Plan F3
-> jar, fails at **session-factory init** — the pod CrashLoopBackOffs
-> on an unknown SPI provider id. It is not a realm-import failure, so look in
-> the container log rather than the realm-init Job. Either way it does not
-> silently degrade to another vendor.
+> `1.2.0-SNAPSHOT` stops Keycloak at startup (`kc.sh start` exits 1 with
+> `Failed to find provider http for sms`; verified on 26.7.3 with the 1.0.0
+> jar), so the pod CrashLoopBackOffs. It is not a realm-import failure, so look
+> in the container log rather than the realm-init Job. It does not silently
+> degrade to another vendor.
+>
+> `otpEmailProvider: http` needs the Plan F3 jar. Without it the setting has no
+> effect on email OTP: Keycloak starts normally and keeps sending email OTP
+> over SMTP (verified on 26.7.3 with the committed `1.2.0-SNAPSHOT` jar and
+> `KC_SPI_OTP_EMAIL__PROVIDER=http`: clean start, no warning). Check the jar
+> before relying on the flip.
 >
 > **Pin an immutable image tag before flipping the value.** The chart defaults to
 > `image.tag: develop` with `pullPolicy: IfNotPresent`, so a node holding a

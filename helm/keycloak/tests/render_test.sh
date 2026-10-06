@@ -72,4 +72,29 @@ has 'SMS_HTTP_URL: "http://ns.test/v1/notify"' || fail "smsHttp.url override not
 if render --set keycloak.otpEmailProvider=sendgrid >/dev/null 2>&1; then
   fail "rendered with an unknown otpEmailProvider"
 fi
+
+# http OTP needs the NS signing secret. With the chart rendering its own Secret
+# (no global.existingSecret), a blank smsHttpSecret stops the render instead of
+# deploying a Keycloak whose every http OTP send is unsigned.
+SECRET_SETS=()
+for k in kcBootstrapAdminPassword keycloakPostgresPassword keycloakAdminClientSecret oidcClientSecret \
+  signalsApiSecret signalstackClientSecret voiceDpgSignalsSecret campaignManagerSecret; do
+  SECRET_SETS+=(--set "secrets.$k=rt-$k")
+done
+own() {
+  helm template keycloak "$UMBRELLA" --namespace common-services \
+    --set global.keycloakRealm=ci-smoke "${SECRET_SETS[@]}" --show-only templates/secrets.yaml "$@"
+}
+own >/dev/null || fail "default with its own Secret does not render"
+for tr in smsProvider otpEmailProvider; do
+  if own --set keycloak.$tr=http >/dev/null 2>&1; then fail "$tr=http rendered without smsHttpSecret"; fi
+  if own --set keycloak.$tr=http --set 'secrets.smsHttpSecret= ' >/dev/null 2>&1; then
+    fail "$tr=http rendered with a whitespace-only smsHttpSecret"
+  fi
+  out="$(own --set keycloak.$tr=http --set secrets.smsHttpSecret=rt-sign)"
+  has 'SMS_HTTP_SECRET: "rt-sign"' || fail "$tr=http with a secret does not render SMS_HTTP_SECRET"
+  render --set keycloak.$tr=http >/dev/null || fail "$tr=http with global.existingSecret does not render"
+done
+err="$(own --set keycloak.otpEmailProvider=http 2>&1 >/dev/null || true)"
+grep -q 'signing secret' <<<"$err" || fail "blank-secret failure does not name the signing secret: $err"
 echo "keycloak render_test: ok"
