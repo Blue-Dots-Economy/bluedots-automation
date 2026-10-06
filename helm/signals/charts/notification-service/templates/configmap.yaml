@@ -17,6 +17,9 @@ data:
   {{- if .Values.content }}
   NS_CONTENT_FILE: "/app/content/content.json"
   {{- end }}
+  {{- if .Files.Get "files/catalogue/ns-catalogue.json" }}
+  NS_SEED_FILE: "/app/seed/ns-catalogue.json"
+  {{- end }}
   {{- with (include "dpg-notification-service.keycloakEnv" . | trim) }}
   {{- . | nindent 2 }}
   {{- end }}

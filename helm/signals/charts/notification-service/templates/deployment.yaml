@@ -24,6 +24,9 @@ spec:
         {{- if .Values.content }}
         checksum/content: {{ include (print $.Template.BasePath "/configmap-content.yaml") . | sha256sum }}
         {{- end }}
+        {{- if .Files.Get "files/catalogue/ns-catalogue.json" }}
+        checksum/catalogue: {{ include (print $.Template.BasePath "/configmap-catalogue.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -79,6 +82,12 @@ spec:
               mountPath: /app/content
               readOnly: true
             {{- end }}
+            {{- if .Files.Get "files/catalogue/ns-catalogue.json" }}
+            # Read once at boot (seed). Not under /app/config (internal-secrets) or /app/content.
+            - name: catalogue
+              mountPath: /app/seed
+              readOnly: true
+            {{- end }}
       volumes:
         - name: internal-secrets
           secret:
@@ -90,6 +99,11 @@ spec:
         - name: content
           configMap:
             name: {{ include "dpg-notification-service.fullname" . }}-content
+        {{- end }}
+        {{- if .Files.Get "files/catalogue/ns-catalogue.json" }}
+        - name: catalogue
+          configMap:
+            name: {{ include "dpg-notification-service.fullname" . }}-catalogue
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -16,6 +16,8 @@
 #   <network>/<brand>/messages.properties
 #   <network>/sms.properties
 #   <network>/<brand>/sms.properties
+#   <network>/ns-catalogue.json
+#   <network>/<brand>/ns-catalogue.json
 # (network/brand dir names use underscores, e.g. blue_dot, orange_dot, upsdm).
 #
 # Subcommands:
@@ -43,6 +45,10 @@
 #               copy and merges these PER KEY, so a network with no file (or a
 #               ref predating them) keeps the built-in wording instead of
 #               failing the deploy.
+#               PLUS ns-catalogue.json — the notification-service catalogue,
+#               brand copy first, else the network's
+#                 -> helm/signals/charts/notification-service/files/catalogue/
+#               REQUIRED: the deploy fails when neither copy exists on the ref.
 #   aggregator  consent.json (a FULL document), canonical in bluedots-schemas —
 #               the SAME repo network.json comes from, resolved brand > network the
 #               same way. NOTE it is NOT the same file as <network>/consent.json in
@@ -509,6 +515,25 @@ case "$TARGET" in
         "${RAW}/${NETWORK}/${BRAND}/sms.properties" \
         "brand sms templates" "network/bundled templates only"
     fi
+    # ── notification-service catalogue (NS Stage 1 Plan F1/F4) ──────────────
+    # One per cluster: the brand's own catalogue when it has one, else the
+    # network's. REQUIRED — a deploy without it would leave NS with no
+    # templates or policies, so try_fetch fails the deploy. Cleared first
+    # because the chart renders on file presence.
+    CAT_DIR="$REPO_ROOT/helm/signals/charts/notification-service/files/catalogue"
+    mkdir -p "$CAT_DIR"
+    rm -f "$CAT_DIR/ns-catalogue.json"
+    cat_cands=()
+    [ -n "$BRAND" ] && cat_cands+=("${RAW}/${NETWORK}/${BRAND}/ns-catalogue.json")
+    cat_cands+=("${RAW}/${NETWORK}/ns-catalogue.json")
+    try_fetch "$CAT_DIR/ns-catalogue.json" "${cat_cands[@]}"
+    if command -v jq >/dev/null 2>&1; then
+      jq -e '.version and (.templates|type=="array") and (.policies|type=="array")' \
+        "$CAT_DIR/ns-catalogue.json" >/dev/null \
+        || { rm -f "$CAT_DIR/ns-catalogue.json"
+             echo "ERROR: fetched ns-catalogue.json is not a catalogue" >&2; exit 1; }
+    fi
+    echo "  ns catalogue -> ${CAT_DIR}/ns-catalogue.json"
 
     # UI college/institute reference list for the selected region. Lives under
     # apps/ui/public/ (not examples/schemas/), hence its own RAW base. Only the one
