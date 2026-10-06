@@ -86,7 +86,8 @@ restore_fixtures() {
   for f in "${fx_files[@]}"; do rm -f "${API_FILES:?}/$f"; done
   for d in "${fx_new_dirs[@]+"${fx_new_dirs[@]}"}"; do rmdir "$d" 2>/dev/null || true; done
 }
-trap 'restore; restore_fixtures' EXIT
+secrets_values=""
+trap 'restore; restore_fixtures; rm -f "$secrets_values"' EXIT
 printf '{"id":"%s"}' "$FX" > "$API_FILES/networks/$FX.json"
 printf '{"documents":{}}' > "$API_FILES/consent/$FX.json"
 printf '{"documents":{}}' > "$API_FILES/consent/$FX.$FXB.json"
@@ -97,7 +98,7 @@ done
 apiw="$(helm template a ../charts/api --set global.publicHost=x.test \
   --set-json "schemas.networks=[\"$FX\"]" --set schemas.consentNetwork=$FX --set schemas.consentBrand=$FXB \
   --show-only templates/schemas-configmap.yaml --show-only templates/deployment.yaml)"
-grep -q 'consent.json' <<<"$apiw" || fail "Signals lost consent.json"
+grep -q '^  consent.json: |' <<<"$apiw" || fail "Signals lost the consent.json ConfigMap key"
 grep -q "path: $FXB/consent.json" <<<"$apiw" || fail "Signals lost brand consent"
 grep -q 'messages.properties' <<<"$apiw" && fail "Signals still gets messages.properties"
 grep -q 'sms.properties' <<<"$apiw" && fail "Signals still gets sms.properties"
@@ -107,20 +108,33 @@ signals() {
     --set-json 'api.schemas.networks=[]' --set ui.reference.enabled=false \
     --set notification-service.postgres.host=ci-smoke.invalid "$@"
 }
-api="$(signals --show-only charts/api/templates/secret.yaml --show-only charts/api/templates/configmap.yaml)"
-grep -q 'NOTIFICATION_SERVICE_SECRET' <<<"$api" && fail "Signals still gets the HMAC secret"
-grep -q 'NOTIFICATION_SERVICE_KEY_ID' <<<"$api" && fail "Signals still gets the HMAC key id"
+# The generated secrets file, placeholders filled, layered the way a deploy
+# layers it; signals_notification_secret gets a value of its own.
+TFPL=../../../opentofu/aws/modules/output-file/global-secrets.yaml.tfpl
+secrets_values="$(mktemp)"
+sed -E -e 's/\$\{yamlencode\([^}]*\)\}/"x"/' -e 's/\$\{signals_notification_secret\}/rt-ns-secret/g' \
+  -e 's/\$\{[a-z0-9_]+\}/x/g' "$TFPL" > "$secrets_values"
+api="$(signals -f "$secrets_values" --show-only charts/api/templates/secret.yaml --show-only charts/api/templates/configmap.yaml)"
+ns="$(signals -f "$secrets_values" --show-only charts/notification-service/templates/internal-secret.yaml)"
 grep -q 'SMS_TEMPLATE_ID' <<<"$api" && fail "Signals still gets SMS_TEMPLATE_ID"
-grep -q 'NOTIFICATION_FROM_EMAIL' <<<"$api" && fail "Signals still gets NOTIFICATION_FROM_EMAIL"
 grep -q 'NOTIFICATION_SERVICE_ENDPOINT' <<<"$api" || fail "Signals lost NOTIFICATION_SERVICE_ENDPOINT"
 grep -q 'KEYCLOAK_API_CLIENT_ID' <<<"$api" || fail "Signals lost KEYCLOAK_API_CLIENT_ID"
-# Source values and the generated secrets carry none of the removed keys
-for f in ../values.yaml ../charts/api/values.yaml "$TPL/global-values.yaml" \
-  ../../../opentofu/aws/modules/output-file/global-secrets.yaml.tfpl; do
-  if grep -nE 'NOTIFICATION_SERVICE_(KEY_ID|SECRET)|notification(KeyId|Secret)|SMS_TEMPLATE_ID|NOTIFICATION_FROM_EMAIL|[&*]notification_(key_id|secret)\b' "$f"; then
-    fail "$f still carries a removed Signals notification key"
-  fi
+# Present until Part B: the previous Signals image reads the HMAC pair and the
+# From address through envFrom, so they ride along for rollout and rollback,
+# and the pair matches the NS dpg-api-client entry.
+grep -q 'NOTIFICATION_SERVICE_KEY_ID: "dpg-api-client"' <<<"$api" || fail "HMAC key id must stay until Part B"
+grep -q 'NOTIFICATION_SERVICE_SECRET: "rt-ns-secret"' <<<"$api" || fail "HMAC secret must stay until Part B"
+grep -q 'NOTIFICATION_FROM_EMAIL: "sender@example.com"' <<<"$api" || fail "NOTIFICATION_FROM_EMAIL must stay until Part B"
+tr -d ' \n' <<<"$ns" | grep -q '"dpg-api-client":{"secret":"rt-ns-secret"}' \
+  || fail "NS dpg-api-client must carry the Signals HMAC secret until Part B"
+# Source values carry no SMS_TEMPLATE_ID, and keep the HMAC pair until Part B
+for f in ../values.yaml ../charts/api/values.yaml "$TPL/global-values.yaml" "$TFPL"; do
+  if grep -n 'SMS_TEMPLATE_ID' "$f"; then fail "$f still carries SMS_TEMPLATE_ID"; fi
 done
+grep -q 'NOTIFICATION_SERVICE_KEY_ID: \*notification_key_id' ../values.yaml || fail "umbrella HMAC key id must stay until Part B"
+grep -q 'NOTIFICATION_SERVICE_SECRET: \*notification_secret' ../values.yaml || fail "umbrella HMAC secret must stay until Part B"
+grep -q 'notificationKeyId: "dpg-api-client"' "$TPL/global-values.yaml" || fail "template notificationKeyId must stay until Part B"
+grep -q 'notificationSecret: "${signals_notification_secret}"' "$TFPL" || fail "tfpl notificationSecret must stay until Part B"
 # Part A keeps dpg-api-client so old Signals pods keep delivering mid-rollout (F4-1)
 ns="$(signals --show-only charts/notification-service/templates/internal-secret.yaml)"
 grep -q 'dpg-api-client' <<<"$ns" || fail "Part A must keep dpg-api-client in internal-secrets"
