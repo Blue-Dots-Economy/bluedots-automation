@@ -33,6 +33,12 @@ resource "random_id" "signals_notification_secret" {
   byte_length = var.signals_notification_secret_bytes
 }
 
+# Operator HMAC key for the notification-service admin API (/v1/admin/*,
+# POST /failed/retry): the `ns-admin` entry in NS internal-secrets.json.
+resource "random_id" "ns_admin_secret" {
+  byte_length = var.ns_admin_secret_bytes
+}
+
 # Inter-instance peer-auth HMAC secret (INSTANCE_SHARED_SECRET). Min 32 chars;
 # byte_length 32 → 64 hex chars. See signals-dpg#255.
 resource "random_id" "signals_instance_shared_secret" {

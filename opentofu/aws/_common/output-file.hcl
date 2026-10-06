@@ -90,6 +90,10 @@ dependency "rds" {
   }
 }
 
+# Shallow merge also applies these mocks on a real apply, for any output the
+# random_passwords state does not carry yet. ns_admin_secret is therefore blank:
+# NS skips an internal-secrets entry whose secret is blank, so a mock can never
+# become a working admin key. Apply random_passwords first to get the real one.
 dependency "random_passwords" {
   config_path                            = "../random_passwords"
   mock_outputs_merge_strategy_with_state = "shallow"
@@ -104,6 +108,7 @@ dependency "random_passwords" {
     signals_auth_secret            = "00000000000000000000000000000003"
     signals_pii_key                = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     signals_notification_secret    = "00000000000000000000000000000004"
+    ns_admin_secret                = ""
     signals_search_api_key         = "dummy-signals-search-api-key-00000000000000"
     raya_voice_bot_api_key         = "dummy-raya-voice-bot-api-key-0000000000000000"
     signals_instance_shared_secret = "000000000000000000000000000000000000000000000000000000000000000d"
@@ -155,6 +160,7 @@ inputs = {
   signals_auth_secret            = dependency.random_passwords.outputs.signals_auth_secret
   signals_pii_key                = dependency.random_passwords.outputs.signals_pii_key
   signals_notification_secret    = dependency.random_passwords.outputs.signals_notification_secret
+  ns_admin_secret                = dependency.random_passwords.outputs.ns_admin_secret
   signals_search_api_key         = dependency.random_passwords.outputs.signals_search_api_key
   raya_voice_bot_api_key         = dependency.random_passwords.outputs.raya_voice_bot_api_key
   signals_instance_shared_secret = dependency.random_passwords.outputs.signals_instance_shared_secret
