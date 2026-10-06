@@ -42,6 +42,9 @@ sum2="$(render | grep 'checksum/catalogue')"
 if helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true --set postgres.host=pg.test >/dev/null 2>&1; then
   fail "rendered without EMAIL_FROM_ADDRESS"
 fi
+if helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true --set postgres.host=pg.test --set 'config.EMAIL_FROM_ADDRESS= ' >/dev/null 2>&1; then
+  fail "rendered with a whitespace-only EMAIL_FROM_ADDRESS"
+fi
 out="$(render --set config.EMAIL_FROM_NAME='Blue Dots')"
 grep -q 'EMAIL_FROM_ADDRESS: "from@example.test"' <<<"$out" || fail "EMAIL_FROM_ADDRESS not rendered"
 grep -q 'EMAIL_FROM_NAME: "Blue Dots"' <<<"$out" || fail "EMAIL_FROM_NAME not rendered"

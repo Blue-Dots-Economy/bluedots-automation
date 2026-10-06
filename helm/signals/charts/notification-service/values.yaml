@@ -92,10 +92,11 @@ config:
   # From for every v1 email. The address must be a mailbox the relay accepts as
   # sender, usually SMTP_USER; the render fails without it. The name is optional
   # (NS shows the address when it is empty), and a cluster sets its own name by
-  # overriding this key in its values. When SMTP_FROM is set (or the relay is
-  # smtp.gmail.com, which uses SMTP_USER), that mailbox replaces the address in
-  # the From header and EMAIL_FROM_NAME stays as the display name, so keep
-  # SMTP_FROM and EMAIL_FROM_ADDRESS on the same mailbox.
+  # overriding this key in its values. On an SMTP relay (SMTP_HOST), SMTP_FROM
+  # when set, or SMTP_USER on smtp.gmail.com, supplies the address in the From
+  # header and EMAIL_FROM_NAME stays as the display name, so keep SMTP_FROM and
+  # EMAIL_FROM_ADDRESS on the same mailbox. With SMTP_AWS_SES=true the From is
+  # EMAIL_FROM_ADDRESS itself, so set it to a verified SES identity.
   EMAIL_FROM_ADDRESS: ""
   EMAIL_FROM_NAME: ""
   # Inert: the service never reads this key (it appears only in the upstream
