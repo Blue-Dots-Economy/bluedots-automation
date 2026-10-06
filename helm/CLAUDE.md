@@ -162,8 +162,10 @@ address from `_smtp_user` and the name from `_smtp_from_display`, the same ident
 Keycloak's emails show. The chart refuses to render without `EMAIL_FROM_ADDRESS`, since
 every v1 email would otherwise fail permanently. A cluster that wants a different NS
 From name (up-sdm uses "UP SDM") sets `notification-service.config.EMAIL_FROM_NAME` in
-its `global-values.yaml`. `SMTP_FROM` (also `_smtp_user`) still decides the mailbox in
-the From header when set, so the two stay on the same mailbox.
+its `global-values.yaml`. On an SMTP relay (`SMTP_HOST`), `SMTP_FROM` (also `_smtp_user`)
+decides the mailbox in the From header when set, as does `SMTP_USER` on `smtp.gmail.com`,
+so the two stay on the same mailbox. With `SMTP_AWS_SES=true` the From is
+`EMAIL_FROM_ADDRESS` itself, so it is set to a verified SES identity.
 
 **notification-service needs its own Postgres database.** The `notification` database,
 role and `pg_partman` (schema `partman`) are created by the common-services
