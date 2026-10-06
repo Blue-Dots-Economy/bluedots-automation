@@ -115,11 +115,6 @@ credentials:
     # chars), so removing it here crashloops the api. Drop it only after
     # signals-dpg removes it from packages/config/src/secrets.ts.
     authSecret: &api_auth_secret ""  # AUTH_SECRET
-    # API → notification-service auth. notificationKeyId + notificationSecret
-    # MUST match an entry in notification-service's internal-secrets.json below:
-    # { "<keyId>": { "secret": "...", "scopes"?: [...] } }.
-    notificationKeyId: &notification_key_id "dpg-api-client"
-    notificationSecret: &notification_secret "" # openssl rand -hex 32
     # All keys here become env vars on api pod (envFrom secretRef).
     # Required by AuthSecretsSchema/PostgresSchema/RedisSchema zod validators
     # at boot — missing key = crash on startup.
@@ -133,10 +128,10 @@ credentials:
       # Migrate-job hashes via SHA-256→base64url, upserts into apikey row
       # on every helm install/upgrade. Rotate = change value + helm upgrade.
       AGGREGATOR_DPG_API_KEY: ""
+      # API → notification-service. The api sends a bearer token from its
+      # Keycloak signals-api client (KEYCLOAK_API_CLIENT_ID/_SECRET); sender
+      # identity and all email/SMS copy live in notification-service.
       NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
-      NOTIFICATION_SERVICE_KEY_ID: *notification_key_id
-      NOTIFICATION_SERVICE_SECRET: *notification_secret
-      SMS_TEMPLATE_ID: ""
       # Needs an api image from signals-dpg#352+; older builds reject it at boot.
       MATCH_SCORE_PROVIDER: "signals_search"
       # match-score → signals-search POST /v1/relevance; key seeded by the migrate-job.
@@ -285,23 +280,14 @@ api:
     # in NETWORK_CONFIG_LOCAL_FILE. Consent is cached in-process → after changing it,
     # `kubectl -n dpg rollout restart deploy/<api>` (and the search pods that reuse
     # this ConfigMap). Set to "" to fall back to the image-baked consent.
-    #
-    # It also selects the network's EMAIL COPY (charts/api/files/messages/
-    # <network>.properties -> /app/schemas/messages.properties), for the same
-    # reason: the api resolves consent and email copy from the same directory,
-    # so one value has to pick both or a pod could serve one network's consent
-    # beside another's emails. Email copy is optional — a network with no file
-    # keeps the api's bundled wording, no render failure.
+    # Email and SMS copy live in notification-service, seeded from the cluster's
+    # ns-catalogue.json, so this value selects consent only.
     consentNetwork: purple_dot
     # Optional brand skin whose consent differs from the network. When set, the
     # brand's PARTIAL override (charts/api/files/consent/<network>.<brand>.json) is
     # placed at /app/schemas/<brand>/consent.json and the api deep-merges it over
     # the network default — so keep both files in sync. Must match ui.VITE_BRAND_NAME.
     # Empty = standard (network consent only). Examples: upsdm, onetac.
-    # Also selects the brand email copy (<network>.<brand>.properties ->
-    # /app/schemas/<brand>/messages.properties), likewise a partial override and
-    # likewise optional. NOTE: brand email copy is inert today — no email send
-    # resolves a brand yet, so the file loads at boot but changes no wording.
     consentBrand: ""
     # Support/grievance email injected into the consent T&C / Privacy / Grievances
     # copy at deploy time — it replaces the __SUPPORT_EMAIL__ placeholder in
@@ -421,15 +407,15 @@ notification-service:
   # Override with: --set-file notificationService.internalSecrets.json=./internal-secrets.json
   # Shape: { "<keyId>": { "secret": "...", "scopes"?: ["notify:send", "templates:admin"] } }.
   # `scopes` defaults to ["notify:send"]; DLQ replay and template/policy admin
-  # need "templates:admin". The entry keyed credentials.api.notificationKeyId
-  # must carry credentials.api.notificationSecret (the API sends X-NS-Key + an
-  # HMAC signature, which notification-service verifies against this file).
+  # need "templates:admin". The Signals api authenticates with a Keycloak
+  # bearer token (signals-api client), not with an entry here. "dpg-api-client"
+  # serves the legacy /notify route for Signals pods on the previous image
+  # during a rolling upgrade; it leaves with that route in the next release.
   internalSecrets:
     create: true
     existingSecret: ""
     fileName: internal-secrets.json
     mountPath: /app/config
-    # Use same as notificationSecret.
     json: |
       {
         "dpg-api-client": {
