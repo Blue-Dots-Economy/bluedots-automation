@@ -88,7 +88,7 @@ config:
   SMTP_HOST: ""
   SMTP_PORT: ""      # default 587 when SMTP_HOST is set
   SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
-  SMTP_FROM: ""      # relay only: overrides the From address; empty = EMAIL_FROM_ADDRESS
+  SMTP_FROM: ""      # relay only: overrides the From address; empty = EMAIL_FROM_ADDRESS (Gmail: SMTP_USER)
   # From for every v1 email. The address must be a mailbox the relay accepts as
   # sender, usually SMTP_USER; the render fails without it. The name is optional
   # (NS shows the address when it is empty), and a cluster sets its own name by
