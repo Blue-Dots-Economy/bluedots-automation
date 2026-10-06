@@ -113,6 +113,7 @@ signals() {
 TFPL=../../../opentofu/aws/modules/output-file/global-secrets.yaml.tfpl
 secrets_values="$(mktemp)"
 sed -E -e 's/\$\{yamlencode\([^}]*\)\}/"x"/' -e 's/\$\{signals_notification_secret\}/rt-ns-secret/g' \
+  -e 's/\$\{sms_http_secret\}/rt-kc-sign/g' -e 's/\$\{ns_admin_secret\}/rt-ns-admin/g' \
   -e 's/\$\{[a-z0-9_]+\}/x/g' "$TFPL" > "$secrets_values"
 api="$(signals -f "$secrets_values" --show-only charts/api/templates/secret.yaml --show-only charts/api/templates/configmap.yaml)"
 ns="$(signals -f "$secrets_values" --show-only charts/notification-service/templates/internal-secret.yaml)"
@@ -127,6 +128,18 @@ grep -q 'NOTIFICATION_SERVICE_SECRET: "rt-ns-secret"' <<<"$api" || fail "HMAC se
 grep -q 'NOTIFICATION_FROM_EMAIL: "sender@example.com"' <<<"$api" || fail "NOTIFICATION_FROM_EMAIL must stay until Part B"
 tr -d ' \n' <<<"$ns" | grep -q '"dpg-api-client":{"secret":"rt-ns-secret"}' \
   || fail "NS dpg-api-client must carry the Signals HMAC secret until Part B"
+# The operator key for the NS admin API (/v1/admin/*, /failed/retry): its own
+# generated secret, admin scope only. Keycloak's entry keeps the send default.
+ns_json="$(python3 -c '
+import sys, yaml
+for d in yaml.safe_load_all(sys.stdin):
+    if d and d.get("kind") == "Secret":
+        print(d["stringData"]["internal-secrets.json"])' <<<"$ns")"
+jq -e '."ns-admin" == {"secret": "rt-ns-admin", "scopes": ["templates:admin"]}' <<<"$ns_json" >/dev/null \
+  || fail "NS internal secrets lack ns-admin with scopes [templates:admin]: $ns_json"
+jq -e '.keycloak == {"secret": "rt-kc-sign"}' <<<"$ns_json" >/dev/null \
+  || fail "NS keycloak entry is not the sms_http_secret send key: $ns_json"
+jq -e 'has("dpg-api-client")' <<<"$ns_json" >/dev/null || fail "NS lost dpg-api-client: $ns_json"
 # Source values carry no SMS_TEMPLATE_ID, and keep the HMAC pair until Part B
 for f in ../values.yaml ../charts/api/values.yaml "$TPL/global-values.yaml" "$TFPL"; do
   if grep -n 'SMS_TEMPLATE_ID' "$f"; then fail "$f still carries SMS_TEMPLATE_ID"; fi

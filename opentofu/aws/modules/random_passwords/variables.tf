@@ -42,6 +42,11 @@ variable "signals_notification_secret_bytes" {
   default = 32
 }
 
+variable "ns_admin_secret_bytes" {
+  type    = number
+  default = 32
+}
+
 variable "signals_instance_shared_secret_bytes" {
   type    = number
   default = 32
