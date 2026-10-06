@@ -313,7 +313,7 @@ All email and SMS copy (subjects, bodies, DLT template ids, the variable contrac
 
 Signals authenticates to NS with a bearer token from its Keycloak `signals-api` client (`KEYCLOAK_API_CLIENT_ID`/`KEYCLOAK_API_CLIENT_SECRET`) and posts to `NOTIFICATION_SERVICE_ENDPOINT`. Sender identity is NS's own (`EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME`). `fetch-configs.sh signals` clears `charts/api/files/{messages,sms}/` left by earlier deploys, so the chart directory holds only what the current deploy fetched.
 
-NS `internalSecrets` keeps the `dpg-api-client` entry for one more release: it serves legacy `/notify` for Signals pods on the previous image during the rolling upgrade, and leaves together with that route.
+Three settings stay one more release, for Signals pods on the previous image during rollout and rollback: NS `internalSecrets` `dpg-api-client` (legacy `/notify`), the matching Signals HMAC pair (`credentials.api.notificationKeyId`/`notificationSecret` → `NOTIFICATION_SERVICE_KEY_ID`/`NOTIFICATION_SERVICE_SECRET`), and `api.config.NOTIFICATION_FROM_EMAIL`. The api reads them through `envFrom` from the shared Secret and ConfigMap, which Helm updates in place, so a previous-image pod that restarts mid-rollout, or a rollback, finds them there. All three leave together with legacy `/notify`.
 
 ## `aggregator.config.yaml` is ConfigMap-delivered — fetched, not vendored
 
