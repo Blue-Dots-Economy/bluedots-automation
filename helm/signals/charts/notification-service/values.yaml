@@ -237,3 +237,8 @@ metrics:
     dlqGrowthThreshold: 10
     # Realtime (OTP) queue depth that means sends are lagging, not just busy.
     realtimeBacklogThreshold: 50
+    # Seconds since any pod last loaded the content file before warning. Only
+    # rendered when `content` is set. NS reloads every 30 s and stamps
+    # ns_content_loaded on every successful reload, so 600 s is ~20 missed
+    # reloads — well clear of a slow tick or a rolling restart.
+    contentStaleSeconds: 600
