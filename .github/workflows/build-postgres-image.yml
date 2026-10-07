@@ -55,6 +55,32 @@ jobs:
           # addresses the image by digest (name@sha256:...) rather than by tag.
           echo "repo=ghcr.io/${owner_lc}/postgres-pgvector" >> "$GITHUB_OUTPUT"
 
+      # Publish vs build-only, resolved once so the build, the scan and the
+      # scan's image reference cannot drift apart. Mirrors
+      # build-keycloak-image.yml — see the longer note there for why a
+      # build-only run must still scan: image rebuilds happen on release tags,
+      # so their SARIF uploads against the tag ref and main's image findings
+      # never refresh. `load:` handles one platform, so a build-only run is
+      # pinned to linux/amd64; publishing runs still honour the input.
+      - name: Resolve run mode
+        id: mode
+        # Inputs reach the script through `env:` rather than `${{ }}` inside it:
+        # `platforms` is free text, so interpolating it into the shell is a
+        # template-injection sink (zizmor template-injection).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PUSH: ${{ inputs.push }}
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          if [ "$EVENT_NAME" != 'workflow_dispatch' ] || [ "$INPUT_PUSH" = 'true' ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "platforms=${INPUT_PLATFORMS:-linux/amd64}" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
+          fi
+          echo "local_tag=postgres-pgvector:scan" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
@@ -62,7 +88,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GHCR
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
+        if: ${{ steps.mode.outputs.publish == 'true' }}
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -91,9 +117,11 @@ jobs:
           # `inputs.*` exist only on workflow_dispatch. On a release tag they are
           # empty, so both are defaulted: an ungated `inputs.push` would be falsy
           # and the release build would silently BUILD WITHOUT PUSHING.
-          platforms: ${{ inputs.platforms || 'linux/amd64' }}
-          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ steps.mode.outputs.platforms }}
+          push: ${{ steps.mode.outputs.publish == 'true' }}
+          # Build-only: keep the image locally so the scan below has a source.
+          load: ${{ steps.mode.outputs.publish != 'true' }}
+          tags: ${{ steps.mode.outputs.publish == 'true' && steps.meta.outputs.tags || steps.mode.outputs.local_tag }}
           provenance: false
 
       # Image scanning (Sec-Audit A2 — Blue-Dots-Economy/signals-dpg#300).
@@ -109,18 +137,17 @@ jobs:
       # Trivy would then try to pull an image that was never published
       # (MANIFEST_UNKNOWN). Build-only runs therefore skip the scan cleanly.
       - name: Trivy image scan
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.push }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: ${{ steps.ref.outputs.repo }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ steps.mode.outputs.publish == 'true' && format('{0}@{1}', steps.ref.outputs.repo, steps.build.outputs.digest) || steps.mode.outputs.local_tag }}
           format: sarif
           output: trivy-image.sarif
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           exit-code: "0"   # Phase A: report-only, never fails the build
 
       - name: Upload Trivy image SARIF
-        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.push) }}
+        if: always()
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: trivy-image.sarif
