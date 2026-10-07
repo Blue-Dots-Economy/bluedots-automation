@@ -152,6 +152,22 @@ else
   fail "unknown placeholder(s), render will fail at deploy:$unknown"
 fi
 
+# ── A10. Service-written identity attributes are admin-only ──────────────────
+# They feed the portal gate and token claims the apps act on, and only service
+# accounts write them through the admin API. build-realm.sh forces these
+# declarations (H4); this catches a realm.json edited or built without it.
+for attr in aggregator_id decision_made aggregator_type signalstack_org_id; do
+  if jq -e --arg a "$attr" '
+       .attributes."kc.user.profile.config" // "{}" | fromjson
+       | [.attributes[]? | select(.name == $a)]
+       | length == 1 and (.[0].permissions.edit == ["admin"]) and (.[0].permissions.view == ["admin"])
+     ' "$REALM_FILE" >/dev/null 2>&1; then
+    pass "user profile declares $attr admin-only"
+  else
+    fail "user profile does not declare $attr admin-only (view/edit [\"admin\"])"
+  fi
+done
+
 echo
 if [ "$FAILED" -eq 0 ]; then
   echo "realm assertions: ALL PASSED"
