@@ -1,0 +1,53 @@
+# Copy to helm/campaign-manager.yaml (git-ignored), fill in, then pass with -f.
+# Keys not listed here keep the defaults in campaign-manager/values.yaml.
+
+image:
+  repository: ghcr.io/your-org/campaign-manager
+  tag: sha-1a2b3c4
+
+ingress:
+  enabled: true
+  className: kong                          # kubectl get ingressclass
+  host: campaign-manager.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod   # kubectl get clusterissuer
+  tls:
+    enabled: true
+    secretName: campaign-manager-tls
+
+config:
+  SUPABASE_URL: https://abcd1234.supabase.co
+  PURPLE_SUPABASE_URL: https://efgh5678.supabase.co
+  PURPLE_CUTOVER: "false"
+
+secrets:
+  SUPABASE_PUBLISHABLE_KEY: sb_publishable_xxx
+  SUPABASE_SERVICE_ROLE_KEY: sb_secret_xxx
+  PURPLE_SUPABASE_SERVICE_ROLE_KEY: sb_secret_xxx
+  LOVABLE_CRON_SECRET: a-long-random-string
+  LOVABLE_CRON_SECRET_PREVIOUS: the-old-random-string
+  RAYA_API_KEY: raya_xxx
+  GOOGLE_SHEETS_API_KEY: AIza-xxx
+  LOVABLE_API_KEY: lov_xxx
+  GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"example"}'
+
+pipeline:
+  enabled: true
+  image:
+    repository: ghcr.io/your-org/purple-dots
+    tag: v1.0.0
+  schedule: "0 2 * * *"
+  config:
+    BASE_URL: https://aggregator.example.com
+    KEYCLOAK_URL: https://auth.example.com/auth
+    REALM: bluedots
+    CLIENT_ID: campaign-manager
+  secrets:
+    RAYA_API_KEY: raya_xxx
+    CLIENT_SECRET: xxx
+  database:
+    host: postgres.databases.svc.cluster.local
+    password: a-strong-password
+  dbInit:
+    admin:
+      password: xxx
