@@ -5,7 +5,7 @@ Guidance for the Helm half of the repo. Read the root `CLAUDE.md` first (the cri
 ## The five umbrella charts
 
 - **`monitoring/`** (chart `monitoring`) — `kube-prometheus-stack` (Prometheus Operator + Prometheus + Alertmanager + node-exporter + kube-state-metrics, **and the monitoring CRDs** others depend on), `loki`, `alloy` (DaemonSet log shipper, replaced Promtail), `jaeger`, Grafana (`_grafana_host`). The stock kube-prometheus ruleset is **disabled** (`defaultRules.create: false`) — alerting is a curated `additionalPrometheusRulesMap`. See `helm/monitoring/README.md`.
-- **`common-services/`** (chart `platform`) — Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres`/`data-redis` Secrets in the `common-services` namespace. The Bitnami `postgresql` subchart runs the org **portable-pgvector** image (`ghcr.io/blue-dots-economy/postgres-pgvector`, #93) — a Postgres + pgvector + PostGIS build compiled without AVX-512 so it doesn't SIGILL on non-AVX-512 nodes; it needs the `image.*` override plus `allowInsecureImages`, since the Bitnami chart otherwise refuses a non-Bitnami image.
+- **`common-services/`** (chart `platform`) — Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres`/`data-redis` Secrets in the `common-services` namespace. The Bitnami `postgresql` subchart runs the org **portable-pgvector** image (`ghcr.io/blue-dots-economy/postgres-pgvector`, #93) — a Postgres + pgvector + PostGIS + pg_partman build, with pgvector compiled without AVX-512 so it doesn't SIGILL on non-AVX-512 nodes; it needs the `image.*` override plus `allowInsecureImages`, since the Bitnami chart otherwise refuses a non-Bitnami image.
 - **`signals/`** (chart `dpg`) — api, ui, notification-service, search (+ search-embeddings), s3-export. Connects to the shared DBs in `common-services`. The `match-score` subchart (the external dpg-scoring service) was removed in #89 — match-score now calls signals-search `POST /v1/relevance`. The **`s3-export`** subchart (chart `dpg-s3-export`, #86) is a CronJob that dumps allowlisted **non-PII** Signals data to S3 for campaign analytics.
 - **`keycloak/`** (chart `keycloak-platform`) — the **shared** Keycloak. One instance, one realm, **both DPGs' clients**. Its own release in the `common-services` namespace (see the deadlock note below). Owns this repo's realm artefact (`charts/keycloak/files/realm.json`) plus the two realm-reconciliation scripts.
 - **`aggregator/`** (chart `aggregator-dpg`) — web (BFF), api, worker. Vendored `ingress-nginx`/`cert-manager` subcharts are **disabled** (`platform` owns them). Keycloak is no longer here. The worker liveness probe is an `httpGet` on `/healthz` (aggregator-dpg#675), not an `exec` — the DHI-based image has no shell.
@@ -32,6 +32,10 @@ not upstream of this repo and are *supposed* to differ from what deploys. Build
 with `scripts/build-realm.sh <app-repo realm.json>` (applies the hardening
 transform) and gate with `scripts/assert-realm.sh` — which CI runs. Do **not** add
 a "drift from upstream" diff; it would fail on the intentional differences.
+The deployment realm also carries edits made **here only** (event logging #217,
+campaign-manager's OTP browser binding), so a straight `build-realm.sh` run over the
+current app-repo realm reverts them — `assert-realm.sh` catches the binding, not the
+event settings. Diff the result and port back anything it drops.
 
 **Two hardening steps that are invisible when they regress:**
 - The local realms carry `localhost` entries in `redirectUris`, `webOrigins` and —
@@ -91,9 +95,18 @@ empty on KA-Dharwad). Turn it on manually on existing realms, or add it to
 
 It uses Keycloak's own `partialImport` with `ifResourceExists: SKIP`, never
 OVERWRITE — re-creating an existing client changes its service-account user id, and
-those ids are referenced from the aggregator database. It also grants the
-`realm-management` client roles each service account needs, because creating a
-client with `serviceAccountsEnabled` makes the SA user but grants it nothing.
+those ids are referenced from the aggregator database. The import carries
+`roles.client` too, so a new client arrives with its roles (notification-service's
+`notify:send` / `templates:admin`). It then grants every client role listed in a
+service account's `clientRoles` — `realm-management` or any other client — that
+the live SA user lacks: creating a client with `serviceAccountsEnabled` makes the
+SA user but grants it nothing, and import never updates an existing SA's
+mappings. Grants are add-only; a referenced client or role that does not exist
+after import fails the Job. Verified on 26.7.3 + OTP SPI against the pre-NS realm:
+run 1 added the client + 2 roles and granted signals-api `notify:send`, run 2
+`added=0 skipped=14`, signals-api client id/secret/SA user id unchanged, and its
+`client_credentials` token carried `aud` `notification-service` with role
+`notify:send`.
 
 It strips `authenticationFlowBindingOverrides` before importing: a binding
 references a flow by id, and importing a client whose flow does not exist yet fails
@@ -136,12 +149,57 @@ dead-letter, finds no template tokens to fail on, and sends a message whose text
 literally `UPDATE_THIS_VALUE` with no OTP in it.
 
 **Keycloak → notification-service HMAC is one input rendering two halves.**
-`sms_http_secret` produces both `keycloak.secrets.smsHttpSecret` and the `keycloak`
-key id inside notification-service's `internalSecrets.json`. Two separate inputs
+`sms_http_secret` produces both the keycloak release's `secrets.smsHttpSecret` (root
+`secrets:` block of `global-secrets.yaml`) and the `keycloak` key id inside
+notification-service's `internalSecrets.json`. Two separate inputs
 would drift into a permanent `401` that looks like a code bug. The same applies to
-`SMS_LOGIN_OTP_TEMPLATE_ID`: notification-service reads *that* name, not
-`MSG91_TEMPLATE_ID` (which is the Keycloak SPI's variable), and without it NS falls
-back to a hardcoded literal flow id that is not what any cluster is configured with.
+`SMS_LOGIN_OTP_TEMPLATE_ID`: notification-service reads *that* name (Keycloak's SPI
+reads its own `MSG91_TEMPLATE_ID`, rendered by the keycloak chart), and without it NS
+falls back to a hardcoded literal flow id that is not what any cluster is configured
+with. `msg91_template_id` feeds both.
+
+**Keycloak has two OTP transports that can reach notification-service.**
+`keycloak.smsProvider: http` (SMS OTP) and `keycloak.otpEmailProvider: http` (email
+OTP; default `smtp`, which renders no env and keeps the realm's SMTP server). Either
+one on `http` renders the shared NS connection (`SMS_HTTP_*`, default URL
+`…/v1/notify`, HMAC v2, secret `SMS_HTTP_SECRET`); `http` email also renders
+`KC_SPI_OTP_EMAIL__PROVIDER`. Both need the OTP plugin jar built after Plan F3 in the
+image (`dockerfiles/keycloak/providers/README.md`). `helm/keycloak/tests/render_test.sh`
+(run in CI) asserts the combinations.
+
+**NS sends every email as `EMAIL_FROM_NAME <EMAIL_FROM_ADDRESS>`.** opentofu sets the
+address from `_smtp_user` and the name from `_smtp_from_display`, the same identity
+Keycloak's emails show. The chart refuses to render without `EMAIL_FROM_ADDRESS`, since
+every v1 email would otherwise fail permanently. A cluster that wants a different NS
+From name (up-sdm uses "UP SDM") sets `notification-service.config.EMAIL_FROM_NAME` in
+its `global-values.yaml`. On an SMTP relay (`SMTP_HOST`), `SMTP_FROM` (also `_smtp_user`)
+decides the mailbox in the From header when set, as does `SMTP_USER` on `smtp.gmail.com`,
+so the two stay on the same mailbox. With `SMTP_AWS_SES=true` the From is
+`EMAIL_FROM_ADDRESS` itself, so it is set to a verified SES identity.
+
+**notification-service needs its own Postgres database.** The `notification` database,
+role and `pg_partman` (schema `partman`) are created by the common-services
+`postgresBootstrap` job; NS reads `DATABASE_HOST/PORT/NAME/USER/SSL` from its ConfigMap
+(`postgres.host` is written by opentofu into `global-cloud-values.yaml`) and
+`DATABASE_PASSWORD` from its Secret — the same generated value as
+`credentials.notificationPassword`. NS migrates its own schema on boot, so deploy
+common-services before an NS image that carries persistence. ALIMCO-TCS must move its
+Ansible-Vault `global-values.yaml` to SOPS before this rolls out there. `NS_NETWORK` comes from opentofu's `signals_network`. To grant template/policy admin to an HMAC caller, give its `internal-secrets.json` entry `"scopes": ["notify:send", "templates:admin"]` (an entry without `scopes` can only send).
+
+**Every cluster has an NS operator key: key id `ns-admin`.** Its secret is generated per cluster by `random_passwords` (`random_id.ns_admin_secret`, 32 bytes, 64 hex chars) and rendered into `internal-secrets.json` with `"scopes": ["templates:admin"]`, so it covers the whole admin API (`/v1/admin/*`, including draft publish and verification reads) and DLQ replay (`POST /failed/retry`), and holds the admin scope only (`/v1/notify` stays with the service keys). To use it, read the value from the NS internal Secret (`signals-notification-service-internal` in the `signals` namespace, key `internal-secrets.json`, entry `ns-admin`):
+
+```bash
+kubectl -n signals get secret signals-notification-service-internal \
+  -o jsonpath='{.data.internal-secrets\.json}' | base64 -d | jq -r '."ns-admin".secret'
+```
+
+(the same value is `random_passwords`' sensitive `ns_admin_secret` output and sits in the generated `global-secrets.yaml`). On an existing cluster, apply `random_passwords` (`bash install.sh apply_tf_random_passwords`, or `create_tf_resources`) before `apply_tf_output_file`; until it has run, the entry renders with a blank secret, which NS skips at boot. Send `X-NS-Key: ns-admin` and sign each request with HMAC v2 as the notification-service README describes ("HMAC v2 signing"; its Admin API section has a ready `ns_curl` helper), from inside the cluster, for example via `kubectl -n signals port-forward svc/signals-notification-service 3000`. An entry whose `secret` is `""` (e.g. `keycloak` when `sms_http_secret` is unset) is skipped with a boot warning, not a boot failure. Bearer callers need a `notification-service` client role in the realm (granted on their service account in `realm.json`) and their client id in `NS_AUTH_ALLOWED_AZP`.
+
+**notification-service content (T&C urls/text) is an optional ConfigMap.** Set `notification-service.content` (`{version, entries: {<dotted.key>: {<locale>: <value>}}}`, keys like `tnc.in_force.url`, locales like `en`/`hi-IN`) and the chart renders `<fullname>-content` (key `content.json`), mounts it as a directory (no `subPath`, so edits propagate) at `/app/content`, and sets `NS_CONTENT_FILE`. It is deliberately not under `/app/config`, which is the read-only internal-secrets mount. Edits reach the pod via kubelet sync and NS reloads the file every 30 s, so no restart is needed (the `checksum/content` annotation still rolls pods on a Helm upgrade). Setting `content` also renders the `notification-service-content` alert group (`NotificationContentLoadFailing`, `NotificationContentStale`): NS keeps serving the last good snapshot when a reload fails, so a broken ConfigMap edit is otherwise silent. `ns_content_loaded` is restamped on every reload and its series are never deleted, so staleness is `max` across versions (threshold `metrics.prometheusRule.contentStaleSeconds`, default 600). The keys present are the only ones templates can reference via `content_ref`; empty `content` renders nothing. `content.version` is required (the render `fail`s without it), and a numeric version is written as a string, since NS rejects a non-string version.
+
+**NS catalogue rides fetch-configs.** Each cluster's notification-service catalogue (templates + policies) comes from bluedots-schemas, the same repo and ref as the signals network/consent files. `scripts/fetch-configs.sh signals` fetches exactly one file into the gitignored `helm/signals/charts/notification-service/files/catalogue/ns-catalogue.json`: `<network>/<brand>/ns-catalogue.json` when the `_brand` anchor is set, and `<network>/ns-catalogue.json` only when `_brand` is empty. A branded cluster always uses its brand catalogue, because seeding keeps whichever copy reaches the first boot (brand and network copies differ substantially, e.g. ALIMCO). The selected file is **required**: the deploy stops when it is missing on the ref, when the fetch fails, or when it is not a catalogue (`version` plus `templates`/`policies` arrays). The shape check needs `jq`, so `jq` is required on the deploy host and the script stops with a clear message when it is absent. The script logs the path it used. The file is cleared before each fetch, because the chart renders on **file presence**: with the file, it renders `<fullname>-catalogue` (key `ns-catalogue.json`, byte-for-byte, so NS's own `{{token}}` placeholders pass through), mounts it as a directory at `/app/seed` (distinct from `/app/config` and `/app/content`) and sets `NS_SEED_FILE=/app/seed/ns-catalogue.json`. Without it (CI's bare `helm template`, a hand render) none of the three render, so NS never sees a `NS_SEED_FILE` that points nowhere. **Seeding is absent-only:** NS reads the file once at boot and inserts only the templates and policies it does not already have. A catalogue change therefore adds new rows and never rewrites live copy; edit existing templates through the NS admin API. A `checksum/catalogue` annotation restarts NS on a catalogue change so the new rows are seeded. `helm/signals/tests/render_test.sh` (run in CI) asserts both the with-file and the without-file renders.
+
+**NS bearer auth is derived, and optional.** `NS_KEYCLOAK_ISSUER` / `NS_KEYCLOAK_JWKS_URI` are not values: the `dpg-notification-service.keycloakEnv` helper builds them from the same realm/public-base/internal-base chain as the signals api ConfigMap (including the `global.keycloak.host` → `global.publicHost` fallbacks every environment relies on), so the issuer NS checks is the one signals validates. Unlike signals, an unresolved realm or public base is not a render failure: neither variable renders, bearer auth stays off and NS keeps serving HMAC callers. A token is accepted only with `aud: notification-service`, which Keycloak adds because the caller holds a `notification-service` role — no audience mapper on the calling client.
 
 **Alert rules are unit-tested, because PromQL bugs render as valid YAML.**
 `helm/signals/tests/run.sh` (promtool, mirroring `helm/monitoring/tests/`) is wired
@@ -268,29 +326,13 @@ The aggregator's shape is the better one — an obvious missing feature beats a 
 
 **Aggregator-specific: it is a directory mount, unlike the consent file next to it.** Consent uses `subPath` (single file, because the directory it lands in carries other image-baked files). The reference mount is a whole-directory mount at `/app/apps/web/public/reference`, which is exactly what makes it shadow the baked fallbacks — and it means only the one selected region is reachable while enabled, even though the image contains more. Directory mounts *do* hot-update, but the widget caches per page load, so a `checksum/reference` annotation still rolls the pods.
 
-## Email copy rides the signals consent ConfigMap (optional, per-key)
+## Email and SMS copy live in notification-service
 
-Per-network email wording (signals-dpg#540) ships the same way consent does and on the **same** `-schemas` ConfigMap, because the api resolves both from `dirname(NETWORK_CONFIG_LOCAL_FILE)`: `/app/schemas/messages.properties` and `/app/schemas/<brand>/messages.properties`. Canonical is `bluedots-schemas` `<network>/messages.properties` (+ `<network>/<brand>/`), fetched by `scripts/fetch-configs.sh signals` into the gitignored `helm/signals/charts/api/files/messages/`.
+All email and SMS copy (subjects, bodies, DLT template ids, the variable contract) lives in notification-service. NS seeds it from the cluster's `ns-catalogue.json` (see "NS catalogue rides fetch-configs" above), and live copy is edited through the NS admin API. The signals `-schemas` ConfigMap carries network configs and consent only, and `schemas.consentNetwork`/`consentBrand` select consent only.
 
-**It is optional, and that is the whole difference from consent.** The api bundles a complete set of email copy and merges these files **per key** (bundled defaults < `EMAIL_MESSAGES_PATH` < network < brand), so a network with no file — or a `--ref` predating the files — keeps the built-in wording. The fetch is therefore non-fatal (`try_fetch_optional`) and the render uses `with`, not `fail`. Consent has no in-app fallback, which is why it still fails hard.
+Signals authenticates to NS with a bearer token from its Keycloak `signals-api` client (`KEYCLOAK_API_CLIENT_ID`/`KEYCLOAK_API_CLIENT_SECRET`) and posts to `NOTIFICATION_SERVICE_ENDPOINT`. Sender identity is NS's own (`EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME`). `fetch-configs.sh signals` clears `charts/api/files/{messages,sms}/` left by earlier deploys, so the chart directory holds only what the current deploy fetched.
 
-Three traps:
-
-- **It is keyed off `schemas.consentNetwork`/`consentBrand`, not its own value.** Deliberate: one served network must select consent *and* copy, or a pod could serve one network's consent beside another's emails. Setting `consentNetwork: ""` to fall back to image-baked consent drops the network email copy too.
-- **`items` entries are conditional on the source file, not on the brand value.** An `items` entry naming a ConfigMap key that doesn't exist leaves the volume unmountable and the pod stuck in `ContainerCreating` — so the deployment template gates each entry on the same `Files.Get` the ConfigMap does.
-- **The fetch clears the network's files before fetching.** Rendering keys off file *presence* (there is no values flag to switch copy off), so a leftover from an earlier deploy of a different brand would silently override copy on this one.
-
-No `__SUPPORT_EMAIL__`-style substitution happens here — the copy's own `{{likeThis}}` placeholders are filled by the api at send time, so Helm passes the file through byte-for-byte. The `checksum/schemas` annotation already covers it, so a copy change rolls the api pods. Brand copy is **inert today**: no email send resolves a brand yet, so the file loads and validates at boot but changes no wording.
-
-## SMS templates ride the same ConfigMap as the email copy
-
-Per-network SMS templates (signals-dpg#595) ship exactly like the email copy above, on the same `-schemas` ConfigMap and selected by the same `schemas.consentNetwork`/`consentBrand`: `/app/schemas/sms.properties` and `/app/schemas/<brand>/sms.properties`. Canonical is `bluedots-schemas` `<network>/sms.properties` (+ `<network>/<brand>/`), fetched into the gitignored `helm/signals/charts/api/files/sms/`. Optional and merged per key, so a network with no file keeps the api's bundled registry; the same three traps apply verbatim.
-
-**What is in the file is not message text the api sends.** Each case carries a DLT `template_id`, a reference `body` and a `vars` contract. The delivered text is rendered by the vendor from the DLT-approved template (MSG91) or posted verbatim by notification-service (Pinnacle, which renders nothing) — so on a Pinnacle deployment the `body` here *is* what reaches the handset and must stay byte-identical to the registered template, because the operator matches on it and scrubs a mismatch silently.
-
-**Shipping it is safe before any template is registered.** A blank `template_id` means "not DLT-approved yet" and `dispatchSms` skips that send. That is also why an empty value must never be treated the way the email copy treats one: email discards an empty value so a bad override cannot ship a blank subject, while for SMS the empty value is the signal. The api keeps the two loaders separate for exactly this reason.
-
-Boot logs the state — `sms templates: N cases loaded from M layer(s), K with a template_id` — so `K` going up is how a newly-approved id is confirmed to have shipped.
+Three settings stay one more release, for Signals pods on the previous image during rollout and rollback: NS `internalSecrets` `dpg-api-client` (legacy `/notify`), the matching Signals HMAC pair (`credentials.api.notificationKeyId`/`notificationSecret` → `NOTIFICATION_SERVICE_KEY_ID`/`NOTIFICATION_SERVICE_SECRET`), and `api.config.NOTIFICATION_FROM_EMAIL`. The api reads them through `envFrom` from the shared Secret and ConfigMap, which Helm updates in place, so a previous-image pod that restarts mid-rollout, or a rollback, finds them there. All three leave together with legacy `/notify`.
 
 ## `aggregator.config.yaml` is ConfigMap-delivered — fetched, not vendored
 

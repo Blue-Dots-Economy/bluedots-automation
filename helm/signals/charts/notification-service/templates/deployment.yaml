@@ -21,6 +21,12 @@ spec:
         {{- if .Values.internalSecrets.create }}
         checksum/internal-secret: {{ include (print $.Template.BasePath "/internal-secret.yaml") . | sha256sum }}
         {{- end }}
+        {{- if .Values.content }}
+        checksum/content: {{ include (print $.Template.BasePath "/configmap-content.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Files.Get "files/catalogue/ns-catalogue.json" }}
+        checksum/catalogue: {{ include (print $.Template.BasePath "/configmap-catalogue.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -69,6 +75,19 @@ spec:
             - name: internal-secrets
               mountPath: {{ .Values.internalSecrets.mountPath }}
               readOnly: true
+            {{- if .Values.content }}
+            # Directory mount (no subPath) so kubelet pushes ConfigMap edits into the pod.
+            # Deliberately NOT under /app/config: that path is the read-only internal-secrets mount.
+            - name: content
+              mountPath: /app/content
+              readOnly: true
+            {{- end }}
+            {{- if .Files.Get "files/catalogue/ns-catalogue.json" }}
+            # Read once at boot (seed). Not under /app/config (internal-secrets) or /app/content.
+            - name: catalogue
+              mountPath: /app/seed
+              readOnly: true
+            {{- end }}
       volumes:
         - name: internal-secrets
           secret:
@@ -76,6 +95,16 @@ spec:
             items:
               - key: {{ .Values.internalSecrets.fileName }}
                 path: {{ .Values.internalSecrets.fileName }}
+        {{- if .Values.content }}
+        - name: content
+          configMap:
+            name: {{ include "dpg-notification-service.fullname" . }}-content
+        {{- end }}
+        {{- if .Files.Get "files/catalogue/ns-catalogue.json" }}
+        - name: catalogue
+          configMap:
+            name: {{ include "dpg-notification-service.fullname" . }}-catalogue
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -1,0 +1,19 @@
+{{- if .Values.content }}
+{{- if or (not (hasKey .Values.content "version")) (kindIs "invalid" .Values.content.version) }}
+{{- fail "content.version is required when content is set (e.g. version: \"2026-10-01\")" }}
+{{- end }}
+{{- $c := deepCopy .Values.content }}
+{{- /* NS requires a string version; YAML/--set-json may hand us a number. toJson
+       renders a number in plain digits (toString would give e.g. 2.0261001e+07). */}}
+{{- if not (kindIs "string" $c.version) }}
+{{- $_ := set $c "version" ($c.version | toJson) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dpg-notification-service.fullname" . }}-content
+  labels:
+    {{- include "dpg-notification-service.labels" . | nindent 4 }}
+data:
+  content.json: {{ $c | toJson | quote }}
+{{- end }}

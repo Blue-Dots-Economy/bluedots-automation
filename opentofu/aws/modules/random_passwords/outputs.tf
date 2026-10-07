@@ -36,6 +36,11 @@ output "signals_notification_secret" {
   sensitive = true
 }
 
+output "ns_admin_secret" {
+  value     = random_id.ns_admin_secret.hex
+  sensitive = true
+}
+
 output "signals_instance_shared_secret" {
   value     = random_id.signals_instance_shared_secret.hex
   sensitive = true
@@ -60,6 +65,12 @@ output "aggregator_keycloak_admin_client_secret" {
 output "keycloak_postgres_password" {
   description = "Keycloak's own Postgres role password (credentials.keycloakPassword == secrets.keycloakPostgresPassword)"
   value       = random_id.keycloak_postgres_password.hex
+  sensitive   = true
+}
+
+output "notification_postgres_password" {
+  description = "notification-service's Postgres role password (credentials.notificationPassword == NS DATABASE_PASSWORD)"
+  value       = random_id.notification_postgres_password.hex
   sensitive   = true
 }
 

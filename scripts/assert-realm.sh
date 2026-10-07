@@ -77,6 +77,32 @@ for client in aggregator-portal aggregator-api aggregator-bff \
   fi
 done
 
+# ── A4b. notification-service resource server, its roles, the signals-api grant
+# NS validates bearer tokens; it never logs in itself, so the client is
+# bearer-only with no secret and no login flow. Its two client roles keep
+# sending (notify:send) separate from template/policy admin (templates:admin).
+# The signals-api service account holds notify:send; that grant is also what
+# puts aud=notification-service in its tokens (audience resolve).
+if jq -e '[.clients[] | select(.clientId=="notification-service")] | length == 1 and (.[0] | .bearerOnly == true and .standardFlowEnabled == false and .serviceAccountsEnabled == false and .directAccessGrantsEnabled == false and (has("secret") | not))' "$REALM_FILE" >/dev/null; then
+  pass "notification-service client is bearer-only with no secret or login flow"
+else
+  fail "notification-service client missing or not bearer-only/secretless"
+fi
+
+ns_roles=$(q '[.roles.client["notification-service"][]?.name] | sort | join(",")')
+if [ "$ns_roles" = "notify:send,templates:admin" ]; then
+  pass "notification-service client roles are notify:send + templates:admin"
+else
+  fail "notification-service client roles are '${ns_roles:-none}', expected 'notify:send,templates:admin'"
+fi
+
+sa_ns=$(q '[.users[]? | select(.username=="service-account-signals-api") | .clientRoles["notification-service"] // [] | sort | join(",")] | first // ""')
+if [ "$sa_ns" = "notify:send" ]; then
+  pass "service-account-signals-api holds notification-service notify:send"
+else
+  fail "service-account-signals-api notification-service roles are '${sa_ns:-none}', expected 'notify:send'"
+fi
+
 # ── A5. Per-client login theme override ──────────────────────────────────────
 # This is what lets ONE shared realm serve two brands. Without it, signals users
 # silently get the aggregator-branded login page — cosmetic but very visible.

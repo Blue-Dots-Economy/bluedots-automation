@@ -256,9 +256,10 @@ secrets:
     # re-running `helm upgrade` rotates the key in place.
     AGGREGATOR_DPG_API_KEY: ""
     NOTIFICATION_SERVICE_ENDPOINT: ""
+    # Kept for Signals pods on the previous image during rollout and rollback;
+    # removed in Part B with the NS "dpg-api-client" entry.
     NOTIFICATION_SERVICE_KEY_ID: ""
     NOTIFICATION_SERVICE_SECRET: ""
-    SMS_TEMPLATE_ID: ""
     MATCH_SCORE_PROVIDER: ""
     # match-score → signals-search /v1/relevance; x-api-key seeded by the migrate-job.
     SIGNALS_SEARCH_ENDPOINT: ""

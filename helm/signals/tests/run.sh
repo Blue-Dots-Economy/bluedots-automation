@@ -20,7 +20,11 @@ CHART="../charts/notification-service"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
-helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true \
+# The content rules only render while `content` is set, so the test render sets
+# it; the gate itself is asserted below.
+helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true --set postgres.host=pg.test \
+  --set config.EMAIL_FROM_ADDRESS=from@example.test \
+  --set-json 'content={"version":"test","entries":{}}' \
   --show-only templates/prometheusrule.yaml \
   | python3 -c "
 import sys, yaml
@@ -28,6 +32,16 @@ for d in yaml.safe_load_all(sys.stdin):
     if d and d.get('kind') == 'PrometheusRule':
         print(yaml.safe_dump({'groups': d['spec']['groups']}, sort_keys=False, allow_unicode=True))
 " > "$OUT/rules-fixed.yaml"
+
+# Without content there is nothing to load, so the content group must not render.
+# Rendered to a file first: inside an `if`, a failed render would read as "absent".
+helm template ns "$CHART" --namespace signals --set config.SMTP_AWS_SES=true --set postgres.host=pg.test \
+  --set config.EMAIL_FROM_ADDRESS=from@example.test \
+  --show-only templates/prometheusrule.yaml > "$OUT/rules-no-content.yaml"
+if grep -q 'notification-service-content' "$OUT/rules-no-content.yaml"; then
+  echo "content alert group rendered without content configured" >&2
+  exit 1
+fi
 
 cp notification-alerts_test.yaml "$OUT/"
 chmod -R a+rX "$OUT"

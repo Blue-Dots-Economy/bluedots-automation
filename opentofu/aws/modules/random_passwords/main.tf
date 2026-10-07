@@ -33,6 +33,12 @@ resource "random_id" "signals_notification_secret" {
   byte_length = var.signals_notification_secret_bytes
 }
 
+# Operator HMAC key for the notification-service admin API (/v1/admin/*,
+# POST /failed/retry): the `ns-admin` entry in NS internal-secrets.json.
+resource "random_id" "ns_admin_secret" {
+  byte_length = var.ns_admin_secret_bytes
+}
+
 # Inter-instance peer-auth HMAC secret (INSTANCE_SHARED_SECRET). Min 32 chars;
 # byte_length 32 → 64 hex chars. See signals-dpg#255.
 resource "random_id" "signals_instance_shared_secret" {
@@ -58,6 +64,13 @@ resource "random_id" "aggregator_keycloak_admin_client_secret" {
 # secrets.keycloakPostgresPassword (Keycloak logs in) — one value, two consumers.
 resource "random_id" "keycloak_postgres_password" {
   byte_length = var.keycloak_postgres_password_bytes
+}
+
+# notification-service's own Postgres role. Feeds BOTH
+# credentials.notificationPassword (common-services creates/syncs the role) AND
+# the NS subchart's DATABASE_PASSWORD (NS logs in) — one value, two consumers.
+resource "random_id" "notification_postgres_password" {
+  byte_length = var.notification_postgres_password_bytes
 }
 
 # `signals-api` confidential client. Feeds the realm render in the keycloak

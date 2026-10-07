@@ -42,6 +42,11 @@ variable "signals_notification_secret_bytes" {
   default = 32
 }
 
+variable "ns_admin_secret_bytes" {
+  type    = number
+  default = 32
+}
+
 variable "signals_instance_shared_secret_bytes" {
   type    = number
   default = 32
@@ -68,6 +73,12 @@ variable "aggregator_keycloak_admin_client_secret_bytes" {
 variable "keycloak_postgres_password_bytes" {
   type    = number
   default = 24
+}
+
+variable "notification_postgres_password_bytes" {
+  description = "Bytes of entropy for notification-service's Postgres role password (hex-encoded, so URL/YAML safe)."
+  type        = number
+  default     = 32
 }
 
 variable "signals_api_client_secret_bytes" {
