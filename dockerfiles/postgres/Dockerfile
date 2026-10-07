@@ -1,5 +1,5 @@
 # =============================================================================
-# Custom PostgreSQL 17 image: Bitnami base + PORTABLE pgvector.
+# Custom PostgreSQL 17 image: Bitnami base + PORTABLE pgvector + pg_partman.
 #
 # WHY THIS EXISTS
 # ---------------
@@ -25,6 +25,18 @@
 # (the version the official image ships); 0.8.x is backward compatible, so it also
 # interoperates with the 0.8.5 pgvector the signals-dpg app image ships.
 #
+# pg_partman
+# ----------
+# notification-service partitions its tables with pg_partman: the common-services
+# postgresBootstrap Job runs `CREATE EXTENSION pg_partman SCHEMA partman` and NS
+# migration 0000 calls `partman.create_parent`. Bitnami does not ship it, so the
+# PGDG Debian package (same PG major, same Debian 12 / glibc as the Bitnami base)
+# is installed in a throwaway stage and only its extension files are copied in:
+# the control file + SQL scripts, and pg_partman_bgw.so (the optional background
+# worker; partitions are maintained without it unless it is put in
+# shared_preload_libraries). The package version is pinned; when PGDG drops it
+# from the bookworm-pgdg pool the build fails loudly, which is the cue to bump.
+#
 # BUILD (multi-arch base images; build for the node arch you deploy to):
 #   docker build --platform linux/amd64 \
 #     -t <registry>/postgresql:17.6.0-pgvector-portable dockerfiles/postgres
@@ -39,6 +51,14 @@
 # pgvector than the one documented/validated for this shared base image.
 FROM pgvector/pgvector:pg17@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f AS pgv
 
+# Source of pg_partman: the official postgres image (PGDG apt repo preconfigured),
+# pinned by digest, with the PGDG package pinned to an exact version.
+FROM postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826 AS partman
+ARG PG_PARTMAN_DEB_VERSION=5.5.0-1.pgdg12+1
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends "postgresql-17-partman=${PG_PARTMAN_DEB_VERSION}" \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM bitnamilegacy/postgresql:17.6.0
 
 # Replace Bitnami's AVX-512 pgvector with the portable build from the official
@@ -48,4 +68,7 @@ RUN rm -f /opt/bitnami/postgresql/lib/vector.so \
     && rm -f /opt/bitnami/postgresql/share/extension/vector*
 COPY --from=pgv /usr/lib/postgresql/17/lib/vector.so /opt/bitnami/postgresql/lib/vector.so
 COPY --from=pgv /usr/share/postgresql/17/extension/vector* /opt/bitnami/postgresql/share/extension/
+# pg_partman: extension control/SQL + background-worker library (see header).
+COPY --from=partman /usr/lib/postgresql/17/lib/pg_partman_bgw.so /opt/bitnami/postgresql/lib/pg_partman_bgw.so
+COPY --from=partman /usr/share/postgresql/17/extension/pg_partman* /opt/bitnami/postgresql/share/extension/
 USER 1001
