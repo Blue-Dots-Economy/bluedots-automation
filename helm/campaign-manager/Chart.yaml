@@ -1,6 +1,6 @@
 apiVersion: v2
 name: campaign-manager
-description: Blue Dots Purple Dots Campaign Manager (TanStack Start SSR app backed by Supabase).
+description: Blue Dots Campaign Manager web app (Deployment, Service, optional Ingress) with an optional Purple Dots data pipeline CronJob that loads Raya calls and the platform S3 dump into Postgres.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

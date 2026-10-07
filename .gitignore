@@ -10,6 +10,7 @@ helm/common-services/charts/kong-*.tgz
 helm/common-services/charts/postgresql-*.tgz
 helm/common-services/charts/redis-*.tgz
 helm/**/values.*.local.yaml
+helm/campaign-manager.yaml
 helm/**/secrets.yaml.bak
 
 # OpenTofu / Terraform state and locals

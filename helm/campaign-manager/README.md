@@ -1,150 +1,101 @@
-# Deploying Campaign Manager on Kubernetes
+# campaign-manager
 
-This guide deploys Campaign Manager on your cluster using the Helm chart in the `bluedots-automation` repository (`helm/campaign-manager`, branch `alimco-tcs`).
+Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators manage voice-AI outreach campaigns. It is a standalone chart: it does not depend on the other charts and is not part of the `install.sh` flow.
 
-## What you need
+## What it deploys
 
-- A Kubernetes cluster and `kubectl` access to it
-- Helm 3
-- An ingress controller in the cluster
-- A domain name, with a DNS record pointing to the ingress controller's load balancer
-- cert-manager with a ClusterIssuer, for HTTPS
-- The container image details, Supabase URLs and keys
+| Resource | Purpose |
+|---|---|
+| Deployment, Service | The Campaign Manager web app (listens on port 3000). |
+| Ingress (optional) | Exposes the app on your domain, with an HTTPS certificate from cert-manager. |
+| ConfigMap, Secret | Non-secret settings and credentials, injected into the app as environment variables. |
+| CronJob (optional) | Purple Dots data pipeline. Loads Raya calls and the platform S3 dump into Postgres. |
+| Job (optional) | Runs after every install and upgrade. Creates the pipeline's Postgres user, database and tables if they are missing. |
 
-Make sure you are connected to the right cluster before you start:
+The app stores its data in Supabase, which is external to the chart. The pipeline writes to a Postgres you point it at.
 
-```bash
-kubectl config current-context
-```
+## Before you configure
 
-## Step 1. Get the chart
+- An ingress controller in the cluster, and a DNS record for your domain pointing at its load balancer (only if you enable the ingress).
+- cert-manager with a ClusterIssuer (only if you want HTTPS certificates issued automatically).
+- A namespace of your choice. Install the release into it, and create it with `--create-namespace` if it does not exist.
 
-```bash
-git clone -b alimco-tcs https://github.com/Blue-Dots-Economy/bluedots-automation.git
-cd bluedots-automation
-```
+## How to configure
 
-## Step 2. Create the namespace
+Defaults live in `values.yaml`. Do not edit it. Copy `helm/campaign-manager.yaml.example` to `helm/campaign-manager.yaml` (git ignores it, so it is safe to put secrets in), fill in the values below, and pass it to Helm:
 
 ```bash
-kubectl create namespace campaign-manager
+helm upgrade -i campaign-manager ./helm/campaign-manager -n <namespace> --create-namespace -f helm/campaign-manager.yaml
 ```
 
-## Step 3. Create the overrides file
+Use `--set key=value` instead for a one-off override.
 
-Create a file named `global-overrides.yaml`. It contains secrets, so do not commit it to git.
+## Values to fill in
 
-```yaml
-image:
-  repository: <image-repository>
-  tag: <image-tag>
+### Image
 
-ingress:
-  enabled: true
-  className: kong                   # your ingress class: kubectl get ingressclass
-  host: campaign-manager.example.com   # your domain
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod   # your ClusterIssuer: kubectl get clusterissuer
-  tls:
-    enabled: true
-    secretName: campaign-manager-tls
+| Key | What it is | Example |
+|---|---|---|
+| `image.repository` | Container image of the app. | `ghcr.io/your-org/campaign-manager` |
+| `image.tag` | Image tag to deploy. There is no usable default, so always set it. | `sha-1a2b3c4` |
 
-config:
-  SUPABASE_URL: ""
-  PURPLE_SUPABASE_URL: ""
-  PURPLE_CUTOVER: ""
+If the registry is private, create an image pull secret named `ghcr-pull` in the namespace, or list your own names under `global.imagePullSecrets`.
 
-secrets:
-  SUPABASE_PUBLISHABLE_KEY: ""
-  SUPABASE_SERVICE_ROLE_KEY: ""
-  PURPLE_SUPABASE_SERVICE_ROLE_KEY: ""
-  LOVABLE_CRON_SECRET: ""
-  LOVABLE_CRON_SECRET_PREVIOUS: ""
-  RAYA_API_KEY: ""
-  GOOGLE_SHEETS_API_KEY: ""
-  LOVABLE_API_KEY: ""
-  GOOGLE_SERVICE_ACCOUNT_JSON: ""   # service-account JSON as one string
-```
+### Ingress
 
-Fill in every value. All available settings are listed in `helm/campaign-manager/values.yaml`.
+| Key | What it is | Example |
+|---|---|---|
+| `ingress.enabled` | Create the Ingress. Off by default. | `true` |
+| `ingress.className` | Ingress class in your cluster (`kubectl get ingressclass`). | `kong` |
+| `ingress.host` | Your domain. | `campaign-manager.example.com` |
+| `ingress.annotations` | Annotations for your controller. For automatic HTTPS, name your ClusterIssuer (`kubectl get clusterissuer`). | `cert-manager.io/cluster-issuer: letsencrypt-prod` |
+| `ingress.tls.enabled`, `ingress.tls.secretName` | Serve HTTPS from this certificate Secret. | `true`, `campaign-manager-tls` |
 
-If the image is private, also create the pull secret the chart expects:
+### App settings (`config`)
 
-```bash
-kubectl -n campaign-manager create secret docker-registry ghcr-pull \
-  --docker-server=ghcr.io \
-  --docker-username=<github-username> \
-  --docker-password=<github-token-with-read:packages>
-```
+| Key | What it is | Example |
+|---|---|---|
+| `config.SUPABASE_URL` | Supabase project URL. | `https://abcd1234.supabase.co` |
+| `config.PURPLE_SUPABASE_URL` | Purple Dots Supabase project URL. | `https://efgh5678.supabase.co` |
+| `config.PURPLE_CUTOVER` | Purple Dots cutover flag. | `"false"` |
 
-## Step 4. Install
+### App credentials (`secrets`)
 
-```bash
-helm upgrade -i campaign-manager ./helm/campaign-manager \
-  -n campaign-manager \
-  -f global-overrides.yaml
-```
+| Key | What it is | Example |
+|---|---|---|
+| `secrets.SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key. | `sb_publishable_xxx` |
+| `secrets.SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key. | `sb_secret_xxx` |
+| `secrets.PURPLE_SUPABASE_SERVICE_ROLE_KEY` | Service-role key of the Purple Dots project. | `sb_secret_xxx` |
+| `secrets.LOVABLE_CRON_SECRET` | Secret that authenticates cron calls to the app. | `a-long-random-string` |
+| `secrets.LOVABLE_CRON_SECRET_PREVIOUS` | The previous cron secret, still accepted while you rotate. | `the-old-random-string` |
+| `secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
+| `secrets.GOOGLE_SHEETS_API_KEY` | Google Sheets API key. | `AIza...` |
+| `secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
+| `secrets.LOVABLE_API_KEY` | Lovable API key. | `lov_xxx` |
 
-## Step 5. Check it works
+To keep credentials out of Helm values, create a Secret yourself with the same keys and set `secrets.existingSecret` to its name.
 
-```bash
-kubectl -n campaign-manager get pods,ingress,certificate
-```
+### Purple Dots pipeline (`pipeline`, optional)
 
-The pod should be `Running` and ready, and the certificate `READY: True` (this can take a couple of minutes). Then open `https://<your-domain>`.
+Off by default. Set `pipeline.enabled: true` to deploy the CronJob and the database Job.
 
-If you are not mapping the app to a domain, you can use `kubectl port-forward` on the `campaign-manager` service to access it instead.
-
-## Data pipeline (Purple Dots)
-
-The chart can also run the Purple Dots data pipeline as a CronJob. It loads Raya calls and the platform S3 dump into Postgres. It is off by default. Add this to `campaign-manager.yaml` to turn it on:
-
-```yaml
-pipeline:
-  enabled: true
-  image:
-    tag: <pipeline-image-tag>
-  schedule: "0 2 * * *"                  # when to run
-  config:
-    BASE_URL: <purple-dots-api-url>      # for the S3 dump
-    KEYCLOAK_URL: <keycloak-url>
-  secrets:
-    RAYA_API_KEY: <key>
-    CLIENT_SECRET: <keycloak-client-secret>
-  database:
-    host: <postgres-host>
-    password: <password-for-the-pipeline-user>
-  dbInit:
-    admin:
-      password: <postgres-admin-password>
-```
-
-On every install and upgrade, a Job creates the database (`purple` by default) and its user if they do not exist, then creates the tables. It only needs the admin password. The CronJob never sees it.
+| Key | What it is | Example |
+|---|---|---|
+| `pipeline.image.repository`, `pipeline.image.tag` | Pipeline image. The tag is required. | `ghcr.io/your-org/purple-dots`, `v1.0.0` |
+| `pipeline.schedule` | Cron expression for the run, in `pipeline.timeZone` (default `Asia/Kolkata`). | `"0 2 * * *"` |
+| `pipeline.config.BASE_URL` | Host that serves `/v1/campaign/dump`, for the S3 dump. | `https://aggregator.example.com` |
+| `pipeline.config.KEYCLOAK_URL` | Keycloak base URL. | `https://auth.example.com/auth` |
+| `pipeline.config.REALM`, `pipeline.config.CLIENT_ID` | Keycloak realm and the service-account client. | `bluedots`, `campaign-manager` |
+| `pipeline.secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
+| `pipeline.secrets.CLIENT_SECRET` | Secret of the Keycloak client. | `xxx` |
+| `pipeline.database.host` | Postgres host. | `postgres.databases.svc.cluster.local` |
+| `pipeline.database.name`, `pipeline.database.user` | Database and user the pipeline uses. Created for you if missing. Defaults to `purple`. | `purple`, `purple` |
+| `pipeline.database.password` | Password for that user. | `a-strong-password` |
+| `pipeline.dbInit.admin.user`, `pipeline.dbInit.admin.password` | Admin account used once to create the user and database. Only the database Job sees it. | `postgres`, `xxx` |
+| `pipeline.args` | Extra arguments for the run, for example to skip a stage. | `["--skip", "inbound"]` |
 
 To run the pipeline once without waiting for the schedule:
 
 ```bash
-kubectl -n campaign-manager create job --from=cronjob/campaign-manager-pipeline pipeline-manual
+kubectl -n <namespace> create job --from=cronjob/<release-name>-pipeline pipeline-manual
 ```
-
-The job name is `<release-name>-pipeline`, so use your release name if it is different.
-
-## Update or remove
-
-To update, change `global-overrides.yaml` and run the Step 4 command again.
-
-To remove:
-
-```bash
-helm -n campaign-manager uninstall campaign-manager
-kubectl delete namespace campaign-manager
-```
-
-## If something goes wrong
-
-| Problem | What to check |
-|---|---|
-| Pod in `ImagePullBackOff` | The image details are wrong, or the image is private and the `ghcr-pull` secret is missing |
-| Pod running but not ready | `kubectl -n campaign-manager logs deploy/campaign-manager` — usually a wrong Supabase value |
-| Ingress returns 404 | `className` or `host` in the overrides file is wrong |
-| Certificate not ready | The domain does not resolve to the load balancer yet, or the ClusterIssuer name is wrong |
