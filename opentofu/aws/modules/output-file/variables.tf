@@ -125,10 +125,13 @@ variable "msg91_auth_key" {
   default     = "UPDATE_THIS_VALUE"
 }
 
+# "" rather than UPDATE_THIS_VALUE, like the pinnacle inputs below: NS seeds and
+# publishes an active login_otp row from SMS_LOGIN_OTP_TEMPLATE_ID on first boot
+# and never revisits it, so a placeholder would stick. The NS chart drops "".
 variable "msg91_template_id" {
-  description = "MSG91 OTP template id. Feeds notification-service SMS_LOGIN_OTP_TEMPLATE_ID and aggregator keycloak.msg91TemplateId."
+  description = "MSG91 OTP template id. Feeds notification-service SMS_LOGIN_OTP_TEMPLATE_ID and aggregator keycloak.msg91TemplateId. Blank = not configured."
   type        = string
-  default     = "UPDATE_THIS_VALUE"
+  default     = ""
 }
 
 # Pinnacle — the alternative SMS vendor, selected per deployment by

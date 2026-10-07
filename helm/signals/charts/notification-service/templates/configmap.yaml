@@ -14,7 +14,10 @@ metadata:
     {{- include "dpg-notification-service.labels" . | nindent 4 }}
 data:
   {{- range $key, $val := .Values.config }}
-  {{- if ne ($val | toString) "" }}
+  {{- /* SMS_LOGIN_OTP_TEMPLATE_ID: NS publishes its login_otp row from this on
+         first boot and never re-reads it, so the house placeholder from an
+         older generated global-secrets.yaml must not reach it — unset instead. */}}
+  {{- if not (or (eq ($val | toString) "") (and (eq $key "SMS_LOGIN_OTP_TEMPLATE_ID") (eq ($val | toString) "UPDATE_THIS_VALUE"))) }}
   {{ $key }}: {{ $val | quote }}
   {{- end }}
   {{- end }}

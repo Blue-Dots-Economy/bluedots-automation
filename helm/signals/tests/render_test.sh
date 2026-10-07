@@ -148,6 +148,19 @@ grep -q 'NOTIFICATION_SERVICE_KEY_ID: \*notification_key_id' ../values.yaml || f
 grep -q 'NOTIFICATION_SERVICE_SECRET: \*notification_secret' ../values.yaml || fail "umbrella HMAC secret must stay until Part B"
 grep -q 'notificationKeyId: "dpg-api-client"' "$TPL/global-values.yaml" || fail "template notificationKeyId must stay until Part B"
 grep -q 'notificationSecret: "${signals_notification_secret}"' "$TFPL" || fail "tfpl notificationSecret must stay until Part B"
+# msg91_template_id -> SMS_LOGIN_OTP_TEMPLATE_ID: NS publishes login_otp from it
+# once and never re-reads it, so the placeholder must never reach the ConfigMap.
+grep -q 'SMS_LOGIN_OTP_TEMPLATE_ID: "${msg91_template_id}"' "$TFPL" || fail "tfpl no longer feeds SMS_LOGIN_OTP_TEMPLATE_ID from msg91_template_id"
+grep -Eq 'msg91_template_id_raw += try\(local\.manual_secrets\.msg91_template_id, ""\)' ../../../opentofu/aws/_common/output-file.hcl \
+  || fail "output-file msg91_template_id must default to \"\""
+grep -q 'msg91_template_id_raw == "UPDATE_THIS_VALUE" ? ""' ../../../opentofu/aws/_common/output-file.hcl \
+  || fail "output-file must render a leftover UPDATE_THIS_VALUE msg91_template_id as \"\""
+out="$(render --set config.SMS_LOGIN_OTP_TEMPLATE_ID=UPDATE_THIS_VALUE)"
+grep -q 'SMS_LOGIN_OTP_TEMPLATE_ID' <<<"$out" && fail "placeholder SMS_LOGIN_OTP_TEMPLATE_ID reached the ConfigMap"
+out="$(render --set config.SMS_LOGIN_OTP_TEMPLATE_ID=)"
+grep -q 'SMS_LOGIN_OTP_TEMPLATE_ID' <<<"$out" && fail "empty SMS_LOGIN_OTP_TEMPLATE_ID reached the ConfigMap"
+out="$(render --set config.SMS_LOGIN_OTP_TEMPLATE_ID=flow-123)"
+grep -q 'SMS_LOGIN_OTP_TEMPLATE_ID: "flow-123"' <<<"$out" || fail "a real SMS_LOGIN_OTP_TEMPLATE_ID was dropped"
 # Part A keeps dpg-api-client so old Signals pods keep delivering mid-rollout (F4-1)
 ns="$(signals --show-only charts/notification-service/templates/internal-secret.yaml)"
 grep -q 'dpg-api-client' <<<"$ns" || fail "Part A must keep dpg-api-client in internal-secrets"
