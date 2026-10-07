@@ -93,10 +93,17 @@ jobs:
       # unaffected and still honour it.
       - name: Resolve run mode
         id: mode
+        # Inputs reach the script through `env:` rather than `${{ }}` inside it:
+        # `platforms` is free text, so interpolating it into the shell is a
+        # template-injection sink (zizmor template-injection).
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PUSH: ${{ inputs.push }}
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
         run: |
-          if [ "${{ github.event_name }}" != 'workflow_dispatch' ] || [ "${{ inputs.push }}" = 'true' ]; then
+          if [ "$EVENT_NAME" != 'workflow_dispatch' ] || [ "$INPUT_PUSH" = 'true' ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "platforms=${{ inputs.platforms || 'linux/amd64' }}" >> "$GITHUB_OUTPUT"
+            echo "platforms=${INPUT_PLATFORMS:-linux/amd64}" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
