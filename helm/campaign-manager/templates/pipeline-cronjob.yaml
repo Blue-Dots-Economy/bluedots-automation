@@ -1,0 +1,51 @@
+{{- if .Values.pipeline.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "campaign-manager.pipeline.name" . }}
+  labels:
+    {{- include "campaign-manager.pipeline.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.pipeline.schedule | quote }}
+  timeZone: {{ .Values.pipeline.timeZone | quote }}
+  suspend: {{ .Values.pipeline.suspend }}
+  concurrencyPolicy: {{ .Values.pipeline.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ .Values.pipeline.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.pipeline.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.pipeline.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.pipeline.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.pipeline.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "campaign-manager.pipeline.selectorLabels" . | nindent 12 }}
+          annotations:
+            checksum/config: {{ include (print $.Template.BasePath "/pipeline-configmap.yaml") . | sha256sum }}
+            {{- if not .Values.pipeline.secrets.existingSecret }}
+            checksum/secrets: {{ include (print $.Template.BasePath "/pipeline-secret.yaml") . | sha256sum }}
+            {{- end }}
+        spec:
+          restartPolicy: Never
+          {{- include "campaign-manager.imagePullSecrets" . | nindent 10 }}
+          containers:
+            - name: pipeline
+              image: {{ include "campaign-manager.pipeline.image" . | quote }}
+              imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+              # The image's entrypoint is load_purple.py; run the whole pipeline instead.
+              command: ["python", "run_pipeline.py"]
+              {{- with .Values.pipeline.args }}
+              args:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              envFrom:
+                - configMapRef:
+                    name: {{ include "campaign-manager.pipeline.name" . }}-config
+                - secretRef:
+                    name: {{ include "campaign-manager.pipeline.secretName" . }}
+              securityContext:
+                allowPrivilegeEscalation: false
+              resources:
+                {{- toYaml .Values.pipeline.resources | nindent 16 }}
+{{- end }}

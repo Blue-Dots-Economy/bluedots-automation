@@ -87,3 +87,63 @@ podAnnotations: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# Purple Dots data pipeline: CronJob loading Raya calls and the S3 dump into Postgres.
+pipeline:
+  enabled: false
+
+  image:
+    repository: ghcr.io/blue-dots-economy/purple-dots
+    tag: ""                      # UPDATE: required when enabled; no default tag exists
+    pullPolicy: IfNotPresent
+
+  schedule: "0 2 * * *"          # UPDATE: cron expression, evaluated in timeZone
+  timeZone: Asia/Kolkata
+  concurrencyPolicy: Forbid      # a slow run must not overlap the next one
+  startingDeadlineSeconds: 900
+  backoffLimit: 1
+  activeDeadlineSeconds: 7200
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  suspend: false
+
+  args: []                       # extra run_pipeline.py arguments, e.g. ["--skip", "inbound"]
+
+  config:                        # empty values are not rendered, so the pipeline defaults apply
+    BASE_URL: ""                 # UPDATE: Purple Dots signals API, for the S3 dump
+    KEYCLOAK_URL: ""             # UPDATE: Keycloak base URL, for the S3 dump
+    REALM: ""
+    CLIENT_ID: ""
+    PD_INSTANCE: ""
+    PD_REFRESH_DAYS: ""
+    PD_TEST_BATCHES: ""
+
+  secrets:
+    existingSecret: ""           # or a Secret with DATABASE_URL, RAYA_API_KEY, CLIENT_SECRET
+    RAYA_API_KEY: ""             # UPDATE
+    CLIENT_SECRET: ""            # UPDATE: Keycloak service-account secret, for the S3 dump
+
+  database:                      # DATABASE_URL is built from these
+    host: ""                     # UPDATE: Postgres host
+    port: 5432
+    name: purple
+    user: purple
+    password: ""                 # UPDATE: password for the pipeline's own role
+
+  dbInit:                        # creates the role, database and tables if missing
+    enabled: true
+    image:
+      repository: postgres       # only used to run psql
+      tag: "17-alpine"
+      pullPolicy: IfNotPresent
+    admin:
+      user: postgres
+      password: ""               # UPDATE: admin password, used only by this Job
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
