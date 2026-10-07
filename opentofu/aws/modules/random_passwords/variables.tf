@@ -37,11 +37,6 @@ variable "signals_pii_key_bytes" {
   default = 32
 }
 
-variable "signals_notification_secret_bytes" {
-  type    = number
-  default = 32
-}
-
 variable "ns_admin_secret_bytes" {
   type    = number
   default = 32

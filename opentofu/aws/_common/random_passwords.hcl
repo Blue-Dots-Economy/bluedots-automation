@@ -5,7 +5,6 @@ locals {
   signals_export_ro_password_bytes              = try(local.global_vars.global.signals_export_ro_password_bytes, 16)
   signals_redis_password_bytes                  = try(local.global_vars.global.signals_redis_password_bytes, 16)
   signals_auth_secret_bytes                     = try(local.global_vars.global.signals_auth_secret_bytes, 32)
-  signals_notification_secret_bytes             = try(local.global_vars.global.signals_notification_secret_bytes, 32)
   ns_admin_secret_bytes                         = try(local.global_vars.global.ns_admin_secret_bytes, 32)
   signals_instance_shared_secret_bytes          = try(local.global_vars.global.signals_instance_shared_secret_bytes, 32)
   aggregator_postgres_password_bytes            = try(local.global_vars.global.aggregator_postgres_password_bytes, 16)
@@ -32,7 +31,6 @@ inputs = {
   signals_export_ro_password_bytes              = local.signals_export_ro_password_bytes
   signals_redis_password_bytes                  = local.signals_redis_password_bytes
   signals_auth_secret_bytes                     = local.signals_auth_secret_bytes
-  signals_notification_secret_bytes             = local.signals_notification_secret_bytes
   ns_admin_secret_bytes                         = local.ns_admin_secret_bytes
   signals_instance_shared_secret_bytes          = local.signals_instance_shared_secret_bytes
   aggregator_postgres_password_bytes            = local.aggregator_postgres_password_bytes

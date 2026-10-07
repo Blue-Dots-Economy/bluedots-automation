@@ -682,13 +682,8 @@ api:
   secrets:
     create: true
     existingSecret: dpg-api-secrets
-    # Legacy /notify HMAC key id and From address, kept for Signals pods on the
-    # previous image during rollout and rollback; removed in Part B with the NS
-    # "dpg-api-client" entry.
-    notificationKeyId: "dpg-api-client"
   config:
     NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
-    NOTIFICATION_FROM_EMAIL: *smtp_user
     SERVED_DOMAINS: *signals_served_domains
     # ── Auth provider ──────────────────────────────────
     # `keycloak` is the only supported value. `dual` was removed in signals #456
