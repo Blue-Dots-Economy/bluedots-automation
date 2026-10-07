@@ -130,18 +130,32 @@ smsProvider: log
 msg91TemplateId: ''
 msg91OtpVarName: ''
 
-# Only read when smsProvider=http. The shared secret is a Secret key
-# (SMS_HTTP_SECRET), not a value here.
+# One of: smtp | http.
+# smtp (default): Keycloak sends email OTP through the realm's SMTP server.
+# http: posts it to notification-service (/v1/notify, template login_otp, HMAC v2),
+# sharing the smsHttp connection below. Flip per cluster only after Plan F3's jar
+# is in the image and the cluster's NS catalogue carries the email login_otp template.
+# smtp renders no env (the plugin picks smtp by provider order); http renders
+# KC_SPI_OTP_EMAIL__PROVIDER=http. Any other value stops the render.
+otpEmailProvider: smtp
+
+# NS connection (SMS and email over http). Read when smsProvider or
+# otpEmailProvider is http; the key keeps its `smsHttp` name so existing cluster
+# values keep working. The shared secret is a Secret key (SMS_HTTP_SECRET), not
+# a value here. Requests go to /v1/notify, signed with HMAC v2: the signature
+# covers METHOD\nPATH\nTIMESTAMP\nNONCE\nsha256(body).
 smsHttp:
   # Left empty so the template derives it from global.signalsNamespace, the way
   # every other cross-namespace reference in this chart does. Set explicitly
   # only to point at something other than this cluster's notification service.
   url: ''
-  # NS-named template. NS owns both its vendor id and its body, which is why
-  # nothing here carries message text.
+  # SMS only. NS-named template. NS owns both its vendor id and its body, which
+  # is why nothing here carries message text. Email over http uses the plugin's
+  # own defaults (OTP_EMAIL_HTTP_TEMPLATE_ID=login_otp,
+  # OTP_EMAIL_HTTP_OTP_VAR_NAME=message), which match the NS catalogue.
   templateId: login_otp
-  # Variable name the body's placeholder expects. NS's login_otp body uses
-  # `{{message}}`; every existing OTP caller already sends that key.
+  # SMS only. Variable name the body's placeholder expects. NS's login_otp body
+  # uses `{{message}}`; every existing OTP caller already sends that key.
   otpVarName: message
   keyId: keycloak
   timeoutMs: 5000

@@ -106,7 +106,7 @@ spec:
             severity: warning
           annotations:
             summary: "Notification DLQ grew by more than {{ .Values.metrics.prometheusRule.dlqGrowthThreshold }} in an hour"
-            description: "Messages are being dropped. Inspect via GET /metrics/queue and /failed/retry."
+            description: "Messages are being dropped. Inspect via GET /metrics/queue; replay with POST /failed/retry, which needs a templates:admin credential (an HMAC key whose internal-secrets.json entry has scopes [..., templates:admin])."
 
         {{- /*
         The DLQ counter, not just its depth. A job dead-lettered and then
@@ -168,4 +168,69 @@ spec:
           annotations:
             summary: "notification-service is not reporting metrics"
             description: "The scrape is failing, so every other notification alert is blind."
+{{- if .Values.content }}
+
+    {{- /*
+    Only rendered when this release ships a content ConfigMap (`content` set):
+    without it NS_CONTENT_FILE is unset, NS loads nothing, and both rules would
+    either never evaluate or fire on a deployment that has no content to load.
+    Scoped to this release's namespace for the same reason as
+    NotificationMetricsAbsent — the gate is per release, so another namespace's
+    NS must not satisfy (or trip) these.
+    */}}
+    - name: notification-service-content
+      rules:
+        {{- /*
+        NS keeps serving the last good snapshot when a boot or reload fails, so a
+        broken ConfigMap edit is silent from the outside: sends that use
+        `content_ref` keep going out with the OLD text. Reloads run every 30 s,
+        so a persistent failure increments this many times per window.
+        */}}
+        - alert: NotificationContentLoadFailing
+          expr: |
+            sum by (namespace, provider) (
+              increase(ns_content_load_failures_total{namespace="{{ .Release.Namespace }}"}[15m])
+            ) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "notification-service cannot load its {{ `{{ $labels.provider }}` }} content"
+            description: >-
+              Content loads are failing, so NS is serving the last good version (or
+              none, if it never loaded). Check the NS logs for "content (...) not
+              loaded" and the {{ include "dpg-notification-service.fullname" . }}-content
+              ConfigMap.
+
+        {{- /*
+        ns_content_loaded is the unix time of the latest successful load, written
+        on EVERY reload (not only on change), so it advances every 30 s while
+        anything is healthy. Its series are never deleted (Redis-backed hash):
+        an old version/fingerprint keeps its last timestamp forever, hence max()
+        across them — the newest load is what is being served.
+
+        The `absent` arm covers "configured but never loaded" (a bad file since
+        boot, or an image without the content resolver). It is guarded on
+        ns_queue_depth so a dead scrape stays NotificationMetricsAbsent's alert.
+        */}}
+        - alert: NotificationContentStale
+          expr: |
+            time() - max by (namespace) (ns_content_loaded{namespace="{{ .Release.Namespace }}"})
+              > {{ .Values.metrics.prometheusRule.contentStaleSeconds }}
+            or
+            (
+              absent(ns_content_loaded{namespace="{{ .Release.Namespace }}"})
+              and on ()
+              count(ns_queue_depth{namespace="{{ .Release.Namespace }}"}) > 0
+            )
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "notification-service content has not loaded in over {{ .Values.metrics.prometheusRule.contentStaleSeconds }}s"
+            description: >-
+              No pod has loaded the content file recently (reloads run every 30 s), so
+              content_ref sends may be using stale text or failing with
+              content_unavailable. See NotificationContentLoadFailing and the NS logs.
+{{- end }}
 {{- end }}

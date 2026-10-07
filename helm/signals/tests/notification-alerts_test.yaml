@@ -83,7 +83,7 @@ tests:
               queue: dlq
             exp_annotations:
               summary: "Notification DLQ grew by more than 10 in an hour"
-              description: "Messages are being dropped. Inspect via GET /metrics/queue and /failed/retry."
+              description: "Messages are being dropped. Inspect via GET /metrics/queue; replay with POST /failed/retry, which needs a templates:admin credential (an HMAC key whose internal-secrets.json entry has scopes [..., templates:admin])."
 
   # ── Balance staleness ───────────────────────────────────────────────────────
   # A balance gauge with no freshness check reports the last healthy number
@@ -121,3 +121,111 @@ tests:
             exp_annotations:
               summary: "notification-service is not reporting metrics"
               description: "The scrape is failing, so every other notification alert is blind."
+
+  # ── Content resolver ────────────────────────────────────────────────────────
+  # NS keeps serving the last good snapshot when a reload fails, so a broken
+  # ConfigMap edit is invisible without these. Reloads run every 30 s.
+  - interval: 1m
+    name: a content file that keeps failing to load is reported
+    input_series:
+      - series: 'ns_content_load_failures_total{namespace="signals",provider="configmap"}'
+        values: '1+2x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: NotificationContentLoadFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: signals
+              provider: configmap
+            exp_annotations:
+              summary: "notification-service cannot load its configmap content"
+              description: 'Content loads are failing, so NS is serving the last good version (or none, if it never loaded). Check the NS logs for "content (...) not loaded" and the ns-dpg-notification-service-content ConfigMap.'
+
+  - interval: 1m
+    name: an old failure count that stopped growing does not page
+    input_series:
+      - series: 'ns_content_load_failures_total{namespace="signals",provider="configmap"}'
+        values: '3x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: NotificationContentLoadFailing
+        exp_alerts: []
+
+  - interval: 1m
+    name: another namespace's content failures do not page this release
+    input_series:
+      - series: 'ns_content_load_failures_total{namespace="other",provider="configmap"}'
+        values: '1+2x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: NotificationContentLoadFailing
+        exp_alerts: []
+
+  # ns_content_loaded = unix time of the latest successful load, restamped on
+  # every reload; series are never deleted, so a superseded version keeps its
+  # last timestamp forever and must not read as stale.
+  - interval: 1m
+    name: content that keeps reloading is not stale, even beside a superseded version
+    input_series:
+      # superseded version: last loaded at t=0, then frozen
+      - series: 'ns_content_loaded{namespace="signals",provider="configmap",version="v1",fingerprint="aaaaaaaaaaaa"}'
+        values: '0x60'
+      # current version: restamped every minute (value = eval time in seconds)
+      - series: 'ns_content_loaded{namespace="signals",provider="configmap",version="v2",fingerprint="bbbbbbbbbbbb"}'
+        values: '0+60x60'
+      - series: 'ns_queue_depth{namespace="signals",queue="dlq"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: NotificationContentStale
+        exp_alerts: []
+
+  - interval: 1m
+    name: content no pod has reloaded for over 10 minutes is reported
+    input_series:
+      # loads until t=10m, then stops advancing
+      - series: 'ns_content_loaded{namespace="signals",provider="configmap",version="v2",fingerprint="bbbbbbbbbbbb"}'
+        values: '0+60x10 600x40'
+      - series: 'ns_queue_depth{namespace="signals",queue="dlq"}'
+        values: '0x50'
+    alert_rule_test:
+      # 600 s threshold crossed just after t=20m, plus `for: 5m`
+      - eval_time: 24m
+        alertname: NotificationContentStale
+        exp_alerts: []
+      - eval_time: 27m
+        alertname: NotificationContentStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: signals
+            exp_annotations:
+              summary: "notification-service content has not loaded in over 600s"
+              description: "No pod has loaded the content file recently (reloads run every 30 s), so content_ref sends may be using stale text or failing with content_unavailable. See NotificationContentLoadFailing and the NS logs."
+
+  - interval: 1m
+    name: content that never loaded while NS is up is reported
+    input_series:
+      - series: 'ns_queue_depth{namespace="signals",queue="dlq"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NotificationContentStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: signals
+            exp_annotations:
+              summary: "notification-service content has not loaded in over 600s"
+              description: "No pod has loaded the content file recently (reloads run every 30 s), so content_ref sends may be using stale text or failing with content_unavailable. See NotificationContentLoadFailing and the NS logs."
+
+  - interval: 1m
+    name: a dead scrape is left to NotificationMetricsAbsent, not reported as stale content
+    input_series:
+      - series: 'ns_queue_depth{namespace="signals",queue="dlq"}'
+        values: '_x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: NotificationContentStale
+        exp_alerts: []

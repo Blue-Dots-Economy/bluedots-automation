@@ -148,13 +148,16 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
   values — nothing to re-enter. Edit `secrets.yaml`, never `global-secrets.yaml`.
   - **SMS OTP (MSG91)** — `msg91_auth_key` and `msg91_template_id`. One key
     each, fanned out to both consumers (notification-service `MSG91_AUTH_KEY`/
-    `MSG91_TEMPLATE_ID`, aggregator `secrets.msg91AuthKey`/
+    `SMS_LOGIN_OTP_TEMPLATE_ID`, aggregator `secrets.msg91AuthKey`/
     `keycloak.msg91TemplateId`), so the copies can't drift.
   - **Email (SMTP)** — non-secret anchors `_smtp_host/_port/_user/_from_display`
     stay in `global-values.yaml`; the password is `smtp_password` in
     `secrets.yaml` (Gmail App Password if using `smtp.gmail.com`), rendered into
     all three consumers: notification-service `GMAIL_PASS`, aggregator
     `secrets.smtpPassword`, monitoring `alerting.email.smtpAuthPassword`.
+    notification-service sends as `_smtp_from_display <_smtp_user>`
+    (`EMAIL_FROM_NAME` / `EMAIL_FROM_ADDRESS`); a cluster can set its own
+    `notification-service.config.EMAIL_FROM_NAME` in `global-values.yaml`.
   - **Alerting (monitoring)** — `discord_critical_webhook` /
     `discord_warning_webhook` / `discord_info_webhook` in `secrets.yaml`; the
     on/off toggles (`alerting.email.enabled`, `alerting.discord.enabled`) and
