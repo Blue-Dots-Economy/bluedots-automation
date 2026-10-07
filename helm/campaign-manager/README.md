@@ -7,17 +7,17 @@ Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators m
 | Resource | Purpose |
 |---|---|
 | Deployment, Service | The Campaign Manager web app (listens on port 3000). |
-| Ingress (optional) | Exposes the app on your domain, with an HTTPS certificate from cert-manager. |
+| Ingress | Exposes the app on your domain, with an HTTPS certificate from cert-manager. |
 | ConfigMap, Secret | Non-secret settings and credentials, injected into the app as environment variables. |
-| CronJob (optional) | Purple Dots data pipeline. Loads Raya calls and the platform S3 dump into Postgres. |
-| Job (optional) | Runs after every install and upgrade. Creates the pipeline's Postgres user, database and tables if they are missing. |
+| CronJob | Purple Dots data pipeline. Loads Raya calls and the platform S3 dump into Postgres. |
+| Job | Runs after every install and upgrade. Creates the pipeline's Postgres user, database and tables if they are missing. |
 
 The app stores its data in Supabase, which is external to the chart. The pipeline writes to a Postgres you point it at.
 
 ## Before you configure
 
-- An ingress controller in the cluster, and a DNS record for your domain pointing at its load balancer (only if you enable the ingress).
-- cert-manager with a ClusterIssuer (only if you want HTTPS certificates issued automatically).
+- An ingress controller in the cluster, and a DNS record for your domain pointing at its load balancer.
+- cert-manager with a ClusterIssuer, to issue the HTTPS certificate automatically.
 - A namespace of your choice. Install the release into it, and create it with `--create-namespace` if it does not exist.
 
 ## How to configure
@@ -45,7 +45,7 @@ If the registry is private, create an image pull secret named `ghcr-pull` in the
 
 | Key | What it is | Example |
 |---|---|---|
-| `ingress.enabled` | Create the Ingress. Off by default. | `true` |
+| `ingress.enabled` | Set to `true` to create the Ingress. | `true` |
 | `ingress.className` | Ingress class in your cluster (`kubectl get ingressclass`). | `kong` |
 | `ingress.host` | Your domain. | `campaign-manager.example.com` |
 | `ingress.annotations` | Annotations for your controller. For automatic HTTPS, name your ClusterIssuer (`kubectl get clusterissuer`). | `cert-manager.io/cluster-issuer: letsencrypt-prod` |
@@ -75,9 +75,9 @@ If the registry is private, create an image pull secret named `ghcr-pull` in the
 
 To keep credentials out of Helm values, create a Secret yourself with the same keys and set `secrets.existingSecret` to its name.
 
-### Purple Dots pipeline (`pipeline`, optional)
+### Purple Dots pipeline (`pipeline`)
 
-Off by default. Set `pipeline.enabled: true` to deploy the CronJob and the database Job.
+Set `pipeline.enabled: true` to deploy the CronJob and the database Job.
 
 | Key | What it is | Example |
 |---|---|---|
