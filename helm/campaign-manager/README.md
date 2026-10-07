@@ -95,6 +95,40 @@ The pod should be `Running` and ready, and the certificate `READY: True` (this c
 
 If you are not mapping the app to a domain, you can use `kubectl port-forward` on the `campaign-manager` service to access it instead.
 
+## Data pipeline (Purple Dots)
+
+The chart can also run the Purple Dots data pipeline as a CronJob. It loads Raya calls and the platform S3 dump into Postgres. It is off by default. Add this to `campaign-manager.yaml` to turn it on:
+
+```yaml
+pipeline:
+  enabled: true
+  image:
+    tag: <pipeline-image-tag>
+  schedule: "0 2 * * *"                  # when to run
+  config:
+    BASE_URL: <purple-dots-api-url>      # for the S3 dump
+    KEYCLOAK_URL: <keycloak-url>
+  secrets:
+    RAYA_API_KEY: <key>
+    CLIENT_SECRET: <keycloak-client-secret>
+  database:
+    host: <postgres-host>
+    password: <password-for-the-pipeline-user>
+  dbInit:
+    admin:
+      password: <postgres-admin-password>
+```
+
+On every install and upgrade, a Job creates the database (`purple` by default) and its user if they do not exist, then creates the tables. It only needs the admin password. The CronJob never sees it.
+
+To run the pipeline once without waiting for the schedule:
+
+```bash
+kubectl -n campaign-manager create job --from=cronjob/campaign-manager-pipeline pipeline-manual
+```
+
+The job name is `<release-name>-pipeline`, so use your release name if it is different.
+
 ## Update or remove
 
 To update, change `global-overrides.yaml` and run the Step 4 command again.

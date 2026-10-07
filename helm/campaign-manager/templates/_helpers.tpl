@@ -41,3 +41,37 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/* Pipeline: resource names and labels. */}}
+{{- define "campaign-manager.pipeline.name" -}}
+{{- printf "%s-pipeline" (include "campaign-manager.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "campaign-manager.pipeline.labels" -}}
+{{ include "campaign-manager.labels" . }}
+app.kubernetes.io/component: pipeline
+{{- end -}}
+
+{{- define "campaign-manager.pipeline.selectorLabels" -}}
+app.kubernetes.io/name: campaign-manager-pipeline
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "campaign-manager.pipeline.image" -}}
+{{ .Values.pipeline.image.repository }}:{{ required "pipeline.image.tag is required when pipeline.enabled" .Values.pipeline.image.tag }}
+{{- end -}}
+
+{{/* Name of the Secret carrying DATABASE_URL, RAYA_API_KEY, CLIENT_SECRET. */}}
+{{- define "campaign-manager.pipeline.secretName" -}}
+{{- if .Values.pipeline.secrets.existingSecret -}}
+{{- .Values.pipeline.secrets.existingSecret -}}
+{{- else -}}
+{{- printf "%s-secrets" (include "campaign-manager.pipeline.name" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/* postgresql:// URL with the user and password percent-encoded. */}}
+{{- define "campaign-manager.pipeline.databaseUrl" -}}
+{{- $db := .Values.pipeline.database -}}
+{{- printf "postgresql://%s:%s@%s:%v/%s" (urlquery (required "pipeline.database.user is required" $db.user) | replace "+" "%20") (urlquery (required "pipeline.database.password is required" $db.password) | replace "+" "%20") (required "pipeline.database.host is required" $db.host) $db.port (required "pipeline.database.name is required" $db.name) -}}
+{{- end -}}
