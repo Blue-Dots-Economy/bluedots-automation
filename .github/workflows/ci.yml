@@ -120,6 +120,12 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: render assertions (notification-service, keycloak)
+        run: |
+          set -euo pipefail
+          bash helm/signals/tests/render_test.sh
+          bash helm/keycloak/tests/render_test.sh
+
       # Renders all 5 charts once, shared by both drift checks below. Layers
       # the template env's own committed global-images.yaml/global-values.yaml
       # (non-secret, no cluster needed) rather than chart defaults only:

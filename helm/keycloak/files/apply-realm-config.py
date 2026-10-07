@@ -14,17 +14,25 @@ re-login, no user migration.
 
 WHAT IT RECONCILES
 ------------------
-1. Clients and realm roles, via Keycloak's own `partialImport` with
-   `ifResourceExists: SKIP`. Using the built-in importer rather than hand-rolled
-   client creation means the client definitions have exactly ONE source of truth
-   (the chart's realm.json) and we inherit Keycloak's own validation.
+1. Clients, realm roles and client roles, via Keycloak's own `partialImport`
+   with `ifResourceExists: SKIP`. Using the built-in importer rather than
+   hand-rolled client creation means the client definitions have exactly ONE
+   source of truth (the chart's realm.json) and we inherit Keycloak's own
+   validation. Client roles (`roles.client`) are part of the payload so that a
+   client added to realm.json arrives together with the roles callers are
+   granted on it (e.g. notification-service's notify:send / templates:admin).
 
-2. `realm-management` client-role grants on each client's service-account user.
-   Creating a client with `serviceAccountsEnabled` auto-creates its
-   `service-account-<clientId>` user but does NOT grant it anything, so step 1
-   alone would leave aggregator-api and signals-api unable to administer the
-   realm. Driven off the `clientRoles` on the matching `.users[]` entry in
-   realm.json, so this too has a single source of truth.
+2. Client-role grants on each service-account user, for ANY client: the
+   `realm-management` admin roles aggregator-api and signals-api need, and
+   equally an application client's roles such as notification-service
+   notify:send for signals-api. Creating a client with `serviceAccountsEnabled`
+   auto-creates its `service-account-<clientId>` user but grants it nothing, and
+   a grant on an already-existing service account is never applied by import.
+   Driven off each `.users[]` entry that has a `serviceAccountClientId`, reading
+   its `clientRoles` map `{<clientId>: [role, ...]}`, so this too has a single
+   source of truth. Only missing roles are granted; existing grants are never
+   removed. A referenced client or role that does not exist after step 1 is a
+   hard failure: realm.json and Keycloak disagree.
 
 WHAT IT DELIBERATELY DOES NOT DO
 --------------------------------
@@ -155,6 +163,7 @@ def main():
 
     clients = realm.get("clients", [])
     realm_roles = realm.get("roles", {}).get("realm", [])
+    client_roles = realm.get("roles", {}).get("client", {})
 
     # Drop authenticationFlowBindingOverrides before importing.
     #
@@ -181,14 +190,19 @@ def main():
         )
 
     # ── 1. clients + realm roles ────────────────────────────────────────────
+    n_client_roles = sum(len(v) for v in client_roles.values())
     log(
-        f"reconciling {len(clients)} clients and {len(realm_roles)} realm roles "
-        f"into '{REALM}' (existing resources are skipped, never overwritten)"
+        f"reconciling {len(clients)} clients, {len(realm_roles)} realm roles and "
+        f"{n_client_roles} client roles into '{REALM}' "
+        "(existing resources are skipped, never overwritten)"
     )
+    roles = {"realm": realm_roles}
+    if client_roles:
+        roles["client"] = client_roles
     payload = {
         "ifResourceExists": "SKIP",
         "clients": clients,
-        "roles": {"realm": realm_roles},
+        "roles": roles,
     }
     status, body = request(
         "POST", f"/admin/realms/{REALM}/partialImport", token=token, body=payload
@@ -204,80 +218,84 @@ def main():
             if r.get("action") == "ADDED":
                 log(f"  added {r.get('resourceType')} {r.get('resourceName')}")
 
-    # ── 2. service-account role grants ──────────────────────────────────────
-    # Client creation makes the service-account user but grants it nothing.
-    wanted = {
-        u["username"]: u.get("clientRoles", {})
+    # ── 2. service-account client-role grants (any client) ──────────────────
+    # Client creation makes the service-account user but grants it nothing, and
+    # partialImport never touches an existing service account's mappings.
+    wanted = [
+        (u["serviceAccountClientId"], u["username"], u.get("clientRoles") or {})
         for u in realm.get("users", [])
-        if u.get("clientRoles")
-    }
+        if u.get("serviceAccountClientId") and u.get("clientRoles")
+    ]
     if not wanted:
         log("no service-account role grants declared — done")
         return
 
-    status, all_clients = request("GET", f"/admin/realms/{REALM}/clients", token=token)
-    if status != 200:
-        die(f"cannot list clients (HTTP {status})")
-    by_id = {c["clientId"]: c for c in all_clients}
+    uuid_cache = {}
 
-    for username, client_roles in sorted(wanted.items()):
-        # realm.json names these `service-account-<clientId>` by convention.
-        owner = username.removeprefix("service-account-")
-        client = by_id.get(owner)
-        if client is None:
-            log(f"  {username}: client '{owner}' absent — skipping grants")
-            continue
-
-        status, sa = request(
-            "GET",
-            f"/admin/realms/{REALM}/clients/{client['id']}/service-account-user",
-            token=token,
-        )
-        if status != 200 or "id" not in sa:
-            log(f"  {username}: no service-account user (HTTP {status}) — skipping")
-            continue
-
-        for source_client, role_names in client_roles.items():
-            src = by_id.get(source_client)
-            if src is None:
-                log(f"  {username}: source client '{source_client}' absent — skipping")
-                continue
-
-            status, current = request(
+    def client_uuid(client_id):
+        """Internal id of `client_id`; dies if the client does not exist."""
+        if client_id not in uuid_cache:
+            status, found = request(
                 "GET",
-                f"/admin/realms/{REALM}/users/{sa['id']}"
-                f"/role-mappings/clients/{src['id']}",
+                f"/admin/realms/{REALM}/clients?"
+                + urllib.parse.urlencode({"clientId": client_id}),
                 token=token,
-            )
-            have = {r["name"] for r in current} if status == 200 else set()
-            missing = [r for r in role_names if r not in have]
-            if not missing:
-                log(f"  {username}: {source_client} roles already granted — skip")
-                continue
-
-            status, available = request(
-                "GET", f"/admin/realms/{REALM}/clients/{src['id']}/roles", token=token
             )
             if status != 200:
-                die(f"cannot list roles of '{source_client}' (HTTP {status})")
-            grant = [r for r in available if r["name"] in missing]
-            found = {r["name"] for r in grant}
-            if set(missing) - found:
+                die(f"cannot look up client '{client_id}' (HTTP {status}): {found}")
+            match = [c for c in found if c.get("clientId") == client_id]
+            if not match:
                 die(
-                    f"{source_client} does not define role(s) "
-                    f"{sorted(set(missing) - found)} — realm.json and Keycloak disagree"
+                    f"client '{client_id}' does not exist after import — "
+                    "realm.json and Keycloak disagree"
                 )
+            uuid_cache[client_id] = match[0]["id"]
+        return uuid_cache[client_id]
 
-            status, body = request(
-                "POST",
-                f"/admin/realms/{REALM}/users/{sa['id']}"
-                f"/role-mappings/clients/{src['id']}",
-                token=token,
-                body=grant,
+    for owner, username, grants in sorted(wanted, key=lambda w: w[0]):
+        status, sa = request(
+            "GET",
+            f"/admin/realms/{REALM}/clients/{client_uuid(owner)}/service-account-user",
+            token=token,
+        )
+        if status != 200 or not isinstance(sa, dict) or "id" not in sa:
+            die(f"{username}: no service-account user on '{owner}' (HTTP {status}): {sa}")
+
+        for target, role_names in sorted(grants.items()):
+            target_id = client_uuid(target)
+            mapping_path = (
+                f"/admin/realms/{REALM}/users/{sa['id']}/role-mappings/clients/{target_id}"
             )
+            status, current = request("GET", mapping_path, token=token)
+            if status != 200:
+                die(f"cannot read {username}'s '{target}' role mappings (HTTP {status}): {current}")
+            have = {r["name"] for r in current}
+            missing = [r for r in role_names if r not in have]
+            if not missing:
+                log(f"  {username}: {target} roles already granted — skip")
+                continue
+
+            grant = []
+            for name in missing:
+                status, role = request(
+                    "GET",
+                    f"/admin/realms/{REALM}/clients/{target_id}/roles/"
+                    + urllib.parse.quote(name, safe=""),
+                    token=token,
+                )
+                if status == 404:
+                    die(
+                        f"client '{target}' does not define role '{name}' — "
+                        "realm.json and Keycloak disagree"
+                    )
+                if status != 200:
+                    die(f"cannot read role '{target}/{name}' (HTTP {status}): {role}")
+                grant.append(role)
+
+            status, body = request("POST", mapping_path, token=token, body=grant)
             if status not in (200, 204):
-                die(f"granting {missing} to {username} failed (HTTP {status}): {body}")
-            log(f"  {username}: granted {source_client} {sorted(found)}")
+                die(f"granting {target} {missing} to {username} failed (HTTP {status}): {body}")
+            log(f"  {username}: granted {target} {sorted(missing)}")
 
     log("realm config reconciled")
 

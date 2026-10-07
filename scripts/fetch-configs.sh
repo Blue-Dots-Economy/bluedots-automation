@@ -12,10 +12,8 @@
 #   <network>/network.json
 #   <network>/consent.json
 #   <network>/<brand>/consent.json
-#   <network>/messages.properties
-#   <network>/<brand>/messages.properties
-#   <network>/sms.properties
-#   <network>/<brand>/sms.properties
+#   <network>/ns-catalogue.json
+#   <network>/<brand>/ns-catalogue.json
 # (network/brand dir names use underscores, e.g. blue_dot, orange_dot, upsdm).
 #
 # Subcommands:
@@ -32,17 +30,13 @@
 #               delivered at all (up-gzb); a partial one ships alongside it for
 #               the api to deep-merge (upsdm, onetac). See the brand consent
 #               block below.
-#               PLUS messages.properties (+ <brand>/messages.properties) — the
-#               per-network email copy (signals-dpg#540)
-#                 -> helm/signals/charts/api/files/messages/
-#               PLUS sms.properties (+ <brand>/sms.properties) — the per-network
-#               SMS template registry: DLT template ids, reference bodies and
-#               the variable contract (signals-dpg#595)
-#                 -> helm/signals/charts/api/files/sms/
-#               OPTIONAL, unlike consent: the api ships complete bundled email
-#               copy and merges these PER KEY, so a network with no file (or a
-#               ref predating them) keeps the built-in wording instead of
-#               failing the deploy.
+#               PLUS ns-catalogue.json — the notification-service catalogue,
+#               which carries all email and SMS copy:
+#               <network>/<brand>/ns-catalogue.json when a brand is set (that
+#               file only), <network>/ns-catalogue.json when it is not
+#                 -> helm/signals/charts/notification-service/files/catalogue/
+#               REQUIRED, and checked with jq (also required): the deploy stops
+#               when the selected file is missing or is not a catalogue.
 #   aggregator  consent.json (a FULL document), canonical in bluedots-schemas —
 #               the SAME repo network.json comes from, resolved brand > network the
 #               same way. NOTE it is NOT the same file as <network>/consent.json in
@@ -316,19 +310,6 @@ try_fetch() { # <dest> <url>...
   return 1
 }
 
-# try_fetch for a genuinely OPTIONAL file — one the app has its own fallback for,
-# so a miss is reported and shrugged off instead of failing the deploy. Removes
-# the destination on a miss, so the chart's Files.Get presence check sees
-# "absent" rather than an empty file.
-fetch_optional() { # <dest> <url> <label> <fallback-note>
-  if try_fetch "$1" "$2" 2>/dev/null; then
-    echo "  $3 -> $1"
-  else
-    rm -f "$1"
-    echo "  $3: absent on ${REF} — $4"
-  fi
-}
-
 TARGET="${1:-}"; shift 2>/dev/null || true
 GLOBAL_VALUES=""; REF=""; REPO=""; NETWORK=""; BRAND=""; COLLEGE_DATASET=""
 # auto | replace | merge — see the brand consent block in the signals target.
@@ -460,55 +441,38 @@ case "$TARGET" in
       rm -f "$brand_tmp"
     fi
 
-    # ── per-network email copy (signals-dpg#540) ──────────────────────────────
-    # Rides the consent ConfigMap: the api resolves both from
-    # dirname(NETWORK_CONFIG_LOCAL_FILE). Optional per key, so a missing file
-    # just keeps the api's bundled wording. Cleared first because the chart
-    # renders on file presence alone — a leftover from an earlier deploy of a
-    # different network/brand would otherwise override this one's copy.
-    # Full rationale: helm/CLAUDE.md, "Email copy rides the signals consent ConfigMap".
-    MESSAGES_DIR="$REPO_ROOT/helm/signals/charts/api/files/messages"
-    mkdir -p "$MESSAGES_DIR"
-    rm -f "$MESSAGES_DIR"/*.properties
+    # Email and SMS copy live in notification-service, seeded from the
+    # catalogue below. Clear the copy directories earlier deploys wrote, so the
+    # chart directory holds only files this deploy fetched.
+    rm -rf "$REPO_ROOT/helm/signals/charts/api/files/messages" "$REPO_ROOT/helm/signals/charts/api/files/sms"
 
-    fetch_optional "${MESSAGES_DIR}/${NETWORK}.properties" \
-      "${RAW}/${NETWORK}/messages.properties" \
-      "email copy" "api keeps its bundled defaults"
-
+    # ── notification-service catalogue (NS Stage 1 Plan F1/F4) ──────────────
+    # Exactly one source per cluster, REQUIRED:
+    #   _brand set   -> <network>/<brand>/ns-catalogue.json, and only that file
+    #   _brand empty -> <network>/ns-catalogue.json
+    # A branded cluster never takes the network copy: NS seeds absent rows only
+    # and never overwrites, so whichever copy reaches the first boot is the copy
+    # the cluster keeps. A missing or failed fetch therefore stops the deploy.
+    # jq is required for the shape check. The file is cleared first because the
+    # chart renders on file presence.
+    command -v jq >/dev/null 2>&1 \
+      || { echo "ERROR: jq is required to check ns-catalogue.json — install jq and re-run" >&2; exit 1; }
+    CAT_DIR="$REPO_ROOT/helm/signals/charts/notification-service/files/catalogue"
+    mkdir -p "$CAT_DIR"
+    rm -f "$CAT_DIR/ns-catalogue.json"
     if [ -n "$BRAND" ]; then
-      fetch_optional "${MESSAGES_DIR}/${NETWORK}.${BRAND}.properties" \
-        "${RAW}/${NETWORK}/${BRAND}/messages.properties" \
-        "brand email copy" "network/bundled copy only"
+      cat_path="${NETWORK}/${BRAND}/ns-catalogue.json"
+    else
+      cat_path="${NETWORK}/ns-catalogue.json"
     fi
-
-    # ── per-network SMS templates (signals-dpg#595) ───────────────────────────
-    # Same delivery as the email copy above: rides the schemas ConfigMap, read
-    # by the api from dirname(NETWORK_CONFIG_LOCAL_FILE). Optional per key — a
-    # missing file just keeps the api's bundled template registry.
-    #
-    # These files carry no message text that is ever sent by the api: the body
-    # is either rendered by the vendor from the DLT-approved template (MSG91) or
-    # posted verbatim by notification-service (Pinnacle). What ships here is the
-    # DLT template id, the reference body and the variable contract. A blank
-    # template_id means "not DLT-approved yet" and the api skips that send, so
-    # this is safe to deliver long before any template is registered.
-    #
-    # Cleared first for the same reason as the copy dir: the chart renders on
-    # file presence alone, so a leftover from a different network/brand would
-    # otherwise override this deploy's templates.
-    SMS_DIR="$REPO_ROOT/helm/signals/charts/api/files/sms"
-    mkdir -p "$SMS_DIR"
-    rm -f "$SMS_DIR"/*.properties
-
-    fetch_optional "${SMS_DIR}/${NETWORK}.properties" \
-      "${RAW}/${NETWORK}/sms.properties" \
-      "sms templates" "api keeps its bundled defaults"
-
-    if [ -n "$BRAND" ]; then
-      fetch_optional "${SMS_DIR}/${NETWORK}.${BRAND}.properties" \
-        "${RAW}/${NETWORK}/${BRAND}/sms.properties" \
-        "brand sms templates" "network/bundled templates only"
-    fi
+    echo "  ns catalogue source: ${cat_path}"
+    try_fetch "$CAT_DIR/ns-catalogue.json" "${RAW}/${cat_path}" \
+      || { echo "ERROR: ${cat_path} is required on ${REF} (a branded cluster uses its brand catalogue only)" >&2; exit 1; }
+    jq -e '.version and (.templates|type=="array") and (.policies|type=="array")' \
+      "$CAT_DIR/ns-catalogue.json" >/dev/null \
+      || { rm -f "$CAT_DIR/ns-catalogue.json"
+           echo "ERROR: fetched ${cat_path} is not a catalogue" >&2; exit 1; }
+    echo "  ns catalogue (${cat_path}) -> ${CAT_DIR}/ns-catalogue.json"
 
     # UI college/institute reference list for the selected region. Lives under
     # apps/ui/public/ (not examples/schemas/), hence its own RAW base. Only the one

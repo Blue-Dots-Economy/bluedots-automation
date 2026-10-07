@@ -16,11 +16,9 @@ Everything in this directory is copied to `/opt/keycloak/providers/` by
 > source yields different bytes. Use it to verify what is in this directory,
 > and update it whenever the jar is replaced.
 
-> The source repo moved to the `Blue-Dots-Economy` org; the old
-> `sanketika-labs` URL recorded here was stale. Note also that the SMS vendor
-> providers live on the **`enhancements`** branch, not `main` — `main` carries
-> no msg91 provider at all, so a jar built from it would break every cluster
-> running `smsProvider: msg91`.
+> The source repo is in the `Blue-Dots-Economy` org. Build from **`main`**: it
+> carries every SMS vendor provider (`log`, `twilio`, `sns`, `msg91`, `http`)
+> and both email OTP transports.
 
 The jar is committed rather than fetched at build time so an image build is
 reproducible from a checkout alone, with no dependency on a second private repo
@@ -35,34 +33,59 @@ being reachable from the runner.
 - `hr.delmisoft.keycloak.otp.EmailOtpAuthenticatorFactory`
 - `hr.delmisoft.keycloak.otp.sms.SmsOtpAuthenticatorFactory`
 
-Plus an SMS SPI (`hr.delmisoft.keycloak.otp.sms.SmsSpi`) configured at runtime
-via `KC_SPI_SMS_PROVIDER` (`log` / `twilio` / `sns` / `msg91` / `http`) and the
-matching credential env vars, which the chart wires from the release Secret.
+Plus two SPIs, each selected at runtime by the chart:
+
+- **SMS** (`hr.delmisoft.keycloak.otp.sms.SmsSpi`, SPI id `sms`): selected by
+  `KC_SPI_SMS_PROVIDER` (`log` / `twilio` / `sns` / `msg91` / `http`), with the
+  matching credential env vars the chart wires from the release Secret. Chart
+  value `smsProvider`.
+- **Email OTP** (`hr.delmisoft.keycloak.otp.email.OtpEmailSenderSpi`, SPI id
+  `otp-email`): `smtp` (the realm's SMTP server, the default by provider order)
+  or `http` (notification-service). Selected by `KC_SPI_OTP_EMAIL__PROVIDER`,
+  with a double underscore, the current SPI option format. Chart value
+  `otpEmailProvider`; the chart renders the env only for `http`. Ships in the
+  jar built from `main` after Plan F3 (the jar committed here predates it).
+
+`META-INF/services/org.keycloak.protocol.oidc.grants.OAuth2GrantTypeFactory`
+adds the `urn:otp:email` and `urn:otp:sms` direct grants.
 
 ### `http` — the preferred provider
 
 `http` posts the OTP to **notification-service** rather than calling a vendor
-from inside Keycloak. Prefer it: every SMS vendor after MSG91 then becomes an
+(or an SMTP server) from inside Keycloak. Both SPIs have one, and they share one
+NS connection. Prefer it: every SMS vendor after MSG91 then becomes an
 NS-only change, instead of repeating this whole chain (Java PR → jar → image →
 tag pin → chart values) per vendor. It also collapses the login-OTP template id,
 which currently exists twice — `msg91TemplateId` here and
 `SMS_LOGIN_OTP_TEMPLATE_ID` in NS.
 
-Shipped in `1.2.0-SNAPSHOT` (`HttpSmsProviderFactory`).
+The jar built from `main` after Plan F3 posts to **`/v1/notify`** with **HMAC
+v2**, which is what the chart's default `SMS_HTTP_URL` targets. (The
+`1.2.0-SNAPSHOT` jar committed here posts to the legacy `/notify` with HMAC v1;
+replace it before setting either transport to `http` — see "Bumping the
+version".)
 
-It must send NS's HMAC envelope (`X-NS-Key`, `X-NS-Timestamp`, `X-NS-Nonce`,
-`X-NS-Signature` over `METHOD\nPATH\nTIMESTAMP\nNONCE`) and a body of:
+Each request carries NS's HMAC v2 envelope: `X-NS-Key`, `X-NS-Timestamp`,
+`X-NS-Nonce` and `X-NS-Signature: v2=<hex>`, an HMAC-SHA256 over
+`METHOD\nPATH\nTIMESTAMP\nNONCE\nsha256(body)` (the path includes any query; a
+fresh nonce per request). The body names a template:
 
 ```json
-{"channel":"sms","to":"+9190...","template_id":"login_otp",
- "priority":"realtime","variables":{"message":"123456"}}
+{"template_key":"login_otp","channel":"sms","to":{"phone":"+9190..."},
+ "variables":{"message":"123456"},"priority":"urgent"}
+{"template_key":"login_otp","channel":"email","to":{"email":"user@example.org"},
+ "variables":{"message":"123456"},"priority":"urgent"}
 ```
 
-No message text: `login_otp` is a template NS *names*, so NS owns both the
-vendor's template id and the body. Env wired by the chart when
-`smsProvider: http`: `SMS_HTTP_URL`, `SMS_HTTP_TEMPLATE_ID`,
-`SMS_HTTP_OTP_VAR_NAME`, `SMS_HTTP_KEY_ID`, `SMS_HTTP_TIMEOUT_MS`, plus
-`SMS_HTTP_SECRET` from the Secret.
+No message text: `login_otp` is a template NS *names*, so NS owns the vendor's
+template id, the SMS body and the email subject and body (the email template
+comes from the cluster's NS catalogue). Env wired by the chart when
+`smsProvider` or `otpEmailProvider` is `http`: `SMS_HTTP_URL`,
+`SMS_HTTP_KEY_ID`, `SMS_HTTP_TIMEOUT_MS` (shared), `SMS_HTTP_TEMPLATE_ID`,
+`SMS_HTTP_OTP_VAR_NAME` (SMS), plus `SMS_HTTP_SECRET` from the Secret. Email
+reads `OTP_EMAIL_HTTP_TEMPLATE_ID` (default `login_otp`) and
+`OTP_EMAIL_HTTP_OTP_VAR_NAME` (default `message`); the defaults match the
+catalogue, so the chart sets neither.
 
 The trade-off is that login OTP gains a hard dependency on notification-service
 being reachable from `common-services`.
@@ -73,10 +96,17 @@ notification-service holds the authoritative text and the string Keycloak's
 theme renders is discarded.
 
 > Setting `smsProvider: http` on an image built from a jar older than
-> `1.2.0-SNAPSHOT` fails at **session-factory init** — the pod CrashLoopBackOffs
-> on an unknown SPI provider id. It is not a realm-import failure, so look in
-> the container log rather than the realm-init Job. Either way it does not
-> silently degrade to another vendor.
+> `1.2.0-SNAPSHOT` stops Keycloak at startup (`kc.sh start` exits 1 with
+> `Failed to find provider http for sms`; verified on 26.7.3 with the 1.0.0
+> jar), so the pod CrashLoopBackOffs. It is not a realm-import failure, so look
+> in the container log rather than the realm-init Job. It does not silently
+> degrade to another vendor.
+>
+> `otpEmailProvider: http` needs the Plan F3 jar. Without it the setting has no
+> effect on email OTP: Keycloak starts normally and keeps sending email OTP
+> over SMTP (verified on 26.7.3 with the committed `1.2.0-SNAPSHOT` jar and
+> `KC_SPI_OTP_EMAIL__PROVIDER=http`: clean start, no warning). Check the jar
+> before relying on the flip.
 >
 > **Pin an immutable image tag before flipping the value.** The chart defaults to
 > `image.tag: develop` with `pullPolicy: IfNotPresent`, so a node holding a
@@ -100,10 +130,10 @@ order. When bumping, **replace** the old jar — never leave both.
 ## Bumping the version
 
 ```bash
-# 1. Build the jar from its own repo (Java 17+, uses the bundled wrapper).
-#    Build from `enhancements`, NOT `main` — see the note above.
+# 1. Build the jar from its own repo's `main` (Java 17+, uses the bundled
+#    wrapper). Its pom's keycloak.version tracks the runtime in ../Dockerfile.
 git clone https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator
-cd keycloak-otp-authenticator && git switch enhancements
+cd keycloak-otp-authenticator && git switch main
 ./mvnw clean package -DskipTests
 
 # 2. Replace the jar here (delete the old one — see above)
