@@ -146,6 +146,7 @@ jobs:
                   --set rdsRelay.enabled=true \
                   --set postgres.host=ci-smoke.invalid \
                   --set credentials.postgresAdminPassword=ci-smoke \
+                  --set credentials.notificationPassword=ci-smoke \
                   --set clusterAutoscaler.enabled=true \
                   --set clusterAutoscaler.clusterName=ci-smoke \
                   --set clusterAutoscaler.awsRegion=ap-south-1 \
@@ -198,6 +199,30 @@ jobs:
             esac
             echo "::endgroup::"
           done
+
+      # An empty notification-service role password must fail the render, not
+      # reach `ALTER ROLE notification WITH PASSWORD ''` (which clears it and
+      # succeeds). Guards the `required` in postgres-bootstrap-job.yaml.
+      - name: postgres bootstrap refuses an empty notification password
+        run: |
+          set -uo pipefail
+          if helm template common-services helm/common-services -f helm/global-resources.yaml \
+              --set postgresBootstrap.enabled=true \
+              --set postgres.host=ci-smoke.invalid \
+              --set credentials.postgresAdminPassword=ci-smoke \
+              --show-only templates/postgres-bootstrap-job.yaml >/dev/null 2>/tmp/ns-pw.err; then
+            echo "::error::bootstrap Job rendered without credentials.notificationPassword"
+            exit 1
+          fi
+          grep -q 'credentials.notificationPassword is required' /tmp/ns-pw.err
+          # ...and a cluster that opts out of the role still renders.
+          helm template common-services helm/common-services -f helm/global-resources.yaml \
+            --set postgresBootstrap.enabled=true \
+            --set postgres.host=ci-smoke.invalid \
+            --set credentials.postgresAdminPassword=ci-smoke \
+            --set postgresBootstrap.notificationRole.enabled=false \
+            --show-only templates/postgres-bootstrap-job.yaml >/dev/null
+          echo "OK"
 
       # Every Docker Hardened Image the charts deploy is served from OUR GHCR
       # mirror, not from dhi.io (see the header of helm/*/values.yaml for why).

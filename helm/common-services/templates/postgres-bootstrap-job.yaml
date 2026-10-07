@@ -12,6 +12,17 @@ Renders only when bootstrap is enabled AND the RDS host + admin password are kno
 so `helm template`/`lint` stay clean before the opentofu overlay populates them.
 */}}
 {{- if and .Values.postgresBootstrap.enabled .Values.postgres.host .Values.credentials.postgresAdminPassword }}
+{{- /* notification-service's role password is mandatory whenever the role is
+       managed here. An empty value would otherwise reach
+       `ALTER ROLE notification WITH PASSWORD ''`, which Postgres treats as
+       clearing the password — the Job succeeds and NS can never log in.
+       Clusters that do not run NS on this Postgres set
+       postgresBootstrap.notificationRole.enabled=false AND drop the
+       `notification` entry from postgresBootstrap.databases (its owner role
+       would not exist). */}}
+{{- if .Values.postgresBootstrap.notificationRole.enabled }}
+{{- $_ := required "credentials.notificationPassword is required while postgresBootstrap.notificationRole.enabled=true (regenerate global-secrets.yaml with `install.sh apply_tf_output_file`, or disable postgresBootstrap.notificationRole and drop the notification database entry)" .Values.credentials.notificationPassword }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -75,16 +86,23 @@ spec:
                   name: data-postgres
                   key: signals-export-ro-password
                   optional: true
+            {{- if .Values.postgresBootstrap.notificationRole.enabled }}
             - name: NOTIFICATION_PW
               valueFrom:
                 secretKeyRef:
                   name: data-postgres
                   key: notification-password
-                  optional: true
+            {{- end }}
           command:
             - sh
             - -ec
             - |
+              set -e
+              {{- if .Values.postgresBootstrap.notificationRole.enabled }}
+              # Belt-and-braces for the render-time `required` above: an empty
+              # password would make ALTER ROLE clear it rather than fail.
+              : "${NOTIFICATION_PW:?NOTIFICATION_PW is empty — data-postgres has no notification-password}"
+              {{- end }}
               echo "waiting for postgres at $PGHOST:$PGPORT"
               i=0
               until pg_isready -h "$PGHOST" -p "$PGPORT" -U postgres >/dev/null 2>&1; do
