@@ -47,6 +47,7 @@ resource "local_sensitive_file" "global_secrets" {
     signals_auth_secret                     = var.signals_auth_secret
     signals_pii_key                         = var.signals_pii_key
     signals_notification_secret             = var.signals_notification_secret
+    ns_admin_secret                         = var.ns_admin_secret
     signals_search_api_key                  = var.signals_search_api_key
     raya_voice_bot_api_key                  = var.raya_voice_bot_api_key
     signals_instance_shared_secret          = var.signals_instance_shared_secret

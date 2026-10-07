@@ -2,6 +2,10 @@
 {{- if and (not .Values.config.SMTP_HOST) (ne (.Values.config.SMTP_AWS_SES | toString) "true") }}
 {{- fail "notification-service: no mail transport configured. Set config.SMTP_HOST (with SMTP_PORT/SMTP_SECURE and the SMTP_USER/SMTP_PASS secrets) or config.SMTP_AWS_SES=true." }}
 {{- end }}
+{{- /* Send API v1 sends every email from EMAIL_FROM_ADDRESS; without it each one fails permanently. */}}
+{{- if not (trim (default "" .Values.config.EMAIL_FROM_ADDRESS)) }}
+{{- fail "notification-service: config.EMAIL_FROM_ADDRESS is required (the From address for every email)." }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,9 +14,18 @@ metadata:
     {{- include "dpg-notification-service.labels" . | nindent 4 }}
 data:
   {{- range $key, $val := .Values.config }}
-  {{- if ne ($val | toString) "" }}
+  {{- /* SMS_LOGIN_OTP_TEMPLATE_ID: NS publishes its login_otp row from this on
+         first boot and never re-reads it, so the house placeholder from an
+         older generated global-secrets.yaml must not reach it — unset instead. */}}
+  {{- if not (or (eq ($val | toString) "") (and (eq $key "SMS_LOGIN_OTP_TEMPLATE_ID") (eq ($val | toString) "UPDATE_THIS_VALUE"))) }}
   {{ $key }}: {{ $val | quote }}
   {{- end }}
+  {{- end }}
+  {{- if .Values.content }}
+  NS_CONTENT_FILE: "/app/content/content.json"
+  {{- end }}
+  {{- if .Files.Get "files/catalogue/ns-catalogue.json" }}
+  NS_SEED_FILE: "/app/seed/ns-catalogue.json"
   {{- end }}
   {{- with (include "dpg-notification-service.keycloakEnv" . | trim) }}
   {{- . | nindent 2 }}

@@ -54,93 +54,17 @@ data:
   /app/schemas/<brand>/consent.json via the api deployment's volume `items`
   mapping. Source: files/consent/<net>.<brand>.json.
 
-  Conditioned on the SOURCE FILE, not on schemas.consentBrand — same reason the
-  messages.properties blocks below are. In --consent-brand-mode=replace the
-  brand document IS the served consent.json above (it covers every key, so the
-  network default could never be reached) and no brand file is written; keying
-  this off consentBrand would then fail a render that is deliberately
-  single-file. consentBrand stays meaningful: it names the mount subdir and
-  selects the brand email copy.
+  Conditioned on the SOURCE FILE, not on schemas.consentBrand. In
+  --consent-brand-mode=replace the brand document IS the served consent.json
+  above (it covers every key, so the network default could never be reached)
+  and no brand file is written; keying this off consentBrand would then fail a
+  render that is deliberately single-file. consentBrand stays meaningful: it
+  names the mount subdir.
 */ -}}
 {{- if .Values.schemas.consentBrand }}
 {{- with $.Files.Get (printf "files/consent/%s.%s.json" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
   {{ $.Values.schemas.consentBrand }}-consent.json: |
 {{ . | replace "__SUPPORT_EMAIL__" $supportEmail | indent 4 }}
-{{- end }}
-{{- end }}
-{{- /*
-  Per-network email copy (signals-dpg#540). Same delivery as consent above and
-  keyed off the same consentNetwork/consentBrand values — the api resolves BOTH
-  from dirname(NETWORK_CONFIG_LOCAL_FILE), so one served network must select
-  both or the pod would render one network's consent beside another's emails.
-
-  OPTIONAL, unlike consent: the api bundles a complete set of email copy and
-  merges these PER KEY, so an absent file means "keep the bundled wording", not
-  a broken deploy. Hence `with` on the file contents rather than `fail`.
-
-  Not templated. Unlike consent there is no __SUPPORT_EMAIL__ substitution here:
-  the copy's own placeholders are {{`{{likeThis}}`}} and are filled by the api at
-  send time, so Helm must pass the file through byte-for-byte.
-
-  Source: files/messages/<net>.properties, fetched by scripts/fetch-configs.sh.
-  The search subchart reuses this ConfigMap and dir-scans /app/schemas for
-  *.json, so a .properties file is invisible to it.
-*/ -}}
-{{- with $.Files.Get (printf "files/messages/%s.properties" .Values.schemas.consentNetwork) }}
-  messages.properties: |
-{{ . | indent 4 }}
-{{- end }}
-{{- if .Values.schemas.consentBrand }}
-{{- /*
-  Brand copy is a PARTIAL override merged over the network file, so — exactly
-  like brand consent — both must be delivered. Placed at
-  /app/schemas/<brand>/messages.properties by the deployment's volume `items`.
-  NOTE: brand email copy has no effect yet (no send resolves a brand at send
-  time); it loads and validates at boot. See bluedots-schemas#14.
-*/ -}}
-{{- with $.Files.Get (printf "files/messages/%s.%s.properties" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
-  {{ $.Values.schemas.consentBrand }}-messages.properties: |
-{{ . | indent 4 }}
-{{- end }}
-{{- end }}
-{{- /*
-  Per-network SMS templates (signals-dpg#595). Delivered exactly like the email
-  copy above and selected by the same consentNetwork/consentBrand values, for
-  the same reason: the api resolves consent, email copy and SMS templates all
-  from dirname(NETWORK_CONFIG_LOCAL_FILE), so one value has to pick them
-  together or a pod could serve one network's templates beside another's copy.
-
-  OPTIONAL and merged PER KEY over a complete bundled registry, so an absent
-  file means "keep the bundled templates", not a broken deploy — hence `with`
-  rather than `fail`.
-
-  Nothing here is message text the api sends. Each case carries a DLT template
-  id, a reference body and the variable contract; the delivered text is rendered
-  by the vendor from the DLT-approved template (MSG91) or posted verbatim by
-  notification-service (Pinnacle). A BLANK template_id means "not DLT-approved
-  yet" and the api skips that send — which is why this ships safely before any
-  template is registered.
-
-  Not templated: the bodies carry {{`{{likeThis}}`}} placeholders filled at send
-  time, so Helm must pass the file through byte-for-byte.
-
-  Source: files/sms/<net>.properties, fetched by scripts/fetch-configs.sh. The
-  search subchart reuses this ConfigMap and dir-scans /app/schemas for *.json,
-  so a .properties file is invisible to it.
-*/ -}}
-{{- with $.Files.Get (printf "files/sms/%s.properties" .Values.schemas.consentNetwork) }}
-  sms.properties: |
-{{ . | indent 4 }}
-{{- end }}
-{{- if .Values.schemas.consentBrand }}
-{{- /*
-  Brand SMS templates are a PARTIAL override merged over the network file, so
-  both must be delivered. Placed at /app/schemas/<brand>/sms.properties by the
-  deployment's volume `items`.
-*/ -}}
-{{- with $.Files.Get (printf "files/sms/%s.%s.properties" .Values.schemas.consentNetwork .Values.schemas.consentBrand) }}
-  {{ $.Values.schemas.consentBrand }}-sms.properties: |
-{{ . | indent 4 }}
 {{- end }}
 {{- end }}
 {{- end }}

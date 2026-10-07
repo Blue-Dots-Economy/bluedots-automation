@@ -36,6 +36,11 @@ output "signals_notification_secret" {
   sensitive = true
 }
 
+output "ns_admin_secret" {
+  value     = random_id.ns_admin_secret.hex
+  sensitive = true
+}
+
 output "signals_instance_shared_secret" {
   value     = random_id.signals_instance_shared_secret.hex
   sensitive = true

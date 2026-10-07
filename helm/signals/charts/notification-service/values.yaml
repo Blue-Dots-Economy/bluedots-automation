@@ -88,7 +88,17 @@ config:
   SMTP_HOST: ""
   SMTP_PORT: ""      # default 587 when SMTP_HOST is set
   SMTP_SECURE: ""    # default: true only on port 465, else STARTTLS on 587
-  SMTP_FROM: ""      # fixed envelope sender; empty = the caller's fromEmail
+  SMTP_FROM: ""      # relay only: overrides the From address; empty = EMAIL_FROM_ADDRESS (Gmail: SMTP_USER)
+  # From for every v1 email. The address must be a mailbox the relay accepts as
+  # sender, usually SMTP_USER; the render fails without it. The name is optional
+  # (NS shows the address when it is empty), and a cluster sets its own name by
+  # overriding this key in its values. On an SMTP relay (SMTP_HOST), SMTP_FROM
+  # when set, or SMTP_USER on smtp.gmail.com, supplies the address in the From
+  # header and EMAIL_FROM_NAME stays as the display name, so keep SMTP_FROM and
+  # EMAIL_FROM_ADDRESS on the same mailbox. With SMTP_AWS_SES=true the From is
+  # EMAIL_FROM_ADDRESS itself, so set it to a verified SES identity.
+  EMAIL_FROM_ADDRESS: ""
+  EMAIL_FROM_NAME: ""
   # Inert: the service never reads this key (it appears only in the upstream
   # repo's docker-compose.yaml and example.env). WhatsApp is a supported
   # channel — `src/lib/providers/whatsapp` registers at boot like any other —
@@ -110,8 +120,12 @@ config:
   PINNACLE_DLT_HEADER_ID: ""    # optional; omitted from the request when empty
   PINNACLE_DLT_TAG_ID: ""       # optional
   PINNACLE_TMID: ""             # optional
-  # Pinnacle's DLT template id for `login_otp`. Blank until approval lands; a
-  # blank id dead-letters the job with an explicit "not configured yet".
+  # Pinnacle's DLT template id for `login_otp`. At boot, when NS has no pinnacle
+  # login_otp row yet, it seeds one from this id and SMS_LOGIN_OTP_BODY: id and
+  # body give an active template, an id alone gives a draft for an admin to
+  # complete and publish. Blank until approval lands, and a blank id seeds no
+  # login_otp row; until one is active (set the id and restart NS, or publish
+  # through the admin API), a login_otp send answers 422 `not_found`.
   PINNACLE_LOGIN_OTP_TEMPLATE_ID: ""
   # Network this deployment serves (e.g. blue_dot). Stamped on every template,
   # policy and audit row; never taken from a request. Set by opentofu.
@@ -144,7 +158,6 @@ secrets:
     SMTP_PASS: ""
     # MSG91 SMS provider — required for mobile OTP login flow.
     MSG91_AUTH_KEY: ""
-    MSG91_TEMPLATE_ID: ""
     # Pinnacle SMS provider — required when config.SMS_PROVIDER=pinnacle.
     PINNACLE_API_KEY: ""
 
@@ -178,6 +191,18 @@ internalSecrets:
   # Raw JSON contents. Override via --set-file internalSecrets.json=./internal-secrets.json
   json: |
     {}
+
+# Shared public content (e.g. T&C urls/text) resolved by NS for `content_ref` template
+# variables. Empty = no ConfigMap, no mount, no NS_CONTENT_FILE. Shape:
+#   content:
+#     version: "2026-10-01"
+#     entries:
+#       tnc.in_force.url: { en: "https://...", hi-IN: "https://..." }
+# Keys are dotted lowercase (`tnc.in_force.url`, `tnc.on_offer.text`); locales look
+# like `en` or `hi-IN`. Mounted at /app/content (NOT /app/config, which is the
+# read-only internal-secrets mount); NS reloads the file every 30 s. `version` is
+# required (render fails without it); a numeric version is rendered as a string.
+content: {}
 
 podDisruptionBudget:
   enabled: false
@@ -225,3 +250,8 @@ metrics:
     dlqGrowthThreshold: 10
     # Realtime (OTP) queue depth that means sends are lagging, not just busy.
     realtimeBacklogThreshold: 50
+    # Seconds since any pod last loaded the content file before warning. Only
+    # rendered when `content` is set. NS reloads every 30 s and stamps
+    # ns_content_loaded on every successful reload, so 600 s is ~20 missed
+    # reloads — well clear of a slow tick or a rolling restart.
+    contentStaleSeconds: 600
