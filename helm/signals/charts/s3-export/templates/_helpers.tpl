@@ -76,3 +76,19 @@ imagePullSecrets:
 {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end -}}
+
+{{/*
+Name of the Secret carrying AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, or "" if
+the exporter should use no static credentials at all (the AWS/IRSA case).
+
+Resolved in ONE place because the name is needed by both secret.yaml (to render
+it) and cronjob.yaml (to mount it); duplicating the precedence rule is how the
+two drift and the job silently starts with no credentials.
+*/}}
+{{- define "dpg-s3-export.credentialsSecretName" -}}
+{{- if .Values.s3.existingCredentialsSecret -}}
+{{- .Values.s3.existingCredentialsSecret -}}
+{{- else if and .Values.s3.credentials.accessKeyId .Values.s3.credentials.secretAccessKey -}}
+{{- printf "%s-s3" (include "dpg-s3-export.fullname" .) -}}
+{{- end -}}
+{{- end -}}

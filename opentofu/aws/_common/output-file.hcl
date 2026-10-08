@@ -101,6 +101,7 @@ dependency "random_passwords" {
     signals_postgres_password      = "00000000000000000000000000000001"
     signals_export_ro_password     = "0000000000000000000000000000000e"
     signals_redis_password         = "00000000000000000000000000000002"
+    minio_root_password            = "00000000000000000000000000000003"
     signals_auth_secret            = "00000000000000000000000000000003"
     signals_pii_key                = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
     signals_notification_secret    = "00000000000000000000000000000004"
@@ -140,6 +141,12 @@ inputs = {
   # Storage — one public bucket, likewise shared with the s3-export CronJob.
   storage_bucket_public = dependency.storage.outputs.storage_bucket_public == null ? "" : dependency.storage.outputs.storage_bucket_public
 
+  # S3-compatible object store (MinIO on platforms with no managed S3). All three
+  # are optional in global-values.yaml, so AWS environments need no change.
+  s3_endpoint         = try(local.global_vars.global.s3_endpoint, "")
+  s3_public_endpoint  = try(local.global_vars.global.s3_public_endpoint, "")
+  s3_force_path_style = try(local.global_vars.global.s3_force_path_style, false)
+
   # RDS (managed Postgres) — endpoint hostname injected into all three chart overlays
   postgres_host = dependency.rds.outputs.db_address
 
@@ -151,6 +158,7 @@ inputs = {
   signals_postgres_password      = dependency.random_passwords.outputs.signals_postgres_password
   signals_export_ro_password     = dependency.random_passwords.outputs.signals_export_ro_password
   signals_redis_password         = dependency.random_passwords.outputs.signals_redis_password
+  minio_root_password            = dependency.random_passwords.outputs.minio_root_password
   signals_auth_secret            = dependency.random_passwords.outputs.signals_auth_secret
   signals_pii_key                = dependency.random_passwords.outputs.signals_pii_key
   signals_notification_secret    = dependency.random_passwords.outputs.signals_notification_secret

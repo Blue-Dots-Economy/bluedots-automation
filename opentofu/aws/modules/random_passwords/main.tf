@@ -19,6 +19,12 @@ resource "random_id" "signals_redis_password" {
   byte_length = var.signals_redis_password_bytes
 }
 
+# MinIO root password. Only consumed where the self-hosted MinIO subchart is
+# enabled (no managed object store); inert on AWS, which uses real S3 + IRSA.
+resource "random_id" "minio_root_password" {
+  byte_length = var.minio_root_password_bytes
+}
+
 resource "random_id" "signals_auth_secret" {
   byte_length = var.signals_auth_secret_bytes
 }
