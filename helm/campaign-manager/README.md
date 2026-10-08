@@ -89,7 +89,7 @@ Set `pipeline.enabled: true` to deploy the CronJob and the database Job.
 | `pipeline.secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
 | `pipeline.secrets.CLIENT_SECRET` | Secret of the Keycloak client. | `xxx` |
 | `pipeline.database.host` | Postgres host. | `postgres.databases.svc.cluster.local` |
-| `pipeline.database.name`, `pipeline.database.user` | Database and user the pipeline uses. Created for you if missing. Defaults to `purple`. | `purple`, `purple` |
+| `pipeline.database.name`, `pipeline.database.user` | Database and user the pipeline uses. Created for you if missing. Both default to `campaign_manager`. | `campaign_manager`, `campaign_manager` |
 | `pipeline.database.password` | Password for that user. | `a-strong-password` |
 | `pipeline.dbInit.admin.user`, `pipeline.dbInit.admin.password` | Admin account used once to create the user and database. Only the database Job sees it. | `postgres`, `xxx` |
 | `pipeline.args` | Extra arguments for the run, for example to skip a stage. | `["--skip", "inbound"]` |

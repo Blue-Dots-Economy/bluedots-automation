@@ -126,8 +126,8 @@ pipeline:
   database:                      # DATABASE_URL is built from these
     host: ""                     # UPDATE: Postgres host
     port: 5432
-    name: purple
-    user: purple
+    name: campaign_manager
+    user: campaign_manager
     password: ""                 # UPDATE: password for the pipeline's own role
 
   dbInit:                        # creates the role, database and tables if missing
