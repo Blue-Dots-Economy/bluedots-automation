@@ -17,15 +17,15 @@ ingress:
 
 database:
   host: postgres.databases.svc.cluster.local
-  migratorPassword: a-strong-password
-  appPassword: a-strong-password
-  pipelinePassword: a-strong-password
+  migratorPassword: migrator-password
+  appPassword: app-password
+  pipelinePassword: pipeline-password
   admin:
-    password: xxx
+    password: postgres-admin-password
 
 secrets:
-  SESSION_SECRET: a-long-random-string
-  CRON_SECRET: a-long-random-string
+  SESSION_SECRET: random-session-secret
+  CRON_SECRET: random-cron-secret
   RAYA_API_KEY: raya_xxx
   GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"example"}'
 
@@ -41,5 +41,4 @@ pipeline:
     REALM: bluedots
     CLIENT_ID: campaign-manager
   secrets:
-    RAYA_API_KEY: raya_xxx
-    CLIENT_SECRET: xxx
+    CLIENT_SECRET: keycloak-client-secret

@@ -98,7 +98,7 @@ Set `pipeline.enabled: true` to deploy the CronJob. It uses the database above, 
 | `pipeline.config.BASE_URL` | Host that serves `/v1/campaign/dump`, for the S3 dump. | `https://aggregator.example.com` |
 | `pipeline.config.KEYCLOAK_URL` | Keycloak base URL. | `https://auth.example.com/auth` |
 | `pipeline.config.REALM`, `pipeline.config.CLIENT_ID` | Keycloak realm and the service-account client. | `bluedots`, `campaign-manager` |
-| `pipeline.secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
+| `pipeline.secrets.RAYA_API_KEY` | Only if the pipeline needs a different Raya key. Empty means it uses `secrets.RAYA_API_KEY`. | leave empty |
 | `pipeline.secrets.CLIENT_SECRET` | Secret of the Keycloak client. | `xxx` |
 | `pipeline.args` | Extra arguments for the run, for example to skip a stage. | `["--skip", "platform"]` |
 
