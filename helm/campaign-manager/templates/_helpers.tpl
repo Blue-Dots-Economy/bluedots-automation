@@ -70,8 +70,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
-{{/* postgresql:// URL with the user and password percent-encoded. */}}
-{{- define "campaign-manager.pipeline.databaseUrl" -}}
-{{- $db := .Values.pipeline.database -}}
-{{- printf "postgresql://%s:%s@%s:%v/%s" (urlquery (required "pipeline.database.user is required" $db.user) | replace "+" "%20") (urlquery (required "pipeline.database.password is required" $db.password) | replace "+" "%20") (required "pipeline.database.host is required" $db.host) $db.port (required "pipeline.database.name is required" $db.name) -}}
+{{/* postgresql:// URL for one role, user and password percent-encoded. Args: db, user, password, key. */}}
+{{- define "campaign-manager.databaseUrl" -}}
+{{- $db := .db -}}
+{{- printf "postgresql://%s:%s@%s:%v/%s" (urlquery .user | replace "+" "%20") (urlquery (required (printf "%s is required" .key) .password) | replace "+" "%20") (required "database.host is required" $db.host) $db.port (required "database.name is required" $db.name) -}}
 {{- end -}}

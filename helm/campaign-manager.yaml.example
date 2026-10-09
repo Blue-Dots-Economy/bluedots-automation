@@ -15,20 +15,18 @@ ingress:
     enabled: true
     secretName: campaign-manager-tls
 
-config:
-  SUPABASE_URL: https://abcd1234.supabase.co
-  PURPLE_SUPABASE_URL: https://efgh5678.supabase.co
-  PURPLE_CUTOVER: "false"
+database:
+  host: postgres.databases.svc.cluster.local
+  migratorPassword: a-strong-password
+  appPassword: a-strong-password
+  pipelinePassword: a-strong-password
+  admin:
+    password: xxx
 
 secrets:
-  SUPABASE_PUBLISHABLE_KEY: sb_publishable_xxx
-  SUPABASE_SERVICE_ROLE_KEY: sb_secret_xxx
-  PURPLE_SUPABASE_SERVICE_ROLE_KEY: sb_secret_xxx
-  LOVABLE_CRON_SECRET: a-long-random-string
-  LOVABLE_CRON_SECRET_PREVIOUS: the-old-random-string
+  SESSION_SECRET: a-long-random-string
+  CRON_SECRET: a-long-random-string
   RAYA_API_KEY: raya_xxx
-  GOOGLE_SHEETS_API_KEY: AIza-xxx
-  LOVABLE_API_KEY: lov_xxx
   GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"example"}'
 
 pipeline:
@@ -45,9 +43,3 @@ pipeline:
   secrets:
     RAYA_API_KEY: raya_xxx
     CLIENT_SECRET: xxx
-  database:
-    host: postgres.databases.svc.cluster.local
-    password: a-strong-password
-  dbInit:
-    admin:
-      password: xxx

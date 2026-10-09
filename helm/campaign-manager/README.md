@@ -1,6 +1,6 @@
 # campaign-manager
 
-Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators manage voice-AI outreach campaigns. It is a standalone chart: it does not depend on the other charts and is not part of the `install.sh` flow.
+Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators manage voice-AI outreach campaigns. It stores its data in Postgres. It is a standalone chart: it does not depend on the other charts and is not part of the `install.sh` flow.
 
 ## What it deploys
 
@@ -8,14 +8,17 @@ Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators m
 |---|---|
 | Deployment, Service | The Campaign Manager web app (listens on port 3000). |
 | Ingress | Exposes the app on your domain, with an HTTPS certificate from cert-manager. |
-| ConfigMap, Secret | Non-secret settings and credentials, injected into the app as environment variables. |
-| CronJob | Purple Dots data pipeline. Loads Raya calls and the platform S3 dump into Postgres. |
-| Job | Runs after every install and upgrade. Creates the pipeline's Postgres user, database and tables if they are missing. |
+| ConfigMap, Secret | Settings and credentials, injected into the app as environment variables. |
+| Database Job | Runs after every install and upgrade. Creates the Postgres roles (`migrator`, `cm_app`, `purple_loader`), the database and its schemas if they are missing. |
+| Migrate Job | Runs after the database Job. Applies the app's schema migrations. |
+| Pipeline schema Job | Runs after the Migrate Job. Creates the pipeline's own tables (`purple_users`, `purple_items`, `purple_actions`) in the `platform` schema, as `purple_loader`. Only deployed with the pipeline. |
+| CronJob | Purple Dots data pipeline. Loads Raya calls and the platform S3 dump into the same database, which is where the app reads them. |
 
-The app stores its data in Supabase, which is external to the chart. The pipeline writes to a Postgres you point it at.
+Each component connects with its own Postgres role: the app as `cm_app`, the migrations as `migrator` (owns the schema), the pipeline as `purple_loader`. The jobs run in this order: Database Job, Migrate Job, Pipeline schema Job.
 
 ## Before you configure
 
+- A Postgres server the cluster can reach, and its admin credentials.
 - An ingress controller in the cluster, and a DNS record for your domain pointing at its load balancer.
 - cert-manager with a ClusterIssuer, to issue the HTTPS certificate automatically.
 - A namespace of your choice. Install the release into it, and create it with `--create-namespace` if it does not exist.
@@ -51,33 +54,42 @@ If the registry is private, create an image pull secret named `ghcr-pull` in the
 | `ingress.annotations` | Annotations for your controller. For automatic HTTPS, name your ClusterIssuer (`kubectl get clusterissuer`). | `cert-manager.io/cluster-issuer: letsencrypt-prod` |
 | `ingress.tls.enabled`, `ingress.tls.secretName` | Serve HTTPS from this certificate Secret. | `true`, `campaign-manager-tls` |
 
-### App settings (`config`)
+### Database
 
 | Key | What it is | Example |
 |---|---|---|
-| `config.SUPABASE_URL` | Supabase project URL. | `https://abcd1234.supabase.co` |
-| `config.PURPLE_SUPABASE_URL` | Purple Dots Supabase project URL. | `https://efgh5678.supabase.co` |
-| `config.PURPLE_CUTOVER` | Purple Dots cutover flag. | `"false"` |
+| `database.host` | Postgres host. | `postgres.databases.svc.cluster.local` |
+| `database.name` | Database to create and use. Defaults to `campaign_manager`. | `campaign_manager` |
+| `database.admin.user`, `database.admin.password` | Admin account, used only by the database Job to create the roles and database. | `postgres`, `xxx` |
+| `database.migratorPassword` | Password for the `migrator` role. | `a-strong-password` |
+| `database.appPassword` | Password for the `cm_app` role. | `a-strong-password` |
+| `database.pipelinePassword` | Password for the `purple_loader` role. | `a-strong-password` |
+
+The role passwords are set on the roles every time the database Job runs, so changing one here and upgrading rotates it.
+
+### Migrations
+
+| Key | What it is | Example |
+|---|---|---|
+| `migrate.enabled` | Run the migrations after every install and upgrade. Already applied migrations are skipped. | `true` |
+| `migrate.image.repository`, `migrate.image.tag` | Only to run the migrations from a different image. Empty means the app image, which contains them. | leave empty |
+| `migrate.command` | Command that applies the migrations. | `["node", "migrate/migrate.mjs"]` |
 
 ### App credentials (`secrets`)
 
 | Key | What it is | Example |
 |---|---|---|
-| `secrets.SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key. | `sb_publishable_xxx` |
-| `secrets.SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key. | `sb_secret_xxx` |
-| `secrets.PURPLE_SUPABASE_SERVICE_ROLE_KEY` | Service-role key of the Purple Dots project. | `sb_secret_xxx` |
-| `secrets.LOVABLE_CRON_SECRET` | Secret that authenticates cron calls to the app. | `a-long-random-string` |
-| `secrets.LOVABLE_CRON_SECRET_PREVIOUS` | The previous cron secret, still accepted while you rotate. | `the-old-random-string` |
+| `secrets.SESSION_SECRET` | Key that signs login sessions. | `a-long-random-string` |
+| `secrets.CRON_SECRET` | Secret that authenticates the sync hook called by your scheduler. | `a-long-random-string` |
+| `secrets.CRON_SECRET_PREVIOUS` | The previous cron secret, still accepted while you rotate. Leave empty otherwise. | `the-old-random-string` |
 | `secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
-| `secrets.GOOGLE_SHEETS_API_KEY` | Google Sheets API key. | `AIza...` |
 | `secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
-| `secrets.LOVABLE_API_KEY` | Lovable API key. | `lov_xxx` |
 
-To keep credentials out of Helm values, create a Secret yourself with the same keys and set `secrets.existingSecret` to its name.
+To keep credentials out of Helm values, create a Secret yourself with these keys plus `DATABASE_URL` (the `cm_app` connection string) and set `secrets.existingSecret` to its name.
 
 ### Purple Dots pipeline (`pipeline`)
 
-Set `pipeline.enabled: true` to deploy the CronJob and the database Job.
+Set `pipeline.enabled: true` to deploy the CronJob. It uses the database above, connecting as `purple_loader`.
 
 | Key | What it is | Example |
 |---|---|---|
@@ -88,11 +100,7 @@ Set `pipeline.enabled: true` to deploy the CronJob and the database Job.
 | `pipeline.config.REALM`, `pipeline.config.CLIENT_ID` | Keycloak realm and the service-account client. | `bluedots`, `campaign-manager` |
 | `pipeline.secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
 | `pipeline.secrets.CLIENT_SECRET` | Secret of the Keycloak client. | `xxx` |
-| `pipeline.database.host` | Postgres host. | `postgres.databases.svc.cluster.local` |
-| `pipeline.database.name`, `pipeline.database.user` | Database and user the pipeline uses. Created for you if missing. Both default to `campaign_manager`. | `campaign_manager`, `campaign_manager` |
-| `pipeline.database.password` | Password for that user. | `a-strong-password` |
-| `pipeline.dbInit.admin.user`, `pipeline.dbInit.admin.password` | Admin account used once to create the user and database. Only the database Job sees it. | `postgres`, `xxx` |
-| `pipeline.args` | Extra arguments for the run, for example to skip a stage. | `["--skip", "inbound"]` |
+| `pipeline.args` | Extra arguments for the run, for example to skip a stage. | `["--skip", "platform"]` |
 
 To run the pipeline once without waiting for the schedule:
 

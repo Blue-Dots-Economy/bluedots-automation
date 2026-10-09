@@ -44,26 +44,46 @@ ingress:
     enabled: false
     secretName: campaign-manager-tls
 
-# Non-secret runtime config, rendered into a ConfigMap and injected as env.
-config:
-  # UPDATE: Supabase project URLs (server-side).
-  SUPABASE_URL: ""
-  PURPLE_SUPABASE_URL: ""
-  PURPLE_CUTOVER: ""
+# Extra non-secret env for the app, rendered into a ConfigMap.
+config: {}
 
-# Sensitive runtime config, rendered into a Secret unless existingSecret is set.
+# App credentials, rendered into a Secret. Empty values are skipped.
 secrets:
-  # Name of a pre-created Secret carrying the same keys as below.
-  existingSecret: ""
-  SUPABASE_PUBLISHABLE_KEY: ""
-  SUPABASE_SERVICE_ROLE_KEY: ""
-  PURPLE_SUPABASE_SERVICE_ROLE_KEY: ""
-  LOVABLE_CRON_SECRET: ""
-  LOVABLE_CRON_SECRET_PREVIOUS: ""
-  GOOGLE_SERVICE_ACCOUNT_JSON: ""
-  GOOGLE_SHEETS_API_KEY: ""
-  LOVABLE_API_KEY: ""
-  RAYA_API_KEY: ""
+  existingSecret: ""             # or a Secret with DATABASE_URL and the keys below
+  SESSION_SECRET: ""             # UPDATE
+  CRON_SECRET: ""                # UPDATE
+  CRON_SECRET_PREVIOUS: ""       # only while rotating CRON_SECRET
+  RAYA_API_KEY: ""               # UPDATE
+  GOOGLE_SERVICE_ACCOUNT_JSON: ""   # UPDATE: service-account JSON as one string
+
+# Postgres shared by the app, the migrations and the pipeline.
+database:
+  host: ""                       # UPDATE
+  port: 5432
+  name: campaign_manager
+  migratorPassword: ""           # UPDATE: role migrator, owns the schema
+  appPassword: ""                # UPDATE: role cm_app, used by the app
+  pipelinePassword: ""           # UPDATE: role purple_loader, used by the pipeline
+  admin:
+    user: postgres
+    password: ""                 # UPDATE: used only by the database Job
+
+# Job that creates the roles, database and schemas if missing.
+dbInit:
+  enabled: true
+  image:
+    repository: postgres         # only used to run psql
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+
+# Job that applies the app's schema migrations from the app image, after the database Job.
+migrate:
+  enabled: true
+  image:
+    repository: ""               # empty = the app image
+    tag: ""                      # empty = the app image tag
+    pullPolicy: IfNotPresent
+  command: ["node", "migrate/migrate.mjs"]
 
 resources:
   requests:
@@ -88,7 +108,7 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Purple Dots data pipeline: CronJob loading Raya calls and the S3 dump into Postgres.
+# Purple Dots data pipeline: CronJob loading Raya calls and the S3 dump into Postgres (role purple_loader).
 pipeline:
   enabled: false
 
@@ -122,23 +142,6 @@ pipeline:
     existingSecret: ""           # or a Secret with DATABASE_URL, RAYA_API_KEY, CLIENT_SECRET
     RAYA_API_KEY: ""             # UPDATE
     CLIENT_SECRET: ""            # UPDATE: Keycloak service-account secret, for the S3 dump
-
-  database:                      # DATABASE_URL is built from these
-    host: ""                     # UPDATE: Postgres host
-    port: 5432
-    name: campaign_manager
-    user: campaign_manager
-    password: ""                 # UPDATE: password for the pipeline's own role
-
-  dbInit:                        # creates the role, database and tables if missing
-    enabled: true
-    image:
-      repository: postgres       # only used to run psql
-      tag: "17-alpine"
-      pullPolicy: IfNotPresent
-    admin:
-      user: postgres
-      password: ""               # UPDATE: admin password, used only by this Job
 
   resources:
     requests:
