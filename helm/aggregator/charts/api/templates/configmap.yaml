@@ -118,3 +118,10 @@ data:
   # Drives the "Already Registered - Sign In" chooser and post-submit redirect.
   SIGNALS_UI_URLS: {{ .Values.global.signalsUiUrls | quote }}
 {{- end }}
+  # RBAC (aggregator-dpg #849). OPA runs as a sidecar when the mode is not off;
+  # 127.0.0.1, not localhost, because the sidecar binds IPv4 loopback only.
+  RBAC_MODE: "{{ include "api.rbacMode" . }}"
+  OPA_URL: "http://127.0.0.1:{{ .Values.rbac.opa.port }}"
+  OPA_TIMEOUT_MS: "{{ .Values.rbac.opa.timeoutMs }}"
+  OPA_RETRIES: "{{ .Values.rbac.opa.retries }}"
+  OPA_BACKOFF_MS: "{{ .Values.rbac.opa.backoffMs }}"

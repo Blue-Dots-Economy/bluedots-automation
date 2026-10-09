@@ -115,3 +115,36 @@ securityContext:
   capabilities:
     drop:
       - ALL
+
+# RBAC policy engine (aggregator-dpg #849). `mode` is the api's RBAC_MODE:
+#   off     — no checks and no OPA sidecar (default)
+#   log     — decide every request and log denies, block nothing
+#   enforce — deny with 403
+# Any mode but `off` adds an OPA native sidecar and an init container that copies
+# the policy out of the api image (/app/policy/rbac/rbac.rego), so the image must
+# be a build that ships it. Quote the value: bare `off` is a YAML boolean.
+# See docs/aggregator-rbac-opa-plan.md.
+rbac:
+  mode: "off"
+  # Full rbac.yaml replacing the image's copy (roles, grants, permission sets).
+  # Blank = the image's own. Validated by the api at boot; an invalid file stops it.
+  config: ""
+  opa:
+    image:
+      repository: openpolicyagent/opa
+      tag: "1.21.1"
+      digest: "sha256:d3a9a6bd4fbcb0f4403294b0d0b239b07be163ac118a46df7d50045b52e52053"
+      pullPolicy: IfNotPresent
+    # Decision port, bound to 127.0.0.1: only the api container can reach it.
+    port: 8181
+    # Health and metrics only; the kubelet probes it on the pod IP.
+    diagnosticPort: 8282
+    # The api's per-attempt timeout, retries after the first attempt, and base
+    # backoff (doubles per retry). An engine failure is a deny.
+    timeoutMs: 500
+    retries: 1
+    backoffMs: 50
+    logLevel: error
+    resources:
+      requests: { cpu: 25m, memory: 48Mi }
+      limits: { cpu: 250m, memory: 128Mi }

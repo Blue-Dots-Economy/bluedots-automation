@@ -85,3 +85,31 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/*
+  The api's RBAC_MODE: off | log | enforce. A bare `off` in YAML is the boolean
+  false, so that reads as "off"; anything else fails the render.
+*/}}
+{{- define "api.rbacMode" -}}
+{{- $mode := toString .Values.rbac.mode -}}
+{{- if eq $mode "false" }}{{- $mode = "off" }}{{- end -}}
+{{- if not (has $mode (list "off" "log" "enforce")) -}}
+{{- fail (printf "aggregator-api.rbac.mode must be off, log or enforce (got %q)" $mode) -}}
+{{- end -}}
+{{- $mode -}}
+{{- end -}}
+
+{{/* Whether the OPA sidecar runs (any mode but off). */}}
+{{- define "api.rbacEnabled" -}}
+{{- if ne (include "api.rbacMode" .) "off" }}true{{ end -}}
+{{- end -}}
+
+{{/* OPA image, by digest when one is set. */}}
+{{- define "api.opaImage" -}}
+{{- $img := .Values.rbac.opa.image -}}
+{{- if $img.digest -}}
+{{ $img.repository }}:{{ $img.tag }}@{{ $img.digest }}
+{{- else -}}
+{{ $img.repository }}:{{ $img.tag }}
+{{- end -}}
+{{- end -}}

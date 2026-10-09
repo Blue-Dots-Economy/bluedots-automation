@@ -17,6 +17,12 @@
 */ -}}
 {{- $configPath := printf "/app/config/%s/aggregator.config.yaml" $net -}}
 {{- if $brand }}{{- $configPath = printf "/app/config/%s/%s/aggregator.config.yaml" $net $brand -}}{{- end -}}
+{{- /*
+  RBAC (aggregator-dpg #849). The api reads rbac.yaml from the same directory as
+  aggregator.config.yaml first, so an override is mounted there.
+*/ -}}
+{{- $rbac := include "api.rbacEnabled" . -}}
+{{- $rbacPath := printf "%s/rbac.yaml" (dir $configPath) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -36,12 +42,87 @@ spec:
         {{- include "api.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if $rbac }}
+        checksum/rbac: {{ include (print $.Template.BasePath "/rbac-configmap.yaml") . | sha256sum }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "api.serviceAccountName" . }}
       {{- include "api.imagePullSecrets" . | nindent 6 }}
       {{- include "api.hostAliases" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if $rbac }}
+      initContainers:
+        # Copies the RBAC policy out of the api image, so OPA always runs the
+        # policy this api build was tested with. The runtime image has no shell.
+        - name: rbac-policy
+          image: {{ include "api.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - node
+            - -e
+            - "require('fs').copyFileSync('/app/policy/rbac/rbac.rego', '/policy/rbac.rego')"
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          volumeMounts:
+            - name: rbac-policy
+              mountPath: /policy
+        # OPA as a native sidecar: it starts before the api and the api starts
+        # only after this startup probe passes. Decisions on 127.0.0.1 only;
+        # the kubelet probes the diagnostic port (health and metrics only).
+        - name: opa
+          image: {{ include "api.opaImage" . }}
+          imagePullPolicy: {{ .Values.rbac.opa.image.pullPolicy }}
+          restartPolicy: Always
+          args:
+            - run
+            - --server
+            - --addr=127.0.0.1:{{ .Values.rbac.opa.port }}
+            - --diagnostic-addr=0.0.0.0:{{ .Values.rbac.opa.diagnosticPort }}
+            - --authorization=basic
+            - --disable-telemetry
+            - --log-level={{ .Values.rbac.opa.logLevel }}
+            - /policy
+            - /authz
+          ports:
+            - name: opa-diag
+              containerPort: {{ .Values.rbac.opa.diagnosticPort }}
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /health
+              port: opa-diag
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: opa-diag
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: opa-diag
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            {{- toYaml (merge (dict "readOnlyRootFilesystem" true) (deepCopy .Values.securityContext)) | nindent 12 }}
+          {{- with .Values.rbac.opa.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: rbac-policy
+              mountPath: /policy
+              readOnly: true
+            - name: rbac
+              mountPath: /authz/authz.rego
+              subPath: authz.rego
+              readOnly: true
+      {{- end }}
       containers:
         - name: api
           image: {{ include "api.image" . }}
@@ -162,6 +243,13 @@ spec:
               subPath: aggregator.config.yaml
               readOnly: true
             {{- end }}
+            {{- if and $rbac .Values.rbac.config }}
+            # rbac.yaml override (rbac.config), read before the image's copy.
+            - name: rbac
+              mountPath: {{ $rbacPath }}
+              subPath: rbac.yaml
+              readOnly: true
+            {{- end }}
       volumes:
         - name: consent
           configMap:
@@ -170,4 +258,12 @@ spec:
         - name: network-config
           configMap:
             name: {{ .Release.Name }}-network-config
+        {{- end }}
+        {{- if $rbac }}
+        - name: rbac-policy
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: rbac
+          configMap:
+            name: {{ include "api.fullname" . }}-rbac
         {{- end }}
