@@ -1,0 +1,44 @@
+# Copy to helm/campaign-manager.yaml (git-ignored), fill in, then pass with -f.
+# Keys not listed here keep the defaults in campaign-manager/values.yaml.
+
+image:
+  repository: ghcr.io/your-org/campaign-manager
+  tag: sha-1a2b3c4
+
+ingress:
+  enabled: true
+  className: kong                          # kubectl get ingressclass
+  host: campaign-manager.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod   # kubectl get clusterissuer
+  tls:
+    enabled: true
+    secretName: campaign-manager-tls
+
+database:
+  host: postgres.databases.svc.cluster.local
+  migratorPassword: migrator-password
+  appPassword: app-password
+  pipelinePassword: pipeline-password
+  admin:
+    password: postgres-admin-password
+
+secrets:
+  SESSION_SECRET: random-session-secret
+  CRON_SECRET: random-cron-secret
+  RAYA_API_KEY: raya_xxx
+  GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"example"}'
+
+pipeline:
+  enabled: true
+  image:
+    repository: ghcr.io/your-org/purple-dots
+    tag: v1.0.0
+  schedule: "0 2 * * *"
+  config:
+    BASE_URL: https://aggregator.example.com
+    KEYCLOAK_URL: https://auth.example.com/auth
+    REALM: bluedots
+    CLIENT_ID: campaign-manager
+  secrets:
+    CLIENT_SECRET: keycloak-client-secret

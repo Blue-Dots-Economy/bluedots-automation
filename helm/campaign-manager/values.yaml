@@ -1,0 +1,152 @@
+# campaign-manager chart — skeleton values.
+# Review every line tagged `# UPDATE:` before deploying.
+
+global:
+  # UPDATE: public FQDN served by the ingress.
+  publicHost: campaign-manager.example.com
+  publicProtocol: https
+  # List of Secret NAMES used as imagePullSecrets.
+  imagePullSecrets:
+    - ghcr-pull
+
+replicaCount: 1
+
+image:
+  # UPDATE: set once the image build pipeline publishes the image.
+  repository: ghcr.io/blue-dots-economy/agg-campaign-manager-v2
+  # Empty = Chart.appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Optional: render a ghcr.io dockerconfigjson pull secret from these credentials.
+imagePullSecret:
+  create: false
+  name: ghcr-pull
+  registry: ghcr.io
+  username: ""
+  password: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  # Port the Node server listens on inside the container.
+  targetPort: 3000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # Defaults to global.publicHost when empty.
+  host: ""
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: false
+    secretName: campaign-manager-tls
+
+# Extra non-secret env for the app, rendered into a ConfigMap.
+config: {}
+
+# App credentials, rendered into a Secret. Empty values are skipped.
+secrets:
+  existingSecret: ""             # or a Secret with DATABASE_URL and the keys below
+  SESSION_SECRET: ""             # UPDATE
+  CRON_SECRET: ""                # UPDATE
+  CRON_SECRET_PREVIOUS: ""       # only while rotating CRON_SECRET
+  RAYA_API_KEY: ""               # UPDATE
+  GOOGLE_SERVICE_ACCOUNT_JSON: ""   # UPDATE: service-account JSON as one string
+
+# Postgres shared by the app, the migrations and the pipeline.
+database:
+  host: ""                       # UPDATE
+  port: 5432
+  name: campaign_manager
+  migratorPassword: ""           # UPDATE: role migrator, owns the schema
+  appPassword: ""                # UPDATE: role cm_app, used by the app
+  pipelinePassword: ""           # UPDATE: role purple_loader, used by the pipeline
+  admin:
+    user: postgres
+    password: ""                 # UPDATE: used only by the database Job
+
+# Job that creates the roles, database and schemas if missing.
+dbInit:
+  enabled: true
+  image:
+    repository: postgres         # only used to run psql
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+
+# Job that applies the app's schema migrations from the app image, after the database Job.
+migrate:
+  enabled: true
+  image:
+    repository: ""               # empty = the app image
+    tag: ""                      # empty = the app image tag
+    pullPolicy: IfNotPresent
+  command: ["node", "migrate/migrate.mjs"]
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# UPDATE: confirm the health path once the container image exists.
+probes:
+  path: /
+  readiness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Purple Dots data pipeline: CronJob loading Raya calls and the S3 dump into Postgres (role purple_loader).
+pipeline:
+  enabled: false
+
+  image:
+    repository: ghcr.io/blue-dots-economy/purple-dots
+    tag: ""                      # UPDATE: required when enabled; no default tag exists
+    pullPolicy: IfNotPresent
+
+  schedule: "0 2 * * *"          # UPDATE: cron expression, evaluated in timeZone
+  timeZone: Asia/Kolkata
+  concurrencyPolicy: Forbid      # a slow run must not overlap the next one
+  startingDeadlineSeconds: 900
+  backoffLimit: 1
+  activeDeadlineSeconds: 7200
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  suspend: false
+
+  args: []                       # extra run_pipeline.py arguments, e.g. ["--skip", "inbound"]
+
+  config:                        # empty values are not rendered, so the pipeline defaults apply
+    BASE_URL: ""                 # UPDATE: Purple Dots signals API, for the S3 dump
+    KEYCLOAK_URL: ""             # UPDATE: Keycloak base URL, for the S3 dump
+    REALM: ""
+    CLIENT_ID: ""
+    PD_INSTANCE: ""
+    PD_REFRESH_DAYS: ""
+    PD_TEST_BATCHES: ""
+
+  secrets:
+    existingSecret: ""           # or a Secret with DATABASE_URL, RAYA_API_KEY, CLIENT_SECRET
+    RAYA_API_KEY: ""             # empty = the app's secrets.RAYA_API_KEY
+    CLIENT_SECRET: ""            # UPDATE: Keycloak service-account secret, for the S3 dump
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
