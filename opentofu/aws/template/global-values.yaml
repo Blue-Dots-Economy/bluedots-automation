@@ -652,6 +652,11 @@ web:
 aggregator-api:
   adminEmails: *aggregator_admin_emails
   supportEmail: *support_email
+  # RBAC: "off" | "log" | "enforce" (quoted). Not off adds the OPA sidecar and
+  # needs an api image that ships the policy. Roll out log first, then enforce;
+  # see docs/aggregator-rbac-opa-plan.md.
+  rbac:
+    mode: "off"
 
 mail:
   provider: smtp  # smtp | ses

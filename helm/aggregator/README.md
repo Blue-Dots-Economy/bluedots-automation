@@ -132,7 +132,9 @@ kubectl get certificate -n aggregator      # READY=True once ACME completes
 Per-env config layers from `opentofu/aws/<env>/global-values.yaml` (anchors at
 the top); chart defaults in `values.yaml`. Notable: `global.publicHost`
 (aggregator FQDN, from `_aggregator_host`), `global.signalstack.actingOrgId`,
-`secrets.*` (from `global-secrets.yaml`), `mail.smtp.*` / `secrets.smtp*`.
+`secrets.*` (from `global-secrets.yaml`), `mail.smtp.*` / `secrets.smtp*`,
+`aggregator-api.rbac.mode` (RBAC and its OPA sidecar, default `off`; see
+`docs/aggregator-rbac-opa-plan.md`).
 
 ## Uninstall
 

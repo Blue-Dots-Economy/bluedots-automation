@@ -1,0 +1,21 @@
+{{- /*
+  RBAC sidecar inputs (aggregator-dpg #849), rendered only when rbac.mode is not
+  off: OPA's own API authorisation policy, and an optional rbac.yaml that
+  replaces the image's copy. The RBAC policy itself comes from the api image
+  (see the rbac-policy init container in deployment.yaml).
+*/ -}}
+{{- if include "api.rbacEnabled" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "api.fullname" . }}-rbac
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+data:
+  authz.rego: |
+{{ .Files.Get "files/opa-authz.rego" | indent 4 }}
+  {{- with .Values.rbac.config }}
+  rbac.yaml: |
+{{ . | indent 4 }}
+  {{- end }}
+{{- end }}
