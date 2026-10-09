@@ -8,7 +8,7 @@ environment.
 |---|---|
 | App side | aggregator-dpg `feat/805-rbac` (#849); design `docs/rbac/rbac-design-aggregator.md` |
 | Switch | `aggregator-api.rbac.mode`: `off` (default) / `log` / `enforce` |
-| OPA image | `openpolicyagent/opa:1.21.1`, digest-pinned |
+| OPA image | Docker Hardened Image `dhi.io/open-policy-agent:1.21.1`, mirrored to `ghcr.io/blue-dots-economy/dhi/open-policy-agent` |
 | Needs | An api image that ships `/app/policy/rbac/rbac.rego` |
 
 ## Pod layout
@@ -39,6 +39,7 @@ flowchart LR
 | No sidecar while `mode` is `off` | No cost and no behaviour change until an environment opts in |
 | Optional `rbac.yaml` override from values | The coordinator export setting (design open item 1) can differ per instance without rebuilding |
 | Sidecar resources in `global-resources.yaml` | Same place as every other request and limit |
+| Hardened OPA image through the DHI mirror, tag only | Same path and refresh as the other third-party images; the cluster never pulls from dhi.io |
 
 ## Steps
 
@@ -52,13 +53,15 @@ flowchart LR
 | B5 Sidecar resources | `helm/global-resources.yaml` | Done |
 | B6 Render checks for `off`, `log`, `enforce`; run the rendered OPA command and authz policy in Docker | local, CI `helm lint` / `template` | Done; `off` renders the same pod spec as before |
 | B7 Docs | `helm/CLAUDE.md`, `helm/aggregator/README.md` | Done |
+| B8 OPA image from the DHI mirror; CI drift check renders the sidecar | `.github/dhi-mirror-images.txt`, `ci.yml` | Done |
 
 ## Rollout per environment
 
-1. Deploy an api image that contains the policy (A1).
-2. Set `rbac.mode: log`, deploy, and check the api logs for `rbac.decision` denies.
-3. Settle open item 1 (coordinator export) with the `rbac.yaml` override if needed.
-4. Set `rbac.mode: enforce` and deploy.
+1. Once per GitHub org: after the mirror workflow first copies `open-policy-agent`, make the `dhi/open-policy-agent` package public.
+2. Deploy an api image that contains the policy (A1).
+3. Set `rbac.mode: log`, deploy, and check the api logs for `rbac.decision` denies.
+4. Settle open item 1 (coordinator export) with the `rbac.yaml` override if needed.
+5. Set `rbac.mode: enforce` and deploy.
 
 Back out by setting `mode: off`; the sidecar is removed on the next deploy.
 
@@ -67,5 +70,4 @@ Back out by setting `mode: off`; the sidecar is removed on the next deploy.
 | Item | Where it is tracked |
 |---|---|
 | Portal gate for org owners and admin-only attributes in the deployment realm (H-11) | aggregator-dpg RBAC plan, bluedots-automation row |
-| Mirroring the OPA image to GHCR | Only if Docker Hub pulls are rate-limited |
 | OPA in the worker | Deferred in the RBAC plan (worker re-check) |
