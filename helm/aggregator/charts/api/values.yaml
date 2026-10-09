@@ -130,10 +130,14 @@ rbac:
   # Blank = the image's own. Validated by the api at boot; an invalid file stops it.
   config: ""
   opa:
+    # Docker Hardened Image, mirrored to GHCR from dhi.io/open-policy-agent
+    # (.github/dhi-mirror-images.txt). Tag only, like the other mirrored images,
+    # so the monthly mirror refresh brings in security rebuilds. `digest` pins
+    # an exact build when set.
     image:
-      repository: openpolicyagent/opa
+      repository: ghcr.io/blue-dots-economy/dhi/open-policy-agent
       tag: "1.21.1"
-      digest: "sha256:d3a9a6bd4fbcb0f4403294b0d0b239b07be163ac118a46df7d50045b52e52053"
+      digest: ""
       pullPolicy: IfNotPresent
     # Decision port, bound to 127.0.0.1: only the api container can reach it.
     port: 8181
