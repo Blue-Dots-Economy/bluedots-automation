@@ -1,0 +1,77 @@
+{{- /* Post-install/upgrade hook, idempotent. Mirrors db/bootstrap.sql in agg-campaign-manager-v2. */ -}}
+{{- if .Values.dbInit.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "campaign-manager.fullname" . }}-dbinit
+  labels:
+    {{- include "campaign-manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: dbinit
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: campaign-manager-dbinit
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: dbinit
+          image: "{{ .Values.dbInit.image.repository }}:{{ .Values.dbInit.image.tag }}"
+          imagePullPolicy: {{ .Values.dbInit.image.pullPolicy }}
+          env:
+            - name: PGHOST
+              value: {{ required "database.host is required" .Values.database.host | quote }}
+            - name: PGPORT
+              value: {{ .Values.database.port | quote }}
+            - name: PGUSER
+              value: {{ .Values.database.admin.user | quote }}
+            - name: PD_DB
+              value: {{ required "database.name is required" .Values.database.name | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ include "campaign-manager.fullname" . }}-dbinit
+          command:
+            - sh
+            - -ec
+            - |
+              echo "waiting for postgres at $PGHOST:$PGPORT"
+              i=0
+              until pg_isready -h "$PGHOST" -p "$PGPORT" >/dev/null 2>&1; do
+                i=$((i+1)); [ "$i" -gt 60 ] && { echo "postgres not reachable" >&2; exit 1; }
+                sleep 3
+              done
+              echo "creating roles and database $PD_DB if missing"
+              psql -v ON_ERROR_STOP=1 -d postgres -v db="$PD_DB" -v migrator_pw="$MIGRATOR_PW" -v app_pw="$APP_PW" -v pipeline_pw="$PIPELINE_PW" <<'EOSQL'
+                SELECT format('CREATE ROLE %I LOGIN', r)
+                  FROM unnest(ARRAY['migrator', 'cm_app', 'purple_loader']) AS r
+                  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r)\gexec
+                SELECT format('ALTER ROLE %I WITH PASSWORD %L', r, p)
+                  FROM (VALUES ('migrator', :'migrator_pw'), ('cm_app', :'app_pw'), ('purple_loader', :'pipeline_pw')) AS v (r, p)\gexec
+                -- RDS: the master must be a member of an owner role to create objects it owns
+                GRANT migrator TO CURRENT_USER;
+                GRANT purple_loader TO CURRENT_USER;
+                SELECT format('CREATE DATABASE %I OWNER migrator', :'db')
+                  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db')\gexec
+                SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'db')\gexec
+                SELECT format('GRANT CONNECT ON DATABASE %I TO migrator, cm_app, purple_loader', :'db')\gexec
+              EOSQL
+              psql -v ON_ERROR_STOP=1 -d "$PD_DB" <<'EOSQL'
+                ALTER SCHEMA public OWNER TO migrator;
+                REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+                GRANT USAGE ON SCHEMA public TO cm_app, purple_loader;
+                CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION purple_loader;
+                CREATE SCHEMA IF NOT EXISTS extensions;
+                CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA extensions;
+              EOSQL
+              echo "database ready"
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+{{- end }}

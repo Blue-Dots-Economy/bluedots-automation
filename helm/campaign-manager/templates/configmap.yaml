@@ -4,7 +4,9 @@ metadata:
   name: {{ include "campaign-manager.fullname" . }}-config
   labels:
     {{- include "campaign-manager.labels" . | nindent 4 }}
+{{- with .Values.config }}
 data:
-  {{- range $key, $value := .Values.config }}
+  {{- range $key, $value := . }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
+{{- end }}
