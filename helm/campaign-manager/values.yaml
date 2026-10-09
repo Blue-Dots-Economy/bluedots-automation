@@ -140,7 +140,7 @@ pipeline:
 
   secrets:
     existingSecret: ""           # or a Secret with DATABASE_URL, RAYA_API_KEY, CLIENT_SECRET
-    RAYA_API_KEY: ""             # UPDATE
+    RAYA_API_KEY: ""             # empty = the app's secrets.RAYA_API_KEY
     CLIENT_SECRET: ""            # UPDATE: Keycloak service-account secret, for the S3 dump
 
   resources:
