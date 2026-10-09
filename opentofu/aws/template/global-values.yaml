@@ -680,6 +680,7 @@ api:
     NOTIFICATION_SERVICE_ENDPOINT: "http://signals-notification-service:3000"
     NOTIFICATION_FROM_EMAIL: *smtp_user
     SERVED_DOMAINS: *signals_served_domains
+    INSTANCE_NAME: "dpg"  # email sign-off; match EMAIL_SIGNOFF in aggregator-dpg/config/<network>/keycloak.env
     # ── Auth provider ──────────────────────────────────
     # `keycloak` is the only supported value. `dual` was removed in signals #456
     # and `betterauth` in signals-dpg#757; the api rejects either at startup with
