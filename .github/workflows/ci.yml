@@ -171,12 +171,15 @@ jobs:
                 # web.reference.enabled=false for the same reason as
                 # ui.reference.enabled=false above: the college dataset is
                 # fetched at deploy time and absent from a fresh checkout.
+                # rbac.mode=log renders the OPA sidecar, off by default, so
+                # its image is checked too.
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
                   -f opentofu/aws/template/global-images.yaml \
                   -f opentofu/aws/template/global-values.yaml \
                   --set global.existingSecret=ci-smoke \
                   --set global.networkConfigDelivery=false \
                   --set web.reference.enabled=false \
+                  --set aggregator-api.rbac.mode=log \
                   >> /tmp/all-rendered.yaml
                 ;;
               keycloak)

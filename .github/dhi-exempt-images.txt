@@ -65,3 +65,9 @@ postgres:16-alpine
 # keys — same blind spot class as cert-manager's acmesolver (mirrored, not
 # exempted, since that one genuinely runs on every ACME challenge).
 quay.io/thanos/thanos:v0.42.4
+
+# ── Aggregator RBAC policy engine (OPA sidecar, off by default) ─────────────
+# Upstream official image, pinned by digest; no shell, runs as uid 1000 with a
+# read-only root filesystem. No DHI equivalent checked yet: revisit before an
+# environment turns rbac.mode on. See docs/aggregator-rbac-opa-plan.md.
+openpolicyagent/opa:1.21.1@sha256:d3a9a6bd4fbcb0f4403294b0d0b239b07be163ac118a46df7d50045b52e52053
