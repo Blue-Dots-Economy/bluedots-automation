@@ -268,6 +268,16 @@ The aggregator's shape is the better one — an obvious missing feature beats a 
 
 **Aggregator-specific: it is a directory mount, unlike the consent file next to it.** Consent uses `subPath` (single file, because the directory it lands in carries other image-baked files). The reference mount is a whole-directory mount at `/app/apps/web/public/reference`, which is exactly what makes it shadow the baked fallbacks — and it means only the one selected region is reachable while enabled, even though the image contains more. Directory mounts *do* hot-update, but the widget caches per page load, so a `checksum/reference` annotation still rolls the pods.
 
+## Country restriction + boundary — one anchor, a committed ConfigMap (signals-dpg#785)
+
+`_geo_country` in `<env>/global-values.yaml` (ISO alpha-2, `IN` by default) feeds three keys: `api.config.GEOCODING_COUNTRY`, `ui.runtimeConfig.VITE_GEO_COUNTRY` and aggregator `web.geoCountry` (rendered as `GEO_COUNTRY`). Together they restrict the server geocoder and both address search boxes to that country. `""` turns the restriction off everywhere.
+
+The api also rejects a **caller-supplied** coordinate outside the country with `400 LOCATION_OUTSIDE_COUNTRY` (#789). For that it needs the boundary:
+
+- **Committed, not fetched.** Unlike consent or network.json, the boundary is static data, so it lives in this repo at `helm/signals/charts/api/files/geo/<CC>.geojson`. Regenerate it with `scripts/build-geo-boundary.sh <CC>`, which pulls Natural Earth's India point-of-view admin-0 file (public domain; J&K, Ladakh and Arunachal drawn as India), unsimplified, ~150 KB. Simplifying drops Lakshadweep, which is why it isn't simplified. The Natural Earth release is pinned (`NE_VERSION`, currently 5.1.1) and fetched from the tagged GitHub source; `<CC>.source` beside the file records the version and URL it came from. Bump the version deliberately: a new release can move the border line.
+- **Delivery.** `templates/geo-boundary-configmap.yaml` renders `{api}-geo-boundary`, which is mounted read-only at `/app/geo`. The chart **derives** `GEOCODING_BOUNDARY_PATH=/app/geo/<CC>.geojson`. Never set that variable by hand: the mount and the path come from the one `dpg-api.geoBoundaryCountry` helper so they cannot disagree. A `checksum/geo-boundary` annotation rolls the api on change, because the file is read once at boot.
+- **A country with no committed file fails the render.** This is deliberate. The api itself fails *open* (it warns at boot and skips the check), so a missing file would otherwise mean a check that is configured but silently off. `api.geoBoundary.enabled: false` keeps the geocoder restriction and skips only the boundary check.
+
 ## Email copy rides the signals consent ConfigMap (optional, per-key)
 
 Per-network email wording (signals-dpg#540) ships the same way consent does and on the **same** `-schemas` ConfigMap, because the api resolves both from `dirname(NETWORK_CONFIG_LOCAL_FILE)`: `/app/schemas/messages.properties` and `/app/schemas/<brand>/messages.properties`. Canonical is `bluedots-schemas` `<network>/messages.properties` (+ `<network>/<brand>/`), fetched by `scripts/fetch-configs.sh signals` into the gitignored `helm/signals/charts/api/files/messages/`.

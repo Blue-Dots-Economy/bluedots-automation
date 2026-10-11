@@ -45,6 +45,10 @@ data:
   # Set to an absolute URL only to host the lists off-cluster — that host must
   # then send permissive CORS headers, since the browser fetches it directly.
   REFERENCE_BASE_URL: "{{ .Values.referenceBaseUrl | default "" }}"
+  # ISO 3166-1 alpha-2 country the address autocomplete is restricted to
+  # (signals-dpg#785), e.g. "IN". Blank = suggestions from anywhere. Same
+  # _geo_country anchor that drives signals' VITE_GEO_COUNTRY and GEOCODING_COUNTRY.
+  GEO_COUNTRY: "{{ .Values.geoCountry | default "" }}"
 {{- /*
   Google Maps browser key. OMITTED when unset or left at the house
   UPDATE_THIS_VALUE placeholder, rather than rendered empty/bogus: the app
