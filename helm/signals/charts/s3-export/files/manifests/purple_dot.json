@@ -55,10 +55,25 @@
       "item_actions": {
         "columns": [
           "partition_network",
+          "action_type",
+          "action_id",
+          "action_status",
+          "update_count",
+          "source_item_network",
+          "source_item_domain",
+          "source_item_type",
+          "source_item_id",
+          "source_item_owner",
+          "target_item_network",
+          "target_item_domain",
+          "target_item_type",
+          "target_item_id",
+          "target_item_owner",
+          "performed_by_org_id",
           "created_at",
           "updated_at"
         ],
         "row_filters": ["exclude_test_action_owners"]
-      }
-  }
+        }
+    }
 }
