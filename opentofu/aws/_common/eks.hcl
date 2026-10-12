@@ -37,7 +37,20 @@ dependency "network" {
     public_subnet_ids      = ["subnet-dummy-3", "subnet-dummy-4"]
     private_eks_subnet_ids = []
     security_group_id      = "sg-dummy"
-    subnets                = {}
+    # Non-empty so a brand-new environment's first-ever `run --all apply` doesn't crash before
+    # network even runs: eks_node_subnet_keys indexes this map (line below), and on a fresh
+    # environment `network` has no real state yet, so Terragrunt falls back to this mock to even
+    # generate eks's plan. An empty map there makes ANY non-empty eks_node_subnet_keys fail with
+    # "Invalid index" at plan-graph time — real values replace these the moment network applies.
+    subnets = {
+      for k in ["public-a", "public-b", "private-a", "private-b", "private-eks-a", "private-eks-b"] : k => {
+        id                = "subnet-dummy-${k}"
+        arn               = "arn:aws:ec2:ap-south-1:000000000000:subnet/subnet-dummy-${k}"
+        cidr_block        = "10.0.0.0/24"
+        availability_zone = "ap-south-1a"
+        type              = "private"
+      }
+    }
   }
 }
 

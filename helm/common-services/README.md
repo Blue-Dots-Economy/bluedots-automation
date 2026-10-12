@@ -29,14 +29,15 @@ false`) — Kong is the active controller. When RDS is provisioned the in-cluste
 - `kubectl` current-context pointed at the target cluster, `helm` v3.12+.
 - The generated values files exist in the env dir: `global-secrets.yaml` +
   `global-cloud-values.yaml` (run `bash install.sh create_tf_resources` first).
-- `gp3` must be the default StorageClass (Postgres/Redis PVCs bind to it) — the
-  deploy step applies it for you.
+- The cluster must already have a default StorageClass (Postgres/Redis PVCs
+  bind to it, unnamed) — run `bash install.sh apply_default_sc` once at
+  cluster creation if it doesn't. `deploy_common_services` does not apply it.
 - Kong CRDs must be applied — the deploy step applies them for you (Helm does
   **not** install subchart CRDs, nor update CRDs on upgrade).
 
 ## Deploy this chart only
 
-**Recommended — via `install.sh`** (applies gp3 + Kong CRDs, then helm):
+**Recommended — via `install.sh`** (applies Kong CRDs, then helm):
 
 ```bash
 cd opentofu/aws/<env>          # e.g. opentofu/aws/dev
@@ -48,13 +49,10 @@ That runs, from the repo root, exactly:
 ```bash
 ENV=opentofu/aws/<env>
 
-# 1. gp3 as default StorageClass (demote gp2)
-kubectl apply -f "$ENV/gp3-sc.yaml"
-
-# 2. Kong CRDs — server-side, idempotent (helm skips subchart/upgrade CRDs)
+# 1. Kong CRDs — server-side, idempotent (helm skips subchart/upgrade CRDs)
 kubectl apply --server-side -f helm/common-services/crds/
 
-# 3. the chart, with the layered values files (-f order = precedence)
+# 2. the chart, with the layered values files (-f order = precedence)
 helm upgrade --install common-services helm/common-services \
   -n common-services --create-namespace \
   -f helm/global-resources.yaml \

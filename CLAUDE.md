@@ -9,9 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **Provisions AWS EKS infrastructure** using OpenTofu + Terragrunt (`opentofu/aws/`).
 2. **Deploys the application stack** to Kubernetes using Helm (`helm/`).
 
-Both are driven by a **single `install.sh`** in the per-environment directory (`opentofu/aws/<env>/install.sh`). See [DEPLOYMENT.md](DEPLOYMENT.md) for the end-to-end runbook.
+Both are driven by a **single `install.sh`** in the per-environment directory (`opentofu/aws/<env>/install.sh`). See [docs/deployment_guide.md](docs/deployment_guide.md) for the end-to-end runbook.
 
-> ⚠️ **There is no Makefile.** Older docs referenced `make install` / `make platform-install`; those targets are gone — `install.sh` is the only entrypoint. Treat any `make ...` in stray READMEs/comments as stale. **install.sh and DEPLOYMENT.md are the source of truth.**
+> ⚠️ **There is no Makefile.** Older docs referenced `make install` / `make platform-install`; those targets are gone — `install.sh` is the only entrypoint. Treat any `make ...` in stray READMEs/comments as stale. **install.sh and docs/deployment_guide.md are the source of truth.**
 
 **Subsystem docs** (auto-load when you work in that tree — read before making changes there):
 - **`opentofu/CLAUDE.md`** — Terragrunt module structure, provision order, network topology, EKS placement/capacity, RDS auto-wiring, private-cluster access (Pritunl + bastion), infra state.
@@ -32,7 +32,7 @@ Release name and namespace **match the directory name**. Only the Helm **chart n
 | `helm/signals/`        | `dpg`            | `signals`         | `signals`         | Signals stack (api, ui, notification-service, search, **s3-export** non-PII export CronJob) |
 | `helm/aggregator/`     | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal (web/BFF, api, worker) — Keycloak moved to its own release |
 
-Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`, `SIGNALS_NS`, `CS_REL`, `GLOBAL_VALUES`, …) — see the function reference in DEPLOYMENT.md.
+Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`, `SIGNALS_NS`, `CS_REL`, `GLOBAL_VALUES`, …) — see [docs/deployment_guide.md → Command reference](docs/deployment_guide.md#command-reference).
 
 ---
 
@@ -43,7 +43,7 @@ Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`,
 1. **`monitoring`** — first so metrics/alerts are live from the start (its `kube-prometheus-stack` also ships the ServiceMonitor/PodMonitor/PrometheusRule CRDs others rely on). Functionally optional but deployed first by default.
 2. **`common-services`** — owns the Kong ingress controller, cert-manager + `letsencrypt-prod` ClusterIssuer, and shared Postgres/Redis. Without it, other Ingresses sit Pending and ACME challenges fail.
 3. **`keycloak`** — the shared realm for both DPGs. **Must be its own release, not a subchart of `common-services`.** The `keycloak` database is created by common-services' `postgres-bootstrap-job`, a **post-install hook**; Helm with `--wait` waits for main resources to be Ready *before* running post-install hooks, so a Keycloak Deployment inside that release would crash-loop on the missing database while the hook that creates it never runs — the release deadlocks and times out. Keeping it a later release means the database already exists. Do not "simplify" this back in.
-4. **`signals`** — connects to the shared DBs in `common-services`. Its api asserts Keycloak config at boot once `AUTH_PROVIDER=keycloak`, hence keycloak first.
+4. **`signals`** — connects to the shared DBs in `common-services`. Its api asserts Keycloak config at boot (`AUTH_PROVIDER=keycloak` is the only supported value since signals-dpg#757 retired better-auth), hence keycloak first.
 5. **`aggregator`** — same shared DBs; needs the `actingOrgId` manual step after signals — see `helm/CLAUDE.md`.
 
 Each `deploy_*` runs `helm upgrade --install … --wait`, so it blocks on its own pods but does **not** verify cross-namespace deps — confirm common-services Postgres/Redis are Ready before deploying signals/aggregator.
@@ -57,12 +57,12 @@ All commands run from the **environment directory** (`opentofu/aws/<env>/`). On 
 ### Infrastructure (OpenTofu/Terragrunt)
 
 ```bash
-bash install.sh                          # full bootstrap: create_tf_backend → create_tf_resources → apply_gp3_default_sc
+bash install.sh                          # full bootstrap: create_tf_backend → create_tf_resources → apply_default_sc
 bash install.sh create_tf_backend        # create S3 tfstate bucket, write tf.sh
 bash install.sh create_tf_resources      # source tf.sh + terragrunt run --all apply + write kubeconfig
-bash install.sh apply_gp3_default_sc      # make gp3 the default StorageClass (demote gp2)
+bash install.sh apply_default_sc         # make STORAGE_CLASS_TYPE the default StorageClass (demote the rest)
 bash install.sh destroy_tf_resources     # terragrunt run --all destroy
-bash install.sh plan_tf_eks              # plan/apply one module (network|eks|iam|storage|random_passwords|rds|output-file|bastion|pritunl)
+bash install.sh plan_tf_eks              # plan/apply one module (network|eks|iam|storage|random_passwords|rds|output-file|backup|bastion|pritunl)
 bash install.sh apply_tf_output_file     # regenerate just the generated values files
 bash install.sh apply_tf_pritunl         # bring up just the VPN host (ignores pritunl_enabled)
 bash install.sh apply_tf_bastion         # bring up just the bastion (ignores bastion_enabled)
@@ -76,7 +76,7 @@ export IMAGES_PUBLIC=false                # and export GHCR_PAT=ghp_xxx
 bash install.sh deploy_all_services       # preflight → ns+secrets → monitoring → common-services → keycloak → signals → aggregator → fix_acme_issuer_uri
 bash install.sh create_namespaces_and_secrets   # namespaces + ghcr-pull secret in each
 bash install.sh deploy_monitoring
-bash install.sh deploy_common_services    # applies gp3 + Kong CRDs first, then helm --wait
+bash install.sh deploy_common_services    # applies Kong CRDs first, then helm --wait
 bash install.sh deploy_keycloak           # shared realm, into the common-services ns
 bash install.sh deploy_signals
 bash install.sh deploy_aggregator
@@ -149,7 +149,9 @@ The helm job also runs a **DHI mirror drift check**: it renders monitoring + com
 
 This mirrors `bash install.sh lint` but gates it per-PR. Separately, `.github/workflows/develop-pr-gate.yml` enforces the Release-Notes + doc-update PR gate (see `.claude/rules/pr-gate.md`).
 
-Security scanning runs on its own: `.github/workflows/security.yml` (PRs to `feature`/`develop`/`main`, plus a weekly cron) calls the local reusable `.github/workflows/security-scan.yml` — the same workflow the other five repos consume. Almost everything it does (Trivy, gitleaks, most zizmor audits) is **report-only** and uploads SARIF to the Security tab. The one exception is a **zizmor action-pinning gate** (#154): the `workflow-lint` job's `Pinning gate` step **fails the PR** when any workflow `uses:` a GitHub Action not pinned to a full 40-char commit SHA — **GitHub-owned `actions/*` and `github/*` included** — regardless of the `block:` input, because report-only is exactly what let unpinned refs slip in. The gate reads an **offline** zizmor run (`unpinned-uses` is an offline audit); zizmor's online audits (impostor-commit, known-vulnerable-actions) were decoupled into a separate best-effort step (#168) so a GitHub-API 403/rate-limit on a cross-repo pin lookup can't abort the run and take the deterministic gate down with it.
+Security scanning runs on its own: `.github/workflows/security.yml` (PRs to `feature`/`develop`/`main`, pushes to `develop`/`main`, plus a monthly cron) calls the local reusable `.github/workflows/security-scan.yml` — the same workflow the other five repos consume. Almost everything it does (Trivy, gitleaks, most zizmor audits) is **report-only** and uploads SARIF to the Security tab. The one exception is a **zizmor action-pinning gate** (#154): the `workflow-lint` job's `Pinning gate` step **fails the PR** when any workflow `uses:` a GitHub Action not pinned to a full 40-char commit SHA — **GitHub-owned `actions/*` and `github/*` included** — regardless of the `block:` input, because report-only is exactly what let unpinned refs slip in. The gate reads an **offline** zizmor run (`unpinned-uses` is an offline audit); zizmor's online audits (impostor-commit, known-vulnerable-actions) were decoupled into a separate best-effort step (#168) so a GitHub-API 403/rate-limit on a cross-repo pin lookup can't abort the run and take the deterministic gate down with it.
+
+gitleaks inputs (#253/#254): `run-gitleaks` now **defaults to `true`** (callers that never passed it were silently skipping the history scan; opting out must be explicit), and a separate **`block-secrets`** input fails the job on gitleaks findings independently of `block` — the gitleaks exit code is `block-secrets || block`, so a caller can keep CVE scanning report-only while making committed secrets blocking (set it only once the repo's history is triaged, or every PR goes red). The gitleaks image is **pinned by digest** (`ghcr.io/gitleaks/gitleaks@sha256:…`), and the step **fails closed**: if the log doesn't report at least one commit scanned (shallow clone, mount/ownership failure) the job fails even with `block: false`, rather than passing as a clean scan. This repo's own caller passes `run-gitleaks: true`, `block: false` and no `block-secrets`, so its gitleaks findings stay report-only.
 
 ---
 
@@ -167,7 +169,7 @@ kubectl get challenge -A                        # if stuck, see cert-manager ACM
 kubectl -n common-services get secret data-postgres -o yaml
 ```
 
-See [DEPLOYMENT.md → Troubleshooting](DEPLOYMENT.md) for the symptom→fix table.
+See [docs/deployment_guide.md → Troubleshooting](docs/deployment_guide.md#troubleshooting) for the symptom→fix table.
 
 ---
 
@@ -177,14 +179,14 @@ See [DEPLOYMENT.md → Troubleshooting](DEPLOYMENT.md) for the symptom→fix tab
 2. Edit `opentofu/aws/<env>/global-values.yaml` (anchors at the top).
 3. `cd opentofu/aws/<env> && bash install.sh` (infra), then `bash install.sh deploy_all_services` (apps).
 
-For a full new-instance / new-network launch (network.json, brand assets, terms & policies, domains, auth channels), follow [docs/instance-setup.md](docs/instance-setup.md).
+For a full new-instance / new-network launch (network.json, brand assets, terms & policies, domains, auth channels), follow [docs/deployment_guide_reference.md](docs/deployment_guide_reference.md).
 
 ---
 
 ## Files to Know
 
-- `DEPLOYMENT.md` — authoritative end-to-end runbook + `install.sh` function reference + troubleshooting.
-- `docs/instance-setup.md` — per-instance checklist for a new environment / network / brand.
+- `docs/deployment_guide.md` — authoritative end-to-end runbook: first-time deploy, day-2 config/secret/infra changes, `install.sh` command reference, troubleshooting.
+- `docs/deployment_guide_reference.md` — reference companion to `docs/deployment_guide.md`: which extra values to set (and where) for a new environment / network / brand — network.json, consent, brand skin, domains, auth-channel secrets, image tags.
 - `docs/dhi/monitoring-dhi-verification.md` — the manifest-diff analysis behind the monitoring chart's DHI-driven version bump (kube-prometheus-stack, loki, alloy, metrics-server): what changed, what it fixed, what it broke, what it deliberately does not disturb, and why rollback is a chart downgrade, not a tag revert.
 - `opentofu/aws/<env>/install.sh` — single entrypoint for infra **and** Helm deploy (function dispatcher).
 - `opentofu/aws/<env>/global-values.yaml` — single source of truth for cluster + app config (edit anchors only).
@@ -192,7 +194,8 @@ For a full new-instance / new-network launch (network.json, brand assets, terms 
 - `helm/global-resources.yaml` — shared replica/HPA/PDB/resource overrides across all envs.
 - `scripts/create-permissions-boundary.sh` + `scripts/permissions-boundary.json` — **admin-only, once per AWS account**: creates the IAM permissions-boundary policy every role in this repo attaches to. `--name` is required and has no default so each org owns its own policy; the name then goes in `<env>/global-values.yaml` as `permissions_boundary_policy_name`. Create-only (`--verify` to diff, `--update` to republish deliberately) because a new default version silently re-caps every attached role. Never run by `install.sh`.
 - `scripts/build-realm.sh` — builds the shared deployment realm from an app repo's local-dev realm (applies the production-hardening transform). `scripts/assert-realm.sh` — the invariants CI enforces on it.
-- `dockerfiles/` — the **shared base images** this repo builds, one directory each, both **manual `workflow_dispatch` only** (never on push/PR: rarely-rebuilt base images, deliberately outside app CI/CD). Rationale lives in each `Dockerfile` header; pin the resulting tag in `<env>/global-images.yaml`.
+- `dockerfiles/` — the **shared base images** this repo builds, one directory each, both built by **manual `workflow_dispatch` or a release tag** (`v*.*.*` / `20*-s*-rc*`; never on branch push/PR: rarely-rebuilt base images, deliberately outside app CI/CD). Rationale lives in each `Dockerfile` header; pin the resulting tag in `<env>/global-images.yaml`.
+  - **Build-only scan (#276):** dispatching either workflow from `main` with `push: false` builds the image locally (linux/amd64), Trivy-scans it and uploads the SARIF without publishing anything — the way to refresh `main`'s image findings in the Security tab, since release-tag runs upload against the tag ref and never move `main`'s results.
   - `dockerfiles/postgres/` → `ghcr.io/<owner>/postgres-pgvector` — Bitnami PG 17 + portable pgvector (the AVX-512 `SIGILL` fix). Workflow: *Build Postgres pgvector image*.
   - `dockerfiles/keycloak/` → `ghcr.io/<owner>/keycloak-server` — upstream Keycloak + the **OTP authenticator SPI**, `kc.sh build`-indexed at image build time so pods boot `start --optimized`. Workflow: *Build Keycloak image*. **Do not drop the jar:** the shared realm's browser flows bind to provider ids that exist only when it loads (`otp-identifier-form`, `otp-channel-choice-form`), so realm import *and* the entitlement-gate Job fail on unknown provider ids rather than quietly degrading to password login. Jar provenance + bump steps: `dockerfiles/keycloak/providers/README.md`.
 - `.github/dhi-mirror-images.txt` + `.github/workflows/mirror-dhi-images.yml` — the **third-party** Docker Hardened Images (cert-manager, metrics-server, the whole monitoring stack) copied byte-for-byte from `dhi.io` into `ghcr.io/<owner>/dhi/*`, because dhi.io refuses anonymous pulls and those charts have the *kubelet* do the pull. Distinct from `dockerfiles/` above, which **builds** images: this only **copies** them, digests unchanged, via `regctl image copy --referrers --digest-tags` so the SBOM/provenance/signature travel too. Our own service images need none of this — they are built *from* a DHI base in each app repo's CI. Pinned in `helm/common-services/values.yaml` and `helm/monitoring/values.yaml` as chart defaults; cert-manager and metrics-server specifically are **not** overridden in `<env>/global-images.yaml` (a per-env override there would silently escape the CI mirror check). Redis is the one exception — its `dhi/*` tag IS also set in `<env>/global-images.yaml`, with a comment there that it must stay in step with the chart default, since that overlay is layered after the chart and wins. DHI publishes **only current versions**, so the charts were bumped to match the images rather than the reverse (kube-prometheus-stack 65.1.1→88.5.2, loki 6.7.1→7.3.0, alloy 1.8.2→1.11.1, metrics-server 3.12.1→3.14.0) — pinning a DHI image into a chart built for an older app version is what produced the kube-state-metrics readiness failure. CI guards this from both directions: a rendered `dhi/*` ref missing from the mirror list fails, **and** any rendered image that is neither mirrored nor listed in `.github/dhi-exempt-images.txt` (with a reason) fails — the second check exists because the first one is blind to a chart bump *adding* an unhardened container, which is how loki 7.x quietly introduced `kiwigrid/k8s-sidecar`.
