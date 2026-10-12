@@ -63,9 +63,27 @@ echo "[build-realm] output: $OUT"
 #
 # H2 (no test users) needs no transform — the source carries only the two
 #    service accounts. assert-realm.sh enforces that it stays that way.
+#
+# H4  Declare aggregator_id, decision_made, aggregator_type and
+#     signalstack_org_id admin-only in the user profile
+#     (attributes."kc.user.profile.config", a JSON string). Only service
+#     accounts write them, through the admin API, and they feed token claims the
+#     apps act on. Forced here rather than trusted from the source, so a source
+#     realm without these declarations cannot drop them; any earlier
+#     declaration of those names is replaced. unmanagedAttributePolicy is left
+#     as the source has it. apply-user-profile.sh applies the same declarations
+#     to realms that already exist.
 
 jq '
   def is_local: test("localhost|127\\.0\\.0\\.1");
+
+  def admin_only_names: ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id"];
+  def admin_only_attrs: [
+    { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+    { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+    { name: "aggregator_type", displayName: "Aggregator type", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+    { name: "signalstack_org_id", displayName: "Signals organisation id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false }
+  ];
 
   # JSON array form (redirectUris, webOrigins)
   def strip_local:
@@ -86,6 +104,11 @@ jq '
           .attributes."post.logout.redirect.uris" |=  strip_local_hashlist
         else . end
     ]
+  | .attributes."kc.user.profile.config" |= (
+      (if . == null then error("source realm has no attributes.kc.user.profile.config") else fromjson end)
+      | .attributes = ([(.attributes // [])[] | select(.name as $n | admin_only_names | index($n) | not)] + admin_only_attrs)
+      | tojson
+    )
 ' "$SRC" > "${OUT}.tmp"
 
 mv "${OUT}.tmp" "$OUT"
@@ -95,6 +118,7 @@ echo "  sslRequired : $(jq -r '.sslRequired' "$OUT")  (was $(jq -r '.sslRequired
 echo "  clients     : $(jq -r '.clients | length' "$OUT")"
 echo "  realm roles : $(jq -r '[.roles.realm[]?.name] | join(", ")' "$OUT")"
 echo "  users       : $(jq -r '[.users[]?.username] | join(", ")' "$OUT")"
+echo "  admin-only  : $(jq -r '.attributes."kc.user.profile.config" | fromjson | [.attributes[] | select(.permissions.edit == ["admin"]) | .name] | join(", ")' "$OUT")"
 removed=$(( $(jq '[.clients[] | (.redirectUris // []) + (.webOrigins // []) | length] | add' "$SRC") \
           - $(jq '[.clients[] | (.redirectUris // []) + (.webOrigins // []) | length] | add' "$OUT") ))
 echo "  stripped    : ${removed} localhost redirect/origin entries"

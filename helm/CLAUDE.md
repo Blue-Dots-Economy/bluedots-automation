@@ -33,7 +33,7 @@ with `scripts/build-realm.sh <app-repo realm.json>` (applies the hardening
 transform) and gate with `scripts/assert-realm.sh` — which CI runs. Do **not** add
 a "drift from upstream" diff; it would fail on the intentional differences.
 
-**Two hardening steps that are invisible when they regress:**
+**Three hardening steps that are invisible when they regress:**
 - The local realms carry `localhost` entries in `redirectUris`, `webOrigins` and —
   easy to miss — the `##`-delimited `post.logout.redirect.uris` *attribute*. Those
   widen a production OAuth client's allow-lists. `assert-realm.sh` fails on any of
@@ -42,6 +42,13 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   addresses, so the in-cluster init Job keeps working over plain HTTP while
   external callers must use HTTPS. A `kubectl port-forward` session comes from a
   non-private address and gets `403 HTTPS required` — expected, not a fault.
+- `aggregator_id`, `decision_made`, `aggregator_type` and `signalstack_org_id`
+  are declared **admin-only** in the user profile. Only service accounts write
+  them, through the admin API, and they feed token claims the apps act on.
+  `build-realm.sh` forces the declarations (H4), `assert-realm.sh` checks them
+  (A10), and `apply-user-profile.sh` re-applies them to existing realms and
+  fails the init Job unless all four are admin-only. `unmanagedAttributePolicy`
+  stays `ENABLED` for every other attribute.
 
 **signals-ui lives on different hostnames to Keycloak.** `__PUBLIC_BASE_URL__` is
 the Keycloak/aggregator host; the signals UI is served from `global.publicHosts` (a
