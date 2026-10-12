@@ -9,6 +9,11 @@ locals {
     "postgresql://signals_export_ro:%s@%s:5432/dpg",
     var.signals_export_ro_password, local.signals_export_db_host,
   )
+  # Same server, aggregator database, its own read-only role.
+  aggregator_export_database_url = format(
+    "postgresql://aggregator_export_ro:%s@%s:5432/aggregator",
+    var.aggregator_export_ro_password, local.signals_export_db_host,
+  )
 }
 
 # Renamed from global_credentials -> global_secrets (file renamed to
@@ -30,6 +35,8 @@ resource "local_sensitive_file" "global_secrets" {
     signals_postgres_password               = var.signals_postgres_password
     signals_export_ro_password              = var.signals_export_ro_password
     signals_export_database_url             = local.signals_export_database_url
+    aggregator_export_ro_password           = var.aggregator_export_ro_password
+    aggregator_export_database_url          = local.aggregator_export_database_url
     signals_redis_password                  = var.signals_redis_password
     monitoring_grafana_password             = var.monitoring_grafana_password
     keycloak_postgres_password              = var.keycloak_postgres_password
