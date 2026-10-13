@@ -125,3 +125,4 @@ data:
   OPA_TIMEOUT_MS: "{{ .Values.rbac.opa.timeoutMs }}"
   OPA_RETRIES: "{{ .Values.rbac.opa.retries }}"
   OPA_BACKOFF_MS: "{{ .Values.rbac.opa.backoffMs }}"
+  RBAC_CATALOGUE_REFRESH_MS: "{{ .Values.rbac.catalogueRefreshMs }}"

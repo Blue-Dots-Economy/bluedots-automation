@@ -412,7 +412,8 @@ The worker deployment's `secretKeyRef` carries `optional: true`, and **that only
 - **The OPA image is a Docker Hardened Image** (`dhi/open-policy-agent`, on the DHI mirror like the monitoring images). It runs as the pod's uid 1000, not its default 65532. The CI drift check renders the chart with `rbac.mode=log` so the sidecar's image is covered even though the default is `off`.
 - **`OPA_URL` is `127.0.0.1`, not `localhost`.** Node may resolve `localhost` to `::1`, which the sidecar does not listen on.
 - **Quote the mode.** A bare `off` is a YAML boolean; the helper reads `false` as `off` and fails the render on anything else.
-- **`rbac.config`** (a full `rbac.yaml`) replaces the image's copy, mounted next to `aggregator.config.yaml`. The api validates it at boot and refuses to start if it is invalid. Like every subPath mount, a change needs a pod restart; the `checksum/rbac` annotation does that on `helm upgrade`.
+- **`rbac.config`** (a full `rbac.yaml`, version 2) defines the **built-in roles** and replaces the image's copy, mounted next to `aggregator.config.yaml`. The api applies it to the database at every start; custom roles live only in the database (the console's Roles page) and Helm never touches them. The api refuses to start on an invalid file, including an older version-1 file (`roles` + `permission_sets` + `grants`). Like every subPath mount, a change needs a pod restart; the `checksum/rbac` annotation does that on `helm upgrade`.
+- **`rbac.catalogueRefreshMs`** (default 30 000) is how often each replica reloads roles from the database (`RBAC_CATALOGUE_REFRESH_MS`); a role edited in the console reaches every replica within it.
 - **Engine failure is a deny** in `enforce`. With the sidecar inside the pod, that happens only if OPA itself is down, and then the liveness probe restarts it.
 
 ## Org hierarchy flag

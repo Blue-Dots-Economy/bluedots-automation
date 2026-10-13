@@ -126,9 +126,15 @@ securityContext:
 # See docs/aggregator-rbac-opa-plan.md.
 rbac:
   mode: "off"
-  # Full rbac.yaml replacing the image's copy (roles, grants, permission sets).
-  # Blank = the image's own. Validated by the api at boot; an invalid file stops it.
+  # Built-in roles: a full rbac.yaml (version 2, `roles:` only) replacing the
+  # image's copy. Blank = the image's own. The api applies it to the database at
+  # every start; custom roles live only in the database and are never touched
+  # here. Validated at boot: an invalid file, or an older-format one
+  # (version 1), stops the api.
   config: ""
+  # How often each api replica re-reads the role catalogue and reloads it when
+  # a role changed (RBAC_CATALOGUE_REFRESH_MS); 0 = never.
+  catalogueRefreshMs: 30000
   opa:
     # Docker Hardened Image, mirrored to GHCR from dhi.io/open-policy-agent
     # (.github/dhi-mirror-images.txt). Tag only, like the other mirrored images,
