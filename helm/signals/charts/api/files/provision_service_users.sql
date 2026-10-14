@@ -2,12 +2,13 @@
 --
 -- Idempotent upsert for internal/integrating service users + apikeys. Applied
 -- by the helm migrate-job's provision container, after migrate-ddl has created
--- the better-auth tables, on every install AND upgrade.
+-- the user/organization/member/apikey tables, on every install AND upgrade.
 --
 -- Source of truth for each raw key is the api k8s Secret; this file derives the
--- SHA-256(key) hash that better-auth's @better-auth/api-key looks up at verify
--- time. Re-running with a rotated key UPDATEs that row in place — the old key
--- stops working immediately. Rows are keyed per service user, so rotating one
+-- SHA-256(key) hash that the api's in-process verifier
+-- (plugins/auth/verify_api_key.ts) and signals-search look up at verify time.
+-- Re-running with a rotated key UPDATEs that row in place — the old key stops
+-- working immediately. Rows are keyed per service user, so rotating one
 -- service's key never touches another's.
 --
 -- Service users provisioned (add a row to the VALUES list below to extend):
@@ -35,7 +36,9 @@
 --
 -- Requires pgcrypto (digest, gen_random_uuid), provisioned by common-services.
 --
--- Hash format must match @better-auth/api-key `defaultKeyHasher`:
+-- Hash format is a cross-repo contract (signals api + signals-search), kept
+-- byte-identical to the retired @better-auth/api-key `defaultKeyHasher` so no
+-- existing key had to rotate when better-auth was removed (signals-dpg#757):
 --   base64url(sha256(raw_key))  — unpadded, '+/' → '-_'.
 
 \set ON_ERROR_STOP on

@@ -177,9 +177,10 @@ required when cloning template → dev/staging/prod.
 `deploy_all_services` chains: `preflight → create_namespaces_and_secrets →
 deploy_monitoring → deploy_common_services → deploy_signals → deploy_aggregator →
 fix_acme_issuer_uri`, each helm step with a readiness `--wait`.
-`deploy_common_services` applies the gp3 default StorageClass **and the Kong
-CRDs** first (shared Postgres/Redis PVCs bind to gp3; helm skips subchart/upgrade
-CRDs so Kong's must be applied explicitly).
+`deploy_common_services` applies **the Kong CRDs** first (helm skips
+subchart/upgrade CRDs so Kong's must be applied explicitly). The shared
+Postgres/Redis PVCs bind to the cluster-default StorageClass, which
+`apply_default_sc` sets at cluster creation.
 
 ### Per-chart commands
 
@@ -323,9 +324,9 @@ bash install.sh destroy_tf_resources
   current-context`.
 - **`rotate-ghcr-pull.sh missing`** — run from the env directory that contains it
   (`opentofu/aws/<env>`); `install.sh` resolves it next to itself.
-- **PVCs stuck `Pending`** — gp3 isn't the default StorageClass. Run
-  `bash install.sh apply_gp3_default_sc` (also run automatically by
-  `deploy_common_services`).
+- **PVCs stuck `Pending`** — no default StorageClass is set. Run
+  `bash install.sh apply_default_sc` (run at cluster creation by the no-arg
+  bootstrap, not by `deploy_common_services`).
 - **Certificates stuck `READY=False`** — cert-manager v1.20.2 ACME bug. Run
   `bash install.sh fix_acme_issuer_uri` (also run automatically at the end of
   `deploy_all_services`).

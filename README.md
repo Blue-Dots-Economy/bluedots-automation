@@ -16,7 +16,7 @@ Signals, and Aggregator.
 
 > **There is no Makefile.** `install.sh` is the only entrypoint for both infra
 > and Helm. For the full step-by-step runbook (with validation and
-> troubleshooting), see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+> troubleshooting), see **[docs/deployment_guide.md](docs/deployment_guide.md)**.
 
 ---
 
@@ -50,8 +50,10 @@ that means **Signals** (`helm/signals/`).
 │   ├── actions/pr-gate/      # composite action: docs + release-notes gate for develop PRs
 │   ├── workflows/            # develop-pr-gate.yml (gate), pr-gate-tests.yml (action unit tests)
 │   └── PULL_REQUEST_TEMPLATE.md  # Summary / Release Notes / Checklist
-├── DEPLOYMENT.md             # authoritative end-to-end runbook + troubleshooting
-├── dockerfiles/              # Base images this repo builds (manual workflow_dispatch only)
+├── docs/
+│   ├── deployment_guide.md  # authoritative end-to-end runbook + troubleshooting
+│   └── deployment_guide_reference.md  # reference: new network/brand/instance variables
+├── dockerfiles/              # Base images this repo builds (manual workflow_dispatch or release tag)
 │   ├── postgres/             # Bitnami Postgres 17 + portable pgvector → ghcr.io/<owner>/postgres-pgvector
 │   └── keycloak/             # Keycloak + OTP authenticator SPI → ghcr.io/<owner>/keycloak-server
 ├── helm/                     # Application stack — five umbrella charts
@@ -65,7 +67,7 @@ that means **Signals** (`helm/signals/`).
 └── opentofu/
     └── aws/
         ├── _common/          # Terragrunt include files shared by every env (eks.hcl, iam.hcl, bastion.hcl, pritunl.hcl, …)
-        ├── modules/          # OpenTofu modules: network, eks, iam, storage, random_passwords, rds, output-file, bastion, pritunl
+        ├── modules/          # OpenTofu modules: network, eks, iam, storage, random_passwords, rds, output-file, backup, bastion, pritunl
         └── template/         # Reference environment — copy this to make a new env (e.g. dev/)
             ├── install.sh           # ← single entrypoint: infra bootstrap + Helm deploy (function dispatcher)
             ├── global-values.yaml   # ← the one file you edit (anchors at the top)
@@ -74,8 +76,9 @@ that means **Signals** (`helm/signals/`).
             ├── get-signalstack-org-id.sh  # fetch actingOrgId after signals is up
             ├── rotate-ghcr-pull.sh  # write/refresh the ghcr-pull image-pull secret
             ├── gp3-sc.yaml          # gp3 StorageClass (made cluster-default)
+            ├── aws-backup-scripts/  # operator scripts for on-demand backup, restore, status, verify (see its README.md)
             ├── root.hcl             # Terragrunt backend/provider generation
-            └── <module>/terragrunt.hcl  # one dir per module: network, eks, iam, storage, rds, bastion, pritunl, …
+            └── <module>/terragrunt.hcl  # one dir per module: network, eks, iam, storage, rds, backup, bastion, pritunl, …
 ```
 
 > **Private-cluster access** is provided by two optional infra modules —
@@ -263,7 +266,7 @@ Plus:
 ## 1. Infrastructure — `opentofu/aws`
 
 Terragrunt-driven. Each module (`network`, `eks`, `iam`, `storage`,
-`random_passwords`, `rds`, `output-file`, plus the optional `bastion` and
+`random_passwords`, `rds`, `output-file`, plus the optional `backup`, `bastion` and
 `pritunl`) is its own directory under an environment; they all `include` the
 shared logic in `_common/*.hcl` and read configuration from a single
 `global-values.yaml`.
@@ -297,6 +300,7 @@ _grafana_host:           &grafana_host           "monitoring.domain.com"
 # plus _signals_public_hosts, _network, _brand, SMTP, MSG91, alert emails, RDS sizing, IRSA subjects
 # global.orgHierarchyEnabled (default true) and api.schemas.consentNetwork/consentBrand also live here
 # bastion_enabled / pritunl_enabled (default true), pritunl_vpn_ingress_cidrs / pritunl_admin_ingress_cidrs, bastion_authorized_keys also live here
+# backup_enabled (default true), backup_schedule / backup_retention_days (prod defaults: daily / 30 days) also live here
 ```
 
 The file is heavily commented — read it before applying.
@@ -316,16 +320,18 @@ bash install.sh
    for OpenTofu state, and writes `tf.sh` with `AWS_REGION` / `TERRAFORM_BACKEND_BUCKET`.
 2. **`create_tf_resources`** — `source tf.sh` then `terragrunt run --all apply`
    (network → EKS → IAM → storage → random_passwords → rds → output-file, plus
-   `pritunl` after network and `bastion` after EKS), and writes a fresh
+   `pritunl` after network, `bastion` and `backup` after EKS), and writes a fresh
    kubeconfig. This also generates `global-secrets.yaml` and
-   `global-cloud-values.yaml`. The `bastion`/`pritunl` units are skipped from
-   `run --all` when `bastion_enabled`/`pritunl_enabled` is `false`.
-3. **`apply_gp3_default_sc`** — makes `gp3` the default StorageClass (demotes `gp2`).
+   `global-cloud-values.yaml`. The `bastion`/`pritunl`/`backup` units are skipped from
+   `run --all` when `bastion_enabled`/`pritunl_enabled`/`backup_enabled` is `false`.
+3. **`apply_default_sc`** — makes the class named by `STORAGE_CLASS_TYPE` (set at the top of `install.sh`, default `gp3`) the cluster-default StorageClass, demoting any other default.
 
 Targeted re-runs are supported, e.g. `bash install.sh create_tf_resources`, or a
 single module: `bash install.sh apply_tf_output_file` (regenerate just the
-values files), `bash install.sh apply_tf_pritunl` / `apply_tf_bastion` (bring up
-just the VPN/bastion — these ignore the `*_enabled` flag). The VPN/bastion pair
+values files), `bash install.sh apply_tf_backup` (AWS Backup for EKS; restores
+are manual, see `opentofu/aws/<env>/aws-backup-scripts/README.md`),
+`bash install.sh apply_tf_pritunl` / `apply_tf_bastion` (bring up just the
+VPN/bastion — these two ignore the `*_enabled` flag). The VPN/bastion pair
 can also be torn down on their own: `bash install.sh destroy_tf_pritunl` /
 `destroy_tf_bastion`.
 
@@ -347,7 +353,7 @@ basename), edit its `global-values.yaml`, and run its `install.sh`.
 
 For a full new-instance / new-network launch (network.json, brand, terms &
 policies, domains, auth channels, and all per-instance config as one checklist),
-follow **[docs/instance-setup.md](docs/instance-setup.md)**.
+follow **[docs/deployment_guide_reference.md](docs/deployment_guide_reference.md)**.
 
 ### Private-cluster access (Pritunl VPN + bastion)
 
@@ -459,7 +465,7 @@ cluster-wide.
 ```bash
 bash install.sh create_namespaces_and_secrets   # namespaces + ghcr-pull secret in each
 bash install.sh deploy_monitoring
-bash install.sh deploy_common_services           # applies gp3 + Kong CRDs, then helm --wait
+bash install.sh deploy_common_services           # applies Kong CRDs, then helm --wait
 bash install.sh deploy_signals
 bash install.sh deploy_aggregator
 ```
@@ -581,7 +587,7 @@ kubectl -n common-services get svc common-services-kong-proxy   # external hostn
 
 ```bash
 # Infra (from opentofu/aws/<env>)
-bash install.sh                          # provision EKS (backend → apply → gp3)
+bash install.sh                          # provision EKS (backend → apply → apply_default_sc)
 bash install.sh destroy_tf_resources
 
 # Apps (from opentofu/aws/<env>, kubeconfig pointed at the cluster)
@@ -600,4 +606,4 @@ helm list -A
 ```
 
 For the full runbook with validation steps and a troubleshooting table, see
-**[DEPLOYMENT.md](DEPLOYMENT.md)**.
+**[docs/deployment_guide.md](docs/deployment_guide.md)**.
