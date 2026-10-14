@@ -8,13 +8,13 @@ Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators m
 |---|---|
 | Deployment, Service | The Campaign Manager web app (listens on port 3000). |
 | Ingress | Exposes the app on your domain, with an HTTPS certificate from cert-manager. |
-| ConfigMap, Secret | Settings and credentials, injected into the app as environment variables. |
-| Database Job | Runs after every install and upgrade. Creates the Postgres roles (`migrator`, `cm_app`, `purple_loader`), the database and its schemas if they are missing. |
+| ConfigMap, Secret | One ConfigMap for settings and one Secret for every credential in the chart. Each pod reads only the keys it needs. |
+| Database Job | Runs after every install and upgrade. Creates the Postgres login, the database and its schemas if they are missing. |
 | Migrate Job | Runs after the database Job. Applies the app's schema migrations. |
-| Pipeline schema Job | Runs after the Migrate Job. Creates the pipeline's own tables (`purple_users`, `purple_items`, `purple_actions`) in the `platform` schema, as `purple_loader`. Only deployed with the pipeline. |
+| Pipeline schema Job | Runs after the Migrate Job. Creates the pipeline's own tables (`purple_users`, `purple_items`, `purple_actions`) in the `platform` schema. Only deployed with the pipeline. |
 | CronJob | Purple Dots data pipeline. Loads Raya calls and the platform S3 dump into the same database, which is where the app reads them. |
 
-Each component connects with its own Postgres role: the app as `cm_app`, the migrations as `migrator` (owns the schema), the pipeline as `purple_loader`. The jobs run in this order: Database Job, Migrate Job, Pipeline schema Job.
+The app, the migrations and the pipeline all connect with one Postgres login. The jobs run in this order: Database Job, Migrate Job, Pipeline schema Job.
 
 ## Before you configure
 
@@ -60,12 +60,8 @@ If the registry is private, create an image pull secret named `ghcr-pull` in the
 |---|---|---|
 | `database.host` | Postgres host. | `postgres.databases.svc.cluster.local` |
 | `database.name` | Database to create and use. Defaults to `campaign_manager`. | `campaign_manager` |
-| `database.admin.user`, `database.admin.password` | Admin account, used only by the database Job to create the roles and database. | `postgres`, `xxx` |
-| `database.migratorPassword` | Password for the `migrator` role. | `a-strong-password` |
-| `database.appPassword` | Password for the `cm_app` role. | `a-strong-password` |
-| `database.pipelinePassword` | Password for the `purple_loader` role. | `a-strong-password` |
-
-The role passwords are set on the roles every time the database Job runs, so changing one here and upgrading rotates it.
+| `database.admin.user`, `database.admin.password` | Admin account, used only by the database Job to create the login and the database. | `postgres`, `postgres-admin-password` |
+| `database.user`, `database.password` | The one login used by the app, the migrations and the pipeline. The user defaults to `campaign_manager`. The password is set on it every time the database Job runs. | `campaign_manager`, `a-strong-password` |
 
 ### Migrations
 
@@ -85,11 +81,11 @@ The role passwords are set on the roles every time the database Job runs, so cha
 | `secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
 | `secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
 
-To keep credentials out of Helm values, create a Secret yourself with these keys plus `DATABASE_URL` (the `cm_app` connection string) and set `secrets.existingSecret` to its name.
+To keep credentials out of Helm values, create the Secret yourself and set `secrets.existingSecret` to its name. It must carry these keys: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, plus `CLIENT_SECRET` for the pipeline and `DB_ADMIN_PASSWORD` and `DB_PASSWORD` for the database Job. The pipeline uses the same `RAYA_API_KEY` as the app.
 
 ### Purple Dots pipeline (`pipeline`)
 
-Set `pipeline.enabled: true` to deploy the CronJob. It uses the database above, connecting as `purple_loader`.
+Set `pipeline.enabled: true` to deploy the CronJob. It uses the database above.
 
 | Key | What it is | Example |
 |---|---|---|
@@ -98,7 +94,6 @@ Set `pipeline.enabled: true` to deploy the CronJob. It uses the database above, 
 | `pipeline.config.BASE_URL` | Host that serves `/v1/campaign/dump`, for the S3 dump. | `https://aggregator.example.com` |
 | `pipeline.config.KEYCLOAK_URL` | Keycloak base URL. | `https://auth.example.com/auth` |
 | `pipeline.config.REALM`, `pipeline.config.CLIENT_ID` | Keycloak realm and the service-account client. | `bluedots`, `campaign-manager` |
-| `pipeline.secrets.RAYA_API_KEY` | Only if the pipeline needs a different Raya key. Empty means it uses `secrets.RAYA_API_KEY`. | leave empty |
 | `pipeline.secrets.CLIENT_SECRET` | Secret of the Keycloak client. | `xxx` |
 | `pipeline.args` | Extra arguments for the run, for example to skip a stage. | `["--skip", "platform"]` |
 

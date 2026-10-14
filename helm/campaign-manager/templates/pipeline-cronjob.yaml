@@ -23,8 +23,8 @@ spec:
             {{- include "campaign-manager.pipeline.selectorLabels" . | nindent 12 }}
           annotations:
             checksum/config: {{ include (print $.Template.BasePath "/pipeline-configmap.yaml") . | sha256sum }}
-            {{- if not .Values.pipeline.secrets.existingSecret }}
-            checksum/secrets: {{ include (print $.Template.BasePath "/pipeline-secret.yaml") . | sha256sum }}
+            {{- if not .Values.secrets.existingSecret }}
+            checksum/secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
             {{- end }}
         spec:
           restartPolicy: Never
@@ -39,11 +39,13 @@ spec:
               args:
                 {{- toYaml . | nindent 16 }}
               {{- end }}
+              env:
+                {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 16 }}
+                {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "RAYA_API_KEY" "optional" true) | nindent 16 }}
+                {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "CLIENT_SECRET" "optional" true) | nindent 16 }}
               envFrom:
                 - configMapRef:
                     name: {{ include "campaign-manager.pipeline.name" . }}-config
-                - secretRef:
-                    name: {{ include "campaign-manager.pipeline.secretName" . }}
               securityContext:
                 allowPrivilegeEscalation: false
               resources:

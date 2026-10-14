@@ -49,26 +49,25 @@ config: {}
 
 # App credentials, rendered into a Secret. Empty values are skipped.
 secrets:
-  existingSecret: ""             # or a Secret with DATABASE_URL and the keys below
+  existingSecret: ""             # or your own Secret with the same keys (see the README)
   SESSION_SECRET: ""             # UPDATE
   CRON_SECRET: ""                # UPDATE
   CRON_SECRET_PREVIOUS: ""       # only while rotating CRON_SECRET
   RAYA_API_KEY: ""               # UPDATE
   GOOGLE_SERVICE_ACCOUNT_JSON: ""   # UPDATE: service-account JSON as one string
 
-# Postgres shared by the app, the migrations and the pipeline.
+# Postgres used by the app, the migrations and the pipeline, all through one login.
 database:
   host: ""                       # UPDATE
   port: 5432
   name: campaign_manager
-  migratorPassword: ""           # UPDATE: role migrator, owns the schema
-  appPassword: ""                # UPDATE: role cm_app, used by the app
-  pipelinePassword: ""           # UPDATE: role purple_loader, used by the pipeline
+  user: campaign_manager         # the one login for the app, migrations and pipeline
+  password: ""                   # UPDATE
   admin:
     user: postgres
     password: ""                 # UPDATE: used only by the database Job
 
-# Job that creates the roles, database and schemas if missing.
+# Job that creates the login, database and schemas if missing.
 dbInit:
   enabled: true
   image:
@@ -108,7 +107,7 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Purple Dots data pipeline: CronJob loading Raya calls and the S3 dump into Postgres (role purple_loader).
+# Purple Dots data pipeline: CronJob loading Raya calls and the S3 dump into Postgres.
 pipeline:
   enabled: false
 
@@ -139,8 +138,6 @@ pipeline:
     PD_TEST_BATCHES: ""
 
   secrets:
-    existingSecret: ""           # or a Secret with DATABASE_URL, RAYA_API_KEY, CLIENT_SECRET
-    RAYA_API_KEY: ""             # empty = the app's secrets.RAYA_API_KEY
     CLIENT_SECRET: ""            # UPDATE: Keycloak service-account secret, for the S3 dump
 
   resources:
