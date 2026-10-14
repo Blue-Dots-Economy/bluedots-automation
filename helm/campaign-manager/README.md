@@ -75,7 +75,7 @@ If the registry is private, create an image pull secret named `ghcr-pull` in the
 
 | Key | What it is | Example |
 |---|---|---|
-| `secrets.SESSION_SECRET` | Key that signs login sessions. | `a-long-random-string` |
+| `secrets.SESSION_SECRET` | Key that signs login sessions. Must be at least 32 characters. | generate with `openssl rand -hex 32` |
 | `secrets.CRON_SECRET` | Secret that authenticates the sync hook called by your scheduler. | `a-long-random-string` |
 | `secrets.CRON_SECRET_PREVIOUS` | The previous cron secret, still accepted while you rotate. Leave empty otherwise. | `the-old-random-string` |
 | `secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
