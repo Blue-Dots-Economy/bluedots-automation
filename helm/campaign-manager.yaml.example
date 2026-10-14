@@ -17,9 +17,7 @@ ingress:
 
 database:
   host: postgres.databases.svc.cluster.local
-  migratorPassword: migrator-password
-  appPassword: app-password
-  pipelinePassword: pipeline-password
+  password: database-password
   admin:
     password: postgres-admin-password
 

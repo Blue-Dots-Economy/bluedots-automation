@@ -1,0 +1,80 @@
+{{- /* Runs after the database Job, from the app image unless migrate.image is set. */ -}}
+{{- if .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "campaign-manager.fullname" . }}-migrate
+  labels:
+    {{- include "campaign-manager.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: campaign-manager-migrate
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      {{- include "campaign-manager.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: "{{ default .Values.image.repository .Values.migrate.image.repository }}:{{ default (default .Chart.AppVersion .Values.image.tag) .Values.migrate.image.tag }}"
+          imagePullPolicy: {{ .Values.migrate.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.migrate.command | nindent 12 }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "campaign-manager.secretName" . }}
+                  key: DATABASE_URL
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+{{- end }}
+{{- /* Creates the pipeline's platform tables after the migrate Job. Idempotent. */ -}}
+{{- if .Values.pipeline.enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "campaign-manager.pipeline.name" . }}-schema
+  labels:
+    {{- include "campaign-manager.pipeline.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: campaign-manager-pipeline-schema
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      {{- include "campaign-manager.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: schema
+          image: {{ include "campaign-manager.pipeline.image" . | quote }}
+          imagePullPolicy: {{ .Values.pipeline.image.pullPolicy }}
+          command:
+            - python
+            - -c
+            - "import pathlib, db; db.run_sql_file(pathlib.Path('sql/create_purple_dots_s3.sql')); print('platform tables ready')"
+          env:
+            {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+{{- end }}

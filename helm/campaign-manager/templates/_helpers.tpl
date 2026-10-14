@@ -61,17 +61,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{ .Values.pipeline.image.repository }}:{{ required "pipeline.image.tag is required when pipeline.enabled" .Values.pipeline.image.tag }}
 {{- end -}}
 
-{{/* Name of the Secret carrying DATABASE_URL, RAYA_API_KEY, CLIENT_SECRET. */}}
-{{- define "campaign-manager.pipeline.secretName" -}}
-{{- if .Values.pipeline.secrets.existingSecret -}}
-{{- .Values.pipeline.secrets.existingSecret -}}
-{{- else -}}
-{{- printf "%s-secrets" (include "campaign-manager.pipeline.name" .) -}}
-{{- end -}}
+{{/* One env var read from a single key of the chart's Secret. Args: ctx, name, optional. */}}
+{{- define "campaign-manager.secretEnv" -}}
+- name: {{ .name }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "campaign-manager.secretName" .ctx }}
+      key: {{ .name }}
+      {{- if .optional }}
+      optional: true
+      {{- end }}
 {{- end -}}
 
-{{/* postgresql:// URL for one role, user and password percent-encoded. Args: db, user, password, key. */}}
+{{/* postgresql:// URL from the database block, user and password percent-encoded. */}}
 {{- define "campaign-manager.databaseUrl" -}}
-{{- $db := .db -}}
-{{- printf "postgresql://%s:%s@%s:%v/%s" (urlquery .user | replace "+" "%20") (urlquery (required (printf "%s is required" .key) .password) | replace "+" "%20") (required "database.host is required" $db.host) $db.port (required "database.name is required" $db.name) -}}
+{{- printf "postgresql://%s:%s@%s:%v/%s" (urlquery (required "database.user is required" .user) | replace "+" "%20") (urlquery (required "database.password is required" .password) | replace "+" "%20") (required "database.host is required" .host) .port (required "database.name is required" .name) -}}
 {{- end -}}
