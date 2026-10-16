@@ -117,15 +117,14 @@ securityContext:
       - ALL
 
 # RBAC policy engine (aggregator-dpg #849). `mode` is the api's RBAC_MODE:
-#   off     — no checks and no OPA sidecar (default)
-#   log     — decide every request and log denies, block nothing
+#   log     — decide every request and log denies, block nothing (default)
 #   enforce — deny with 403
-# Any mode but `off` adds an OPA native sidecar and an init container that copies
+# The pod always runs an OPA native sidecar and an init container that copies
 # the policy out of the api image (/app/policy/rbac/rbac.rego), so the image must
-# be a build that ships it. Quote the value: bare `off` is a YAML boolean.
+# be a build that ships it.
 # See docs/aggregator-rbac-opa-plan.md.
 rbac:
-  mode: "off"
+  mode: log
   # Built-in roles: a full rbac.yaml (version 2, `roles:` only) replacing the
   # image's copy. Blank = the image's own. The api applies it to the database at
   # every start; custom roles live only in the database and are never touched

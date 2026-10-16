@@ -21,7 +21,6 @@
   RBAC (aggregator-dpg #849). The api reads rbac.yaml from the same directory as
   aggregator.config.yaml first, so an override is mounted there.
 */ -}}
-{{- $rbac := include "api.rbacEnabled" . -}}
 {{- $rbacPath := printf "%s/rbac.yaml" (dir $configPath) -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -42,16 +41,13 @@ spec:
         {{- include "api.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- if $rbac }}
         checksum/rbac: {{ include (print $.Template.BasePath "/rbac-configmap.yaml") . | sha256sum }}
-        {{- end }}
     spec:
       serviceAccountName: {{ include "api.serviceAccountName" . }}
       {{- include "api.imagePullSecrets" . | nindent 6 }}
       {{- include "api.hostAliases" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if $rbac }}
       initContainers:
         # Copies the RBAC policy out of the api image, so OPA always runs the
         # policy this api build was tested with. The runtime image has no shell.
@@ -122,7 +118,6 @@ spec:
               mountPath: /authz/authz.rego
               subPath: authz.rego
               readOnly: true
-      {{- end }}
       containers:
         - name: api
           image: {{ include "api.image" . }}
@@ -243,7 +238,7 @@ spec:
               subPath: aggregator.config.yaml
               readOnly: true
             {{- end }}
-            {{- if and $rbac .Values.rbac.config }}
+            {{- if .Values.rbac.config }}
             # rbac.yaml override (rbac.config), read before the image's copy.
             - name: rbac
               mountPath: {{ $rbacPath }}
@@ -259,11 +254,9 @@ spec:
           configMap:
             name: {{ .Release.Name }}-network-config
         {{- end }}
-        {{- if $rbac }}
         - name: rbac-policy
           emptyDir:
             sizeLimit: 1Mi
         - name: rbac
           configMap:
             name: {{ include "api.fullname" . }}-rbac
-        {{- end }}

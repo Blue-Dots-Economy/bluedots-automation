@@ -143,7 +143,7 @@ aggregator-api:
       cpu: 500m
       memory: 1Gi
 
-  # OPA sidecar, present only while rbac.mode is not off. Its requests count
+  # OPA sidecar, always present in the api pod. Its requests count
   # toward the HPA's CPU utilisation for the pod.
   rbac:
     opa:
