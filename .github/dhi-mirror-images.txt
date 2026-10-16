@@ -89,3 +89,8 @@ busybox:1.38-alpine
 # (verified: identical image id), so there is no second image to copy, only a
 # second name for this one.
 redis:7.4.11-compat
+
+# ── helm/aggregator — api RBAC policy engine (OPA sidecar) ──────────────────
+# Rendered only when aggregator-api.rbac.mode is not off. Runs as the pod's
+# uid 1000 (the image default is 65532); entrypoint /usr/bin/opa.
+open-policy-agent:1.21.1

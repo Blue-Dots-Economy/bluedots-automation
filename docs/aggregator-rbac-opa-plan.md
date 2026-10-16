@@ -1,0 +1,74 @@
+# Aggregator RBAC: OPA sidecar
+
+Runs the aggregator's RBAC policy engine (OPA) next to every `aggregator-api`
+pod, always. `aggregator-api.rbac.mode` picks `log` (default) or `enforce` per
+environment.
+
+| Item | Value |
+|---|---|
+| App side | aggregator-dpg `feat/805-rbac` (#849); design `docs/rbac/rbac-design-aggregator.md` |
+| Switch | `aggregator-api.rbac.mode`: `log` (default) / `enforce` |
+| OPA image | Docker Hardened Image `dhi.io/open-policy-agent:1.21.1`, mirrored to `ghcr.io/blue-dots-economy/dhi/open-policy-agent` |
+| Needs | An api image that ships `/app/policy/rbac/rbac.rego` |
+
+## Pod layout
+
+```mermaid
+flowchart LR
+  I["rbac-policy<br/>init, api image"] -->|1 copy| V[("policy<br/>emptyDir")]
+  V -->|2 load| O["opa<br/>native sidecar"]
+  A["api"] -->|3 decide| O
+  K["kubelet"] -->|4 probe| O
+```
+
+| Step | What happens |
+|---|---|
+| 1 | An init container from the api image copies `rbac.rego` into a shared volume |
+| 2 | OPA starts as a native sidecar (`restartPolicy: Always`) and loads it; the api starts only after OPA's startup probe passes |
+| 3 | The api asks `http://localhost:8181/v1/data/rbac/{decision,capabilities}` |
+| 4 | Probes use a separate diagnostic port (`8282`, health and metrics only) |
+
+## Decisions
+
+| Decision | Why |
+|---|---|
+| Policy comes from the api image, not this repo or a fetch | The policy and the api's TypeScript mirror always match the running build |
+| Decision port bound to `127.0.0.1` | Nothing outside the pod can query OPA or change its policy |
+| OPA `--authorization=basic` with a chart-owned `system.authz` policy | Only `POST` to the two rbac paths is allowed, even from inside the pod |
+| `--disable-telemetry` | OPA reports its version to an external service by default |
+| Sidecar always on, default `log` | Every environment records decisions from the first deploy; nothing is blocked until `enforce` |
+| Optional `rbac.yaml` override from values | An instance can ship its own built-in roles without rebuilding; custom roles are made in the console |
+| Sidecar resources in `global-resources.yaml` | Same place as every other request and limit |
+| Hardened OPA image through the DHI mirror, tag only | Same path and refresh as the other third-party images; the cluster never pulls from dhi.io |
+
+## Steps
+
+| Step | Where | Status |
+|---|---|---|
+| A1 Ship `policy/rbac/rbac.rego` in the api image | aggregator-dpg `apps/api/Dockerfile` | Done |
+| B1 `rbac` values (mode, OPA image, timeouts, config override) | `charts/api/values.yaml`, `opentofu/aws/template/global-values.yaml` | Done |
+| B2 `RBAC_MODE`, `OPA_*` env | `charts/api/templates/configmap.yaml` | Done |
+| B3 Init container, OPA sidecar, volumes | `charts/api/templates/deployment.yaml` | Done |
+| B4 `system.authz` policy and optional `rbac.yaml` ConfigMap | `charts/api/templates/` | Done |
+| B5 Sidecar resources | `helm/global-resources.yaml` | Done |
+| B6 Render checks for `log`, `enforce`; run the rendered OPA command and authz policy in Docker | local, CI `helm lint` / `template` | Done |
+| B7 Docs | `helm/CLAUDE.md`, `helm/aggregator/README.md` | Done |
+| B8 OPA image from the DHI mirror; CI drift check covers the sidecar | `.github/dhi-mirror-images.txt`, `ci.yml` | Done |
+| B9 Role model (aggregator-dpg R3–R6): `rbac.config` is built-in roles only; `rbac.catalogueRefreshMs` | `charts/api`, `helm/CLAUDE.md` | Done |
+
+## Rollout per environment
+
+1. Once per GitHub org: after the mirror workflow first copies `open-policy-agent`, make the `dhi/open-policy-agent` package public.
+2. Deploy an api image that contains the policy (A1).
+3. Deploy with the default `rbac.mode: log` and check the api logs for `rbac.decide` denies. This start also creates the roles in the database.
+4. Run the backfill once, so existing coordinators keep exporting: `psql "$DATABASE_URL" -f scripts/sql/rbac-backfill-roles.sql` (aggregator-dpg; gives active coordinators Data Export and 90-day PII Access, skips any they hold).
+5. Set `rbac.mode: enforce` and deploy.
+
+Back out of enforcement by setting `mode: log`.
+
+## Not in this change
+
+| Item | Where it is tracked |
+|---|---|
+| Portal gate for org owners and admin-only attributes in the deployment realm (H-11) | aggregator-dpg RBAC plan, bluedots-automation row |
+| OPA in the worker | Deferred in the RBAC plan (worker re-check) |
