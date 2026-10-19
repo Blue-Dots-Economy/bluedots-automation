@@ -500,6 +500,13 @@ postgres:
   username: keycloak
   database: keycloak
 
+# Column-level read-only Signals role for the Campaign Manager pipeline
+# (common-services postgresBootstrap). Off by default in the chart; this
+# deep-merges with postgresBootstrap.enabled: true from global-cloud-values.yaml.
+postgresBootstrap:
+  campaignManagerSignalsRole:
+    enabled: true
+
 # ── keycloak subchart ─────────────────────────────────────────────────────────
 # This root `keycloak:` key is the SUBCHART of the keycloak release (umbrella
 # `keycloak-platform`, subchart `keycloak`), so keys here land on the subchart's
