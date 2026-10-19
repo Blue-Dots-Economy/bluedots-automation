@@ -666,6 +666,11 @@ web:
 aggregator-api:
   adminEmails: *aggregator_admin_emails
   supportEmail: *support_email
+  # RBAC: log | enforce. The api pod always runs the OPA sidecar and needs an
+  # api image that ships the policy. Roll out log first, then enforce;
+  # see docs/aggregator-rbac-opa-plan.md.
+  rbac:
+    mode: log
 
 mail:
   provider: smtp  # smtp | ses

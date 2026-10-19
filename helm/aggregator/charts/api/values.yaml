@@ -115,3 +115,45 @@ securityContext:
   capabilities:
     drop:
       - ALL
+
+# RBAC policy engine (aggregator-dpg #849). `mode` is the api's RBAC_MODE:
+#   log     — decide every request and log denies, block nothing (default)
+#   enforce — deny with 403
+# The pod always runs an OPA native sidecar and an init container that copies
+# the policy out of the api image (/app/policy/rbac/rbac.rego), so the image must
+# be a build that ships it.
+# See docs/aggregator-rbac-opa-plan.md.
+rbac:
+  mode: log
+  # Built-in roles: a full rbac.yaml (version 2, `roles:` only) replacing the
+  # image's copy. Blank = the image's own. The api applies it to the database at
+  # every start; custom roles live only in the database and are never touched
+  # here. Validated at boot: an invalid file, or an older-format one
+  # (version 1), stops the api.
+  config: ""
+  # How often each api replica re-reads the role catalogue and reloads it when
+  # a role changed (RBAC_CATALOGUE_REFRESH_MS); 0 = never.
+  catalogueRefreshMs: 30000
+  opa:
+    # Docker Hardened Image, mirrored to GHCR from dhi.io/open-policy-agent
+    # (.github/dhi-mirror-images.txt). Tag only, like the other mirrored images,
+    # so the monthly mirror refresh brings in security rebuilds. `digest` pins
+    # an exact build when set.
+    image:
+      repository: ghcr.io/blue-dots-economy/dhi/open-policy-agent
+      tag: "1.21.1"
+      digest: ""
+      pullPolicy: IfNotPresent
+    # Decision port, bound to 127.0.0.1: only the api container can reach it.
+    port: 8181
+    # Health and metrics only; the kubelet probes it on the pod IP.
+    diagnosticPort: 8282
+    # The api's per-attempt timeout, retries after the first attempt, and base
+    # backoff (doubles per retry). An engine failure is a deny.
+    timeoutMs: 500
+    retries: 1
+    backoffMs: 50
+    logLevel: error
+    resources:
+      requests: { cpu: 25m, memory: 48Mi }
+      limits: { cpu: 250m, memory: 128Mi }

@@ -85,3 +85,22 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/* The api's RBAC_MODE: log | enforce; anything else fails the render. */}}
+{{- define "api.rbacMode" -}}
+{{- $mode := toString .Values.rbac.mode -}}
+{{- if not (has $mode (list "log" "enforce")) -}}
+{{- fail (printf "aggregator-api.rbac.mode must be log or enforce (got %q)" $mode) -}}
+{{- end -}}
+{{- $mode -}}
+{{- end -}}
+
+{{/* OPA image, by digest when one is set. */}}
+{{- define "api.opaImage" -}}
+{{- $img := .Values.rbac.opa.image -}}
+{{- if $img.digest -}}
+{{ $img.repository }}:{{ $img.tag }}@{{ $img.digest }}
+{{- else -}}
+{{ $img.repository }}:{{ $img.tag }}
+{{- end -}}
+{{- end -}}
