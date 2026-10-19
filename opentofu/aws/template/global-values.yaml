@@ -394,7 +394,7 @@ global:
   # there without updating this list and every exchange fails closed with
   # AzpNotAllowedError; drop one from this list and that client is locked out.
   keycloakAllowedAzp: "aggregator-portal,aggregator-api,aggregator-bff"
-  # REPLACES the list above on /v1/campaign/* only (export, email, voice, dump),
+  # REPLACES the list above on /v1/campaign/* only (export, email, voice),
   # scoping the campaign routes to the external campaign-manager client. Matches
   # the app's own fallback; set explicitly so the deployed value is visible in
   # the ConfigMap rather than implied by whichever image tag is running.
@@ -526,16 +526,12 @@ keycloak:
   # `deploy_keycloak` fails outright rather than importing a client that looks
   # configured and rejects every login with invalid_redirect_uri.
   #
-  # Two valid answers:
-  #   "<url>[,<url>...]"  the campaign manager's real callback(s). Keycloak
-  #                       matches redirect_uri BYTE-EXACTLY — a trailing-slash
-  #                       difference fails login. List every callback it uses.
-  #   a URL you own       if this deployment only uses the client_credentials
-  #                       non-PII dump path (which needs no redirect URI at all),
-  #                       point it at a path on your own domain. Never at a host
-  #                       you do not control: this is an OAuth allow-list, and a
-  #                       third-party entry is an open-redirect primitive for
-  #                       stealing authorization codes.
+  # "<url>[,<url>...]" — the campaign manager's real callback(s), used by its
+  # browser/direct-grant login for the org-scoped campaign routes. Keycloak
+  # matches redirect_uri BYTE-EXACTLY — a trailing-slash difference fails
+  # login. List every callback it uses. Never point this at a host you do not
+  # control: this is an OAuth allow-list, and a third-party entry is an
+  # open-redirect primitive for stealing authorization codes.
   #
   # Left EMPTY here on purpose so a new environment has to make that choice
   # rather than inheriting someone else's callback URL. It was previously absent

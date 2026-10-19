@@ -179,7 +179,7 @@ global:
   # renamed there and not here fails every exchange with AzpNotAllowedError.
   keycloakAllowedAzp: 'aggregator-portal,aggregator-api,aggregator-bff'
   # campaignManagerAllowedAzp: REPLACES the list above on the /v1/campaign/*
-  # routes only (export, email, voice, dump), scoping them to the external
+  # routes only (export, email, voice), scoping them to the external
   # campaign-manager client. The app falls back to this same literal when the
   # var is blank or parses to an empty list, so it can never un-gate the most
   # sensitive routes — set explicitly anyway, so the deployed value is visible

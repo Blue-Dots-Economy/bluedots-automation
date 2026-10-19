@@ -84,9 +84,8 @@ resource "random_id" "voice_dpg_signals_secret" {
 }
 
 # `campaign-manager` client. Confidential client for the external campaign
-# manager: its service account is the client_credentials caller for the
-# non-PII dump route, and coordinators take password-grant tokens on it for
-# the org-scoped campaign routes.
+# manager: coordinators take password-grant tokens on it for the org-scoped
+# campaign routes.
 resource "random_id" "campaign_manager_secret" {
   byte_length = var.campaign_manager_secret_bytes
 }

@@ -65,7 +65,7 @@ data:
   # blank. That is the opposite of AGGREGATOR_ONBOARDING_ENABLED below, which is
   # fail-CLOSED and must be omitted; the two look inconsistent on purpose.
   # KEYCLOAK_ALLOWED_AZP covers every route; CAMPAIGN_MANAGER_ALLOWED_AZP
-  # REPLACES it on /v1/campaign/* (export, email, voice, dump).
+  # REPLACES it on /v1/campaign/* (export, email, voice).
   KEYCLOAK_ALLOWED_AZP: "{{ .Values.global.keycloakAllowedAzp }}"
   CAMPAIGN_MANAGER_ALLOWED_AZP: "{{ .Values.global.campaignManagerAllowedAzp }}"
 {{- /*
