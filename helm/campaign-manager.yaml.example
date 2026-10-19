@@ -34,9 +34,6 @@ pipeline:
     tag: v1.0.0
   schedule: "0 2 * * *"
   config:
-    BASE_URL: https://aggregator.example.com
-    KEYCLOAK_URL: https://auth.example.com/auth
-    REALM: bluedots
-    CLIENT_ID: campaign-manager
+    NETWORK: purple_dot          # the Signals network this deployment reads, e.g. purple_dot or blue_dot
   secrets:
-    CLIENT_SECRET: keycloak-client-secret
+    SIGNALS_DATABASE_URL: postgresql://campaign_manager_signals_ro:xxx@host:5432/dpg

@@ -98,16 +98,17 @@ dependency "random_passwords" {
 
     postgres_admin_password = "0000000000000000000000000000000c"
 
-    signals_postgres_password      = "00000000000000000000000000000001"
-    signals_export_ro_password     = "0000000000000000000000000000000e"
-    aggregator_export_ro_password  = "0000000000000000000000000000000f"
-    signals_redis_password         = "00000000000000000000000000000002"
-    signals_auth_secret            = "00000000000000000000000000000003"
-    signals_pii_key                = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-    signals_notification_secret    = "00000000000000000000000000000004"
-    signals_search_api_key         = "dummy-signals-search-api-key-00000000000000"
-    raya_voice_bot_api_key         = "dummy-raya-voice-bot-api-key-0000000000000000"
-    signals_instance_shared_secret = "000000000000000000000000000000000000000000000000000000000000000d"
+    signals_postgres_password            = "00000000000000000000000000000001"
+    signals_export_ro_password           = "0000000000000000000000000000000e"
+    aggregator_export_ro_password        = "0000000000000000000000000000000f"
+    campaign_manager_signals_ro_password = "00000000000000000000000000000014"
+    signals_redis_password               = "00000000000000000000000000000002"
+    signals_auth_secret                  = "00000000000000000000000000000003"
+    signals_pii_key                      = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    signals_notification_secret          = "00000000000000000000000000000004"
+    signals_search_api_key               = "dummy-signals-search-api-key-00000000000000"
+    raya_voice_bot_api_key               = "dummy-raya-voice-bot-api-key-0000000000000000"
+    signals_instance_shared_secret       = "000000000000000000000000000000000000000000000000000000000000000d"
 
     aggregator_postgres_password            = "0000000000000000000000000000000000000000000000000000000000000006"
     keycloak_postgres_password              = "000000000000000000000000000000000000000000000000000000000000000f"
@@ -134,11 +135,10 @@ inputs = {
   signals_network         = local.network
   signals_allowed_origins = local.signals_allowed_origins
 
-  # IAM — one role for the aggregator api/worker AND the signals s3-export
-  # CronJob (no dedicated exporter role).
+  # IAM — the aggregator api/worker's role.
   app_sa_role_arn = dependency.iam.outputs.app_sa_role_arn
 
-  # Storage — one public bucket, likewise shared with the s3-export CronJob.
+  # Storage — the aggregator's public bucket.
   storage_bucket_public = dependency.storage.outputs.storage_bucket_public == null ? "" : dependency.storage.outputs.storage_bucket_public
 
   # RDS (managed Postgres) — endpoint hostname injected into all three chart overlays
@@ -149,16 +149,17 @@ inputs = {
 
   postgres_admin_password = dependency.random_passwords.outputs.postgres_admin_password
 
-  signals_postgres_password      = dependency.random_passwords.outputs.signals_postgres_password
-  signals_export_ro_password     = dependency.random_passwords.outputs.signals_export_ro_password
-  aggregator_export_ro_password  = dependency.random_passwords.outputs.aggregator_export_ro_password
-  signals_redis_password         = dependency.random_passwords.outputs.signals_redis_password
-  signals_auth_secret            = dependency.random_passwords.outputs.signals_auth_secret
-  signals_pii_key                = dependency.random_passwords.outputs.signals_pii_key
-  signals_notification_secret    = dependency.random_passwords.outputs.signals_notification_secret
-  signals_search_api_key         = dependency.random_passwords.outputs.signals_search_api_key
-  raya_voice_bot_api_key         = dependency.random_passwords.outputs.raya_voice_bot_api_key
-  signals_instance_shared_secret = dependency.random_passwords.outputs.signals_instance_shared_secret
+  signals_postgres_password            = dependency.random_passwords.outputs.signals_postgres_password
+  signals_export_ro_password           = dependency.random_passwords.outputs.signals_export_ro_password
+  aggregator_export_ro_password        = dependency.random_passwords.outputs.aggregator_export_ro_password
+  campaign_manager_signals_ro_password = dependency.random_passwords.outputs.campaign_manager_signals_ro_password
+  signals_redis_password               = dependency.random_passwords.outputs.signals_redis_password
+  signals_auth_secret                  = dependency.random_passwords.outputs.signals_auth_secret
+  signals_pii_key                      = dependency.random_passwords.outputs.signals_pii_key
+  signals_notification_secret          = dependency.random_passwords.outputs.signals_notification_secret
+  signals_search_api_key               = dependency.random_passwords.outputs.signals_search_api_key
+  raya_voice_bot_api_key               = dependency.random_passwords.outputs.raya_voice_bot_api_key
+  signals_instance_shared_secret       = dependency.random_passwords.outputs.signals_instance_shared_secret
 
   aggregator_postgres_password            = dependency.random_passwords.outputs.aggregator_postgres_password
   keycloak_postgres_password              = dependency.random_passwords.outputs.keycloak_postgres_password

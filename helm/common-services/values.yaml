@@ -346,6 +346,7 @@ credentials:
   dpgPassword: ""  # DPG_PG_PW
   signalsExportRoPassword: ""  # signals-s3-export read-only role (bootstrap-created)
   aggregatorExportRoPassword: ""  # signals-s3-export read-only role on the aggregator DB
+  campaignManagerSignalsRoPassword: ""  # campaign-manager pipeline's read-only Signals role (bootstrap-created)
   # Login password for the shared Keycloak's own Postgres role. Consumed by the
   # bootstrap Job (creates/syncs the role) AND by the keycloak release's Secret —
   # generate it ONCE in global-secrets.yaml and reference it from both.
@@ -422,13 +423,11 @@ postgresBootstrap:
   keycloakRole:
     enabled: true
     name: keycloak
-  # Read-only role for the signals-s3-export CronJob — created here (privileged),
-  # never the dpg app user. Table SELECTs are auto-granted as `owner` creates
-  # tables (ALTER DEFAULT PRIVILEGES), so it stays read-only. Opt-in: set
-  # enabled true where s3-export runs (needs credentials.signalsExportRoPassword).
-  signalsExportRole:
-    enabled: true
-    name: signals_export_ro
+  # Read-only, column-level-only Signals role for the Campaign Manager
+  # pipeline. Off by default; needs credentials.campaignManagerSignalsRoPassword.
+  campaignManagerSignalsRole:
+    enabled: false
+    name: campaign_manager_signals_ro
     database: dpg
     owner: dpg
   # Read-only role for the signals-s3-export CronJob on the aggregator database

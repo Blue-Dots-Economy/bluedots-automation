@@ -45,7 +45,7 @@ SIGNALS_DPG_REPO="${SIGNALS_DPG_REPO:-Blue-Dots-Economy/bluedots-schemas}"
 IMAGES_PUBLIC="${IMAGES_PUBLIC:-true}"
 
 # Namespaces needing the `ghcr-pull` Secret even when IMAGES_PUBLIC=true, for the
-# "one private image in an otherwise-public stack" case (the s3-export CronJob).
+# "one private image in an otherwise-public stack" case.
 # IMAGES_PUBLIC=false would instead attach the secret to every pod in every
 # namespace. Space-separated; empty = no-op. Pair it with a per-chart
 # `imagePullSecrets` in <env>/global-values.yaml — the Secret alone does nothing.

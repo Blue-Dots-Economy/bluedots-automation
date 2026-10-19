@@ -141,9 +141,8 @@ variable "abort_incomplete_multipart_days" {
   description = <<-EOT
     Days after initiation that incomplete multipart uploads are aborted, BUCKET-WIDE. Orphaned parts
     from a failed upload are billed but unreachable, and aborting an incomplete upload can never
-    delete a completed object — so this is safe to apply unscoped, and it needs to be: the signals
-    s3-export CronJob and bulk CSV uploads both multipart outside campaign_export_prefix. 0 disables
-    the rule.
+    delete a completed object — so this is safe to apply unscoped, and it needs to be: bulk CSV
+    uploads multipart outside campaign_export_prefix. 0 disables the rule.
   EOT
   type        = number
   default     = 7
@@ -160,7 +159,7 @@ variable "campaign_export_prefix" {
   default     = "campaign-exports/"
 
   # An empty prefix would silently widen the DELETE rule to the whole bucket, taking
-  # bulk-uploads/, qr/ and the signals s3-export dump with it. Fail at plan time instead.
+  # bulk-uploads/ and qr/ with it. Fail at plan time instead.
   validation {
     condition     = length(trimspace(var.campaign_export_prefix)) > 0
     error_message = "campaign_export_prefix must not be empty — an empty prefix expires the ENTIRE bucket, not just campaign exports."

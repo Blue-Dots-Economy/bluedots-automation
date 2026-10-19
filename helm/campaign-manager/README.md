@@ -11,8 +11,8 @@ Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators m
 | ConfigMap, Secret | One ConfigMap for settings and one Secret for every credential in the chart. Each pod reads only the keys it needs. |
 | Database Job | Runs after every install and upgrade. Creates the Postgres login, the database and its schemas if they are missing. |
 | Migrate Job | Runs after the database Job. Applies the app's schema migrations. |
-| Pipeline schema Job | Runs after the Migrate Job. Creates the pipeline's own tables (`purple_users`, `purple_items`, `purple_actions`) in the `platform` schema. Only deployed with the pipeline. |
-| CronJob | Purple Dots data pipeline. Loads Raya calls and the platform S3 dump into the same database, which is where the app reads them. |
+| Pipeline schema Job | Runs after the Migrate Job. Creates the pipeline's own tables (`users`, `items`, `actions`) in the `platform` schema. Only deployed with the pipeline. |
+| CronJob | Data pipeline. Loads Raya calls and reads Signals' non-PII data directly into the same database, which is where the app reads them. |
 
 The app, the migrations and the pipeline all connect with one Postgres login. The jobs run in this order: Database Job, Migrate Job, Pipeline schema Job.
 
@@ -81,9 +81,9 @@ If the registry is private, create an image pull secret named `ghcr-pull` in the
 | `secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
 | `secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
 
-To keep credentials out of Helm values, create the Secret yourself and set `secrets.existingSecret` to its name. It must carry these keys: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, plus `CLIENT_SECRET` for the pipeline and `DB_ADMIN_PASSWORD` and `DB_PASSWORD` for the database Job. The pipeline uses the same `RAYA_API_KEY` as the app.
+To keep credentials out of Helm values, create the Secret yourself and set `secrets.existingSecret` to its name. It must carry these keys: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, plus `SIGNALS_DATABASE_URL` for the pipeline and `DB_ADMIN_PASSWORD` and `DB_PASSWORD` for the database Job. The pipeline uses the same `RAYA_API_KEY` as the app.
 
-### Purple Dots pipeline (`pipeline`)
+### Data pipeline (`pipeline`)
 
 Set `pipeline.enabled: true` to deploy the CronJob. It uses the database above.
 
@@ -91,10 +91,8 @@ Set `pipeline.enabled: true` to deploy the CronJob. It uses the database above.
 |---|---|---|
 | `pipeline.image.repository`, `pipeline.image.tag` | Pipeline image. The tag is required. | `ghcr.io/your-org/purple-dots`, `v1.0.0` |
 | `pipeline.schedule` | Cron expression for the run, in `pipeline.timeZone` (default `Asia/Kolkata`). | `"0 2 * * *"` |
-| `pipeline.config.BASE_URL` | Host that serves `/v1/campaign/dump`, for the S3 dump. | `https://aggregator.example.com` |
-| `pipeline.config.KEYCLOAK_URL` | Keycloak base URL. | `https://auth.example.com/auth` |
-| `pipeline.config.REALM`, `pipeline.config.CLIENT_ID` | Keycloak realm and the service-account client. | `bluedots`, `campaign-manager` |
-| `pipeline.secrets.CLIENT_SECRET` | Secret of the Keycloak client. | `xxx` |
+| `pipeline.config.NETWORK` | Signals network this deployment reads. | `purple_dot` |
+| `pipeline.secrets.SIGNALS_DATABASE_URL` | Read-only Postgres URL to the Signals database. | `postgresql://campaign_manager_signals_ro:xxx@host:5432/dpg` |
 | `pipeline.args` | Extra arguments for the run, for example to skip a stage. | `["--skip", "platform"]` |
 
 To run the pipeline once without waiting for the schedule:

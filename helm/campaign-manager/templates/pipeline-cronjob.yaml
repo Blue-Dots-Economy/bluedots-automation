@@ -42,7 +42,7 @@ spec:
               env:
                 {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 16 }}
                 {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "RAYA_API_KEY" "optional" true) | nindent 16 }}
-                {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "CLIENT_SECRET" "optional" true) | nindent 16 }}
+                {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "SIGNALS_DATABASE_URL" "optional" true) | nindent 16 }}
               envFrom:
                 - configMapRef:
                     name: {{ include "campaign-manager.pipeline.name" . }}-config

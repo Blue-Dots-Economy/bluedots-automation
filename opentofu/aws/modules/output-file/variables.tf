@@ -40,8 +40,7 @@ variable "signals_allowed_origins" {
 # -----------------------------------------------------------------------------
 # IAM (IRSA)
 # -----------------------------------------------------------------------------
-# Single app IRSA role, annotated onto the aggregator api/worker AND the
-# signals s3-export ServiceAccounts — the exporter no longer has its own.
+# Single app IRSA role, annotated onto the aggregator api/worker ServiceAccounts.
 variable "app_sa_role_arn" {
   type    = string
   default = ""
@@ -50,8 +49,7 @@ variable "app_sa_role_arn" {
 # -----------------------------------------------------------------------------
 # Storage (S3)
 # -----------------------------------------------------------------------------
-# Single public bucket, shared by the aggregator and the signals s3-export
-# CronJob (which no longer has a dedicated private export bucket).
+# Single public bucket the aggregator writes to.
 variable "storage_bucket_public" {
   type    = string
   default = ""
@@ -256,6 +254,12 @@ variable "signals_export_ro_password" {
 }
 
 variable "aggregator_export_ro_password" {
+  type      = string
+  sensitive = true
+}
+
+# ─── Campaign Manager pipeline — direct read-only Signals DB access ─────────
+variable "campaign_manager_signals_ro_password" {
   type      = string
   sensitive = true
 }

@@ -1,18 +1,24 @@
 locals {
   values_dir = "${var.base_location}/.."
 
-  # DB URL for the signals-s3-export exporter: the read-only role (created by the
-  # common-services bootstrap), never the dpg app user. Host follows the RDS
-  # endpoint when present, else the in-cluster Postgres service.
-  signals_export_db_host = var.postgres_host != "" ? var.postgres_host : "common-services-postgresql.common-services.svc.cluster.local"
+  # Host for the read-only Signals role below. Follows the RDS endpoint when
+  # present, else the in-cluster Postgres service.
+  signals_db_host = var.postgres_host != "" ? var.postgres_host : "common-services-postgresql.common-services.svc.cluster.local"
+
+  # DB URL for the signals-s3-export exporter's read-only role.
   signals_export_database_url = format(
     "postgresql://signals_export_ro:%s@%s:5432/dpg",
-    var.signals_export_ro_password, local.signals_export_db_host,
+    var.signals_export_ro_password, local.signals_db_host,
   )
   # Same server, aggregator database, its own read-only role.
   aggregator_export_database_url = format(
     "postgresql://aggregator_export_ro:%s@%s:5432/aggregator",
-    var.aggregator_export_ro_password, local.signals_export_db_host,
+    var.aggregator_export_ro_password, local.signals_db_host,
+  )
+  # DB URL for the Campaign Manager pipeline's read-only Signals role.
+  campaign_manager_signals_database_url = format(
+    "postgresql://campaign_manager_signals_ro:%s@%s:5432/dpg",
+    var.campaign_manager_signals_ro_password, local.signals_db_host,
   )
 }
 
@@ -37,6 +43,8 @@ resource "local_sensitive_file" "global_secrets" {
     signals_export_database_url             = local.signals_export_database_url
     aggregator_export_ro_password           = var.aggregator_export_ro_password
     aggregator_export_database_url          = local.aggregator_export_database_url
+    campaign_manager_signals_ro_password    = var.campaign_manager_signals_ro_password
+    campaign_manager_signals_database_url   = local.campaign_manager_signals_database_url
     signals_redis_password                  = var.signals_redis_password
     monitoring_grafana_password             = var.monitoring_grafana_password
     keycloak_postgres_password              = var.keycloak_postgres_password

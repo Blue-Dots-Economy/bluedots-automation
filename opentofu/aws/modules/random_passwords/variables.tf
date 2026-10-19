@@ -22,6 +22,12 @@ variable "signals_export_ro_password_bytes" {
   default = 16
 }
 
+# Read-only Signals role for the Campaign Manager pipeline.
+variable "campaign_manager_signals_ro_password_bytes" {
+  type    = number
+  default = 16
+}
+
 variable "aggregator_export_ro_password_bytes" {
   type    = number
   default = 16

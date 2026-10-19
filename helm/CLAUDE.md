@@ -6,7 +6,7 @@ Guidance for the Helm half of the repo. Read the root `CLAUDE.md` first (the cri
 
 - **`monitoring/`** (chart `monitoring`) — `kube-prometheus-stack` (Prometheus Operator + Prometheus + Alertmanager + node-exporter + kube-state-metrics, **and the monitoring CRDs** others depend on), `loki`, `alloy` (DaemonSet log shipper, replaced Promtail), `jaeger`, Grafana (`_grafana_host`). The stock kube-prometheus ruleset is **disabled** (`defaultRules.create: false`) — alerting is a curated `additionalPrometheusRulesMap`. See `helm/monitoring/README.md`.
 - **`common-services/`** (chart `platform`) — Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres`/`data-redis` Secrets in the `common-services` namespace. The Bitnami `postgresql` subchart runs the org **portable-pgvector** image (`ghcr.io/blue-dots-economy/postgres-pgvector`, #93) — a Postgres + pgvector + PostGIS build compiled without AVX-512 so it doesn't SIGILL on non-AVX-512 nodes; it needs the `image.*` override plus `allowInsecureImages`, since the Bitnami chart otherwise refuses a non-Bitnami image.
-- **`signals/`** (chart `dpg`) — api, ui, notification-service, search (+ search-embeddings), s3-export. Connects to the shared DBs in `common-services`. The `match-score` subchart (the external dpg-scoring service) was removed in #89 — match-score now calls signals-search `POST /v1/relevance`. The **`s3-export`** subchart (chart `dpg-s3-export`, #86) is a CronJob that dumps allowlisted **non-PII** Signals data to S3 for campaign analytics.
+- **`signals/`** (chart `dpg`) — api, ui, notification-service, search (+ search-embeddings). Connects to the shared DBs in `common-services`. The `match-score` subchart (the external dpg-scoring service) was removed in #89 — match-score now calls signals-search `POST /v1/relevance`.
 - **`keycloak/`** (chart `keycloak-platform`) — the **shared** Keycloak. One instance, one realm, **both DPGs' clients**. Its own release in the `common-services` namespace (see the deadlock note below). Owns this repo's realm artefact (`charts/keycloak/files/realm.json`) plus the two realm-reconciliation scripts.
 - **`aggregator/`** (chart `aggregator-dpg`) — web (BFF), api, worker. Vendored `ingress-nginx`/`cert-manager` subcharts are **disabled** (`platform` owns them). Keycloak is no longer here. The worker liveness probe is an `httpGet` on `/healthz` (aggregator-dpg#675), not an `exec` — the DHI-based image has no shell.
 
@@ -364,28 +364,6 @@ Once #513 is deployed, canonical can drop `source:` from the YAML entirely (it b
 **They are rendered unconditionally, and that is the opposite of `AGGREGATOR_ONBOARDING_ENABLED` two sections up — deliberately.** `assertAllowedAzp` returns early on an empty list (`if (allow.length === 0) return; // gate disabled when unconfigured`), so these are **fail-open**: a blank value silently *removes* the check rather than denying everything. An omitted-when-empty conditional would therefore be the dangerous choice here, which is why both carry real defaults in `helm/aggregator/values.yaml` instead of empty strings. The onboarding flag is fail-*closed* and must be omitted. Two adjacent keys, opposite treatment, for opposite reasons — don't "make them consistent".
 
 `campaignManagerAllowedAzp` cannot un-gate even if blanked (the app falls back to the literal `campaign-manager` rather than returning an empty list, precisely because that route is the most sensitive). It is still set explicitly so the deployed value is visible in the rendered ConfigMap instead of implied by whichever image tag is running. `keycloakAllowedAzp`'s three ids — `aggregator-portal`, `aggregator-api`, `aggregator-bff` — are the clients the shared realm defines for this DPG; rename one there without updating this list and every exchange fails closed with `AzpNotAllowedError`.
-
-## Signals non-PII dump — a cross-RELEASE key contract nothing validates
-
-`GET /v1/campaign/dump` pre-signs the Signals non-PII snapshot so the campaign manager needs no S3 credentials of its own. The catch is that the objects are written by a **different helm release**: the signals `s3-export` CronJob, at three fixed keys overwritten in place every run (no manifest, no dated run folder):
-
-```
-[<prefix>/]<network>/<instance_id>/{user,items,item_actions}.ndjson.gz
-```
-
-So the key root is **configured on both sides and never probed**. Three things must line up, and **none of them fails the deploy** — both releases install green and the route returns `404 DUMP_NOT_AVAILABLE` at first call, possibly hours later:
-
-| aggregator (reads) | signals (writes) |
-|---|---|
-| `global.campaignDumpInstanceId` → `CAMPAIGN_DUMP_INSTANCE_ID` | `s3-export.instances[].id` → `INSTANCE_ID` |
-| `global.campaignDumpPrefix` → `CAMPAIGN_DUMP_PREFIX` | `s3-export.s3.prefix` → `S3_PREFIX` |
-| `global.s3.bucket` → `S3_BUCKET` | `s3-export.s3.bucket` |
-
-**Bind the instance id to a single YAML anchor in `<env>/global-values.yaml`** (`_s3_export_instance_id`, consumed by both keys) — it is the only mechanism that can keep two separate releases equal, since Helm cannot see across them. The bucket needs no per-env entry: `global-cloud-values.yaml` pins both sides to the generated `public` bucket (see `opentofu/CLAUDE.md` → *One bucket, one role*).
-
-`<network>` is **not** configurable — the api reads it from the resolved `aggregator.config.yaml`/`network.json` (`getNetworkConfig().network.id`), so it cannot drift from what the app actually serves. Note that it is the network **id inside network.json**, not `global.aggregatorNetwork` and not the brand: with `_network: blue_dot` and an exporter instance of `up-gzb` the key root is `blue_dot/up-gzb/`, even though the *brand* is also `up-gzb`. Do not collapse the instance-id anchor onto `*brand`.
-
-`CAMPAIGN_DUMP_INSTANCE_ID` has **no default and is safe to render empty** — the route returns `503 DUMP_NOT_CONFIGURED` (reason `CAMPAIGN_DUMP_INSTANCE_ID_UNSET`) and nothing else in the API is affected, so deployments with no campaign manager need no value. That is why it is a blank chart default rather than a `fail()`.
 
 ## `RAYA_*` — the two keys that crash the worker when rendered EMPTY
 

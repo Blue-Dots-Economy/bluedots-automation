@@ -107,7 +107,7 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
-# Purple Dots data pipeline: CronJob loading Raya calls and the S3 dump into Postgres.
+# Data pipeline: CronJob loading Raya calls and the Signals non-PII data into Postgres.
 pipeline:
   enabled: false
 
@@ -129,16 +129,13 @@ pipeline:
   args: []                       # extra run_pipeline.py arguments, e.g. ["--skip", "inbound"]
 
   config:                        # empty values are not rendered, so the pipeline defaults apply
-    BASE_URL: ""                 # UPDATE: Purple Dots signals API, for the S3 dump
-    KEYCLOAK_URL: ""             # UPDATE: Keycloak base URL, for the S3 dump
-    REALM: ""
-    CLIENT_ID: ""
+    NETWORK: ""                   # UPDATE: Signals network this deployment reads, e.g. purple_dot or blue_dot
     PD_INSTANCE: ""
     PD_REFRESH_DAYS: ""
     PD_TEST_BATCHES: ""
 
   secrets:
-    CLIENT_SECRET: ""            # UPDATE: Keycloak service-account secret, for the S3 dump
+    SIGNALS_DATABASE_URL: ""     # UPDATE: read-only Postgres URL to the Signals database
 
   resources:
     requests:
