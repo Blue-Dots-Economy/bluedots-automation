@@ -32,7 +32,7 @@ pipeline:
   image:
     repository: ghcr.io/your-org/purple-dots
     tag: v1.0.0
-  schedule: "0 2 * * *"
+  schedule: "0 */4 * * *"
   config:
     NETWORK: purple_dot          # the Signals network this deployment reads, e.g. purple_dot or blue_dot
   secrets:
