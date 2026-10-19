@@ -75,6 +75,12 @@ spec:
                   name: data-postgres
                   key: signals-export-ro-password
                   optional: true
+            - name: AGG_EXPORT_RO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: data-postgres
+                  key: aggregator-export-ro-password
+                  optional: true
           command:
             - sh
             - -ec
@@ -88,7 +94,7 @@ spec:
               echo "postgres ready; creating roles + databases"
               # Roles + databases on the default `postgres` db. Passwords passed as
               # psql variables (:'var') so they are safely quoted, never interpolated.
-              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" -v kc_pw="${KC_PW:-}" -v export_ro_pw="${EXPORT_RO_PW:-}" <<-'EOSQL'
+              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" -v kc_pw="${KC_PW:-}" -v export_ro_pw="${EXPORT_RO_PW:-}" -v agg_export_ro_password="${AGG_EXPORT_RO_PASSWORD:-}" <<-'EOSQL'
                 SELECT 'CREATE ROLE aggregator LOGIN'
                   WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aggregator')\gexec
                 SELECT 'CREATE ROLE dpg LOGIN'
@@ -115,6 +121,12 @@ spec:
                   WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{{ .Values.postgresBootstrap.signalsExportRole.name }}')\gexec
                 ALTER ROLE {{ .Values.postgresBootstrap.signalsExportRole.name }} WITH PASSWORD :'export_ro_pw';
                 ALTER ROLE {{ .Values.postgresBootstrap.signalsExportRole.name }} SET default_transaction_read_only = on;
+                {{- end }}
+                {{- if .Values.postgresBootstrap.aggregatorExportRole.enabled }}
+                SELECT 'CREATE ROLE {{ .Values.postgresBootstrap.aggregatorExportRole.name }} LOGIN'
+                  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='{{ .Values.postgresBootstrap.aggregatorExportRole.name }}')\gexec
+                ALTER ROLE {{ .Values.postgresBootstrap.aggregatorExportRole.name }} WITH PASSWORD :'agg_export_ro_password';
+                ALTER ROLE {{ .Values.postgresBootstrap.aggregatorExportRole.name }} SET default_transaction_read_only = on;
                 {{- end }}
                 -- On RDS the master is not a true superuser: to CREATE DATABASE owned
                 -- by a role it must be a member of that role (PG16+ "must be able to
@@ -149,6 +161,31 @@ spec:
                 GRANT SELECT ON ALL TABLES IN SCHEMA public TO {{ .Values.postgresBootstrap.signalsExportRole.name }};
                 ALTER DEFAULT PRIVILEGES FOR ROLE {{ .Values.postgresBootstrap.signalsExportRole.owner }} IN SCHEMA public
                   GRANT SELECT ON TABLES TO {{ .Values.postgresBootstrap.signalsExportRole.name }};
+              EOSQL
+              {{- end }}
+              {{- if .Values.postgresBootstrap.aggregatorExportRole.enabled }}
+              {{- $r := .Values.postgresBootstrap.aggregatorExportRole }}
+              echo "granting column-level SELECT to {{ $r.name }} on {{ $r.database }}"
+              psql -v ON_ERROR_STOP=1 -d {{ $r.database }} <<-'EOSQL'
+                GRANT CONNECT ON DATABASE {{ $r.database }} TO {{ $r.name }};
+                GRANT USAGE ON SCHEMA public TO {{ $r.name }};
+                -- Only the columns the export query reads (adhoc-scripts
+                -- signals-s3-export README). Skipped until the aggregator
+                -- migrations have created the tables.
+                DO $$
+                BEGIN
+                  IF to_regclass('public.aggregator_orgs') IS NOT NULL
+                     AND to_regclass('public.aggregators') IS NOT NULL THEN
+                    GRANT SELECT (id, display_name, status, rejected_at)
+                      ON aggregator_orgs TO {{ $r.name }};
+                    GRANT SELECT (parent_org_id, signalstack_org_id, name, type,
+                                  status, created_at, actor_type)
+                      ON aggregators TO {{ $r.name }};
+                  ELSE
+                    RAISE NOTICE 'aggregator tables not created yet; grants applied on a later upgrade';
+                  END IF;
+                END
+                $$;
               EOSQL
               {{- end }}
               echo "[common-services] postgres bootstrap complete"
