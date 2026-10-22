@@ -115,3 +115,25 @@ securityContext:
   capabilities:
     drop:
       - ALL
+
+# ── Instance-upgrade Job (existing-instance DB + Keycloak migration) ──────────
+# Off by default. Render + apply on demand, with the API/worker/web scaled to 0:
+#   helm template <rel> helm/aggregator \
+#     --set aggregator-api.instanceUpgrade.enabled=true \
+#     --set 'aggregator-api.instanceUpgrade.args={run-all,--snapshot-taken,<snapshot-id>}' \
+#     --show-only charts/aggregator-api/templates/job-instance-upgrade.yaml | kubectl apply -f -
+# (The api subchart is aliased `aggregator-api` in the umbrella Chart.yaml, so
+#  the override key and the --show-only path both use that name, not `api`.)
+# The Job reuses the API's image + env. See aggregator-dpg's
+# docs/user-org-migration-runbook.md for the full sequence and go/no-go checks.
+instanceUpgrade:
+  enabled: false
+  # The instance-upgrade subcommand + flags, e.g.
+  #   ["check"] | ["run","--snapshot-taken","<id>"] | ["data"] |
+  #   ["enrich"] | ["enable-owners"] | ["run-all","--snapshot-taken","<id>"]
+  args: ["check"]
+  # Optional DATABASE_URL override (direct primary, bypassing a pooler); the
+  # tool's `run` / `data` need one session. Blank = use the API's DATABASE_URL.
+  databaseUrl: ""
+  ttlSecondsAfterFinished: 86400
+  resources: {}
