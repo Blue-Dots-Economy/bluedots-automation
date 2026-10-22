@@ -224,7 +224,7 @@ export function docsPrBody({ tag, components }) {
     '',
     '## Checklist',
     '- [ ] Run the `release-page` skill (from the `bluedots-release-tools` plugin) to write `notes.md` for this rc, and edit it by hand.',
-    '- [ ] `pnpm build && pnpm check:links && pnpm check:style` pass locally.',
+    '- [ ] `pnpm build` passes locally (the docs CI does not build PRs); `pnpm check:links` and `pnpm check:style` report nothing new under `src/releases/`.',
     '- [ ] Merge to publish.',
     '',
   ].join('\n');

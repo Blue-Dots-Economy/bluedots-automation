@@ -18,7 +18,7 @@
 #         build-workflow: build-images.yaml
 #         automation-ref: <sha>
 #       secrets:
-#         docs-token: ${{ secrets.RELEASE_NOTES_DOCS_TOKEN }}
+#         docs-token: ${{ secrets.DOCS_SYNC_TOKEN }}
 #
 # Why this exists: tags were cut by hand, which meant remembering to check CI
 # first. Each repo's build-images `verify-ci` job is the backstop that refuses to
@@ -278,7 +278,7 @@ jobs:
       # (say, a wrong build-workflow name) still fails the run, but no longer
       # takes the docs publish down with it.
       # Never fails the run itself: a docs hiccup is fixed by re-running with
-      # docs_only=true (see the warning).
+      # docs_only=true (see the warnings).
       - name: Publish release notes to docs
         id: publish
         if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') }}
@@ -296,8 +296,14 @@ jobs:
           fi
           node automation/.github/scripts/release-notes/run.mjs
 
+      - name: Warn on docs publish skipped
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && steps.publish.outputs.skipped == 'true' }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: echo "::warning title=Docs publish skipped::No DOCS_SYNC_TOKEN secret in this repo. Add it, then re-run Create release with docs_only=true for ${TAG}."
+
       - name: Warn on docs publish failure
-        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && (steps.publish.outcome == 'failure' || steps.publish.outputs.skipped == 'true') }}
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && steps.publish.outcome == 'failure' }}
         env:
           TAG: ${{ inputs.tag }}
         run: echo "::warning title=Docs publish failed::Re-run Create release with docs_only=true for ${TAG}."

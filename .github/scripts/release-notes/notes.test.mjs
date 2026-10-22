@@ -188,7 +188,7 @@ test('docsPrBody lists components and the publishing checklist', () => {
   assert.ok(body.includes('- `src/releases/202610-s1/rc2/components/signals-dpg.md`\n- `src/releases/202610-s1/rc2/components/signals-search.md`'));
   assert.ok(body.includes('release-page'));
   assert.ok(body.includes('bluedots-release-tools'));
-  assert.ok(body.includes('pnpm build && pnpm check:links && pnpm check:style'));
+  assert.ok(body.includes('- [ ] `pnpm build` passes locally (the docs CI does not build PRs); `pnpm check:links` and `pnpm check:style` report nothing new under `src/releases/`.'));
   assert.ok(/- \[ \] .*[Mm]erge/.test(body));
   assert.ok(docsPrBody({ tag: 't', components: [] }).includes('None yet.'));
 });
