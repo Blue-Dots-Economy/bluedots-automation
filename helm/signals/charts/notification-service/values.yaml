@@ -117,6 +117,14 @@ config:
   # BYTE-IDENTICAL to the DLT-approved text or the operator scrubs the message.
   # `{{message}}` is the OTP code.
   SMS_LOGIN_OTP_BODY: ""
+  # Sign-in and sign-up OTP templates per app, sent by Keycloak when
+  # smsProvider=http. Each is one JSON template row: template_key, channel "sms",
+  # provider "pinnacle", provider_template_id (DLT id), variables, body_text
+  # (byte-identical to the DLT text). Blank = template not declared.
+  PINNACLE_TEMPLATE_SIGNALS_SIGNIN_OTP: ""
+  PINNACLE_TEMPLATE_SIGNALS_SIGNUP_OTP: ""
+  PINNACLE_TEMPLATE_AGGREGATOR_SIGNIN_OTP: ""
+  PINNACLE_TEMPLATE_AGGREGATOR_SIGNUP_OTP: ""
   # Path the app reads for runtime secrets JSON (mounted from internalSecrets.json below).
   INTERNAL_SECRETS_JSON: /app/config/internal-secrets.json
 
