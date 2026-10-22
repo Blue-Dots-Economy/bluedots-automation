@@ -1,21 +1,14 @@
 locals {
   values_dir = "${var.base_location}/.."
 
-  # Host for the read-only Signals role below. Follows the RDS endpoint when
-  # present, else the in-cluster Postgres service.
+  # RDS endpoint when present, else the in-cluster Postgres service.
   signals_db_host = var.postgres_host != "" ? var.postgres_host : "common-services-postgresql.common-services.svc.cluster.local"
 
-  # DB URL for the signals-s3-export exporter's read-only role.
-  signals_export_database_url = format(
-    "postgresql://signals_export_ro:%s@%s:5432/dpg",
-    var.signals_export_ro_password, local.signals_db_host,
-  )
-  # Same server, aggregator database, its own read-only role.
+  # Read-only URLs platform-sync reads from.
   aggregator_export_database_url = format(
     "postgresql://aggregator_export_ro:%s@%s:5432/aggregator",
     var.aggregator_export_ro_password, local.signals_db_host,
   )
-  # DB URL for the Campaign Manager pipeline's read-only Signals role.
   campaign_manager_signals_database_url = format(
     "postgresql://campaign_manager_signals_ro:%s@%s:5432/dpg",
     var.campaign_manager_signals_ro_password, local.signals_db_host,
@@ -36,35 +29,37 @@ resource "local_sensitive_file" "global_secrets" {
   filename        = "${local.values_dir}/global-secrets.yaml"
   file_permission = "0600"
   content = templatefile("${path.module}/global-secrets.yaml.tfpl", {
-    postgres_admin_password                 = var.postgres_admin_password
-    aggregator_postgres_password            = var.aggregator_postgres_password
-    signals_postgres_password               = var.signals_postgres_password
-    signals_export_ro_password              = var.signals_export_ro_password
-    signals_export_database_url             = local.signals_export_database_url
-    aggregator_export_ro_password           = var.aggregator_export_ro_password
-    aggregator_export_database_url          = local.aggregator_export_database_url
-    campaign_manager_signals_ro_password    = var.campaign_manager_signals_ro_password
-    campaign_manager_signals_database_url   = local.campaign_manager_signals_database_url
-    signals_redis_password                  = var.signals_redis_password
-    monitoring_grafana_password             = var.monitoring_grafana_password
-    keycloak_postgres_password              = var.keycloak_postgres_password
-    signals_api_client_secret               = var.signals_api_client_secret
-    signalstack_client_secret               = var.signalstack_client_secret
-    voice_dpg_signals_secret                = var.voice_dpg_signals_secret
-    campaign_manager_secret                 = var.campaign_manager_secret
-    aggregator_kc_bootstrap_admin_password  = var.aggregator_kc_bootstrap_admin_password
-    aggregator_keycloak_admin_client_secret = var.aggregator_keycloak_admin_client_secret
-    aggregator_approval_token_secret        = var.aggregator_approval_token_secret
-    aggregator_session_key                  = var.aggregator_session_key
-    aggregator_oidc_client_secret           = var.aggregator_oidc_client_secret
-    signalstack_admin_key                   = var.signalstack_admin_key
-    signals_auth_secret                     = var.signals_auth_secret
-    signals_pii_key                         = var.signals_pii_key
-    signals_notification_secret             = var.signals_notification_secret
-    signals_search_api_key                  = var.signals_search_api_key
-    raya_voice_bot_api_key                  = var.raya_voice_bot_api_key
-    signals_instance_shared_secret          = var.signals_instance_shared_secret
-    smtp_user                               = var.smtp_user
+    postgres_admin_password                      = var.postgres_admin_password
+    aggregator_postgres_password                 = var.aggregator_postgres_password
+    signals_postgres_password                    = var.signals_postgres_password
+    aggregator_export_ro_password                = var.aggregator_export_ro_password
+    aggregator_export_database_url               = local.aggregator_export_database_url
+    campaign_manager_signals_ro_password         = var.campaign_manager_signals_ro_password
+    campaign_manager_signals_database_url        = local.campaign_manager_signals_database_url
+    campaign_manager_app_password                = var.campaign_manager_app_password
+    campaign_manager_session_secret              = var.campaign_manager_session_secret
+    campaign_manager_cron_secret                 = var.campaign_manager_cron_secret
+    campaign_manager_google_service_account_json = var.campaign_manager_google_service_account_json
+    signals_redis_password                       = var.signals_redis_password
+    monitoring_grafana_password                  = var.monitoring_grafana_password
+    keycloak_postgres_password                   = var.keycloak_postgres_password
+    signals_api_client_secret                    = var.signals_api_client_secret
+    signalstack_client_secret                    = var.signalstack_client_secret
+    voice_dpg_signals_secret                     = var.voice_dpg_signals_secret
+    campaign_manager_secret                      = var.campaign_manager_secret
+    aggregator_kc_bootstrap_admin_password       = var.aggregator_kc_bootstrap_admin_password
+    aggregator_keycloak_admin_client_secret      = var.aggregator_keycloak_admin_client_secret
+    aggregator_approval_token_secret             = var.aggregator_approval_token_secret
+    aggregator_session_key                       = var.aggregator_session_key
+    aggregator_oidc_client_secret                = var.aggregator_oidc_client_secret
+    signalstack_admin_key                        = var.signalstack_admin_key
+    signals_auth_secret                          = var.signals_auth_secret
+    signals_pii_key                              = var.signals_pii_key
+    signals_notification_secret                  = var.signals_notification_secret
+    signals_search_api_key                       = var.signals_search_api_key
+    raya_voice_bot_api_key                       = var.raya_voice_bot_api_key
+    signals_instance_shared_secret               = var.signals_instance_shared_secret
+    smtp_user                                    = var.smtp_user
 
     # Hand-entered secrets from the env's gitignored secrets.yaml. Each is
     # templated into every chart that needs it, so copies can't drift.
@@ -98,13 +93,14 @@ resource "local_sensitive_file" "global_cloud_values" {
   filename        = "${local.values_dir}/global-cloud-values.yaml"
   file_permission = "0600"
   content = templatefile("${path.module}/global-cloud-values.yaml.tfpl", {
-    cloud_storage_region    = var.cloud_storage_region
-    storage_bucket_public   = var.storage_bucket_public
-    app_sa_role_arn         = var.app_sa_role_arn
-    signals_public_hosts    = var.signals_public_hosts
-    signals_allowed_origins = var.signals_allowed_origins
-    signals_network         = var.signals_network
-    signals_host_bindings   = var.signals_host_bindings
-    postgres_host           = var.postgres_host
+    cloud_storage_region     = var.cloud_storage_region
+    storage_bucket_public    = var.storage_bucket_public
+    app_sa_role_arn          = var.app_sa_role_arn
+    signals_public_hosts     = var.signals_public_hosts
+    signals_allowed_origins  = var.signals_allowed_origins
+    signals_network          = var.signals_network
+    signals_host_bindings    = var.signals_host_bindings
+    postgres_host            = var.postgres_host
+    campaign_manager_db_host = local.signals_db_host
   })
 }

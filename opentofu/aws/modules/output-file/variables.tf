@@ -248,18 +248,34 @@ variable "signals_postgres_password" {
   sensitive = true
 }
 
-variable "signals_export_ro_password" {
-  type      = string
-  sensitive = true
-}
-
 variable "aggregator_export_ro_password" {
   type      = string
   sensitive = true
 }
 
-# ─── Campaign Manager pipeline — direct read-only Signals DB access ─────────
+# ─── Campaign Manager platform-sync — read-only Signals DB access ──────────
 variable "campaign_manager_signals_ro_password" {
+  type      = string
+  sensitive = true
+}
+
+# ─── Campaign Manager app — its own database + secrets ─────────────────────
+variable "campaign_manager_app_password" {
+  type      = string
+  sensitive = true
+}
+
+variable "campaign_manager_session_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "campaign_manager_cron_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "campaign_manager_google_service_account_json" {
   type      = string
   sensitive = true
 }

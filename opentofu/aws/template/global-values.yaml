@@ -90,8 +90,15 @@ _signals_ui_urls: &signals_ui_urls ''
 # catch, so a new environment fails loudly until it sets a genuine callback.
 _campaign_manager_redirect_uris: &campaign_manager_redirect_uris ''
 
-_aggregator_host: &aggregator_host "aggregator.domain.com"
-_grafana_host:    &grafana_host    "monitoring.domain.com"
+# Campaign Manager: app master switch + its two sync CronJobs.
+_campaign_manager_enabled:          &campaign_manager_enabled          false
+_campaign_manager_raya_enabled:     &campaign_manager_raya_enabled     false
+_campaign_manager_platform_enabled: &campaign_manager_platform_enabled false
+_campaign_manager_instance_id:      &campaign_manager_instance_id      ""   # e.g. up-gzb; never change once set
+
+_aggregator_host:      &aggregator_host      "aggregator.domain.com"
+_grafana_host:         &grafana_host         "monitoring.domain.com"
+_campaign_manager_host: &campaign_manager_host "campaign-manager.domain.com"
 # ── Keycloak's own hostname ────────────────────────────────────────────────────
 # Keycloak's own neutral domain, so users from EITHER DPG log in here instead of
 # at the aggregator's address. Empty = keep serving Keycloak at
@@ -476,6 +483,16 @@ global:
 # Keycloak ran with SMTP_HOST=smtp.example.com and could not deliver a single
 # email OTP, and nothing failed or warned.
 
+  # ── campaign-manager (must stay in this one global: block) ──
+  enabled: *campaign_manager_enabled
+  database:
+    host: ""                     # set by global-cloud-values.yaml
+    port: 5432
+    name: campaign_manager
+    user: campaign_manager
+    password: ""                 # set by global-secrets.yaml
+  rayaApiKey: ""                 # set by global-secrets.yaml
+
 # Umbrella-level. Safe as a root key: `.Values.smtp` is read only by
 # helm/keycloak (configmap-global.yaml + job-keycloak-init.yaml), by no other
 # chart this file is layered into.
@@ -499,13 +516,6 @@ smtp:
 postgres:
   username: keycloak
   database: keycloak
-
-# Column-level read-only Signals role for the Campaign Manager pipeline
-# (common-services postgresBootstrap). Off by default in the chart; this
-# deep-merges with postgresBootstrap.enabled: true from global-cloud-values.yaml.
-postgresBootstrap:
-  campaignManagerSignalsRole:
-    enabled: true
 
 # ── keycloak subchart ─────────────────────────────────────────────────────────
 # This root `keycloak:` key is the SUBCHART of the keycloak release (umbrella
@@ -776,3 +786,18 @@ search:
 
 rdsRelay:
   enabled: false
+
+# ─── campaign-manager chart ──────────────────────────────────────────────────
+app:
+  ingress:
+    enabled: false              # UPDATE: true once app.image.tag is a real published image
+    host: *campaign_manager_host
+
+raya-sync:
+  enabled: *campaign_manager_raya_enabled
+
+platform-sync:
+  enabled: *campaign_manager_platform_enabled
+  config:
+    INSTANCE_ID: *campaign_manager_instance_id
+    EXPORT_NETWORK: *network

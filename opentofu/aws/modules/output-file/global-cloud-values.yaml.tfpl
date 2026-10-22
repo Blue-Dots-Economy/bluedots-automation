@@ -10,6 +10,9 @@ global:
     region: ${cloud_storage_region}
     bucket: ${storage_bucket_public}
     forcePathStyle: false
+  # campaign-manager destination DB (must stay in this one global: block).
+  database:
+    host: ${campaign_manager_db_host}
 %{ if postgres_host != "" ~}
   # Managed Postgres (RDS). Full endpoint takes precedence over the in-cluster
   # postgresService FQDN in the aggregator.postgresHost helper + keycloak KC_DB_URL.

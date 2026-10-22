@@ -1,39 +1,47 @@
 # Copy to helm/campaign-manager.yaml (git-ignored), fill in, then pass with -f.
-# Keys not listed here keep the defaults in campaign-manager/values.yaml.
+# Keys not listed here keep the defaults in campaign-manager/values.yaml and
+# each subchart's own values.yaml (charts/{app,raya-sync,platform-sync}/).
 
-image:
-  repository: ghcr.io/your-org/campaign-manager
-  tag: sha-1a2b3c4
+global:
+  publicHost: campaign-manager.example.com
+  database:
+    host: postgres.databases.svc.cluster.local
+    password: database-password
+  rayaApiKey: raya_xxx           # read by both app and raya-sync — set once here
 
-ingress:
-  enabled: true
-  className: kong                          # kubectl get ingressclass
-  host: campaign-manager.example.com
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod   # kubectl get clusterissuer
-  tls:
+app:
+  image:
+    repository: ghcr.io/your-org/campaign-manager
+    tag: sha-1a2b3c4
+
+  ingress:
     enabled: true
-    secretName: campaign-manager-tls
+    host: campaign-manager.example.com   # TLS via letsencrypt-prod is on by default
 
-database:
-  host: postgres.databases.svc.cluster.local
-  password: database-password
-  admin:
-    password: postgres-admin-password
+  database:
+    admin:
+      password: postgres-admin-password
 
-secrets:
-  SESSION_SECRET: random-session-secret   # generate with: openssl rand -hex 32
-  CRON_SECRET: random-cron-secret
-  RAYA_API_KEY: raya_xxx
-  GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"example"}'
+  secrets:
+    SESSION_SECRET: random-session-secret   # generate with: openssl rand -hex 32
+    CRON_SECRET: random-cron-secret
+    GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"example"}'
 
-pipeline:
+raya-sync:
   enabled: true
   image:
     repository: ghcr.io/your-org/purple-dots
     tag: v1.0.0
+
+platform-sync:
+  enabled: true
+  image:
+    repository: ghcr.io/your-org/campaign-manager-platform-sync
+    tag: v1.0.0
   schedule: "0 */4 * * *"
   config:
-    NETWORK: purple_dot          # the Signals network this deployment reads, e.g. purple_dot or blue_dot
+    INSTANCE_ID: up-gzb          # this deployment's Signals instance id
+    EXPORT_NETWORK: purple_dot   # the Signals network this deployment reads, e.g. purple_dot or blue_dot
   secrets:
     SIGNALS_DATABASE_URL: postgresql://campaign_manager_signals_ro:xxx@host:5432/dpg
+    AGG_DATABASE_URL: postgresql://aggregator_export_ro:xxx@host:5432/aggregator

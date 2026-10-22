@@ -1,0 +1,72 @@
+# Review every line tagged `# UPDATE:` before deploying.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/blue-dots-economy/agg-campaign-manager-v2   # UPDATE
+  tag: ""                       # empty = Chart.appVersion
+  pullPolicy: IfNotPresent
+
+# private: true if this image needs a pull secret.
+imagePullSecret:
+  private: false
+  name: ghcr-pull
+  create: false                 # also render a dockerconfigjson Secret from registry/username/password below
+  registry: ghcr.io
+  username: ""
+  password: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000              # port the Node server listens on inside the container
+
+ingress:
+  enabled: false
+  className: kong
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  host: ""                      # defaults to global.publicHost when empty
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: true
+    secretName: campaign-manager-tls
+
+config: {}                      # extra non-secret app env
+
+secrets:
+  existingSecret: ""            # or your own Secret with the same keys (see the README)
+  SESSION_SECRET: ""            # UPDATE
+  CRON_SECRET: ""                # UPDATE
+  CRON_SECRET_PREVIOUS: ""       # only while rotating CRON_SECRET
+  GOOGLE_SERVICE_ACCOUNT_JSON: ""   # UPDATE
+
+# Admin creds for the db-init Job only; the app itself uses global.database.
+database:
+  admin:
+    user: postgres
+    password: ""                 # UPDATE
+
+dbInit:
+  enabled: true
+  image: { repository: postgres, tag: "17-alpine", pullPolicy: IfNotPresent }
+
+migrate:
+  enabled: true
+  image: { repository: "", tag: "", pullPolicy: IfNotPresent }   # empty = app image/tag
+  command: ["node", "migrate/migrate.mjs"]
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+
+probes:                         # UPDATE: confirm the health path once the image exists
+  path: /
+  readiness: { initialDelaySeconds: 10, periodSeconds: 10 }
+  liveness: { initialDelaySeconds: 30, periodSeconds: 20 }
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

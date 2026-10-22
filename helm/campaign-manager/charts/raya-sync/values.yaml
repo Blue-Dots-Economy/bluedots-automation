@@ -1,0 +1,38 @@
+# Review every line tagged `# UPDATE:` before deploying.
+
+enabled: false
+
+image:
+  repository: ghcr.io/blue-dots-economy/purple-dots
+  tag: ""                      # UPDATE: required when enabled
+  pullPolicy: IfNotPresent
+
+# private: true if this image needs a pull secret.
+imagePullSecret:
+  private: false
+  name: ghcr-pull
+  create: false                 # also render a dockerconfigjson Secret from registry/username/password below
+  registry: ghcr.io
+  username: ""
+  password: ""
+
+schedule: "0 2 * * *"          # UPDATE: cron expression, evaluated in timeZone
+timeZone: Asia/Kolkata
+concurrencyPolicy: Forbid
+startingDeadlineSeconds: 900
+backoffLimit: 1
+activeDeadlineSeconds: 7200
+successfulJobsHistoryLimit: 3
+failedJobsHistoryLimit: 5
+suspend: false
+
+# --skip platform leaves only the Raya stages; platform-sync covers Signals now.
+args: ["--skip", "platform"]
+
+config:                        # empty values are not rendered, so the image's own defaults apply
+  PD_REFRESH_DAYS: ""
+  PD_TEST_BATCHES: ""
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }

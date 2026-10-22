@@ -1,12 +1,14 @@
+{{- if .Values.global.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "campaign-manager.fullname" . }}-config
+  name: {{ include "app.fullname" . }}-config
   labels:
-    {{- include "campaign-manager.labels" . | nindent 4 }}
+    {{- include "app.labels" . | nindent 4 }}
 {{- with .Values.config }}
 data:
   {{- range $key, $value := . }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
+{{- end }}
 {{- end }}
