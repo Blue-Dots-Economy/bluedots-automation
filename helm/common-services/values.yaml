@@ -344,9 +344,8 @@ credentials:
   # per-tenant app passwords
   aggregatorPassword: ""  # AGGREGATOR_PG_PW
   dpgPassword: ""  # DPG_PG_PW
-  signalsExportRoPassword: ""  # signals-s3-export read-only role (bootstrap-created)
-  aggregatorExportRoPassword: ""  # signals-s3-export read-only role on the aggregator DB
-  campaignManagerSignalsRoPassword: ""  # campaign-manager pipeline's read-only Signals role (bootstrap-created)
+  aggregatorExportRoPassword: ""  # platform-sync read-only role on the aggregator DB (bootstrap-created)
+  campaignManagerSignalsRoPassword: ""  # platform-sync read-only role on the Signals DB (bootstrap-created)
   # Login password for the shared Keycloak's own Postgres role. Consumed by the
   # bootstrap Job (creates/syncs the role) AND by the keycloak release's Secret —
   # generate it ONCE in global-secrets.yaml and reference it from both.
@@ -423,18 +422,15 @@ postgresBootstrap:
   keycloakRole:
     enabled: true
     name: keycloak
-  # Read-only, column-level-only Signals role for the Campaign Manager
-  # pipeline. Off by default; needs credentials.campaignManagerSignalsRoPassword.
+  # Read-only, column-level-only Signals role for Campaign Manager platform-sync
+  # (needs credentials.campaignManagerSignalsRoPassword).
   campaignManagerSignalsRole:
-    enabled: false
+    enabled: true
     name: campaign_manager_signals_ro
     database: dpg
     owner: dpg
-  # Read-only role for the signals-s3-export CronJob on the aggregator database
-  # (needs credentials.aggregatorExportRoPassword). Column-level SELECT on only
-  # the columns its query reads; granted once the aggregator tables exist, so
-  # on a fresh environment the grant lands on the next common-services upgrade
-  # after the aggregator migrations have run.
+  # Read-only, column-level-only aggregator role for Campaign Manager platform-sync
+  # (needs credentials.aggregatorExportRoPassword). Granted once the aggregator tables exist.
   aggregatorExportRole:
     enabled: true
     name: aggregator_export_ro

@@ -94,7 +94,7 @@ spec:
               echo "postgres ready; creating roles + databases"
               # Roles + databases on the default `postgres` db. Passwords passed as
               # psql variables (:'var') so they are safely quoted, never interpolated.
-              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" -v kc_pw="${KC_PW:-}" -v export_ro_pw="${EXPORT_RO_PW:-}" -v cm_signals_ro_pw="${CM_SIGNALS_RO_PW:-}" -v agg_export_ro_password="${AGG_EXPORT_RO_PASSWORD:-}" <<-'EOSQL'
+              psql -v ON_ERROR_STOP=1 -d postgres -v agg_pw="$AGG_PW" -v dpg_pw="$DPG_PW" -v kc_pw="${KC_PW:-}" -v cm_signals_ro_pw="${CM_SIGNALS_RO_PW:-}" -v agg_export_ro_password="${AGG_EXPORT_RO_PASSWORD:-}" <<-'EOSQL'
                 SELECT 'CREATE ROLE aggregator LOGIN'
                   WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aggregator')\gexec
                 SELECT 'CREATE ROLE dpg LOGIN'
@@ -162,7 +162,7 @@ spec:
                 BEGIN
                   IF to_regclass('public."user"') IS NOT NULL THEN
                     EXECUTE 'GRANT SELECT (id, created_at, updated_at, domains, onboarded_by_org_id, '
-                      || 'onboarded_via, onboarded_source_id, onboarded_at, tags) ON "user" TO {{ .Values.postgresBootstrap.campaignManagerSignalsRole.name }}';
+                      || 'onboarded_via, onboarded_source_id, onboarded_at, onboarded_by_default, tags) ON "user" TO {{ .Values.postgresBootstrap.campaignManagerSignalsRole.name }}';
                   END IF;
                   IF to_regclass('public.items') IS NOT NULL THEN
                     EXECUTE 'GRANT SELECT (item_network, item_domain, item_type, item_id, lifecycle_status, '
@@ -187,9 +187,7 @@ spec:
               psql -v ON_ERROR_STOP=1 -d {{ $r.database }} <<-'EOSQL'
                 GRANT CONNECT ON DATABASE {{ $r.database }} TO {{ $r.name }};
                 GRANT USAGE ON SCHEMA public TO {{ $r.name }};
-                -- Only the columns the export query reads (adhoc-scripts
-                -- signals-s3-export README). Skipped until the aggregator
-                -- migrations have created the tables.
+                -- Only the columns platform-sync reads; skipped until the tables exist.
                 DO $grant$
                 BEGIN
                   IF to_regclass('public.aggregator_orgs') IS NOT NULL
