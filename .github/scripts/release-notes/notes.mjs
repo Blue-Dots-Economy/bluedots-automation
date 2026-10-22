@@ -11,7 +11,7 @@ export const SECTIONS = [
 ];
 
 const SPRINT_TAG = /^(20\d{4}-s(\d+))-rc(\d+)$/;
-const VERSION_TAG = /^v.+\..+\..+$/;
+const VERSION_TAG = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
 const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 const HEADING = /^\s{0,3}(#{1,6})\s+/;
 
@@ -117,7 +117,7 @@ export function assembleNotes(prs) {
   return { markdown: out.join('\n'), missing };
 }
 
-const q = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, ' ')}"`;
+const q = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, ' ').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ')}"`;
 
 /** YAML frontmatter (every string double-quoted) followed by the notes markdown. */
 export function renderFragment(meta, notes) {

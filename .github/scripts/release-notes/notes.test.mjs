@@ -135,3 +135,18 @@ test('validateTag', () => {
   assert.equal(validateTag('api-v1.2.0', extra).sprint, false);
   assert.ok(validateTag('nope', '').error);
 });
+
+test('validateTag uses the strict v<N>.<N>.<N> form', () => {
+  assert.equal(validateTag('v1.0.0-release-test', '').ok, false);
+  assert.equal(validateTag('vx.y.z', '').ok, false);
+});
+
+test('renderFragment replaces control characters in quoted titles', () => {
+  const meta = {
+    repo: 'r', tag: '202610-s1-rc1', commit: 'b'.repeat(40), base: 'main', previous_tag: null,
+    cut_at: '2026-10-14', release_url: 'u',
+    prs: [{ number: 1, title: 'a\u0001b\n# c\tz', url: 'u' }],
+  };
+  const out = renderFragment(meta, { markdown: 'm', missing: [] });
+  assert.ok(out.includes('    title: "a b # c	z"\n'));
+});
