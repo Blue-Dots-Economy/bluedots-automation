@@ -14,6 +14,9 @@ import {
   docsBranch,
   publishAction,
   validateTag,
+  previousVersionTag,
+  releaseBody,
+  docsPrBody,
 } from './notes.mjs';
 
 test('SECTIONS lists the five extracted headings in order', () => {
@@ -149,4 +152,36 @@ test('renderFragment replaces control characters in quoted titles', () => {
   };
   const out = renderFragment(meta, { markdown: 'm', missing: [] });
   assert.ok(out.includes('    title: "a b # c	z"\n'));
+});
+
+test('previousVersionTag picks the greatest same-family semver tag below current', () => {
+  const tags = ['v1.2.0', 'v1.10.0', 'v1.9.3', 'v2.0.0', 'api-v1.9.9', 'v1.9.3-hotfix', '202609-s1-rc1', 'vx'];
+  assert.equal(previousVersionTag(tags, 'v1.10.0'), 'v1.9.3');
+  assert.equal(previousVersionTag(tags, 'v2.0.0'), 'v1.10.0');
+  assert.equal(previousVersionTag(tags, 'v1.2.0'), null);
+  assert.equal(previousVersionTag(['api-v1.0.0', 'web-v1.5.0', 'api-v1.2.0', 'v1.4.0'], 'api-v1.3.0'), 'api-v1.2.0');
+  assert.equal(previousVersionTag(tags, '202609-s1-rc2'), null);
+});
+
+test('releaseBody appends the PR list and a compare link', () => {
+  const notes = { markdown: '## Release Notes\n- X\n', missing: [] };
+  const prs = [{ number: 3, title: 'Add X' }, { number: 5, title: 'Fix Y' }];
+  const body = releaseBody({ notes, prs, repository: 'o/r', previousTag: 'v1.0.0', tag: 'v1.1.0' });
+  assert.ok(body.startsWith('## Release Notes\n- X\n'));
+  assert.ok(body.includes('## Pull requests\n- Add X (#3)\n- Fix Y (#5)\n'));
+  assert.ok(body.includes('**Full changelog**: https://github.com/o/r/compare/v1.0.0...v1.1.0'));
+  const first = releaseBody({ notes, prs: [], repository: 'o/r', previousTag: null, tag: 'v1.0.0' });
+  assert.ok(first.includes('## Pull requests\nNone.\n'));
+  assert.ok(!first.includes('Full changelog'));
+});
+
+test('docsPrBody lists components and the publishing checklist', () => {
+  const body = docsPrBody({ tag: '202610-s1-rc2', components: ['src/releases/202610-s1/rc2/components/signals-search.md', 'src/releases/202610-s1/rc2/components/signals-dpg.md'] });
+  assert.ok(body.includes('`202610-s1-rc2`'));
+  assert.ok(body.includes('- `src/releases/202610-s1/rc2/components/signals-dpg.md`\n- `src/releases/202610-s1/rc2/components/signals-search.md`'));
+  assert.ok(body.includes('release-page'));
+  assert.ok(body.includes('bluedots-release-tools'));
+  assert.ok(body.includes('pnpm build && pnpm check:links && pnpm check:style'));
+  assert.ok(/- \[ \] .*[Mm]erge/.test(body));
+  assert.ok(docsPrBody({ tag: 't', components: [] }).includes('None yet.'));
 });

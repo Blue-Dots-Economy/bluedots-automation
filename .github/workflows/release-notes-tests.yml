@@ -1,0 +1,26 @@
+name: release-notes-tests
+on:
+  pull_request:
+    paths: ['.github/scripts/release-notes/**']
+  push:
+    branches: [feature, develop, main]
+    paths: ['.github/scripts/release-notes/**']
+# Declared explicitly rather than inheriting the repo default, which may be
+# read-write. This job only runs the release-notes unit tests: it reads the
+# checkout and nothing else (zizmor excessive-permissions).
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - name: Unit tests
+        working-directory: .github/scripts/release-notes
+        run: node --test

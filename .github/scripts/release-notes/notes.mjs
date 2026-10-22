@@ -167,3 +167,56 @@ export function validateTag(tag, extraPattern) {
   }
   return { ok: false, sprint: false, error: `Tag ${tag} is not v*.*.*, a sprint tag, or an allowed pattern` };
 }
+
+const FAMILY_TAG = /^(.*?v)(\d+)\.(\d+)\.(\d+)$/;
+
+/**
+ * Greatest tag below `current` in the same version family (`v1.2.3`, `api-v1.2.3`),
+ * by semver. Tags of other families, suffixed tags and sprint tags are ignored.
+ */
+export function previousVersionTag(tagNames, current) {
+  const parse = (t) => {
+    const m = typeof t === 'string' ? FAMILY_TAG.exec(t) : null;
+    return m && { family: m[1], v: [Number(m[2]), Number(m[3]), Number(m[4])] };
+  };
+  const cur = parse(current);
+  if (!cur) return null;
+  const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  let best = null;
+  for (const t of tagNames) {
+    const p = parse(t);
+    if (!p || p.family !== cur.family || cmp(p.v, cur.v) >= 0) continue;
+    if (!best || cmp(p.v, best.v) > 0) best = { tag: t, v: p.v };
+  }
+  return best ? best.tag : null;
+}
+
+/** GitHub release body: the curated notes, the source PR list, and a compare link. */
+export function releaseBody({ notes, prs, repository, previousTag, tag }) {
+  const list = prs.length ? prs.map((p) => `- ${p.title} (#${p.number})`).join('\n') : 'None.';
+  let body = `${notes.markdown}\n## Pull requests\n${list}\n`;
+  if (previousTag) {
+    body += `\n**Full changelog**: https://github.com/${repository}/compare/${previousTag}...${tag}\n`;
+  }
+  return body;
+}
+
+/** Body of the bluedots-docs `release-notes/<tag>` PR, rewritten on every publish. */
+export function docsPrBody({ tag, components }) {
+  const list = components.length
+    ? [...components].sort().map((c) => `- \`${c}\``).join('\n')
+    : 'None yet.';
+  return [
+    `Release notes for \`${tag}\`, written by each service repo's \`create-release\` workflow.`,
+    'Merging this PR publishes the rc on the Releases page.',
+    '',
+    '## Component notes on this branch',
+    list,
+    '',
+    '## Checklist',
+    '- [ ] Run the `release-page` skill (from the `bluedots-release-tools` plugin) to write `notes.md` for this rc, and edit it by hand.',
+    '- [ ] `pnpm build && pnpm check:links && pnpm check:style` pass locally.',
+    '- [ ] Merge to publish.',
+    '',
+  ].join('\n');
+}
