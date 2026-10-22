@@ -122,10 +122,17 @@ test('fragmentPath and docsBranch', () => {
   assert.equal(docsBranch('202610-s1-rc2'), 'release-notes/202610-s1-rc2');
 });
 
-test('publishAction appends only when an open PR exists', () => {
-  assert.equal(publishAction({ branchExists: true, openPr: false }), 'recreate');
-  assert.equal(publishAction({ branchExists: false, openPr: false }), 'recreate');
-  assert.equal(publishAction({ branchExists: true, openPr: true }), 'append');
+test('publishAction recreates only an absent or stale branch', () => {
+  // open PR: always append
+  assert.equal(publishAction({ remoteHead: 'abc', openPr: true, closedPrHeads: ['abc'] }), 'append');
+  // branch absent: recreate
+  assert.equal(publishAction({ remoteHead: null, openPr: false, closedPrHeads: [] }), 'recreate');
+  assert.equal(publishAction({ remoteHead: '', openPr: false, closedPrHeads: ['old'] }), 'recreate');
+  // stale branch left by a merged/closed PR: recreate
+  assert.equal(publishAction({ remoteHead: 'abc', openPr: false, closedPrHeads: ['zzz', 'abc'] }), 'recreate');
+  // live branch, no PR at all (another run pushed, PR not opened yet) or newer than the closed PR: append
+  assert.equal(publishAction({ remoteHead: 'abc', openPr: false, closedPrHeads: [] }), 'append');
+  assert.equal(publishAction({ remoteHead: 'def', openPr: false, closedPrHeads: ['abc'] }), 'append');
 });
 
 test('validateTag', () => {

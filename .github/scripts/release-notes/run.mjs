@@ -137,7 +137,7 @@ function assemble() {
 
   const notes = assembleNotes(prs);
   if (notes.missing.length) {
-    console.log(`::warning title=Release notes missing::PRs without release-note sections (listed by title): ${notes.missing.map((n) => `#${n}`).join(', ')}`);
+    console.log(`::warning title=Release notes missing::PRs without release-note sections (listed under Release Notes by title only): ${notes.missing.map((n) => `#${n}`).join(', ')}`);
   }
 
   const body = releaseBody({ notes, prs, repository, previousTag, tag });
@@ -163,7 +163,7 @@ function assemble() {
     notes,
   );
   fs.writeFileSync(path.join(temp, 'release-fragment.md'), fragment);
-  appendSummary(`## Docs fragment (${fragmentPath(tag, repoName)})\n\n\`\`\`markdown\n${fragment}\n\`\`\``);
+  appendSummary(`## Docs fragment (${fragmentPath(tag, repoName)})\n\n\`\`\`\`markdown\n${fragment}\n\`\`\`\``);
 }
 
 function publish() {
@@ -198,18 +198,20 @@ function publish() {
   const git = (args) => run('git', args, { cwd: dir, env: gitEnv });
   run('git', ['clone', '--no-tags', `https://github.com/${DOCS_REPO}.git`, dir], { env: gitEnv });
 
-  const openPrs = (ghJson(['pr', 'list', '--repo', DOCS_REPO, '--head', branch, '--state', 'open', '--json', 'number,url'], { env: ghEnv }) ?? []);
-  const openPr = openPrs[0] ?? null;
-  const action = publishAction({ openPr });
+  // Remote head of the branch as we found it ('' when absent); the lease for a recreate push.
+  const remoteHead = (git(['ls-remote', 'origin', `refs/heads/${branch}`]).split(/\s/)[0]) || '';
+  const prs = ghJson(['pr', 'list', '--repo', DOCS_REPO, '--head', branch, '--state', 'all',
+    '--json', 'number,url,state,headRefOid'], { env: ghEnv }) ?? [];
+  const openPr = prs.find((p) => p.state === 'OPEN') ?? null;
+  const closedPrHeads = prs.filter((p) => p.state === 'MERGED' || p.state === 'CLOSED').map((p) => p.headRefOid);
+  const action = publishAction({ remoteHead, openPr: Boolean(openPr), closedPrHeads });
   console.log(`Docs branch ${branch}: ${action}${openPr ? ` (PR ${openPr.url})` : ''}`);
 
-  // Remote head of the branch as we found it; the lease for a recreate push.
-  const remoteHead = (git(['ls-remote', 'origin', `refs/heads/${branch}`]).split(/\s/)[0]) || '';
   if (action === 'append') {
     git(['fetch', 'origin', `refs/heads/${branch}:refs/remotes/origin/${branch}`]);
     git(['checkout', '-B', branch, `origin/${branch}`]);
   } else {
-    // No open PR uses the branch, so any leftover branch (from a merged or closed PR) is
+    // The branch is absent or stale (its head belongs to a merged/closed PR), so it is
     // restarted from main. The lease still refuses the push if it moved since ls-remote.
     git(['checkout', '-B', branch, `origin/${DOCS_BASE}`]);
   }
@@ -240,7 +242,7 @@ function publish() {
           : ['push', 'origin', `HEAD:refs/heads/${branch}`]);
         break;
       } catch (err) {
-        const rejected = /rejected|stale info|fetch first|non-fast-forward/i.test(err.stderr ?? '');
+        const rejected = /fetch first|non-fast-forward|stale info/i.test(err.stderr ?? '');
         if (!rejected || attempt >= PUSH_ATTEMPTS) throw err;
         // Another repo's run pushed first. Rebase onto it and push without force from now on.
         console.log(`Push rejected (attempt ${attempt}/${PUSH_ATTEMPTS}); rebasing onto origin/${branch}.`);
@@ -281,6 +283,8 @@ try {
   else if (mode === 'publish') publish();
   else throw new Error(`MODE must be assemble or publish, got ${mode}`);
 } catch (err) {
-  console.error(`::error title=release-notes::${redact(err.message)}`);
+  // Workflow-command data must escape %, CR and LF or the message is cut at the first newline.
+  const data = redact(err.message).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  console.error(`::error title=release-notes::${data}`);
   process.exit(1);
 }

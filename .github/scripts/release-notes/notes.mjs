@@ -149,9 +149,18 @@ export function fragmentPath(tag, repo) {
 
 export const docsBranch = (tag) => `release-notes/${tag}`;
 
-/** Append to the branch only while its PR is open; otherwise start the branch fresh. */
-export function publishAction({ openPr }) {
-  return openPr ? 'append' : 'recreate';
+/**
+ * Restart the docs branch from main only when nothing live can be on it: the branch is
+ * absent, or its head is the head of a merged/closed PR (stale). A branch with an open
+ * PR, or a live branch whose PR another run hasn't opened yet, is appended to so a
+ * concurrent publish is never force-pushed over.
+ * @param {{ remoteHead: string|null, openPr: boolean, closedPrHeads: string[] }} state
+ * @returns {'append'|'recreate'}
+ */
+export function publishAction({ remoteHead, openPr, closedPrHeads = [] }) {
+  if (openPr) return 'append';
+  if (!remoteHead) return 'recreate';
+  return closedPrHeads.includes(remoteHead) ? 'recreate' : 'append';
 }
 
 /** Accepts v*.*.*, a sprint tag, or a match of `extraPattern` (anchored ERE; empty means none). */
