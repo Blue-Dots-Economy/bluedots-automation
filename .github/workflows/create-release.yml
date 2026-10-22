@@ -130,11 +130,6 @@ jobs:
           # pattern as extra-tag-pattern.
           sprint=$(node automation/.github/scripts/release-notes/validate.mjs)
 
-          if [ "${sprint}" = "true" ] && [ "${BASE}" != "main" ]; then
-            echo "::error title=Sprint tags come from main::${TAG} is a sprint tag but base is '${BASE}'. Cut sprint tags from main."
-            exit 1
-          fi
-
           if [ "${DOCS_ONLY:-false}" = "true" ]; then
             # ── 2a. docs_only: the tag must already exist ───────────────────
             if ! ref=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null); then
@@ -153,6 +148,12 @@ jobs:
               echo "::notice title=Nothing to publish::${TAG} is not a sprint tag, so it has no docs fragment. Only the notes preview will be produced."
             fi
           else
+            # base is only used here: docs_only takes its commit from the tag.
+            if [ "${sprint}" = "true" ] && [ "${BASE}" != "main" ]; then
+              echo "::error title=Sprint tags come from main::${TAG} is a sprint tag but base is '${BASE}'. Cut sprint tags from main."
+              exit 1
+            fi
+
             # ── 2b. Refuse to move an existing tag ──────────────────────────
             if gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
               echo "::error title=Tag already exists::${TAG} is already present. Release tags are immutable — cut the next candidate instead (…-rc2, …-rc3)."
@@ -238,6 +239,7 @@ jobs:
       # name of the separate preview endpoint) is silently ignored, which
       # published an empty release the first time round.
       - name: Create release
+        id: create
         if: ${{ !inputs.dry_run && !inputs.docs_only }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -270,11 +272,16 @@ jobs:
           echo "::notice title=Release cut::${TAG} created at ${SHA}; ${BUILD_WORKFLOW} dispatched against the tag."
 
       # ── 8. Publish the docs fragment (sprint tags only) ───────────────────
-      # Never fails the run: the release and the build are already out, and a
-      # docs hiccup is fixed by re-running with docs_only=true (see the warning).
+      # Runs whenever the release exists (created above, or already there for
+      # docs_only), even if dispatching the build failed: the docs fragment
+      # depends on the release, not on the image build. A failed build dispatch
+      # (say, a wrong build-workflow name) still fails the run, but no longer
+      # takes the docs publish down with it.
+      # Never fails the run itself: a docs hiccup is fixed by re-running with
+      # docs_only=true (see the warning).
       - name: Publish release notes to docs
         id: publish
-        if: ${{ !inputs.dry_run && steps.validate.outputs.sprint == 'true' }}
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') }}
         continue-on-error: true
         env:
           MODE: publish
@@ -290,7 +297,7 @@ jobs:
           node automation/.github/scripts/release-notes/run.mjs
 
       - name: Warn on docs publish failure
-        if: ${{ !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (steps.publish.outcome == 'failure' || steps.publish.outputs.skipped == 'true') }}
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && (steps.publish.outcome == 'failure' || steps.publish.outputs.skipped == 'true') }}
         env:
           TAG: ${{ inputs.tag }}
         run: echo "::warning title=Docs publish failed::Re-run Create release with docs_only=true for ${TAG}."
