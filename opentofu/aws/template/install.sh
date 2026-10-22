@@ -45,7 +45,7 @@ SIGNALS_DPG_REPO="${SIGNALS_DPG_REPO:-Blue-Dots-Economy/bluedots-schemas}"
 IMAGES_PUBLIC="${IMAGES_PUBLIC:-true}"
 
 # Namespaces needing the `ghcr-pull` Secret even when IMAGES_PUBLIC=true, for the
-# "one private image in an otherwise-public stack" case (the s3-export CronJob).
+# "one private image in an otherwise-public stack" case.
 # IMAGES_PUBLIC=false would instead attach the secret to every pod in every
 # namespace. Space-separated; empty = no-op. Pair it with a per-chart
 # `imagePullSecrets` in <env>/global-values.yaml — the Secret alone does nothing.
@@ -114,6 +114,7 @@ CS_NS="${CS_NS:-common-services}"
 SIGNALS_NS="${SIGNALS_NS:-signals}"
 AGG_NS="${AGG_NS:-aggregator}"
 MON_NS="${MON_NS:-monitoring}"
+CM_NS="${CM_NS:-campaign-manager}"
 # Keycloak is a shared common service: its own RELEASE, but it lives in the
 # common-services NAMESPACE (deliberate exception to the dir==ns convention).
 KC_NS="${KC_NS:-$CS_NS}"
@@ -124,6 +125,7 @@ SIGNALS_REL="${SIGNALS_REL:-signals}"
 AGG_REL="${AGG_REL:-aggregator}"
 MON_REL="${MON_REL:-monitoring}"
 KC_REL="${KC_REL:-keycloak}"
+CM_REL="${CM_REL:-campaign-manager}"
 
 # Chart directories.
 CS_DIR="$REPO_ROOT/helm/common-services"
@@ -131,6 +133,7 @@ SIGNALS_DIR="$REPO_ROOT/helm/signals"
 AGG_DIR="$REPO_ROOT/helm/aggregator"
 MON_DIR="$REPO_ROOT/helm/monitoring"
 KC_DIR="$REPO_ROOT/helm/keycloak"
+CM_DIR="$REPO_ROOT/helm/campaign-manager"
 
 # Resource overrides (replica counts, HPA, PDB, container resources) — shared across environments.
 # Edit helm/global-resources.yaml to change settings across all environments.
@@ -272,6 +275,12 @@ function create_namespaces() {
     for ns in "$CS_NS" "$SIGNALS_NS" "$AGG_NS"; do
         kubectl get ns "$ns" >/dev/null 2>&1 || kubectl create ns "$ns"
     done
+}
+
+# Optional: only needed to seed the ghcr-pull secret before deploy_campaign_manager.
+function create_campaign_manager_namespace() {
+    echo -e "\nCreating namespace: $CM_NS"
+    kubectl get ns "$CM_NS" >/dev/null 2>&1 || kubectl create ns "$CM_NS"
 }
 
 # Write/refresh the `ghcr-pull` docker-registry Secret in each namespace.
@@ -576,9 +585,24 @@ function restart_aggregator_config_consumers() {
     return 0
 }
 
+# Renders nothing unless _campaign_manager_enabled / its sync toggles are on.
+function deploy_campaign_manager() {
+    echo -e "\nDeploying campaign-manager"
+    helm upgrade --install "$CM_REL" "$CM_DIR" \
+        -n "$CM_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" \
+        -f "$GLOBAL_IMAGES" \
+        -f "$GLOBAL_VALUES" \
+        -f "$GLOBAL_CLOUD_VALUES" \
+        -f "$GLOBAL_SECRETS" \
+        $IMAGE_PULL_HELM_ARGS \
+        $EXTRA_HELM_ARGS \
+        --wait --timeout 10m
+}
+
 # ═══ helm: deploy everything ══════════════════════════════════════════════════
 # 3) Full stack, in dependency order: namespaces+secrets → common-services →
-#    signals → aggregator.
+#    signals → aggregator → campaign-manager.
 function deploy_all_services() {
     preflight
     create_namespaces_and_secrets
@@ -587,8 +611,9 @@ function deploy_all_services() {
     deploy_keycloak
     deploy_signals
     deploy_aggregator
+    deploy_campaign_manager
     fix_acme_issuer_uri
-    echo -e "\n✔ all releases deployed: monitoring, common-services, keycloak, signals, aggregator"
+    echo -e "\n✔ all releases deployed: monitoring, common-services, keycloak, signals, aggregator, campaign-manager"
 }
 
 # cert-manager v1.20.2 bug (cert-manager/cert-manager#7846): the controller
@@ -753,6 +778,12 @@ function lint() {
     # `helm lint` only logs it as [INFO] and still exits 0 — unlike `helm template`,
     # which errors (hence the flag in .github/workflows/ci.yml's template step).
     helm lint "$AGG_DIR" --set global.existingSecret=lint-only
+    # Dummies for the chart's required values so lint runs without creds.
+    helm lint "$CM_DIR" \
+        --set global.enabled=true \
+        --set global.database.host=lint-only --set global.database.password=lint-only \
+        --set app.database.admin.password=lint-only \
+        --set app.secrets.SESSION_SECRET=lint-only --set app.secrets.CRON_SECRET=lint-only
 }
 
 # helm --dry-run all 5 charts against the current cluster (renders + server-side checks,
@@ -772,6 +803,8 @@ function dry_run() {
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
+    helm upgrade --install "$CM_REL" "$CM_DIR" -n "$CM_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
 }
 

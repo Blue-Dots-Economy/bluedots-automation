@@ -1,0 +1,46 @@
+# Syncs non-PII Signals + aggregator data into the Campaign Manager DB (adhoc-scripts/platform-sync).
+
+enabled: false
+
+image:
+  repository: ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync
+  tag: ""                      # UPDATE: required when enabled
+  pullPolicy: IfNotPresent
+
+# private: true if this image needs a pull secret.
+imagePullSecret:
+  private: false
+  name: ghcr-pull
+  create: false                 # also render a dockerconfigjson Secret from registry/username/password below
+  registry: ghcr.io
+  username: ""
+  password: ""
+
+schedule: "0 */4 * * *"        # UPDATE: cron expression, evaluated in timeZone
+timeZone: Asia/Kolkata
+concurrencyPolicy: Forbid
+startingDeadlineSeconds: 900
+backoffLimit: 1
+activeDeadlineSeconds: 7200
+successfulJobsHistoryLimit: 3
+failedJobsHistoryLimit: 5
+suspend: false
+
+args: []                       # extra run.py arguments, e.g. ["--limit", "100"] for a smoke test
+
+config:                        # empty values are not rendered, so the image's own defaults apply
+  INSTANCE_ID: ""               # UPDATE: this deployment's Signals instance id, e.g. up-gzb
+  EXPORT_NETWORK: ""            # UPDATE: Signals network this deployment reads, e.g. purple_dot or blue_dot
+
+secrets:
+  SIGNALS_DATABASE_URL: ""     # UPDATE: read-only URL to Signals (campaign_manager_signals_ro)
+  AGG_DATABASE_URL: ""         # UPDATE: read-only URL to aggregator (aggregator_export_ro)
+
+# Applies sql/platform_schema.sql (hook weight 2, after app's migrate).
+schemaJob:
+  enabled: true
+  command: ["python3", "tools/apply_schema.py"]
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }

@@ -39,11 +39,7 @@ inputs = {
   oidc_provider              = dependency.eks.outputs.oidc_provider
   storage_bucket_public      = dependency.storage.outputs.storage_bucket_public
   storage_bucket_private     = dependency.storage.outputs.storage_bucket_private
-  # Subjects allowed to assume the single app_sa role. The signals s3-export
-  # CronJob must be listed here in <env>/global-values.yaml: it writes to the
-  # same public bucket as the aggregator worker, so it shares that role rather
-  # than owning a dedicated one. Omit it and the CronJob fails at STS assume
-  # time inside the pod, long after a clean deploy.
+  # Subjects allowed to assume the single app_sa role.
   service_account_subjects   = lookup(local.global_vars.global, "service_account_subjects", [
     "system:serviceaccount:app:app-sa"
   ])

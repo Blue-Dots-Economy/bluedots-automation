@@ -1,13 +1,13 @@
-{{- if .Values.pipeline.enabled }}
+{{- if .Values.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "campaign-manager.pipeline.name" . }}-config
+  name: {{ include "rayaSync.fullname" . }}-config
   labels:
-    {{- include "campaign-manager.pipeline.labels" . | nindent 4 }}
+    {{- include "rayaSync.labels" . | nindent 4 }}
 data:
   {{- /* Empty values are skipped: a set-but-empty variable would beat the pipeline's own default. */}}
-  {{- range $key, $value := .Values.pipeline.config }}
+  {{- range $key, $value := .Values.config }}
   {{- if ne (toString $value) "" }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}

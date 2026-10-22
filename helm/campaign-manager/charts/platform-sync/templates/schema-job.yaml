@@ -1,0 +1,39 @@
+{{- /* Runs after app's dbInit (weight 0) and migrate (weight 1). Command is a
+       placeholder until adhoc-scripts' platform-sync image ships its own
+       schema-apply entrypoint — see schemaJob.command in values.yaml. */ -}}
+{{- if and .Values.enabled .Values.schemaJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "platformSync.fullname" . }}-schema
+  labels:
+    {{- include "platformSync.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: campaign-manager-platform-sync-schema
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      {{- include "platformSync.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: schema
+          image: {{ include "platformSync.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.schemaJob.command | nindent 12 }}
+          env:
+            {{- include "platformSync.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+{{- end }}

@@ -1,18 +1,19 @@
+{{- if .Values.global.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "campaign-manager.fullname" . }}
+  name: {{ include "app.fullname" . }}
   labels:
-    {{- include "campaign-manager.labels" . | nindent 4 }}
+    {{- include "app.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "campaign-manager.selectorLabels" . | nindent 6 }}
+      {{- include "app.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "campaign-manager.selectorLabels" . | nindent 8 }}
+        {{- include "app.selectorLabels" . | nindent 8 }}
       annotations:
         # Roll pods when config or chart-rendered secrets change.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
@@ -23,10 +24,10 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- include "campaign-manager.imagePullSecrets" . | nindent 6 }}
+      {{- include "app.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: campaign-manager
-          image: {{ include "campaign-manager.image" . | quote }}
+          image: {{ include "app.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -34,13 +35,13 @@ spec:
           env:
             - name: PORT
               value: {{ .Values.service.targetPort | quote }}
-            {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 12 }}
+            {{- include "app.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 12 }}
             {{- range $name := list "SESSION_SECRET" "CRON_SECRET" "CRON_SECRET_PREVIOUS" "RAYA_API_KEY" "GOOGLE_SERVICE_ACCOUNT_JSON" }}
-            {{- include "campaign-manager.secretEnv" (dict "ctx" $ "name" $name "optional" true) | nindent 12 }}
+            {{- include "app.secretEnv" (dict "ctx" $ "name" $name "optional" true) | nindent 12 }}
             {{- end }}
           envFrom:
             - configMapRef:
-                name: {{ include "campaign-manager.fullname" . }}-config
+                name: {{ include "app.fullname" . }}-config
           readinessProbe:
             httpGet:
               path: {{ .Values.probes.path }}
@@ -67,3 +68,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}

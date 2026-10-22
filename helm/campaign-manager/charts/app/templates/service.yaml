@@ -1,9 +1,10 @@
+{{- if .Values.global.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "campaign-manager.fullname" . }}
+  name: {{ include "app.fullname" . }}
   labels:
-    {{- include "campaign-manager.labels" . | nindent 4 }}
+    {{- include "app.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -11,4 +12,5 @@ spec:
       port: {{ .Values.service.port }}
       targetPort: http
   selector:
-    {{- include "campaign-manager.selectorLabels" . | nindent 4 }}
+    {{- include "app.selectorLabels" . | nindent 4 }}
+{{- end }}

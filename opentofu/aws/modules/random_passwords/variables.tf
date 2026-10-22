@@ -17,7 +17,7 @@ variable "signals_postgres_password_bytes" {
   default = 16
 }
 
-variable "signals_export_ro_password_bytes" {
+variable "campaign_manager_signals_ro_password_bytes" {
   type    = number
   default = 16
 }
@@ -25,6 +25,22 @@ variable "signals_export_ro_password_bytes" {
 variable "aggregator_export_ro_password_bytes" {
   type    = number
   default = 16
+}
+
+# Campaign Manager's own app database (write role) + app secrets.
+variable "campaign_manager_app_password_bytes" {
+  type    = number
+  default = 16
+}
+
+variable "campaign_manager_session_secret_bytes" {
+  type    = number
+  default = 32
+}
+
+variable "campaign_manager_cron_secret_bytes" {
+  type    = number
+  default = 32
 }
 
 variable "signals_redis_password_bytes" {

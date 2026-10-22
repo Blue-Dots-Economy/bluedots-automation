@@ -29,7 +29,7 @@ Release name and namespace **match the directory name**. Only the Helm **chart n
 | `helm/monitoring/`     | `monitoring`     | `monitoring`      | `monitoring`      | Prometheus + Alertmanager + Loki + Alloy + Jaeger + Grafana |
 | `helm/common-services/`| `platform`       | `common-services` | `common-services` | Cluster-wide: **Kong** ingress, cert-manager, shared Postgres (org **portable-pgvector** image, #93), Redis, metrics-server |
 | `helm/keycloak/`       | `keycloak-platform` | `keycloak`     | **`common-services`** | **Shared Keycloak — one realm holding BOTH DPGs' clients.** The one place release name ≠ namespace: it is a common service, so it lives in the common-services namespace. |
-| `helm/signals/`        | `dpg`            | `signals`         | `signals`         | Signals stack (api, ui, notification-service, search, **s3-export** non-PII export CronJob) |
+| `helm/signals/`        | `dpg`            | `signals`         | `signals`         | Signals stack (api, ui, notification-service, search) |
 | `helm/aggregator/`     | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal (web/BFF, api, worker) — Keycloak moved to its own release |
 
 Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`, `SIGNALS_NS`, `CS_REL`, `GLOBAL_VALUES`, …) — see [docs/deployment_guide.md → Command reference](docs/deployment_guide.md#command-reference).
@@ -199,14 +199,13 @@ For a full new-instance / new-network launch (network.json, brand assets, terms 
   - `dockerfiles/postgres/` → `ghcr.io/<owner>/postgres-pgvector` — Bitnami PG 17 + portable pgvector (the AVX-512 `SIGILL` fix). Workflow: *Build Postgres pgvector image*.
   - `dockerfiles/keycloak/` → `ghcr.io/<owner>/keycloak-server` — upstream Keycloak + the **OTP authenticator SPI**, `kc.sh build`-indexed at image build time so pods boot `start --optimized`. Workflow: *Build Keycloak image*. **Do not drop the jar:** the shared realm's browser flows bind to provider ids that exist only when it loads (`otp-identifier-form`, `otp-channel-choice-form`), so realm import *and* the entitlement-gate Job fail on unknown provider ids rather than quietly degrading to password login. Jar provenance + bump steps: `dockerfiles/keycloak/providers/README.md`.
 - `.github/dhi-mirror-images.txt` + `.github/workflows/mirror-dhi-images.yml` — the **third-party** Docker Hardened Images (cert-manager, metrics-server, the whole monitoring stack) copied byte-for-byte from `dhi.io` into `ghcr.io/<owner>/dhi/*`, because dhi.io refuses anonymous pulls and those charts have the *kubelet* do the pull. Distinct from `dockerfiles/` above, which **builds** images: this only **copies** them, digests unchanged, via `regctl image copy --referrers --digest-tags` so the SBOM/provenance/signature travel too. Our own service images need none of this — they are built *from* a DHI base in each app repo's CI. Pinned in `helm/common-services/values.yaml` and `helm/monitoring/values.yaml` as chart defaults; cert-manager and metrics-server specifically are **not** overridden in `<env>/global-images.yaml` (a per-env override there would silently escape the CI mirror check). Redis is the one exception — its `dhi/*` tag IS also set in `<env>/global-images.yaml`, with a comment there that it must stay in step with the chart default, since that overlay is layered after the chart and wins. DHI publishes **only current versions**, so the charts were bumped to match the images rather than the reverse (kube-prometheus-stack 65.1.1→88.5.2, loki 6.7.1→7.3.0, alloy 1.8.2→1.11.1, metrics-server 3.12.1→3.14.0) — pinning a DHI image into a chart built for an older app version is what produced the kube-state-metrics readiness failure. CI guards this from both directions: a rendered `dhi/*` ref missing from the mirror list fails, **and** any rendered image that is neither mirrored nor listed in `.github/dhi-exempt-images.txt` (with a reason) fails — the second check exists because the first one is blind to a chart bump *adding* an unhardened container, which is how loki 7.x quietly introduced `kiwigrid/k8s-sidecar`.
-- **`campaign-manager` client (shared realm).** Serves two identities on one client: the
-  external campaign manager's service account uses `client_credentials` for the whole-network
-  non-PII dump, and a coordinator uses the browser flow for the org-scoped campaign routes.
-  Three settings are load-bearing and fail *silently* if wrong — `serviceAccountsEnabled` (no
-  it, the dump route is unreachable), the `profile` default scope (it carries
-  `preferred_username`, which is that route's entire access control), and the browser flow
-  bound to **`aggregator-otp-browser`**. That last one matters because coordinators have **no
-  password**: bound to anything else, Keycloak serves its default username+password login and
+- **`campaign-manager` client (shared realm).** A coordinator uses the browser flow on this
+  client to get a token for the org-scoped campaign routes. `serviceAccountsEnabled` and the
+  `profile` default scope (it carries `preferred_username`) were load-bearing for a
+  client_credentials caller this client no longer has — the non-PII dump route it served is
+  retired (Blue-Dots-Economy/agg-campaign-manager-v2#5); revisit whether either is still needed.
+  The browser flow bound to **`aggregator-otp-browser`** stays load-bearing: coordinators have **no
+  password**, so bound to anything else, Keycloak serves its default username+password login and
   nobody can complete it — the same degradation the OTP SPI note above warns about. Do **not**
   bind `aggregator-portal-browser`; it layers the portal entitlement gate on top and locks
   these coordinators out. `assert-realm.sh` asserts both the binding and its target.

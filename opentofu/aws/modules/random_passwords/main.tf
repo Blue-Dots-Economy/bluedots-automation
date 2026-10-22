@@ -9,16 +9,27 @@ resource "random_id" "signals_postgres_password" {
   byte_length = var.signals_postgres_password_bytes
 }
 
-# Read-only role for the signals-s3-export CronJob. Created by the
-# common-services postgres bootstrap; never the app (dpg) user.
-resource "random_id" "signals_export_ro_password" {
-  byte_length = var.signals_export_ro_password_bytes
+# Read-only Signals role for Campaign Manager platform-sync.
+resource "random_id" "campaign_manager_signals_ro_password" {
+  byte_length = var.campaign_manager_signals_ro_password_bytes
 }
 
-# Read-only role the signals-s3-export CronJob uses on the aggregator database.
-# Created by the common-services postgres bootstrap; never the aggregator user.
+# Read-only aggregator role for Campaign Manager platform-sync.
 resource "random_id" "aggregator_export_ro_password" {
   byte_length = var.aggregator_export_ro_password_bytes
+}
+
+# Campaign Manager's own app database (write role) + app secrets.
+resource "random_id" "campaign_manager_app_password" {
+  byte_length = var.campaign_manager_app_password_bytes
+}
+
+resource "random_id" "campaign_manager_session_secret" {
+  byte_length = var.campaign_manager_session_secret_bytes
+}
+
+resource "random_id" "campaign_manager_cron_secret" {
+  byte_length = var.campaign_manager_cron_secret_bytes
 }
 
 resource "random_id" "signals_redis_password" {
@@ -85,9 +96,8 @@ resource "random_id" "voice_dpg_signals_secret" {
 }
 
 # `campaign-manager` client. Confidential client for the external campaign
-# manager: its service account is the client_credentials caller for the
-# non-PII dump route, and coordinators take password-grant tokens on it for
-# the org-scoped campaign routes.
+# manager: coordinators take password-grant tokens on it for the org-scoped
+# campaign routes.
 resource "random_id" "campaign_manager_secret" {
   byte_length = var.campaign_manager_secret_bytes
 }

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: platform-sync
+description: CronJob syncing Signals and Aggregator non-PII platform data directly into the Campaign Manager database (adhoc-scripts/signals-s3-export, Postgres sink).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.24.0-0"

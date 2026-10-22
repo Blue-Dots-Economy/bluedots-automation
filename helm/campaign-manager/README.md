@@ -1,104 +1,91 @@
 # campaign-manager
 
-Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators manage voice-AI outreach campaigns. It stores its data in Postgres. It is a standalone chart: it does not depend on the other charts and is not part of the `install.sh` flow.
+Umbrella Helm chart for **Campaign Manager**, the web app that lets Blue Dots operators manage voice-AI outreach campaigns. It is a standalone chart: it does not depend on the other charts and is not part of the `install.sh` flow.
 
-## What it deploys
+Three independently deployable pieces, each its own subchart under `charts/`:
 
-| Resource | Purpose |
+| Subchart | Purpose |
 |---|---|
-| Deployment, Service | The Campaign Manager web app (listens on port 3000). |
-| Ingress | Exposes the app on your domain, with an HTTPS certificate from cert-manager. |
-| ConfigMap, Secret | One ConfigMap for settings and one Secret for every credential in the chart. Each pod reads only the keys it needs. |
-| Database Job | Runs after every install and upgrade. Creates the Postgres login, the database and its schemas if they are missing. |
-| Migrate Job | Runs after the database Job. Applies the app's schema migrations. |
-| Pipeline schema Job | Runs after the Migrate Job. Creates the pipeline's own tables (`purple_users`, `purple_items`, `purple_actions`) in the `platform` schema. Only deployed with the pipeline. |
-| CronJob | Purple Dots data pipeline. Loads Raya calls and the platform S3 dump into the same database, which is where the app reads them. |
+| `app` | The web app (Deployment, Service, Ingress), plus the database bootstrap Job and schema migrations. Always deployed. |
+| `raya-sync` | CronJob loading Raya voice-bot call data into the app's database. Opt-in (`raya-sync.enabled: true`). |
+| `platform-sync` | CronJob syncing Signals + Aggregator non-PII data directly into the app's database — no S3 involved. Opt-in (`platform-sync.enabled: true`). |
 
-The app, the migrations and the pipeline all connect with one Postgres login. The jobs run in this order: Database Job, Migrate Job, Pipeline schema Job.
+`app`, `raya-sync` and `platform-sync` all connect to the **same** Postgres database with the **same** login (`global.database`) — there is one database, shared by all three. Jobs run in this order across the whole release (Helm orders hooks by weight across the umbrella *and* every subchart together): `app`'s database Job (weight 0) → `app`'s migrate Job (weight 1) → `platform-sync`'s schema Job (weight 2, creates the `platform.*` tables it writes into). `raya-sync` needs no schema Job of its own — its tables are created by `app`'s migrate Job.
 
 ## Before you configure
 
 - A Postgres server the cluster can reach, and its admin credentials.
-- An ingress controller in the cluster, and a DNS record for your domain pointing at its load balancer.
+- An ingress controller in the cluster, and a DNS record for your domain pointing at its load balancer (for `app`'s ingress).
 - cert-manager with a ClusterIssuer, to issue the HTTPS certificate automatically.
 - A namespace of your choice. Install the release into it, and create it with `--create-namespace` if it does not exist.
+- If `raya-sync` or `platform-sync` are enabled, the images they need (`ghcr.io/blue-dots-economy/purple-dots` and `ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync` respectively) and the database roles `platform-sync` reads from (`campaign_manager_signals_ro` on Signals, `aggregator_export_ro` on the aggregator database — both provisioned by `helm/common-services`' `postgresBootstrap`).
 
 ## How to configure
 
-Defaults live in `values.yaml`. Do not edit it. Copy `helm/campaign-manager.yaml.example` to `helm/campaign-manager.yaml` (git ignores it, so it is safe to put secrets in), fill in the values below, and pass it to Helm:
+Defaults live in `values.yaml` (umbrella) and each subchart's own `charts/<name>/values.yaml`. Do not edit either. Copy `helm/campaign-manager.yaml.example` to `helm/campaign-manager.yaml` (git ignores it, so it is safe to put secrets in), fill in the values below, and pass it to Helm:
 
 ```bash
 helm upgrade -i campaign-manager ./helm/campaign-manager -n <namespace> --create-namespace -f helm/campaign-manager.yaml
 ```
 
-Use `--set key=value` instead for a one-off override.
+Use `--set key=value` instead for a one-off override. Subchart keys are set the same way Helm always addresses them from the umbrella: `--set app.image.tag=...`, `--set raya-sync.enabled=true`, `--set platform-sync.config.EXPORT_NETWORK=blue_dot`.
 
 ## Values to fill in
 
-### Image
+### Shared (`global`)
 
 | Key | What it is | Example |
 |---|---|---|
-| `image.repository` | Container image of the app. | `ghcr.io/your-org/campaign-manager` |
-| `image.tag` | Image tag to deploy. There is no usable default, so always set it. | `sha-1a2b3c4` |
+| `global.publicHost` | Public FQDN served by `app`'s ingress. | `campaign-manager.example.com` |
+| `global.database.host` | Postgres host, shared by all three subcharts. | `postgres.databases.svc.cluster.local` |
+| `global.database.password` | The one login's password. Set on it every time `app`'s database Job runs. | `a-strong-password` |
+| `global.rayaApiKey` | Raya API key. Read by both `app` (settings UI "is it configured" check) and `raya-sync` (actually dials out) — one value, entered once. | `raya_xxx` |
 
-If the registry is private, create an image pull secret named `ghcr-pull` in the namespace, or list your own names under `global.imagePullSecrets`.
-
-### Ingress
-
-| Key | What it is | Example |
-|---|---|---|
-| `ingress.enabled` | Set to `true` to create the Ingress. | `true` |
-| `ingress.className` | Ingress class in your cluster (`kubectl get ingressclass`). | `kong` |
-| `ingress.host` | Your domain. | `campaign-manager.example.com` |
-| `ingress.annotations` | Annotations for your controller. For automatic HTTPS, name your ClusterIssuer (`kubectl get clusterissuer`). | `cert-manager.io/cluster-issuer: letsencrypt-prod` |
-| `ingress.tls.enabled`, `ingress.tls.secretName` | Serve HTTPS from this certificate Secret. | `true`, `campaign-manager-tls` |
-
-### Database
+### `app`
 
 | Key | What it is | Example |
 |---|---|---|
-| `database.host` | Postgres host. | `postgres.databases.svc.cluster.local` |
-| `database.name` | Database to create and use. Defaults to `campaign_manager`. | `campaign_manager` |
-| `database.admin.user`, `database.admin.password` | Admin account, used only by the database Job to create the login and the database. | `postgres`, `postgres-admin-password` |
-| `database.user`, `database.password` | The one login used by the app, the migrations and the pipeline. The user defaults to `campaign_manager`. The password is set on it every time the database Job runs. | `campaign_manager`, `a-strong-password` |
+| `app.image.repository`, `app.image.tag` | Container image of the app. | `ghcr.io/your-org/campaign-manager`, `sha-1a2b3c4` |
+| `app.imagePullSecret.private` | `true` if `app.image` needs a pull secret, set independently of raya-sync/platform-sync's own. | `false` |
+| `app.ingress.enabled`, `.host` | Expose the app on your domain. HTTPS via the `letsencrypt-prod` ClusterIssuer is on by default. | `false`, `""` |
+| `app.database.admin.user`, `.password` | Admin account, used only by the database Job to create the login and the database. | `postgres`, `postgres-admin-password` |
+| `app.secrets.SESSION_SECRET` | Key that signs login sessions. Must be at least 32 characters. | generate with `openssl rand -hex 32` |
+| `app.secrets.CRON_SECRET` / `.CRON_SECRET_PREVIOUS` | Secret that authenticates the sync hook called by your scheduler; previous value while rotating. | `a-long-random-string` |
+| `app.secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
+| `app.migrate.enabled` | Run the app's schema migrations after every install/upgrade. Already-applied migrations are skipped. | `true` |
 
-### Migrations
+To keep credentials out of Helm values, create the Secret yourself and set `app.secrets.existingSecret` to its name. It must carry: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, plus `DB_ADMIN_PASSWORD`/`DB_PASSWORD` if `app.dbInit.enabled`.
 
-| Key | What it is | Example |
-|---|---|---|
-| `migrate.enabled` | Run the migrations after every install and upgrade. Already applied migrations are skipped. | `true` |
-| `migrate.image.repository`, `migrate.image.tag` | Only to run the migrations from a different image. Empty means the app image, which contains them. | leave empty |
-| `migrate.command` | Command that applies the migrations. | `["node", "migrate/migrate.mjs"]` |
+### `raya-sync`
 
-### App credentials (`secrets`)
-
-| Key | What it is | Example |
-|---|---|---|
-| `secrets.SESSION_SECRET` | Key that signs login sessions. Must be at least 32 characters. | generate with `openssl rand -hex 32` |
-| `secrets.CRON_SECRET` | Secret that authenticates the sync hook called by your scheduler. | `a-long-random-string` |
-| `secrets.CRON_SECRET_PREVIOUS` | The previous cron secret, still accepted while you rotate. Leave empty otherwise. | `the-old-random-string` |
-| `secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
-| `secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
-
-To keep credentials out of Helm values, create the Secret yourself and set `secrets.existingSecret` to its name. It must carry these keys: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, plus `CLIENT_SECRET` for the pipeline and `DB_ADMIN_PASSWORD` and `DB_PASSWORD` for the database Job. The pipeline uses the same `RAYA_API_KEY` as the app.
-
-### Purple Dots pipeline (`pipeline`)
-
-Set `pipeline.enabled: true` to deploy the CronJob. It uses the database above.
+Set `raya-sync.enabled: true` to deploy its CronJob.
 
 | Key | What it is | Example |
 |---|---|---|
-| `pipeline.image.repository`, `pipeline.image.tag` | Pipeline image. The tag is required. | `ghcr.io/your-org/purple-dots`, `v1.0.0` |
-| `pipeline.schedule` | Cron expression for the run, in `pipeline.timeZone` (default `Asia/Kolkata`). | `"0 2 * * *"` |
-| `pipeline.config.BASE_URL` | Host that serves `/v1/campaign/dump`, for the S3 dump. | `https://aggregator.example.com` |
-| `pipeline.config.KEYCLOAK_URL` | Keycloak base URL. | `https://auth.example.com/auth` |
-| `pipeline.config.REALM`, `pipeline.config.CLIENT_ID` | Keycloak realm and the service-account client. | `bluedots`, `campaign-manager` |
-| `pipeline.secrets.CLIENT_SECRET` | Secret of the Keycloak client. | `xxx` |
-| `pipeline.args` | Extra arguments for the run, for example to skip a stage. | `["--skip", "platform"]` |
+| `raya-sync.image.repository`, `.tag` | Pipeline image. The tag is required. | `ghcr.io/blue-dots-economy/purple-dots`, `v1.0.0` |
+| `raya-sync.schedule` | Cron expression, in `raya-sync.timeZone` (default `Asia/Kolkata`). | `"0 2 * * *"` |
+| `raya-sync.config.PD_REFRESH_DAYS`, `.PD_TEST_BATCHES` | Pipeline tuning, passed straight through. | leave empty for the image's own defaults |
+| `raya-sync.args` | Extra `run_pipeline.py` arguments. Defaults to `["--skip", "platform"]` — Signals sync is `platform-sync`'s job now, not this one's. | `["--skip", "platform"]` |
 
-To run the pipeline once without waiting for the schedule:
-
+To run it once without waiting for the schedule:
 ```bash
-kubectl -n <namespace> create job --from=cronjob/<release-name>-pipeline pipeline-manual
+kubectl -n <namespace> create job --from=cronjob/<release-name>-raya-sync raya-sync-manual
+```
+
+### `platform-sync`
+
+Set `platform-sync.enabled: true` to deploy its CronJob. Backed by `adhoc-scripts/platform-sync`.
+
+| Key | What it is | Example |
+|---|---|---|
+| `platform-sync.image.repository`, `.tag` | Platform-sync image. The tag is required. | `ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync`, no tag |
+| `platform-sync.schedule` | Cron expression, in `platform-sync.timeZone` (default `Asia/Kolkata`). | `"0 */4 * * *"` |
+| `platform-sync.config.INSTANCE_ID` | This deployment's Signals instance id. | `up-gzb` |
+| `platform-sync.config.EXPORT_NETWORK` | Signals network this deployment reads. | `purple_dot` or `blue_dot` |
+| `platform-sync.secrets.SIGNALS_DATABASE_URL` | Read-only Postgres URL to the Signals database. | `postgresql://campaign_manager_signals_ro:xxx@host:5432/dpg` |
+| `platform-sync.secrets.AGG_DATABASE_URL` | Read-only Postgres URL to the aggregator database. | `postgresql://aggregator_export_ro:xxx@host:5432/aggregator` |
+
+To run it once without waiting for the schedule:
+```bash
+kubectl -n <namespace> create job --from=cronjob/<release-name>-platform-sync platform-sync-manual
 ```
