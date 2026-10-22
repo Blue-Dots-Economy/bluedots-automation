@@ -190,7 +190,7 @@ spec:
                 -- Only the columns the export query reads (adhoc-scripts
                 -- signals-s3-export README). Skipped until the aggregator
                 -- migrations have created the tables.
-                DO $$
+                DO $grant$
                 BEGIN
                   IF to_regclass('public.aggregator_orgs') IS NOT NULL
                      AND to_regclass('public.aggregators') IS NOT NULL THEN
@@ -203,7 +203,7 @@ spec:
                     RAISE NOTICE 'aggregator tables not created yet; grants applied on a later upgrade';
                   END IF;
                 END
-                $$;
+                $grant$;
               EOSQL
               {{- end }}
               echo "[common-services] postgres bootstrap complete"
