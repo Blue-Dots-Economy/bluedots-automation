@@ -145,6 +145,15 @@ smsHttp:
   otpVarName: message
   keyId: keycloak
   timeoutMs: 5000
+  # Sign-in and sign-up OTP per app. `<client>=<app>` pairs, comma-separated
+  # (e.g. signals-ui=signals,aggregator-portal=aggregator); a mapped client gets
+  # the template <app>_signin_otp or <app>_signup_otp plus the app link. Empty
+  # keeps login_otp for every client, so set it only where notification-service
+  # declares those templates.
+  clientApps: ''
+  # Apps that decide sign-in on the phone alone (e.g. aggregator, whose accounts
+  # are created with the email already verified). Others use phone or email.
+  signinNeedsPhoneVerifiedApps: ''
 awsRegion: ap-south-1
 service:
   port: 8080

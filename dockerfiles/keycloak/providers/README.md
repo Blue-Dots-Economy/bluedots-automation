@@ -61,16 +61,19 @@ It must send NS's HMAC envelope (`X-NS-Key`, `X-NS-Timestamp`, `X-NS-Nonce`,
 No message text: `login_otp` is a template NS *names*, so NS owns both the
 vendor's template id and the body. Env wired by the chart when
 `smsProvider: http`: `SMS_HTTP_URL`, `SMS_HTTP_TEMPLATE_ID`,
-`SMS_HTTP_OTP_VAR_NAME`, `SMS_HTTP_KEY_ID`, `SMS_HTTP_TIMEOUT_MS`, plus
+`SMS_HTTP_OTP_VAR_NAME`, `SMS_HTTP_KEY_ID`, `SMS_HTTP_TIMEOUT_MS`,
+`SMS_HTTP_CLIENT_APPS`, `SMS_HTTP_SIGNIN_NEEDS_PHONE_VERIFIED_APPS`, plus
 `SMS_HTTP_SECRET` from the Secret.
 
-Sign-in and sign-up OTP per app: for a client listed in `SMS_HTTP_CLIENT_APPS`
-(default `signals-ui=signals,aggregator-portal=aggregator`) the template id is
+Sign-in and sign-up OTP per app (from 1.3.0-SNAPSHOT): for a client listed in
+`SMS_HTTP_CLIENT_APPS` (chart `smsHttp.clientApps`, e.g.
+`signals-ui=signals,aggregator-portal=aggregator`) the template id is
 `<app>_signin_otp` or `<app>_signup_otp`, with the app link sent as `url`.
 Sign-in when the phone or email is verified; apps in
-`SMS_HTTP_SIGNIN_NEEDS_PHONE_VERIFIED_APPS` (default `aggregator`) use the phone
-alone. Other clients still get `login_otp`. The chart does not set either
-value; the defaults match the Signals and Aggregator clients.
+`SMS_HTTP_SIGNIN_NEEDS_PHONE_VERIFIED_APPS` (chart
+`smsHttp.signinNeedsPhoneVerifiedApps`, e.g. `aggregator`) use the phone alone.
+Both are empty by default, so every client keeps `login_otp` until a deployment
+sets them, and only where notification-service declares those templates.
 
 The trade-off is that login OTP gains a hard dependency on notification-service
 being reachable from `common-services`.
