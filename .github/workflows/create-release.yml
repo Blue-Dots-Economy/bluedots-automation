@@ -70,6 +70,10 @@ on:
         description: "Extra regex of accepted non-sprint tags, e.g. '^(api|web|worker)-v[0-9]+\\.[0-9]+\\.[0-9]+$'. Empty = v*.*.* and sprint tags only."
         type: string
         default: ""
+      docs-base:
+        description: "bluedots-docs branch the release-notes PR targets: main (live site) or develop (dev site, for dry tests)"
+        type: string
+        default: main
       automation-ref:
         description: "bluedots-automation commit to load the release-notes scripts from. Pass the same SHA the caller pins this workflow at."
         type: string
@@ -288,6 +292,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
           DOCS_TOKEN: ${{ secrets.docs-token }}
+          DOCS_BASE: ${{ inputs.docs-base }}
         run: |
           if [ -z "${DOCS_TOKEN}" ]; then
             echo "No docs-token secret was passed; skipping the docs publish."

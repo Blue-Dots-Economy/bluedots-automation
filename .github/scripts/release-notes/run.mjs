@@ -8,7 +8,7 @@
 //     (sprint tags only) and appends both to the step summary.
 //   MODE=publish   TAG REPOSITORY DOCS_TOKEN RUNNER_TEMP GITHUB_STEP_SUMMARY
 //     Puts release-fragment.md on the bluedots-docs `release-notes/<tag>` branch and
-//     opens or updates its PR into main.
+//     opens or updates its PR into DOCS_BASE (default main; develop for the dev site).
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -27,7 +27,12 @@ import {
 } from './notes.mjs';
 
 const DOCS_REPO = 'Blue-Dots-Economy/bluedots-docs';
-const DOCS_BASE = 'main';
+// The docs branch the release-notes PR targets. main publishes to the live site;
+// develop feeds the dev deployment, which is how the flow is dry-tested end to end.
+const DOCS_BASE = process.env.DOCS_BASE || 'main';
+if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(DOCS_BASE)) {
+  throw new Error(`DOCS_BASE '${DOCS_BASE}' is not a valid branch name`);
+}
 const BOT_NAME = 'github-actions[bot]';
 const BOT_EMAIL = '41898282+github-actions[bot]@users.noreply.github.com';
 const PUSH_ATTEMPTS = 3;
