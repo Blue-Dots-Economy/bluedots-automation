@@ -7,9 +7,11 @@ Everything in this directory is copied to `/opt/keycloak/providers/` by
 
 | Jar | Version | Source |
 |-----|---------|--------|
-| `keycloak-otp-1.2.0-SNAPSHOT.jar` | 1.2.0-SNAPSHOT | <https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator> |
+| `keycloak-otp-1.3.0-SNAPSHOT.jar` | 1.3.0-SNAPSHOT | <https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator> |
 
-`sha256:05719f4e050e8a671100b6b822f83694890e8192bea67133b546eca6d3f64b0b`
+`sha256:b89079bdb133d0d75400be667bb10f01eccfdc14fce17a392ab603de92529ef9`
+
+Built from `keycloak-otp-authenticator` `main` at `4ff776a` (merge of PR #10).
 
 > The hash identifies the **committed file**, not a target to reproduce: a jar
 > is a zip and carries build timestamps, so a fresh `mvn package` of the same
@@ -17,10 +19,8 @@ Everything in this directory is copied to `/opt/keycloak/providers/` by
 > and update it whenever the jar is replaced.
 
 > The source repo moved to the `Blue-Dots-Economy` org; the old
-> `sanketika-labs` URL recorded here was stale. Note also that the SMS vendor
-> providers live on the **`enhancements`** branch, not `main` — `main` carries
-> no msg91 provider at all, so a jar built from it would break every cluster
-> running `smsProvider: msg91`.
+> `sanketika-labs` URL recorded here was stale. The SMS vendor providers
+> (msg91, http) are on `main` since PR #7; build from `main`.
 
 The jar is committed rather than fetched at build time so an image build is
 reproducible from a checkout alone, with no dependency on a second private repo
@@ -61,8 +61,19 @@ It must send NS's HMAC envelope (`X-NS-Key`, `X-NS-Timestamp`, `X-NS-Nonce`,
 No message text: `login_otp` is a template NS *names*, so NS owns both the
 vendor's template id and the body. Env wired by the chart when
 `smsProvider: http`: `SMS_HTTP_URL`, `SMS_HTTP_TEMPLATE_ID`,
-`SMS_HTTP_OTP_VAR_NAME`, `SMS_HTTP_KEY_ID`, `SMS_HTTP_TIMEOUT_MS`, plus
+`SMS_HTTP_OTP_VAR_NAME`, `SMS_HTTP_KEY_ID`, `SMS_HTTP_TIMEOUT_MS`,
+`SMS_HTTP_CLIENT_APPS`, `SMS_HTTP_SIGNIN_NEEDS_PHONE_VERIFIED_APPS`, plus
 `SMS_HTTP_SECRET` from the Secret.
+
+Sign-in and sign-up OTP per app (from 1.3.0-SNAPSHOT): for a client listed in
+`SMS_HTTP_CLIENT_APPS` (chart `smsHttp.clientApps`, e.g.
+`signals-ui=signals,aggregator-portal=aggregator`) the template id is
+`<app>_signin_otp` or `<app>_signup_otp`, with the app link sent as `url`.
+Sign-in when the phone or email is verified; apps in
+`SMS_HTTP_SIGNIN_NEEDS_PHONE_VERIFIED_APPS` (chart
+`smsHttp.signinNeedsPhoneVerifiedApps`, e.g. `aggregator`) use the phone alone.
+Both are empty by default, so every client keeps `login_otp` until a deployment
+sets them, and only where notification-service declares those templates.
 
 The trade-off is that login OTP gains a hard dependency on notification-service
 being reachable from `common-services`.
@@ -101,9 +112,8 @@ order. When bumping, **replace** the old jar — never leave both.
 
 ```bash
 # 1. Build the jar from its own repo (Java 17+, uses the bundled wrapper).
-#    Build from `enhancements`, NOT `main` — see the note above.
 git clone https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator
-cd keycloak-otp-authenticator && git switch enhancements
+cd keycloak-otp-authenticator
 ./mvnw clean package -DskipTests
 
 # 2. Replace the jar here (delete the old one — see above)
@@ -136,6 +146,6 @@ Those trees are developer-local and are not upstream of this one; the same
 relationship `scripts/build-realm.sh` documents for the realm JSON.
 
 They currently sit on **1.0.0-SNAPSHOT** while this directory ships
-**1.2.0-SNAPSHOT**. Bumping them is a separate change in those repos and is not
+**1.3.0-SNAPSHOT**. Bumping them is a separate change in those repos and is not
 required for a deployment — but note the 1.0.0 jar has no `http` provider, so
 local dev cannot exercise the notification-service path until it is bumped.
