@@ -114,6 +114,7 @@ CS_NS="${CS_NS:-common-services}"
 SIGNALS_NS="${SIGNALS_NS:-signals}"
 AGG_NS="${AGG_NS:-aggregator}"
 MON_NS="${MON_NS:-monitoring}"
+CM_NS="${CM_NS:-campaign-manager}"
 # Keycloak is a shared common service: its own RELEASE, but it lives in the
 # common-services NAMESPACE (deliberate exception to the dir==ns convention).
 KC_NS="${KC_NS:-$CS_NS}"
@@ -124,6 +125,7 @@ SIGNALS_REL="${SIGNALS_REL:-signals}"
 AGG_REL="${AGG_REL:-aggregator}"
 MON_REL="${MON_REL:-monitoring}"
 KC_REL="${KC_REL:-keycloak}"
+CM_REL="${CM_REL:-campaign-manager}"
 
 # Chart directories.
 CS_DIR="$REPO_ROOT/helm/common-services"
@@ -131,6 +133,10 @@ SIGNALS_DIR="$REPO_ROOT/helm/signals"
 AGG_DIR="$REPO_ROOT/helm/aggregator"
 MON_DIR="$REPO_ROOT/helm/monitoring"
 KC_DIR="$REPO_ROOT/helm/keycloak"
+CM_DIR="$REPO_ROOT/helm/campaign-manager"
+
+# Hand-filled from helm/campaign-manager.yaml.example (git-ignored).
+CM_VALUES="${CM_VALUES:-$REPO_ROOT/helm/campaign-manager.yaml}"
 
 # Resource overrides (replica counts, HPA, PDB, container resources) — shared across environments.
 # Edit helm/global-resources.yaml to change settings across all environments.
@@ -574,6 +580,28 @@ function restart_aggregator_config_consumers() {
         echo "    then re-run: bash install.sh restart_aggregator_config_consumers" >&2
     fi
     return 0
+}
+
+# 2d) campaign-manager — standalone, not part of deploy_all_services.
+# Uses only $CM_VALUES; images are private, so it needs the ghcr-pull Secret.
+function deploy_campaign_manager() {
+    test -f "$CM_VALUES" || {
+        echo "ERROR: values file not found: $CM_VALUES" >&2
+        echo "       cp $REPO_ROOT/helm/campaign-manager.yaml.example $CM_VALUES and fill it in." >&2
+        exit 1
+    }
+    kubectl get ns "$CM_NS" >/dev/null 2>&1 || kubectl create ns "$CM_NS"
+    if ! kubectl -n "$CM_NS" get secret ghcr-pull >/dev/null 2>&1; then
+        echo "WARNING: no ghcr-pull Secret in namespace $CM_NS — private images will fail with ImagePullBackOff." >&2
+        echo "         PRIVATE_IMAGE_NAMESPACES=$CM_NS GHCR_PAT=ghp_xxx bash install.sh create_private_image_pull_secret" >&2
+    fi
+
+    echo -e "\nDeploying campaign-manager"
+    helm upgrade --install "$CM_REL" "$CM_DIR" \
+        -n "$CM_NS" --create-namespace \
+        -f "$CM_VALUES" \
+        $EXTRA_HELM_ARGS \
+        --wait --timeout 10m
 }
 
 # ═══ helm: deploy everything ══════════════════════════════════════════════════
