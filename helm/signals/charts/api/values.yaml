@@ -314,6 +314,15 @@ schemas:
   crossNetworkUrl: "http://dpg-api:2742"
   networks: []
 
+# ─── Country boundary for supplied coordinates (signals-dpg#789) ─────────────
+# When config.GEOCODING_COUNTRY is set (e.g. "IN"), files/geo/<CC>.geojson is
+# shipped as the {api}-geo-boundary ConfigMap, mounted at /app/geo, and
+# GEOCODING_BOUNDARY_PATH is set to it. The api then rejects a caller-supplied
+# coordinate outside that country with 400 LOCATION_OUTSIDE_COUNTRY. Set
+# enabled: false to keep the geocoder restriction but skip this check.
+geoBoundary:
+  enabled: true
+
 # ─── Shared Keycloak coordinates ─────────────────────────────────────────────
 # PER-SUBCHART OVERRIDE ONLY — leave empty and configure globals instead.
 #

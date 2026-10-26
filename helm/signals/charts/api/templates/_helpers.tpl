@@ -101,3 +101,17 @@ imagePullSecrets:
 {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end -}}
+
+{{/*
+Country whose boundary the api checks caller-supplied coordinates against
+(signals-dpg#789): config.GEOCODING_COUNTRY, upper-cased, when
+geoBoundary.enabled. Empty → no boundary ConfigMap, no mount, no
+GEOCODING_BOUNDARY_PATH; the api then skips the check (the geocoder country
+restriction from GEOCODING_COUNTRY still applies). One helper so the ConfigMap,
+the mount and the env var cannot disagree.
+*/}}
+{{- define "dpg-api.geoBoundaryCountry" -}}
+{{- if .Values.geoBoundary.enabled -}}
+{{- .Values.config.GEOCODING_COUNTRY | default "" | toString | trim | upper -}}
+{{- end -}}
+{{- end }}

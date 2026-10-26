@@ -1,10 +1,11 @@
 #!/bin/sh
 # Post-import init for the (now combined, Phase B) realm:
-#   1. Declare the phoneNumber/phoneNumberVerified user attributes, enable
-#      Unmanaged Attributes, and relax `required` on email/firstName/lastName
-#      so aggregator's other custom attributes (aggregator_id, aggregator_type,
-#      decision_made, signalstack_org_id, etc.) and signals' phone-only /
-#      one-word-name users all persist and can log in.
+#   1. Declare the phoneNumber/phoneNumberVerified user attributes, declare the
+#      service-written identity attributes (aggregator_id, aggregator_type,
+#      decision_made, signalstack_org_id) admin-only, enable Unmanaged
+#      Attributes, and relax `required` on email/firstName/lastName so any
+#      other custom attributes and signals' phone-only / one-word-name users
+#      all persist and can log in.
 #   2. org_owner realm role + manage-realm grant (org hierarchy).
 #   3. Apply SMTP server config from env vars (KC needs this for email OTP + verify).
 #   4. aggregator-portal client: confidential + secret sync + protocol mappers.
@@ -59,8 +60,15 @@ fi
 #    Declaring phoneNumber/phoneNumberVerified explicitly (rather than relying
 #    on the unmanaged policy alone) makes them first-class/searchable — the
 #    migration's collision check depends on that. The unmanaged policy is the
-#    belt-and-braces for everything else (aggregator_id, aggregator_type,
-#    decision_made, signalstack_org_id, ...).
+#    belt-and-braces for every attribute not declared here.
+#
+#    aggregator_id, decision_made, aggregator_type and signalstack_org_id feed
+#    the portal gate and token claims the apps act on (aggregator_id,
+#    decision_made, aggregator_type, signalstack_org_id, signals_acting_orgs).
+#    Only service accounts write them, through the admin API, so they are
+#    declared admin-only. That is forced: any earlier declaration of those
+#    names is dropped before they are appended, and the check after the PUT
+#    fails the Job unless all four are admin-only.
 #
 #    Relaxing `required` on email/firstName/lastName: Keycloak's default
 #    profile marks all three required for the `user` role, which matches
@@ -72,7 +80,7 @@ fi
 #
 #    `unique_by` keeps the first of each name, and the realm's existing
 #    entries come first — so an already-declared attribute keeps its own
-#    settings.
+#    settings (except the four admin-only ones above).
 # ────────────────────────────────────────────────────────────
 PROFILE=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/users/profile" \
   -H "Authorization: Bearer ${TOKEN}")
@@ -83,9 +91,15 @@ UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" '
     then del(.required)
     else . end;
 
+  def admin_only: ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id"];
+
   .unmanagedAttributePolicy = $policy
   | .attributes = (
-      ((.attributes // []) + [
+      ([(.attributes // [])[] | select(.name as $n | admin_only | index($n) | not)] + [
+        { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+        { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+        { name: "aggregator_type", displayName: "Aggregator type", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+        { name: "signalstack_org_id", displayName: "Signals organisation id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         {
           name: "phoneNumber",
           displayName: "Phone Number",
@@ -123,7 +137,14 @@ HAS_PHONE=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "ph
 GOT_POLICY=$(printf '%s' "$VERIFY" | jq -r '.unmanagedAttributePolicy // "unset"')
 STILL_REQUIRED=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "email" or .name == "firstName" or .name == "lastName") | select(has("required")) | .name] | join(",")')
 
-echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HAS_PHONE}"
+ADMIN_ONLY=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name as $n | ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id"] | index($n)) | select(.permissions.edit == ["admin"] and .permissions.view == ["admin"]) | .name] | unique | length')
+
+echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HAS_PHONE} admin-only identity attributes=${ADMIN_ONLY}/4"
+
+if [ "${ADMIN_ONLY:-0}" -lt 4 ]; then
+  echo "[kc-init] aggregator_id / decision_made / aggregator_type / signalstack_org_id are not all declared admin-only"
+  exit 1
+fi
 
 if [ "${HAS_PHONE:-0}" -lt 1 ]; then
   echo "[kc-init] phoneNumber is still not declared — OTP login would silently fail"

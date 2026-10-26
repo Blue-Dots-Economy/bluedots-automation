@@ -48,5 +48,7 @@ data:
   SMS_HTTP_OTP_VAR_NAME: "{{ .Values.smsHttp.otpVarName }}"
   SMS_HTTP_KEY_ID: "{{ .Values.smsHttp.keyId }}"
   SMS_HTTP_TIMEOUT_MS: "{{ .Values.smsHttp.timeoutMs }}"
+  SMS_HTTP_CLIENT_APPS: "{{ .Values.smsHttp.clientApps }}"
+  SMS_HTTP_SIGNIN_NEEDS_PHONE_VERIFIED_APPS: "{{ .Values.smsHttp.signinNeedsPhoneVerifiedApps }}"
   {{- end }}
   AWS_REGION: "{{ .Values.awsRegion }}"

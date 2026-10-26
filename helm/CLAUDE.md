@@ -33,7 +33,7 @@ with `scripts/build-realm.sh <app-repo realm.json>` (applies the hardening
 transform) and gate with `scripts/assert-realm.sh` — which CI runs. Do **not** add
 a "drift from upstream" diff; it would fail on the intentional differences.
 
-**Two hardening steps that are invisible when they regress:**
+**Three hardening steps that are invisible when they regress:**
 - The local realms carry `localhost` entries in `redirectUris`, `webOrigins` and —
   easy to miss — the `##`-delimited `post.logout.redirect.uris` *attribute*. Those
   widen a production OAuth client's allow-lists. `assert-realm.sh` fails on any of
@@ -42,6 +42,13 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   addresses, so the in-cluster init Job keeps working over plain HTTP while
   external callers must use HTTPS. A `kubectl port-forward` session comes from a
   non-private address and gets `403 HTTPS required` — expected, not a fault.
+- `aggregator_id`, `decision_made`, `aggregator_type` and `signalstack_org_id`
+  are declared **admin-only** in the user profile. Only service accounts write
+  them, through the admin API, and they feed token claims the apps act on.
+  `build-realm.sh` forces the declarations (H4), `assert-realm.sh` checks them
+  (A10), and `apply-user-profile.sh` re-applies them to existing realms and
+  fails the init Job unless all four are admin-only. `unmanagedAttributePolicy`
+  stays `ENABLED` for every other attribute.
 
 **signals-ui lives on different hostnames to Keycloak.** `__PUBLIC_BASE_URL__` is
 the Keycloak/aggregator host; the signals UI is served from `global.publicHosts` (a
@@ -267,6 +274,16 @@ The aggregator's shape is the better one — an obvious missing feature beats a 
 **Static renders need the off switch.** `helm template` fails on the missing file (`helm lint` only logs it as [INFO] and exits 0 — see the note in `install.sh`'s `lint`). CI therefore passes `--set ui.reference.enabled=false` for signals and `--set web.reference.enabled=false` for the aggregator in its `helm template` steps. Add a third chart with this pattern and it needs the same flag.
 
 **Aggregator-specific: it is a directory mount, unlike the consent file next to it.** Consent uses `subPath` (single file, because the directory it lands in carries other image-baked files). The reference mount is a whole-directory mount at `/app/apps/web/public/reference`, which is exactly what makes it shadow the baked fallbacks — and it means only the one selected region is reachable while enabled, even though the image contains more. Directory mounts *do* hot-update, but the widget caches per page load, so a `checksum/reference` annotation still rolls the pods.
+
+## Country restriction + boundary — one anchor, a committed ConfigMap (signals-dpg#785)
+
+`_geo_country` in `<env>/global-values.yaml` (ISO alpha-2, `IN` by default) feeds three keys: `api.config.GEOCODING_COUNTRY`, `ui.runtimeConfig.VITE_GEO_COUNTRY` and aggregator `web.geoCountry` (rendered as `GEO_COUNTRY`). Together they restrict the server geocoder and both address search boxes to that country. `""` turns the restriction off everywhere.
+
+The api also rejects a **caller-supplied** coordinate outside the country with `400 LOCATION_OUTSIDE_COUNTRY` (#789). For that it needs the boundary:
+
+- **Committed, not fetched.** Unlike consent or network.json, the boundary is static data, so it lives in this repo at `helm/signals/charts/api/files/geo/<CC>.geojson`. Regenerate it with `scripts/build-geo-boundary.sh <CC>`, which pulls Natural Earth's India point-of-view admin-0 file (public domain; J&K, Ladakh and Arunachal drawn as India), unsimplified, ~150 KB. Simplifying drops Lakshadweep, which is why it isn't simplified. The Natural Earth release is pinned (`NE_VERSION`, currently 5.1.1) and fetched from the tagged GitHub source; `<CC>.source` beside the file records the version and URL it came from. Bump the version deliberately: a new release can move the border line.
+- **Delivery.** `templates/geo-boundary-configmap.yaml` renders `{api}-geo-boundary`, which is mounted read-only at `/app/geo`. The chart **derives** `GEOCODING_BOUNDARY_PATH=/app/geo/<CC>.geojson`. Never set that variable by hand: the mount and the path come from the one `dpg-api.geoBoundaryCountry` helper so they cannot disagree. A `checksum/geo-boundary` annotation rolls the api on change, because the file is read once at boot.
+- **A country with no committed file fails the render.** This is deliberate. The api itself fails *open* (it warns at boot and skips the check), so a missing file would otherwise mean a check that is configured but silently off. `api.geoBoundary.enabled: false` keeps the geocoder restriction and skips only the boundary check.
 
 ## Email copy rides the signals consent ConfigMap (optional, per-key)
 

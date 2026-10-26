@@ -345,6 +345,7 @@ credentials:
   aggregatorPassword: ""  # AGGREGATOR_PG_PW
   dpgPassword: ""  # DPG_PG_PW
   signalsExportRoPassword: ""  # signals-s3-export read-only role (bootstrap-created)
+  aggregatorExportRoPassword: ""  # signals-s3-export read-only role on the aggregator DB
   # Login password for the shared Keycloak's own Postgres role. Consumed by the
   # bootstrap Job (creates/syncs the role) AND by the keycloak release's Secret —
   # generate it ONCE in global-secrets.yaml and reference it from both.
@@ -430,6 +431,15 @@ postgresBootstrap:
     name: signals_export_ro
     database: dpg
     owner: dpg
+  # Read-only role for the signals-s3-export CronJob on the aggregator database
+  # (needs credentials.aggregatorExportRoPassword). Column-level SELECT on only
+  # the columns its query reads; granted once the aggregator tables exist, so
+  # on a fresh environment the grant lands on the next common-services upgrade
+  # after the aggregator migrations have run.
+  aggregatorExportRole:
+    enabled: true
+    name: aggregator_export_ro
+    database: aggregator
 
 # -----------------------------------------------------------------------------
 # Bitnami Postgres subchart — single shared instance, multi-tenant.

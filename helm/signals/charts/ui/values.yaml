@@ -170,6 +170,9 @@ runtimeConfig:
   # the dataset the UI requests and the one file the reference ConfigMap below
   # ships (colleges-<code>.json), so the two cannot disagree.
   VITE_COLLEGE_DATASET: "ka"
+  # ISO 3166-1 alpha-2 country the address search is restricted to
+  # (signals-dpg#785), e.g. "IN". Empty = no restriction.
+  VITE_GEO_COUNTRY: ""
   # Base URL the reference datasets are fetched from. Leave EMPTY to use the
   # UI's own /reference/ path (served by its nginx from the ConfigMap below).
   # Set to an absolute URL only to host the lists off-cluster (CDN/registry) —

@@ -83,6 +83,10 @@ collegeDataset: "ka"
 # that host must then send permissive CORS headers, since the browser fetches it
 # directly. Setting this makes reference.enabled below redundant.
 referenceBaseUrl: ""
+# ISO 3166-1 alpha-2 country the address autocomplete is restricted to
+# (signals-dpg#785), e.g. "IN". Empty = no restriction. Set per environment from
+# the _geo_country anchor in <env>/global-values.yaml.
+geoCountry: ""
 
 # College/institute reference list delivered to the web pod as a ConfigMap
 # mounted at /app/apps/web/public/reference/, so the list updates with a value

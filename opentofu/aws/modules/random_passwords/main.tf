@@ -15,6 +15,12 @@ resource "random_id" "signals_export_ro_password" {
   byte_length = var.signals_export_ro_password_bytes
 }
 
+# Read-only role the signals-s3-export CronJob uses on the aggregator database.
+# Created by the common-services postgres bootstrap; never the aggregator user.
+resource "random_id" "aggregator_export_ro_password" {
+  byte_length = var.aggregator_export_ro_password_bytes
+}
+
 resource "random_id" "signals_redis_password" {
   byte_length = var.signals_redis_password_bytes
 }

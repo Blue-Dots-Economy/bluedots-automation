@@ -244,6 +244,7 @@ config all set.
 | Network file | `helm/signals/charts/api/files/networks/<net>.json` | + `api.schemas.networks` |
 | Served network | `global-values.yaml` / `api.config` | `_network`, `SERVED_DOMAINS`, `NETWORK_CONFIG_LOCAL_FILE` |
 | Brand skin | `global-values.yaml`, UI | `_brand`, `VITE_NETWORK_NAME`, `VITE_BRAND_NAME` |
+| Email sign-off (signals) | `global-values.yaml` / `api.config` | `INSTANCE_NAME` — chart default `dpg`, the template sets it explicitly; keep it equal to `EMAIL_SIGNOFF` in aggregator-dpg `config/<network>/keycloak.env` so both services sign emails the same way |
 | Brand theme | `global-images.yaml` | keycloak theme tag |
 | Consent (signals) | `helm/signals/charts/api/files/consent/<net>[.<brand>].json` | `api.schemas.consentNetwork` / `consentBrand` |
 | Consent (aggregator) | `helm/aggregator/files/consent/consent.json` | — |

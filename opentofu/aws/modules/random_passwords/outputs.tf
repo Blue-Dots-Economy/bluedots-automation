@@ -15,6 +15,11 @@ output "signals_export_ro_password" {
   sensitive = true
 }
 
+output "aggregator_export_ro_password" {
+  value     = random_id.aggregator_export_ro_password.hex
+  sensitive = true
+}
+
 output "signals_redis_password" {
   value     = random_id.signals_redis_password.hex
   sensitive = true

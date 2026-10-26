@@ -196,6 +196,35 @@ Step 2 also **generates the two files the deploy needs**:
 > `global-values.yaml` + `secrets.yaml` every time you run
 > `install.sh apply_tf_output_file`.
 
+### Cluster backups (AWS Backup)
+
+Step 2 also applies the **`backup`** module, which turns on AWS Backup for the
+cluster: Kubernetes objects plus every disk the pods use, captured together on a
+schedule. It is on by default (`backup_enabled: true` in `global-values.yaml`)
+and the template ships the **production** settings:
+
+| Setting | Template default |
+|---|---|
+| `backup_schedule` | daily, `cron(30 18 ? * * *)` (00:00 IST) |
+| `backup_retention_days` | 30 |
+| Vault lock | governance mode, retention bounded by `backup_min_retention_days` (7) / `backup_max_retention_days` (35) |
+| IAM roles | two: one for the nightly backup, a separate one used only by restores |
+
+For a **dev or UAT** environment, override both in that environment's
+`global-values.yaml`: `backup_schedule: "cron(30 18 ? * SUN *)"` (weekly) and
+`backup_retention_days: 7`. To apply or re-apply just this module:
+`bash install.sh plan_tf_backup` → `bash install.sh apply_tf_backup`.
+
+> Production databases on RDS are **not** covered here — RDS keeps its own
+> backups (`rds_backup_retention_days`). Only disks on the EBS/EFS/S3 CSI
+> driver are captured; see `opentofu/CLAUDE.md` → *Cluster backup*.
+
+**Restoring** is always a manual step. Use the scripts in
+`opentofu/aws/<env>/aws-backup-scripts/` and read its `README.md` before your
+first restore. `trigger-restore.sh` previews with `--dry-run`; a real restore
+asks you to type `yes` and **refuses to run non-interactively** (from a script
+or CI), by design.
+
 ---
 
 ## A6. Connect to the cluster
@@ -491,6 +520,7 @@ All of these follow the same shape: edit `secrets.yaml` →
 | S3 buckets / CORS | `buckets`, `cors_*` | `plan_tf_storage` → `apply_tf_storage` → `apply_tf_output_file` → `deploy_aggregator` |
 | Database size | `rds_instance_class`, `rds_allocated_storage` | `plan_tf_rds` → `apply_tf_rds` |
 | Node count / size | `eks_node_*` | `plan_tf_eks` → `apply_tf_eks` |
+| Cluster backup schedule / retention / on-off | `backup_*` (e.g. `backup_enabled`, `backup_schedule`, `backup_retention_days`) | `plan_tf_backup` → `apply_tf_backup` |
 
 > ⚠️ **Changing the node instance type or disk size replaces the whole node
 > group.** Pods are rescheduled onto new machines. Do it in a maintenance
@@ -548,7 +578,7 @@ bash install.sh plan_tf_<module>         # preview one module's changes
 bash install.sh apply_tf_<module>        # apply one module
 bash install.sh apply_tf_output_file     # regenerate the two generated files
 #   <module> = network | eks | iam | storage | random_passwords | rds
-#              | output-file | bastion | pritunl
+#              | output-file | backup | bastion | pritunl
 
 # --- deploy ---
 bash install.sh preflight                # check tools, cluster, generated files
@@ -608,5 +638,6 @@ worth of overrides from the same shell, or for CI.
 |---|---|
 | [`docs/deployment_guide_reference.md`](deployment_guide_reference.md) | Reference companion: which extra values to set (and where) for a new environment / network / brand — network.json, consent, brand skin, domains, image tags |
 | [`CLAUDE.md`](../CLAUDE.md) | Architecture: charts, deploy order, how the values files layer |
-| [`opentofu/CLAUDE.md`](../opentofu/CLAUDE.md) | Infrastructure detail: VPC, EKS, RDS, VPN, bastion |
+| [`opentofu/CLAUDE.md`](../opentofu/CLAUDE.md) | Infrastructure detail: VPC, EKS, RDS, VPN, bastion, AWS Backup |
+| [`aws-backup-scripts/README.md`](../opentofu/aws/template/aws-backup-scripts/README.md) | Cluster backup operations: on-demand backup, listing recovery points, restore, verify |
 | [`helm/CLAUDE.md`](../helm/CLAUDE.md) | Chart detail: Kong ingress, Keycloak realm, certificates |

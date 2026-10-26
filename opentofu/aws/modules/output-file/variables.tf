@@ -255,6 +255,11 @@ variable "signals_export_ro_password" {
   sensitive = true
 }
 
+variable "aggregator_export_ro_password" {
+  type      = string
+  sensitive = true
+}
+
 variable "signals_redis_password" {
   type      = string
   sensitive = true
