@@ -21,6 +21,7 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       restartPolicy: Never
+      {{- include "campaign-manager.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: dbinit
           image: "{{ .Values.dbInit.image.repository }}:{{ .Values.dbInit.image.tag }}"
