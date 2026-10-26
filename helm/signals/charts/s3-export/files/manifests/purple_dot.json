@@ -1,79 +1,100 @@
 {
-    "manifest_version": 1,
-    "network": "purple_dot",
-    "network_json_ref": "68335c01488a4afab04ec32ef89147eceb365b4c",
-    "format": "ndjson",
-    "tables": {
-      "user": {
-        "columns": [
-          "id",
-          "created_at",
-          "updated_at",
-          "domains",
-          "onboarded_by_org_id",
-          "onboarded_via",
-          "onboarded_source_id",
-          "onboarded_at",
-          "tags"
-        ],
-        "row_filters": ["exclude_test_users"]
-      },
-      "items": {
-        "columns": [
-          "item_network",
-          "item_domain",
-          "item_type",
-          "item_id",
-          "lifecycle_status",
-          "created_by",
-          "item_locations",
-          "created_at",
-          "updated_at"
-        ],
-        "row_filters": ["exclude_test_owned"],
-        "jsonb": {
-          "item_state": {
-            "seeker/profile_1.0": [
-              "age",
-              "gender",
-              "disability_type",
-              "disability_percentage",
-              "looking_for",
-              "documents_available",
-              "highest_qualification"
-            ],
-            "provider/profile_1.0": [
-              "provider_category",
-              "disabilities_served",
-              "services_offered",
-              "service_cities",
-              "catalog_url"
-            ]
+  "manifest_version": 2,
+  "network": "purple_dot",
+  "network_json_ref": "68335c01488a4afab04ec32ef89147eceb365b4c",
+  "format": "ndjson",
+  "databases": {
+    "signals": {
+      "tables": {
+        "user": {
+          "columns": [
+            "id",
+            "created_at",
+            "updated_at",
+            "domains",
+            "onboarded_by_org_id",
+            "onboarded_via",
+            "onboarded_source_id",
+            "onboarded_at",
+            "onboarded_by_default",
+            "tags"
+          ],
+          "row_filters": ["exclude_test_users"]
+        },
+        "items": {
+          "columns": [
+            "item_network",
+            "item_domain",
+            "item_type",
+            "item_id",
+            "lifecycle_status",
+            "created_by",
+            "item_locations",
+            "created_at",
+            "updated_at"
+          ],
+          "row_filters": ["exclude_test_owned"],
+          "jsonb": {
+            "item_state": {
+              "seeker/profile_1.0": [
+                "age",
+                "gender",
+                "disability_type",
+                "disability_percentage",
+                "looking_for",
+                "documents_available",
+                "highest_qualification"
+              ],
+              "provider/profile_1.0": [
+                "provider_category",
+                "disabilities_served",
+                "services_offered",
+                "service_cities",
+                "catalog_url"
+              ]
+            }
           }
+        },
+        "item_actions": {
+          "columns": [
+            "partition_network",
+            "action_type",
+            "action_id",
+            "action_status",
+            "update_count",
+            "source_item_network",
+            "source_item_domain",
+            "source_item_type",
+            "source_item_id",
+            "source_item_owner",
+            "target_item_network",
+            "target_item_domain",
+            "target_item_type",
+            "target_item_id",
+            "target_item_owner",
+            "performed_by_org_id",
+            "created_at",
+            "updated_at"
+          ],
+          "row_filters": ["exclude_test_action_owners"]
         }
-      },
-      "item_actions": {
-        "columns": [
-          "partition_network",
-          "action_type",
-          "action_id",
-          "action_status",
-          "update_count",
-          "source_item_network",
-          "source_item_domain",
-          "source_item_type",
-          "source_item_id",
-          "source_item_owner",
-          "target_item_network",
-          "target_item_domain",
-          "target_item_type",
-          "target_item_id",
-          "target_item_owner",
-          "performed_by_org_id",
-          "created_at",
-          "updated_at"
-        ],
-        "row_filters": ["exclude_test_action_owners"]
+      }
+    },
+    "aggregator": {
+      "tables": {
+        "aggregators": {
+          "columns": [
+            "org_id",
+            "org_name",
+            "org_status",
+            "coordinator_org_id",
+            "coordinator_org_name",
+            "coordinator_type",
+            "coordinator_status",
+            "coordinator_created_at"
+          ]
         }
+      }
     }
+  }
 }
