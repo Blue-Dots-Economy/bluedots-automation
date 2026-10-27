@@ -243,7 +243,8 @@ jobs:
       #
       # So: every rendered image must be either on the mirror, explicitly
       # exempted with a reason in .github/dhi-exempt-images.txt, or one of our
-      # OWN app images (signals/aggregator/keycloak's own `image:` values) —
+      # OWN app images (signals/aggregator/keycloak's own `image:` values, and
+      # opa-envoy, built on a DHI base from dockerfiles/opa-envoy here) —
       # those are already built from a DHI base in their own repo's CI, a
       # separate provenance chain this check has no visibility into and isn't
       # meant to police. What this check actually guards against is a VENDORED
@@ -262,7 +263,7 @@ jobs:
           grep -vE '^[[:space:]]*(#|$)' .github/dhi-exempt-images.txt \
             | tr -d '[:blank:]' | sort -u > /tmp/exempt.txt
 
-          own_app_images='^ghcr\.io/blue-dots-economy/(signals-dpg/|signals-search|notification-service|tei-bge-m3|aggregator-dpg/|keycloak-server)'
+          own_app_images='^ghcr\.io/blue-dots-economy/(signals-dpg/|signals-search|notification-service|tei-bge-m3|aggregator-dpg/|keycloak-server|opa-envoy)'
 
           # Anything neither mirrored, exempted, nor one of our own app images.
           unexpected=$(grep -v '^ghcr\.io/blue-dots-economy/dhi/' /tmp/all-images.txt \
