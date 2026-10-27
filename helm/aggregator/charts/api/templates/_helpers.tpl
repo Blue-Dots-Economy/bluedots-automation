@@ -104,3 +104,44 @@ imagePullSecrets:
 {{ $img.repository }}:{{ $img.tag }}
 {{- end -}}
 {{- end -}}
+
+{{/* Envoy (RBAC edge) image, by digest when one is set. */}}
+{{- define "api.envoyImage" -}}
+{{- $img := .Values.rbac.envoy.image -}}
+{{- if $img.digest -}}
+{{ $img.repository }}:{{ $img.tag }}@{{ $img.digest }}
+{{- else -}}
+{{ $img.repository }}:{{ $img.tag }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+  Values the edge-init container fills into the Envoy template (aggregator-dpg
+  infra/envoy/envoy.yaml), as container env entries. Everything in the pod is
+  on 127.0.0.1. The issuer is the PUBLIC one the api checks tokens against
+  (aggregator.oidcIssuer, the same base as KEYCLOAK_URL); the signing keys are
+  fetched from Keycloak inside the cluster (aggregator.keycloakInternalUrl).
+*/}}
+{{- define "api.edgeTemplateEnv" -}}
+{{- $kc := urlParse (include "aggregator.keycloakInternalUrl" .) -}}
+{{- $kcHost := regexReplaceAll ":[0-9]+$" $kc.host "" -}}
+{{- $kcPort := regexFind "[0-9]+$" (regexFind ":[0-9]+$" $kc.host) | default (ternary "443" "80" (eq $kc.scheme "https")) -}}
+- name: ADMIN_ADDRESS
+  value: "127.0.0.1"
+- name: LISTEN_PORT
+  value: {{ .Values.rbac.envoy.port | quote }}
+- name: API_HOST
+  value: "127.0.0.1"
+- name: API_PORT
+  value: {{ .Values.service.port | quote }}
+- name: OPA_HOST
+  value: "127.0.0.1"
+- name: KEYCLOAK_HOST
+  value: {{ $kcHost | quote }}
+- name: KEYCLOAK_PORT
+  value: {{ $kcPort | quote }}
+- name: JWT_ISSUER
+  value: {{ include "aggregator.oidcIssuer" . | quote }}
+- name: JWKS_URI
+  value: {{ printf "%s/realms/%s/protocol/openid-connect/certs" (include "aggregator.keycloakInternalUrl" .) .Values.global.keycloakRealm | quote }}
+{{- end -}}

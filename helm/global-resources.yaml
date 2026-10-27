@@ -143,8 +143,8 @@ aggregator-api:
       cpu: 500m
       memory: 1Gi
 
-  # OPA sidecar, always present in the api pod. Its requests count
-  # toward the HPA's CPU utilisation for the pod.
+  # RBAC sidecars (OPA and the Envoy edge), always present in the api pod.
+  # Their requests count toward the HPA's CPU utilisation for the pod.
   rbac:
     opa:
       resources:
@@ -154,6 +154,14 @@ aggregator-api:
         limits:
           cpu: 250m
           memory: 128Mi
+    envoy:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
 
 
 web:

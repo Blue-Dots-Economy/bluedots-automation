@@ -666,9 +666,9 @@ web:
 aggregator-api:
   adminEmails: *aggregator_admin_emails
   supportEmail: *support_email
-  # RBAC: log | enforce. The api pod always runs the OPA sidecar and needs an
-  # api image that ships the policy. Roll out log first, then enforce;
-  # see docs/aggregator-rbac-opa-plan.md.
+  # RBAC: log | enforce. The api pod always runs the Envoy + OPA edge sidecars
+  # and needs an api image that ships the policy and the Envoy template. Roll
+  # out log first, then enforce; see docs/aggregator-rbac-opa-plan.md.
   rbac:
     mode: log
 

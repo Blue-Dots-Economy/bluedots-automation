@@ -116,36 +116,37 @@ securityContext:
     drop:
       - ALL
 
-# RBAC policy engine (aggregator-dpg #849). `mode` is the api's RBAC_MODE:
-#   log     — decide every request and log denies, block nothing (default)
-#   enforce — deny with 403
-# The pod always runs an OPA native sidecar and an init container that copies
-# the policy out of the api image (/app/policy/rbac/rbac.rego), so the image must
-# be a build that ships it.
+# RBAC (aggregator-dpg docs/rbac/rbac-edge-enforcement.md). `mode` is the api's
+# RBAC_MODE, one switch for the api and its edge:
+#   log     — the edge records what it would refuse; nothing is blocked (default)
+#   enforce — the edge refuses a missing route permission (403); the api's
+#             per-organisation checks refuse too
+# The pod always runs the edge: an Envoy sidecar that every request reaches
+# first (the Service points at it), which asks the OPA sidecar whether the
+# caller's token roles grant the route's permission. The api listens on
+# 127.0.0.1 only, so nothing reaches it around Envoy. An init container copies
+# the policy and the Envoy template out of the api image (/app/policy), so the
+# image must be a build that ships them (aggregator-dpg #910).
 # See docs/aggregator-rbac-opa-plan.md.
 rbac:
   mode: log
-  # Built-in roles: a full rbac.yaml (version 2, `roles:` only) replacing the
-  # image's copy. Blank = the image's own. The api applies it to the database at
-  # every start; custom roles live only in the database and are never touched
-  # here. Validated at boot: an invalid file, or an older-format one
-  # (version 1), stops the api.
-  config: ""
-  # How often each api replica re-reads the role catalogue and reloads it when
-  # a role changed (RBAC_CATALOGUE_REFRESH_MS); 0 = never.
+  # How often each api replica re-reads the role catalogue, reloads it when a
+  # role changed and re-publishes it to OPA (RBAC_CATALOGUE_REFRESH_MS); 0 = never.
   catalogueRefreshMs: 30000
   opa:
-    # Docker Hardened Image, mirrored to GHCR from dhi.io/open-policy-agent
-    # (.github/dhi-mirror-images.txt). Tag only, like the other mirrored images,
-    # so the monthly mirror refresh brings in security rebuilds. `digest` pins
-    # an exact build when set.
+    # OPA with the Envoy plugin, built by this repo on the DHI OPA base
+    # (dockerfiles/opa-envoy, .github/workflows/build-opa-envoy-image.yml).
+    # The tag is the OPA version; a rebuild republishes it on a refreshed base.
+    # `digest` pins an exact build when set.
     image:
-      repository: ghcr.io/blue-dots-economy/dhi/open-policy-agent
+      repository: ghcr.io/blue-dots-economy/opa-envoy
       tag: "1.21.1"
       digest: ""
       pullPolicy: IfNotPresent
-    # Decision port, bound to 127.0.0.1: only the api container can reach it.
+    # REST port (the api's decisions and its catalogue push), bound to 127.0.0.1.
     port: 8181
+    # Envoy's ext_authz gRPC check is on 127.0.0.1:9191, fixed in the Envoy
+    # template (aggregator-dpg infra/envoy/envoy.yaml).
     # Health and metrics only; the kubelet probes it on the pod IP.
     diagnosticPort: 8282
     # The api's per-attempt timeout, retries after the first attempt, and base
@@ -157,3 +158,18 @@ rbac:
     resources:
       requests: { cpu: 25m, memory: 48Mi }
       limits: { cpu: 250m, memory: 128Mi }
+  envoy:
+    # Docker Hardened Image, mirrored to GHCR from dhi.io/envoy
+    # (.github/dhi-mirror-images.txt). Tag only, like the other mirrored images.
+    image:
+      repository: ghcr.io/blue-dots-economy/dhi/envoy
+      tag: "1.37"
+      digest: ""
+      pullPolicy: IfNotPresent
+    # The edge's listener: the Service's targetPort. Not the api's port, which
+    # the api holds on 127.0.0.1 in the same pod network.
+    port: 8000
+    logLevel: warn
+    resources:
+      requests: { cpu: 50m, memory: 64Mi }
+      limits: { cpu: 500m, memory: 256Mi }

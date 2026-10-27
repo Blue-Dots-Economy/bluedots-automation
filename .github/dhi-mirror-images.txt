@@ -90,7 +90,13 @@ busybox:1.38-alpine
 # second name for this one.
 redis:7.4.11-compat
 
-# ── helm/aggregator — api RBAC policy engine (OPA sidecar) ──────────────────
-# Rendered only when aggregator-api.rbac.mode is not off. Runs as the pod's
-# uid 1000 (the image default is 65532); entrypoint /usr/bin/opa.
+# ── helm/aggregator — api RBAC sidecars ────────────────────────────────────
+# Not rendered directly: the BASE of this repo's own OPA image with the Envoy
+# plugin (dockerfiles/opa-envoy), which keeps its entrypoint /usr/bin/opa and
+# runs as the pod's uid 1000 (the image default is 65532). Keep the tag equal to
+# the OPA version that Dockerfile copies in.
 open-policy-agent:1.21.1
+# The RBAC edge, a native sidecar in the api pod (aggregator-api.rbac.envoy).
+# Runtime variant: no shell, runs as the pod's uid 1000; started as `envoy -c`
+# on a config the edge-init container writes.
+envoy:1.37

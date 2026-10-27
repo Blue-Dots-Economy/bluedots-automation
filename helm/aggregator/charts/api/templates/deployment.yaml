@@ -17,11 +17,6 @@
 */ -}}
 {{- $configPath := printf "/app/config/%s/aggregator.config.yaml" $net -}}
 {{- if $brand }}{{- $configPath = printf "/app/config/%s/%s/aggregator.config.yaml" $net $brand -}}{{- end -}}
-{{- /*
-  RBAC (aggregator-dpg #849). The api reads rbac.yaml from the same directory as
-  aggregator.config.yaml first, so an override is mounted there.
-*/ -}}
-{{- $rbacPath := printf "%s/rbac.yaml" (dir $configPath) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -49,15 +44,15 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:
-        # Copies the RBAC policy out of the api image, so OPA always runs the
-        # policy this api build was tested with. The runtime image has no shell.
-        - name: rbac-policy
+        # Copies the RBAC policy and the edge route table out of the api image,
+        # and fills in its Envoy template (files/edge-init.js), so the sidecars
+        # run what this api build was tested with. The runtime image has no shell.
+        - name: edge-init
           image: {{ include "api.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command:
-            - node
-            - -e
-            - "require('fs').copyFileSync('/app/policy/rbac/rbac.rego', '/policy/rbac.rego')"
+          command: ["node", "/scripts/edge-init.js"]
+          env:
+            {{- include "api.edgeTemplateEnv" . | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           resources:
@@ -66,9 +61,17 @@ spec:
           volumeMounts:
             - name: rbac-policy
               mountPath: /policy
+            - name: envoy-config
+              mountPath: /envoy
+            - name: rbac
+              mountPath: /scripts/edge-init.js
+              subPath: edge-init.js
+              readOnly: true
         # OPA as a native sidecar: it starts before the api and the api starts
-        # only after this startup probe passes. Decisions on 127.0.0.1 only;
-        # the kubelet probes the diagnostic port (health and metrics only).
+        # only after this startup probe passes. Its REST API (the api's
+        # decisions and catalogue push) and Envoy's ext_authz gRPC check are on
+        # 127.0.0.1 only; the kubelet probes the diagnostic port (health and
+        # metrics only).
         - name: opa
           image: {{ include "api.opaImage" . }}
           imagePullPolicy: {{ .Values.rbac.opa.image.pullPolicy }}
@@ -78,11 +81,12 @@ spec:
             - --server
             - --addr=127.0.0.1:{{ .Values.rbac.opa.port }}
             - --diagnostic-addr=0.0.0.0:{{ .Values.rbac.opa.diagnosticPort }}
+            - --config-file=/authz/opa-config.yaml
             - --authorization=basic
             - --disable-telemetry
             - --log-level={{ .Values.rbac.opa.logLevel }}
             - /policy
-            - /authz
+            - /authz/authz.rego
           ports:
             - name: opa-diag
               containerPort: {{ .Values.rbac.opa.diagnosticPort }}
@@ -118,16 +122,61 @@ spec:
               mountPath: /authz/authz.rego
               subPath: authz.rego
               readOnly: true
+            - name: rbac
+              mountPath: /authz/opa-config.yaml
+              subPath: opa-config.yaml
+              readOnly: true
+        # Envoy, the RBAC edge, as a native sidecar: every request to the api
+        # arrives here first (the Service targets this container's `http`
+        # port), is checked with OPA, and only an allowed one is forwarded to
+        # the api on 127.0.0.1. Its admin port stays on 127.0.0.1, so the
+        # kubelet checks the listener instead.
+        - name: envoy
+          image: {{ include "api.envoyImage" . }}
+          imagePullPolicy: {{ .Values.rbac.envoy.image.pullPolicy }}
+          restartPolicy: Always
+          command: ["envoy"]
+          args:
+            - -c
+            - /envoy/envoy.yaml
+            - --log-level
+            - {{ .Values.rbac.envoy.logLevel | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.rbac.envoy.port }}
+              protocol: TCP
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            {{- toYaml (merge (dict "readOnlyRootFilesystem" true) (deepCopy .Values.securityContext)) | nindent 12 }}
+          {{- with .Values.rbac.envoy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: envoy-config
+              mountPath: /envoy
+              readOnly: true
       containers:
         - name: api
           image: {{ include "api.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.service.port }}
-              protocol: TCP
+          # Listens on 127.0.0.1:{{ .Values.service.port }} (HOST in configmap.yaml):
+          # reached only through the envoy sidecar, so no containerPort here.
           envFrom:
             - configMapRef:
                 name: {{ include "api.globalConfigMap" . }}
@@ -193,25 +242,40 @@ spec:
                   key: SIGNALSTACK_ADMIN_KEY
                   optional: true
           readinessProbe:
-            httpGet:
-              path: /health/ready
-              port: http
+            exec:
+              # The api binds 127.0.0.1, which an httpGet probe cannot reach,
+              # and probing through Envoy would restart the api whenever OPA is
+              # down. node is the image's only interpreter (no shell, no wget).
+              command:
+                - node
+                - -e
+                - "fetch('http://127.0.0.1:{{ .Values.service.port }}/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
           livenessProbe:
-            httpGet:
-              path: /health/ready
-              port: http
+            exec:
+              # The api binds 127.0.0.1, which an httpGet probe cannot reach,
+              # and probing through Envoy would restart the api whenever OPA is
+              # down. node is the image's only interpreter (no shell, no wget).
+              command:
+                - node
+                - -e
+                - "fetch('http://127.0.0.1:{{ .Values.service.port }}/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 5
           startupProbe:
-            httpGet:
-              path: /health/ready
-              port: http
+            exec:
+              # The api binds 127.0.0.1, which an httpGet probe cannot reach,
+              # and probing through Envoy would restart the api whenever OPA is
+              # down. node is the image's only interpreter (no shell, no wget).
+              command:
+                - node
+                - -e
+                - "fetch('http://127.0.0.1:{{ .Values.service.port }}/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -238,13 +302,6 @@ spec:
               subPath: aggregator.config.yaml
               readOnly: true
             {{- end }}
-            {{- if .Values.rbac.config }}
-            # rbac.yaml override (rbac.config), read before the image's copy.
-            - name: rbac
-              mountPath: {{ $rbacPath }}
-              subPath: rbac.yaml
-              readOnly: true
-            {{- end }}
       volumes:
         - name: consent
           configMap:
@@ -255,6 +312,9 @@ spec:
             name: {{ .Release.Name }}-network-config
         {{- end }}
         - name: rbac-policy
+          emptyDir:
+            sizeLimit: 1Mi
+        - name: envoy-config
           emptyDir:
             sizeLimit: 1Mi
         - name: rbac
