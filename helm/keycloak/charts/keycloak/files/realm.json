@@ -483,6 +483,22 @@
           }
         },
         {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "roles",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "multivalued": "true",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
           "name": "aggregator-api-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
