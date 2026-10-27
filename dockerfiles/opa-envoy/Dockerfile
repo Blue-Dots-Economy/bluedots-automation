@@ -41,3 +41,9 @@ FROM ${OPA_ENVOY} AS opa-envoy
 
 FROM ${BASE}
 COPY --from=opa-envoy /opa /usr/bin/opa
+# The base's own non-root user, stated so the image never runs as root even if
+# a base default changes (the pod sets uid 1000 on top of this).
+USER 65532:65532
+# Kubernetes ignores a Docker HEALTHCHECK; the chart's startup, readiness and
+# liveness probes on OPA's diagnostic port check this container.
+HEALTHCHECK NONE
