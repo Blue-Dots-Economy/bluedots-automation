@@ -42,6 +42,7 @@
                 "disability_type",
                 "disability_percentage",
                 "looking_for",
+                "looking_for_details",
                 "documents_available",
                 "highest_qualification"
               ],
@@ -49,6 +50,7 @@
                 "provider_category",
                 "disabilities_served",
                 "services_offered",
+                "service_details",
                 "service_cities",
                 "catalog_url"
               ]
