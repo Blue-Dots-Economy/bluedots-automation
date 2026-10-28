@@ -18,9 +18,14 @@ app.kubernetes.io/name: campaign-manager
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{/* Image reference: repository:tag, tag defaults to Chart.appVersion. */}}
+{{/* App image tag. Required: Chart.appVersion is not a published tag. */}}
+{{- define "campaign-manager.imageTag" -}}
+{{- required "image.tag is required" .Values.image.tag -}}
+{{- end -}}
+
+{{/* Image reference: repository:tag. */}}
 {{- define "campaign-manager.image" -}}
-{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}
+{{ .Values.image.repository }}:{{ include "campaign-manager.imageTag" . }}
 {{- end -}}
 
 {{/* Name of the Secret holding credentials (existing or chart-rendered). */}}

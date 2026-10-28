@@ -1,8 +1,8 @@
 apiVersion: v2
 name: campaign-manager
-description: Blue Dots Campaign Manager web app (Deployment, Service, Ingress) backed by Postgres, with database and migration Jobs and a Purple Dots data pipeline CronJob that loads Raya calls and the platform S3 dump into the same database.
+description: Blue Dots Campaign Manager web app (Deployment, Service, Ingress) backed by Postgres, with database setup and migrations run before the app starts, and a Purple Dots data pipeline CronJob that loads Raya calls and the platform S3 dump into the same database.
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "0.1.0"
 kubeVersion: ">=1.24.0-0"
 keywords:

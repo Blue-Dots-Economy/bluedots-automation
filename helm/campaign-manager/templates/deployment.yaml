@@ -24,6 +24,38 @@ spec:
         {{- end }}
     spec:
       {{- include "campaign-manager.imagePullSecrets" . | nindent 6 }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- /* The database and its migrations are ready before the app starts, on install and on every upgrade. */}}
+      {{- if or .Values.dbInit.enabled .Values.migrate.enabled }}
+      initContainers:
+        {{- if .Values.dbInit.enabled }}
+        {{- include "campaign-manager.dbInitContainer" . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.migrate.enabled }}
+        - name: migrate
+          image: "{{ default .Values.image.repository .Values.migrate.image.repository }}:{{ default (include "campaign-manager.imageTag" .) .Values.migrate.image.tag }}"
+          imagePullPolicy: {{ .Values.migrate.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.migrate.command | nindent 12 }}
+          env:
+            {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 12 }}
+            {{- /* The first admin is created after migrating (BOOTSTRAP_ADMIN_EMAIL), through Keycloak. */}}
+            {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "KEYCLOAK_CLIENT_SECRET" "optional" true) | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "campaign-manager.fullname" . }}-config
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+        {{- end }}
+      {{- end }}
       containers:
         - name: campaign-manager
           image: {{ include "campaign-manager.image" . | quote }}
@@ -34,13 +66,19 @@ spec:
           env:
             - name: PORT
               value: {{ .Values.service.targetPort | quote }}
-            {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 12 }}
-            {{- range $name := list "SESSION_SECRET" "CRON_SECRET" "CRON_SECRET_PREVIOUS" "RAYA_API_KEY" "GOOGLE_SERVICE_ACCOUNT_JSON" "KEYCLOAK_CLIENT_SECRET" }}
+            {{- range $name := list "DATABASE_URL" "SESSION_SECRET" "CRON_SECRET" }}
+            {{- include "campaign-manager.secretEnv" (dict "ctx" $ "name" $name) | nindent 12 }}
+            {{- end }}
+            {{- range $name := list "CRON_SECRET_PREVIOUS" "RAYA_API_KEY" "GOOGLE_SERVICE_ACCOUNT_JSON" "KEYCLOAK_CLIENT_SECRET" }}
             {{- include "campaign-manager.secretEnv" (dict "ctx" $ "name" $name "optional" true) | nindent 12 }}
             {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "campaign-manager.fullname" . }}-config
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           readinessProbe:
             httpGet:
               path: {{ .Values.probes.path }}

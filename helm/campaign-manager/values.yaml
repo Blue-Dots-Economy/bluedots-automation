@@ -2,8 +2,8 @@
 # Review every line tagged `# UPDATE:` before deploying.
 
 global:
-  # UPDATE: public FQDN served by the ingress.
-  publicHost: campaign-manager.example.com
+  # UPDATE: public FQDN served by the ingress (or set ingress.host).
+  publicHost: ""
   publicProtocol: https
   # List of Secret NAMES used as imagePullSecrets.
   imagePullSecrets:
@@ -14,8 +14,7 @@ replicaCount: 1
 image:
   # UPDATE: set once the image build pipeline publishes the image.
   repository: ghcr.io/blue-dots-economy/agg-campaign-manager-v2
-  # Empty = Chart.appVersion.
-  tag: ""
+  tag: ""                        # UPDATE: required; no default tag exists
   pullPolicy: IfNotPresent
 
 # Optional: render a ghcr.io dockerconfigjson pull secret from these credentials.
@@ -36,7 +35,7 @@ ingress:
   enabled: false
   className: ""
   annotations: {}
-  # Defaults to global.publicHost when empty.
+  # Defaults to global.publicHost when empty. One of them is required when enabled.
   host: ""
   path: /
   pathType: Prefix
@@ -52,13 +51,13 @@ config: {}
 #   KEYCLOAK_INTERNAL_BASE_URL: http://keycloak.common-services.svc.cluster.local:8080/auth   # optional, in-cluster
 #   KEYCLOAK_REALM: bluedots
 #   KEYCLOAK_CLIENT_ID: campaign-manager
-#   BOOTSTRAP_ADMIN_EMAIL: admin@example.com   # first admin, created by the migrate Job if there is none
+#   BOOTSTRAP_ADMIN_EMAIL: admin@example.com   # first admin, created by the migrate step if there is none
 
 # App credentials, rendered into a Secret. Empty values are skipped.
 secrets:
   existingSecret: ""             # or your own Secret with the same keys (see the README)
-  SESSION_SECRET: ""             # UPDATE
-  CRON_SECRET: ""                # UPDATE
+  SESSION_SECRET: ""             # UPDATE: required, at least 32 characters (openssl rand -hex 32)
+  CRON_SECRET: ""                # UPDATE: required
   CRON_SECRET_PREVIOUS: ""       # only while rotating CRON_SECRET
   RAYA_API_KEY: ""               # UPDATE
   GOOGLE_SERVICE_ACCOUNT_JSON: ""   # UPDATE: service-account JSON as one string
@@ -73,9 +72,9 @@ database:
   password: ""                   # UPDATE
   admin:
     user: postgres
-    password: ""                 # UPDATE: used only by the database Job
+    password: ""                 # UPDATE: used only by the database setup step
 
-# Job that creates the login, database and schemas if missing.
+# Init container on the app pods that creates the login, database and schemas if missing.
 dbInit:
   enabled: true
   image:
@@ -83,7 +82,7 @@ dbInit:
     tag: "17-alpine"
     pullPolicy: IfNotPresent
 
-# Job that applies the app's schema migrations from the app image, after the database Job.
+# Init container on the app pods that applies the app's schema migrations, after the database setup.
 migrate:
   enabled: true
   image:
@@ -111,6 +110,20 @@ probes:
     periodSeconds: 20
 
 podAnnotations: {}
+
+# Applied to the app pods, including the database setup and migrate init containers.
+# The app image runs as the non-root node user (uid 1000).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
 nodeSelector: {}
 tolerations: []
 affinity: {}
