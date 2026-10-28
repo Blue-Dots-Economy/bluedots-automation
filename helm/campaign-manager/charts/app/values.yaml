@@ -7,14 +7,10 @@ image:
   tag: ""                       # empty = Chart.appVersion
   pullPolicy: IfNotPresent
 
-# private: true if this image needs a pull secret.
+# private: true to pull with the ghcr-pull Secret install.sh creates in the namespace.
 imagePullSecret:
   private: false
   name: ghcr-pull
-  create: false                 # also render a dockerconfigjson Secret from registry/username/password below
-  registry: ghcr.io
-  username: ""
-  password: ""
 
 service:
   type: ClusterIP

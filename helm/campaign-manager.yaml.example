@@ -30,7 +30,7 @@ app:
 raya-sync:
   enabled: true
   image:
-    repository: ghcr.io/your-org/purple-dots
+    repository: ghcr.io/your-org/campaign-manager-pipeline
     tag: v1.0.0
 
 platform-sync:
@@ -40,7 +40,7 @@ platform-sync:
     tag: v1.0.0
   schedule: "0 */4 * * *"
   config:
-    INSTANCE_ID: up-gzb          # this deployment's Signals instance id
+    INSTANCE_ID: my-instance     # this deployment's Signals instance id
     EXPORT_NETWORK: purple_dot   # the Signals network this deployment reads, e.g. purple_dot or blue_dot
   secrets:
     SIGNALS_DATABASE_URL: postgresql://campaign_manager_signals_ro:xxx@host:5432/dpg

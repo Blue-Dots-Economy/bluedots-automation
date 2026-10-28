@@ -7,14 +7,10 @@ image:
   tag: ""                      # UPDATE: required when enabled
   pullPolicy: IfNotPresent
 
-# private: true if this image needs a pull secret.
+# private: true to pull with the ghcr-pull Secret install.sh creates in the namespace.
 imagePullSecret:
   private: false
   name: ghcr-pull
-  create: false                 # also render a dockerconfigjson Secret from registry/username/password below
-  registry: ghcr.io
-  username: ""
-  password: ""
 
 schedule: "0 */4 * * *"        # UPDATE: cron expression, evaluated in timeZone
 timeZone: Asia/Kolkata
@@ -29,7 +25,7 @@ suspend: false
 args: []                       # extra run.py arguments, e.g. ["--limit", "100"] for a smoke test
 
 config:                        # empty values are not rendered, so the image's own defaults apply
-  INSTANCE_ID: ""               # UPDATE: this deployment's Signals instance id, e.g. up-gzb
+  INSTANCE_ID: ""               # UPDATE: this deployment's Signals instance id
   EXPORT_NETWORK: ""            # UPDATE: Signals network this deployment reads, e.g. purple_dot or blue_dot
 
 secrets:

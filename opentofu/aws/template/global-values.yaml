@@ -90,15 +90,16 @@ _signals_ui_urls: &signals_ui_urls ''
 # catch, so a new environment fails loudly until it sets a genuine callback.
 _campaign_manager_redirect_uris: &campaign_manager_redirect_uris ''
 
+_aggregator_host:      &aggregator_host      "aggregator.domain.com"
+_grafana_host:         &grafana_host         "monitoring.domain.com"
+_campaign_manager_host: &campaign_manager_host "campaign-manager.domain.com"
+
 # Campaign Manager: app master switch + its two sync CronJobs.
 _campaign_manager_enabled:          &campaign_manager_enabled          false
 _campaign_manager_raya_enabled:     &campaign_manager_raya_enabled     false
 _campaign_manager_platform_enabled: &campaign_manager_platform_enabled false
-_campaign_manager_instance_id:      &campaign_manager_instance_id      ""   # e.g. up-gzb; never change once set
+_campaign_manager_instance_id:      &campaign_manager_instance_id      ""   # never change once set
 
-_aggregator_host:      &aggregator_host      "aggregator.domain.com"
-_grafana_host:         &grafana_host         "monitoring.domain.com"
-_campaign_manager_host: &campaign_manager_host "campaign-manager.domain.com"
 # ── Keycloak's own hostname ────────────────────────────────────────────────────
 # Keycloak's own neutral domain, so users from EITHER DPG log in here instead of
 # at the aggregator's address. Empty = keep serving Keycloak at

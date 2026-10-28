@@ -18,7 +18,7 @@ Three independently deployable pieces, each its own subchart under `charts/`:
 - An ingress controller in the cluster, and a DNS record for your domain pointing at its load balancer (for `app`'s ingress).
 - cert-manager with a ClusterIssuer, to issue the HTTPS certificate automatically.
 - A namespace of your choice. Install the release into it, and create it with `--create-namespace` if it does not exist.
-- If `raya-sync` or `platform-sync` are enabled, the images they need (`ghcr.io/blue-dots-economy/purple-dots` and `ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync` respectively) and the database roles `platform-sync` reads from (`campaign_manager_signals_ro` on Signals, `aggregator_export_ro` on the aggregator database — both provisioned by `helm/common-services`' `postgresBootstrap`).
+- If `raya-sync` or `platform-sync` are enabled, the images they need (`ghcr.io/blue-dots-economy/campaign-manager-pipeline`, not published yet, and `ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync` respectively) and the database roles `platform-sync` reads from (`campaign_manager_signals_ro` on Signals, `aggregator_export_ro` on the aggregator database — both provisioned by `helm/common-services`' `postgresBootstrap`).
 
 ## How to configure
 
@@ -46,7 +46,7 @@ Use `--set key=value` instead for a one-off override. Subchart keys are set the 
 | Key | What it is | Example |
 |---|---|---|
 | `app.image.repository`, `app.image.tag` | Container image of the app. | `ghcr.io/your-org/campaign-manager`, `sha-1a2b3c4` |
-| `app.imagePullSecret.private` | `true` if `app.image` needs a pull secret, set independently of raya-sync/platform-sync's own. | `false` |
+| `app.imagePullSecret.private` | `true` if `app.image` is private. Pods then use the `ghcr-pull` Secret, which `install.sh create_campaign_manager_image_pull_secret` creates. Same key on raya-sync/platform-sync. | `false` |
 | `app.ingress.enabled`, `.host` | Expose the app on your domain. HTTPS via the `letsencrypt-prod` ClusterIssuer is on by default. | `false`, `""` |
 | `app.database.admin.user`, `.password` | Admin account, used only by the database Job to create the login and the database. | `postgres`, `postgres-admin-password` |
 | `app.secrets.SESSION_SECRET` | Key that signs login sessions. Must be at least 32 characters. | generate with `openssl rand -hex 32` |
@@ -62,7 +62,7 @@ Set `raya-sync.enabled: true` to deploy its CronJob.
 
 | Key | What it is | Example |
 |---|---|---|
-| `raya-sync.image.repository`, `.tag` | Pipeline image. The tag is required. | `ghcr.io/blue-dots-economy/purple-dots`, `v1.0.0` |
+| `raya-sync.image.repository`, `.tag` | Pipeline image. The tag is required. | `ghcr.io/blue-dots-economy/campaign-manager-pipeline`, no tag |
 | `raya-sync.schedule` | Cron expression, in `raya-sync.timeZone` (default `Asia/Kolkata`). | `"0 2 * * *"` |
 | `raya-sync.config.PD_REFRESH_DAYS`, `.PD_TEST_BATCHES` | Pipeline tuning, passed straight through. | leave empty for the image's own defaults |
 | `raya-sync.args` | Extra `run_pipeline.py` arguments. Defaults to `["--skip", "platform"]` — Signals sync is `platform-sync`'s job now, not this one's. | `["--skip", "platform"]` |
@@ -80,7 +80,7 @@ Set `platform-sync.enabled: true` to deploy its CronJob. Backed by `adhoc-script
 |---|---|---|
 | `platform-sync.image.repository`, `.tag` | Platform-sync image. The tag is required. | `ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync`, no tag |
 | `platform-sync.schedule` | Cron expression, in `platform-sync.timeZone` (default `Asia/Kolkata`). | `"0 */4 * * *"` |
-| `platform-sync.config.INSTANCE_ID` | This deployment's Signals instance id. | `up-gzb` |
+| `platform-sync.config.INSTANCE_ID` | This deployment's Signals instance id. Never change it once set. | `""` |
 | `platform-sync.config.EXPORT_NETWORK` | Signals network this deployment reads. | `purple_dot` or `blue_dot` |
 | `platform-sync.secrets.SIGNALS_DATABASE_URL` | Read-only Postgres URL to the Signals database. | `postgresql://campaign_manager_signals_ro:xxx@host:5432/dpg` |
 | `platform-sync.secrets.AGG_DATABASE_URL` | Read-only Postgres URL to the aggregator database. | `postgresql://aggregator_export_ro:xxx@host:5432/aggregator` |

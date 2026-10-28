@@ -85,7 +85,7 @@ app:
 
 raya-sync:
   image:
-    repository: ghcr.io/blue-dots-economy/purple-dots
+    repository: ghcr.io/blue-dots-economy/campaign-manager-pipeline
     tag: ""   # UPDATE
     pullPolicy: IfNotPresent
   imagePullSecret:

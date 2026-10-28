@@ -277,7 +277,7 @@ function create_namespaces() {
     done
 }
 
-# Optional: only needed to seed the ghcr-pull secret before deploy_campaign_manager.
+# Optional; create_campaign_manager_image_pull_secret calls it.
 function create_campaign_manager_namespace() {
     echo -e "\nCreating namespace: $CM_NS"
     kubectl get ns "$CM_NS" >/dev/null 2>&1 || kubectl create ns "$CM_NS"
@@ -328,6 +328,19 @@ function create_private_image_pull_secret() {
 
     echo "Reminder: the pod must also REFERENCE it — set the chart's own"
     echo "  imagePullSecrets in <env>/global-values.yaml, or it pulls anonymously."
+}
+
+# Write `ghcr-pull` into the campaign-manager namespace (created if missing).
+#   GHCR_PAT=ghp_xxx bash install.sh create_campaign_manager_image_pull_secret
+function create_campaign_manager_image_pull_secret() {
+    create_campaign_manager_namespace
+    echo -e "\nCreating ghcr-pull secret in: $CM_NS"
+    test -f "$SCRIPT_DIR/rotate-ghcr-pull.sh" || {
+        echo "ERROR: $SCRIPT_DIR/rotate-ghcr-pull.sh missing"
+        exit 1
+    }
+    bash "$SCRIPT_DIR/rotate-ghcr-pull.sh" "${GHCR_PAT:-}" "$CM_NS"
+    echo "Set <subchart>.imagePullSecret.private: true for each private campaign-manager image."
 }
 
 # Both, in order. Kept because deploy_all_services and the runbooks call it.
