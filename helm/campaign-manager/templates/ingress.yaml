@@ -1,5 +1,5 @@
 {{- if .Values.ingress.enabled }}
-{{- $host := default .Values.global.publicHost .Values.ingress.host }}
+{{- $host := required "ingress.host (or global.publicHost) is required when ingress.enabled" (default .Values.global.publicHost .Values.ingress.host) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

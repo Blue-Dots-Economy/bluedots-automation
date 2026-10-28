@@ -1,0 +1,77 @@
+{{- /*
+Init container that creates the login, database and schemas if missing. Idempotent.
+Creates the same login, database and schemas as db/bootstrap.sql in agg-campaign-manager-v2.
+*/ -}}
+{{- define "campaign-manager.dbInitContainer" -}}
+- name: dbinit
+  image: "{{ .Values.dbInit.image.repository }}:{{ .Values.dbInit.image.tag }}"
+  imagePullPolicy: {{ .Values.dbInit.image.pullPolicy }}
+  env:
+    - name: PGHOST
+      value: {{ required "database.host is required" .Values.database.host | quote }}
+    - name: PGPORT
+      value: {{ .Values.database.port | quote }}
+    - name: PGUSER
+      value: {{ .Values.database.admin.user | quote }}
+    - name: PGCONNECT_TIMEOUT
+      value: "5"
+    - name: PD_DB
+      value: {{ required "database.name is required" .Values.database.name | quote }}
+    - name: PD_ROLE
+      value: {{ required "database.user is required" .Values.database.user | quote }}
+    - name: PGPASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "campaign-manager.secretName" . }}
+          key: DB_ADMIN_PASSWORD
+    - name: ROLE_PW
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "campaign-manager.secretName" . }}
+          key: DB_PASSWORD
+  command:
+    - sh
+    - -ec
+    - |
+      echo "waiting for postgres at $PGHOST:$PGPORT"
+      i=0
+      until pg_isready -h "$PGHOST" -p "$PGPORT" >/dev/null 2>&1; do
+        i=$((i+1)); [ "$i" -gt 60 ] && { echo "postgres not reachable" >&2; exit 1; }
+        sleep 3
+      done
+      echo "creating login $PD_ROLE and database $PD_DB if missing"
+      psql -v ON_ERROR_STOP=1 -d postgres -v db="$PD_DB" -v role="$PD_ROLE" <<'EOSQL'
+        SELECT format('CREATE ROLE %I LOGIN', :'role')
+          WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'role')\gexec
+        -- RDS: the master must be a member of the owner role to create objects it owns
+        GRANT :"role" TO CURRENT_USER;
+        SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'role')
+          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db')\gexec
+        SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'db')\gexec
+      EOSQL
+      # Set the password only when the login can't sign in with it, so it is not
+      # sent on every start. A server logging DDL still logs it when it changes.
+      if PGUSER="$PD_ROLE" PGPASSWORD="$ROLE_PW" psql -d "$PD_DB" -c 'SELECT 1' >/dev/null 2>&1; then
+        echo "login password unchanged"
+      else
+        echo "setting the login password"
+        psql -v ON_ERROR_STOP=1 -d postgres -v role="$PD_ROLE" -v pw="$ROLE_PW" <<'EOSQL'
+        SELECT format('ALTER ROLE %I WITH PASSWORD %L', :'role', :'pw')\gexec
+      EOSQL
+      fi
+      psql -v ON_ERROR_STOP=1 -d "$PD_DB" -v role="$PD_ROLE" <<'EOSQL'
+        ALTER SCHEMA public OWNER TO :"role";
+        REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+        CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION :"role";
+        CREATE SCHEMA IF NOT EXISTS extensions;
+        CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA extensions;
+      EOSQL
+      echo "database ready"
+  {{- with .Values.securityContext }}
+  securityContext:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 256Mi }
+{{- end -}}

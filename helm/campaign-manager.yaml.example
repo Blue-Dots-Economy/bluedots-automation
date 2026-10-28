@@ -22,7 +22,7 @@ database:
     password: postgres-admin-password
 
 secrets:
-  SESSION_SECRET: random-session-secret   # generate with: openssl rand -hex 32
+  SESSION_SECRET: replace-with-64-hex-chars-from-openssl   # required, 32+ chars: openssl rand -hex 32
   CRON_SECRET: random-cron-secret
   RAYA_API_KEY: raya_xxx
   GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"example"}'
