@@ -34,6 +34,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "campaign-manager.secretName" . }}
                   key: DATABASE_URL
+            {{- /* The first admin is created after migrating (BOOTSTRAP_ADMIN_EMAIL), through Keycloak. */}}
+            {{- include "campaign-manager.secretEnv" (dict "ctx" . "name" "KEYCLOAK_CLIENT_SECRET" "optional" true) | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "campaign-manager.fullname" . }}-config
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: 500m, memory: 512Mi }

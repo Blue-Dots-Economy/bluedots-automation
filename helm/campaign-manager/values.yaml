@@ -46,6 +46,13 @@ ingress:
 
 # Extra non-secret env for the app, rendered into a ConfigMap.
 config: {}
+# Login goes through Keycloak; the app does not start without these. For example:
+#   APP_BASE_URL: https://campaign-manager.example.com
+#   KEYCLOAK_BASE_URL: https://auth.example.com/auth
+#   KEYCLOAK_INTERNAL_BASE_URL: http://keycloak.common-services.svc.cluster.local:8080/auth   # optional, in-cluster
+#   KEYCLOAK_REALM: bluedots
+#   KEYCLOAK_CLIENT_ID: campaign-manager
+#   BOOTSTRAP_ADMIN_EMAIL: admin@example.com   # first admin, created by the migrate Job if there is none
 
 # App credentials, rendered into a Secret. Empty values are skipped.
 secrets:
@@ -55,6 +62,7 @@ secrets:
   CRON_SECRET_PREVIOUS: ""       # only while rotating CRON_SECRET
   RAYA_API_KEY: ""               # UPDATE
   GOOGLE_SERVICE_ACCOUNT_JSON: ""   # UPDATE: service-account JSON as one string
+  KEYCLOAK_CLIENT_SECRET: ""     # UPDATE: secret of the campaign-manager Keycloak client
 
 # Postgres used by the app, the migrations and the pipeline, all through one login.
 database:

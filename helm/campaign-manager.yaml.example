@@ -21,11 +21,19 @@ database:
   admin:
     password: postgres-admin-password
 
+config:
+  APP_BASE_URL: https://campaign-manager.example.com
+  KEYCLOAK_BASE_URL: https://auth.example.com/auth
+  KEYCLOAK_REALM: bluedots
+  KEYCLOAK_CLIENT_ID: campaign-manager
+  BOOTSTRAP_ADMIN_EMAIL: admin@example.com
+
 secrets:
   SESSION_SECRET: random-session-secret   # generate with: openssl rand -hex 32
   CRON_SECRET: random-cron-secret
   RAYA_API_KEY: raya_xxx
   GOOGLE_SERVICE_ACCOUNT_JSON: '{"type":"service_account","project_id":"example"}'
+  KEYCLOAK_CLIENT_SECRET: keycloak-client-secret
 
 pipeline:
   enabled: true

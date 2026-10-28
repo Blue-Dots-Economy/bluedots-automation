@@ -80,8 +80,21 @@ If the registry is private, create an image pull secret named `ghcr-pull` in the
 | `secrets.CRON_SECRET_PREVIOUS` | The previous cron secret, still accepted while you rotate. Leave empty otherwise. | `the-old-random-string` |
 | `secrets.RAYA_API_KEY` | Raya API key. | `raya_xxx` |
 | `secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
+| `secrets.KEYCLOAK_CLIENT_SECRET` | Secret of the Keycloak client the app signs people in with. Also used by the migrate Job to create the first admin. | `xxx` |
 
-To keep credentials out of Helm values, create the Secret yourself and set `secrets.existingSecret` to its name. It must carry these keys: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, plus `CLIENT_SECRET` for the pipeline and `DB_ADMIN_PASSWORD` and `DB_PASSWORD` for the database Job. The pipeline uses the same `RAYA_API_KEY` as the app.
+### Keycloak login (`config`)
+
+The app signs people in through Keycloak and does not start without these. The migrate Job reads them too, to create the first admin.
+
+| Key | What it is | Example |
+|---|---|---|
+| `config.APP_BASE_URL` | Public address of the app. | `https://campaign-manager.example.com` |
+| `config.KEYCLOAK_BASE_URL` | Public Keycloak address, as browsers reach it. | `https://auth.example.com/auth` |
+| `config.KEYCLOAK_INTERNAL_BASE_URL` | Optional in-cluster Keycloak address for server-side calls. Empty means the public one. | `http://keycloak.common-services.svc.cluster.local:8080/auth` |
+| `config.KEYCLOAK_REALM`, `config.KEYCLOAK_CLIENT_ID` | Realm and the client with browser login and user-management roles. | `bluedots`, `campaign-manager` |
+| `config.BOOTSTRAP_ADMIN_EMAIL` | First admin, created in Keycloak and the app by the migrate Job when there is no active admin. The deploy stops if that account is disabled or unverified. | `admin@example.com` |
+
+To keep credentials out of Helm values, create the Secret yourself and set `secrets.existingSecret` to its name. It must carry these keys: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `KEYCLOAK_CLIENT_SECRET`, plus `CLIENT_SECRET` for the pipeline and `DB_ADMIN_PASSWORD` and `DB_PASSWORD` for the database Job. The pipeline uses the same `RAYA_API_KEY` as the app.
 
 ### Purple Dots pipeline (`pipeline`)
 
