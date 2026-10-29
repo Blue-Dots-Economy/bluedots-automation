@@ -1,5 +1,5 @@
 // Pure release-notes assembly for the create-release workflow. No IO, no dependencies.
-// parseSprintTag/compareTags/extractSection/isNone mirror bluedots-docs src/lib/releases.mjs
+// parseSprintTag/compareTags/fragmentPath/extractSection/isNone mirror bluedots-docs src/lib/releases.mjs
 // and the section rule of .github/actions/pr-gate/gate.mjs.
 
 export const SECTIONS = [
@@ -10,19 +10,31 @@ export const SECTIONS = [
   'Deploy ordering',
 ];
 
-const SPRINT_TAG = /^(20\d{4}-s(\d+))-rc(\d+)$/;
+// Sprint tags come in three kinds, each cut from its own branch (see resolveBase):
+//   candidate  202611-s1-rc2  from develop, deployed to UAT
+//   release    202611-s1      from main, after UAT sign-off
+//   hotfix     202611-s1.1    from release/202611-s1
+// Anything with a suffix (-alimco, -hotfix, -up-dhwd, ...) is not a sprint tag.
+const SPRINT_TAG = /^(20\d{4}-s(\d+))(?:-rc(\d+)|\.(\d+))?$/;
 const VERSION_TAG = /^v[0-9]+\.[0-9]+\.[0-9]+$/;
+const BRANCH_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+const KIND_ORDER = { candidate: 0, release: 1, hotfix: 2 };
 const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 const HEADING = /^\s{0,3}(#{1,6})\s+/;
 
+/** @returns {{ sprint: string, kind: 'candidate'|'release'|'hotfix', num: number, entry: string, sprintKey: number[] } | null} */
 export function parseSprintTag(tag) {
   const m = typeof tag === 'string' ? SPRINT_TAG.exec(tag) : null;
   if (!m) return null;
+  const [, sprint, n, rc, fix] = m;
+  const kind = rc !== undefined ? 'candidate' : fix !== undefined ? 'hotfix' : 'release';
+  const num = Number(rc ?? fix ?? 0);
   return {
-    sprint: m[1],
-    rc: `rc${m[3]}`,
-    rcNum: Number(m[3]),
-    sprintKey: [Number(m[1].slice(0, 6)), Number(m[2])],
+    sprint,
+    kind,
+    num,
+    entry: kind === 'candidate' ? `rc${num}` : kind === 'hotfix' ? `hotfix${num}` : 'release',
+    sprintKey: [Number(sprint.slice(0, 6)), Number(n)],
   };
 }
 
@@ -32,14 +44,18 @@ function mustParse(tag) {
   return p;
 }
 
-/** Ascending comparison of two sprint tags. Throws on a non-sprint tag. */
+/**
+ * Ascending comparison of two sprint tags: sprint, then candidate < release < hotfix,
+ * then the number. Throws on a non-sprint tag.
+ */
 export function compareTags(a, b) {
   const pa = mustParse(a);
   const pb = mustParse(b);
   return (
     pa.sprintKey[0] - pb.sprintKey[0] ||
     pa.sprintKey[1] - pb.sprintKey[1] ||
-    pa.rcNum - pb.rcNum
+    KIND_ORDER[pa.kind] - KIND_ORDER[pb.kind] ||
+    pa.num - pb.num
   );
 }
 
@@ -70,18 +86,33 @@ export function isNone(section) {
   return s === '' || /^none\.?$/i.test(s);
 }
 
-/** Greatest sprint tag strictly below `current`; suffixed and non-sprint tags are ignored. */
+/**
+ * The tag the notes for `current` start from, so each entry covers what changed since:
+ *   candidate: the greatest earlier candidate or release, in any sprint
+ *   release:   the greatest earlier release
+ *   hotfix:    the greatest earlier release or hotfix in the same sprint
+ * Suffixed and non-sprint tags are ignored.
+ */
 export function previousSprintTag(tagNames, current) {
+  const cur = mustParse(current);
+  const eligible = (p) =>
+    cur.kind === 'candidate' ? p.kind !== 'hotfix'
+      : cur.kind === 'release' ? p.kind === 'release'
+        : p.kind !== 'candidate' && p.sprint === cur.sprint;
   const below = tagNames
-    .filter((t) => parseSprintTag(t) && compareTags(t, current) < 0)
+    .filter((t) => {
+      const p = parseSprintTag(t);
+      return p && eligible(p) && compareTags(t, current) < 0;
+    })
     .sort(compareTags);
   return below.length ? below[below.length - 1] : null;
 }
 
-/** PRs merged into main whose merge commit is in the release range, oldest merge first. */
-export function selectSourcePrs(prs, rangeShas) {
+/** PRs merged into `base` whose merge commit is in the release range, oldest merge first. */
+export function selectSourcePrs(prs, rangeShas, base) {
+  if (!base) throw new Error('selectSourcePrs needs a base branch');
   return prs
-    .filter((p) => p.merged_at && p.base?.ref === 'main' && rangeShas.has(p.merge_commit_sha))
+    .filter((p) => p.merged_at && p.base?.ref === base && rangeShas.has(p.merge_commit_sha))
     .sort((a, b) => (a.merged_at < b.merged_at ? -1 : a.merged_at > b.merged_at ? 1 : 0));
 }
 
@@ -142,10 +173,14 @@ export function renderFragment(meta, notes) {
   return lines.join('\n') + notes.markdown;
 }
 
+/** Entry directory per kind: candidate rcN, release `release`, hotfix hotfixN. */
 export function fragmentPath(tag, repo) {
-  const { sprint, rc } = mustParse(tag);
-  return `src/releases/${sprint}/${rc}/components/${repo}.md`;
+  const { sprint, entry } = mustParse(tag);
+  return `src/releases/${sprint}/${entry}/components/${repo}.md`;
 }
+
+/** `release/<YYYYMM-sN>`: created with the release tag, and the base of its hotfixes. */
+export const releaseBranch = (tag) => `release/${mustParse(tag).sprint}`;
 
 export const docsBranch = (tag) => `release-notes/${tag}`;
 
@@ -163,18 +198,39 @@ export function publishAction({ remoteHead, openPr, closedPrHeads = [] }) {
   return closedPrHeads.includes(remoteHead) ? 'recreate' : 'append';
 }
 
-/** Accepts v*.*.*, a sprint tag, or a match of `extraPattern` (anchored ERE; empty means none). */
+/**
+ * Accepts a sprint tag, v*.*.*, or a match of `extraPattern` (anchored ERE; empty means none).
+ * @returns {{ ok: true, kind: 'candidate'|'release'|'hotfix'|'version' } | { ok: false, kind: null, error: string }}
+ */
 export function validateTag(tag, extraPattern) {
-  if (parseSprintTag(tag)) return { ok: true, sprint: true };
-  if (VERSION_TAG.test(tag)) return { ok: true, sprint: false };
+  const sprint = parseSprintTag(tag);
+  if (sprint) return { ok: true, kind: sprint.kind };
+  if (VERSION_TAG.test(tag)) return { ok: true, kind: 'version' };
   if (extraPattern) {
     try {
-      if (new RegExp(extraPattern).test(tag)) return { ok: true, sprint: false };
+      if (new RegExp(extraPattern).test(tag)) return { ok: true, kind: 'version' };
     } catch {
-      return { ok: false, sprint: false, error: `Invalid extra tag pattern: ${extraPattern}` };
+      return { ok: false, kind: null, error: `Invalid extra tag pattern: ${extraPattern}` };
     }
   }
-  return { ok: false, sprint: false, error: `Tag ${tag} is not v*.*.*, a sprint tag, or an allowed pattern` };
+  return { ok: false, kind: null, error: `Tag ${tag} is not a sprint tag, v*.*.*, or an allowed pattern` };
+}
+
+/**
+ * The branch a tag is cut from. Sprint tags pick their own (candidate develop, release
+ * main, hotfix release/<sprint>) and `ignored` says a different `baseInput` was dropped;
+ * any other tag uses `baseInput`, default main. Throws on a malformed branch name.
+ * @returns {{ base: string, ignored: boolean }}
+ */
+export function resolveBase(tag, baseInput) {
+  const p = parseSprintTag(tag);
+  if (!p) {
+    const base = baseInput || 'main';
+    if (!BRANCH_NAME.test(base)) throw new Error(`Base '${base}' is not a valid branch name`);
+    return { base, ignored: false };
+  }
+  const base = p.kind === 'candidate' ? 'develop' : p.kind === 'release' ? 'main' : releaseBranch(tag);
+  return { base, ignored: Boolean(baseInput) && baseInput !== base };
 }
 
 const FAMILY_TAG = /^(.*?v)(\d+)\.(\d+)\.(\d+)$/;
@@ -217,13 +273,13 @@ export function docsPrBody({ tag, components }) {
     : 'None yet.';
   return [
     `Release notes for \`${tag}\`, written by each service repo's \`create-release\` workflow.`,
-    'Merging this PR publishes the rc on the Releases page.',
+    'Merging this PR publishes the entry on the Releases page.',
     '',
     '## Component notes on this branch',
     list,
     '',
     '## Checklist',
-    '- [ ] Run the `release-page` skill (from the `bluedots-release-tools` plugin) to write `notes.md` for this rc, and edit it by hand.',
+    '- [ ] Run the `release-page` skill (from the `bluedots-release-tools` plugin) to write `notes.md` for this entry, and edit it by hand.',
     '- [ ] `pnpm build` passes locally (the docs CI does not build PRs); `pnpm check:links` and `pnpm check:style` report nothing new under `src/releases/`.',
     '- [ ] Merge to publish.',
     '',

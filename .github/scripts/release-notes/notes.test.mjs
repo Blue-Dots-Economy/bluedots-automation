@@ -14,6 +14,8 @@ import {
   docsBranch,
   publishAction,
   validateTag,
+  resolveBase,
+  releaseBranch,
   previousVersionTag,
   releaseBody,
   docsPrBody,
@@ -27,16 +29,27 @@ test('compareTags orders rc and sprint numerically and across years', () => {
   assert.deepEqual([...tags].sort(compareTags),
     ['202610-s1-rc9', '202610-s1-rc10', '202610-s2-rc1', '202610-s10-rc1', '202701-s1-rc1']);
 });
+test('compareTags orders candidate < release < hotfix within a sprint, then the next sprint', () => {
+  const want = ['202611-s1-rc1', '202611-s1-rc10', '202611-s1', '202611-s1.1', '202611-s1.2', '202611-s1.10', '202611-s2-rc1'];
+  const shuffled = ['202611-s1.10', '202611-s2-rc1', '202611-s1', '202611-s1-rc10', '202611-s1.2', '202611-s1-rc1', '202611-s1.1'];
+  assert.deepEqual([...shuffled].sort(compareTags), want);
+});
 test('compareTags throws on a non-sprint tag', () => {
   assert.throws(() => compareTags('v1.0.0', '202610-s1-rc1'));
 });
-test('parseSprintTag parses a sprint tag', () => {
+test('parseSprintTag parses all three kinds', () => {
   assert.deepEqual(parseSprintTag('202610-s2-rc3'),
-    { sprint: '202610-s2', rc: 'rc3', rcNum: 3, sprintKey: [202610, 2] });
+    { sprint: '202610-s2', kind: 'candidate', num: 3, entry: 'rc3', sprintKey: [202610, 2] });
+  assert.deepEqual(parseSprintTag('202610-s2'),
+    { sprint: '202610-s2', kind: 'release', num: 0, entry: 'release', sprintKey: [202610, 2] });
+  assert.deepEqual(parseSprintTag('202610-s2.4'),
+    { sprint: '202610-s2', kind: 'hotfix', num: 4, entry: 'hotfix4', sprintKey: [202610, 2] });
 });
 test('parseSprintTag rejects suffixed tags', () => {
-  assert.equal(parseSprintTag('202609-s2-rc1-hotfix'), null);
-  assert.equal(parseSprintTag('v1.0.0'), null);
+  for (const t of ['202609-s2-rc1-hotfix', '202609-s2-alimco', '202609-s2-up-dhwd', '202609-s2.1-hotfix',
+    '202609-s2-rc1.1', '202609-s2.', '202609-s2-rc', 'v1.0.0', '2026-s1']) {
+    assert.equal(parseSprintTag(t), null, t);
+  }
 });
 test('extractSection is case-insensitive and stops at same-level heading', () => {
   const md = '## release notes\n- a (#1)\n### sub\n- b\n## In Plain Terms\nx';
@@ -56,11 +69,26 @@ test('isNone', () => {
   assert.ok(!isNone('- new env var FOO'));
 });
 
-test('previousSprintTag picks the greatest sprint tag below current, ignoring suffixed', () => {
+test('previousSprintTag for a candidate: greatest earlier candidate or release, any sprint', () => {
   const names = ['202609-s1-rc3', '202609-s2-rc1-hotfix', '202610-s1-rc1', '202610-s1-rc2', 'v1.0.0'];
   assert.equal(previousSprintTag(names, '202610-s1-rc2'), '202610-s1-rc1');
   assert.equal(previousSprintTag(names, '202610-s1-rc1'), '202609-s1-rc3');
   assert.equal(previousSprintTag(names, '202609-s1-rc3'), null);
+  const withRelease = ['202610-s1-rc1', '202610-s1-rc2', '202610-s1', '202610-s1.1', '202610-s1.2', '202610-s1-alimco'];
+  assert.equal(previousSprintTag(withRelease, '202610-s2-rc1'), '202610-s1');
+});
+test('previousSprintTag for a release: greatest earlier release only', () => {
+  const names = ['202610-s1', '202610-s1.1', '202610-s2-rc1', '202610-s2-rc2', '202610-s1-rc9', '202610-s2-x'];
+  assert.equal(previousSprintTag(names, '202610-s2'), '202610-s1');
+  assert.equal(previousSprintTag(['202610-s1-rc1', '202610-s1-rc2'], '202610-s1'), null);
+});
+test('previousSprintTag for a hotfix: greatest earlier release or hotfix in the same sprint', () => {
+  const names = ['202610-s1-rc10', '202610-s1', '202610-s1.1', '202610-s1.2', '202610-s2-rc1', '202609-s3', '202610-s1.1-hotfix'];
+  assert.equal(previousSprintTag(names, '202610-s1.1'), '202610-s1');
+  assert.equal(previousSprintTag(names, '202610-s1.2'), '202610-s1.1');
+  assert.equal(previousSprintTag(names, '202610-s1.3'), '202610-s1.2');
+  // no release in that sprint: no previous tag, even though an older sprint has one
+  assert.equal(previousSprintTag(['202609-s3', '202610-s2-rc1'], '202610-s2.1'), null);
 });
 
 const pr = (number, over = {}) => ({
@@ -75,8 +103,14 @@ test('selectSourcePrs filters by base, merge and range, sorted by merged_at', ()
     pr(4, { merge_commit_sha: 'outside' }),
     pr(5, { merged_at: null }),
   ];
-  const out = selectSourcePrs(prs, new Set(['sha1', 'sha2', 'sha3', 'sha5']));
-  assert.deepEqual(out.map((p) => p.number), [1, 3]);
+  const range = new Set(['sha1', 'sha2', 'sha3', 'sha5']);
+  assert.deepEqual(selectSourcePrs(prs, range, 'main').map((p) => p.number), [1, 3]);
+  assert.deepEqual(selectSourcePrs(prs, range, 'develop').map((p) => p.number), [2]);
+  assert.deepEqual(selectSourcePrs([pr(6, { base: { ref: 'release/202610-s1' } })], new Set(['sha6']), 'release/202610-s1')
+    .map((p) => p.number), [6]);
+});
+test('selectSourcePrs requires a base', () => {
+  assert.throws(() => selectSourcePrs([pr(1)], new Set(['sha1'])));
 });
 
 test('assembleNotes: one PR is verbatim, empty section is None., section-less PR is listed', () => {
@@ -117,9 +151,24 @@ test('renderFragment emits quoted frontmatter and notes_missing', () => {
   assert.ok(renderFragment({ ...meta, prs: [] }, { markdown: 'm', missing: [] }).includes('prs: []'));
 });
 
+test('renderFragment writes the branch the tag was cut from as base', () => {
+  const meta = (tag) => ({
+    repo: 'r', tag, commit: 'c'.repeat(40), base: resolveBase(tag, '').base, previous_tag: null,
+    cut_at: '2026-11-01', release_url: 'u', prs: [],
+  });
+  const notes = { markdown: 'm', missing: [] };
+  assert.ok(renderFragment(meta('202611-s1-rc2'), notes).includes('\nbase: "develop"\n'));
+  assert.ok(renderFragment(meta('202611-s1'), notes).includes('\nbase: "main"\n'));
+  assert.ok(renderFragment(meta('202611-s1.1'), notes).includes('\nbase: "release/202611-s1"\n'));
+});
+
 test('fragmentPath and docsBranch', () => {
   assert.equal(fragmentPath('202610-s1-rc2', 'signals-dpg'), 'src/releases/202610-s1/rc2/components/signals-dpg.md');
+  assert.equal(fragmentPath('202610-s1', 'signals-dpg'), 'src/releases/202610-s1/release/components/signals-dpg.md');
+  assert.equal(fragmentPath('202610-s1.3', 'signals-dpg'), 'src/releases/202610-s1/hotfix3/components/signals-dpg.md');
+  assert.throws(() => fragmentPath('v1.0.0', 'signals-dpg'));
   assert.equal(docsBranch('202610-s1-rc2'), 'release-notes/202610-s1-rc2');
+  assert.equal(docsBranch('202610-s1.1'), 'release-notes/202610-s1.1');
 });
 
 test('publishAction recreates only an absent or stale branch', () => {
@@ -135,15 +184,43 @@ test('publishAction recreates only an absent or stale branch', () => {
   assert.equal(publishAction({ remoteHead: 'def', openPr: false, closedPrHeads: ['abc'] }), 'append');
 });
 
-test('validateTag', () => {
+test('validateTag returns the kind', () => {
   const extra = '^(api|web|worker)-v[0-9]+\\.[0-9]+\\.[0-9]+$';
-  assert.equal(validateTag('api-v1.2.0', extra).ok, true);
+  assert.deepEqual(validateTag('202610-s1-rc1', ''), { ok: true, kind: 'candidate' });
+  assert.deepEqual(validateTag('202610-s1', ''), { ok: true, kind: 'release' });
+  assert.deepEqual(validateTag('202610-s1.2', ''), { ok: true, kind: 'hotfix' });
+  assert.deepEqual(validateTag('v1.2.3', ''), { ok: true, kind: 'version' });
+  assert.deepEqual(validateTag('api-v1.2.0', extra), { ok: true, kind: 'version' });
   assert.equal(validateTag('api-v1.2.0', '').ok, false);
-  assert.equal(validateTag('202609-s2-rc1-hotfix', '').ok, false);
-  assert.deepEqual(validateTag('202610-s1-rc1', ''), { ok: true, sprint: true });
-  assert.deepEqual(validateTag('v1.2.3', ''), { ok: true, sprint: false });
-  assert.equal(validateTag('api-v1.2.0', extra).sprint, false);
   assert.ok(validateTag('nope', '').error);
+  assert.match(validateTag('x', '(').error, /Invalid extra tag pattern/);
+});
+test('validateTag rejects suffixed sprint tags', () => {
+  for (const t of ['202609-s2-rc1-hotfix', '202609-s2-alimco', '202609-s2-up-dhwd', '202609-s2.1-hotfix']) {
+    assert.equal(validateTag(t, '').ok, false, t);
+  }
+});
+test('resolveBase derives the branch for sprint kinds and ignores the input', () => {
+  assert.deepEqual(resolveBase('202611-s1-rc2', ''), { base: 'develop', ignored: false });
+  assert.deepEqual(resolveBase('202611-s1-rc2', 'develop'), { base: 'develop', ignored: false });
+  assert.deepEqual(resolveBase('202611-s1-rc2', 'main'), { base: 'develop', ignored: true });
+  assert.deepEqual(resolveBase('202611-s1', 'feature'), { base: 'main', ignored: true });
+  assert.deepEqual(resolveBase('202611-s1', undefined), { base: 'main', ignored: false });
+  assert.deepEqual(resolveBase('202611-s1.1', 'main'), { base: 'release/202611-s1', ignored: true });
+  assert.deepEqual(resolveBase('202611-s1.1', ''), { base: 'release/202611-s1', ignored: false });
+});
+test('resolveBase uses the input (default main) for version tags', () => {
+  assert.deepEqual(resolveBase('v1.2.0', ''), { base: 'main', ignored: false });
+  assert.deepEqual(resolveBase('v1.2.0', 'develop'), { base: 'develop', ignored: false });
+  assert.deepEqual(resolveBase('api-v1.2.0', 'release/x'), { base: 'release/x', ignored: false });
+  assert.throws(() => resolveBase('v1.2.0', 'bad branch'), /not a valid branch name/);
+  assert.throws(() => resolveBase('v1.2.0', '-x'), /not a valid branch name/);
+});
+test('releaseBranch names the sprint branch for release and hotfix tags', () => {
+  assert.equal(releaseBranch('202611-s1'), 'release/202611-s1');
+  assert.equal(releaseBranch('202611-s1.3'), 'release/202611-s1');
+  assert.equal(releaseBranch('202611-s1-rc1'), 'release/202611-s1');
+  assert.throws(() => releaseBranch('v1.0.0'));
 });
 
 test('validateTag uses the strict v<N>.<N>.<N> form', () => {

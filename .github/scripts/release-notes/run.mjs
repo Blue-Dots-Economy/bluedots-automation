@@ -3,7 +3,8 @@
 // array (execFileSync), never a shell string, so tags and PR titles are never
 // interpreted by a shell.
 //
-//   MODE=assemble  TAG SHA REPOSITORY GH_TOKEN RUNNER_TEMP GITHUB_STEP_SUMMARY
+//   MODE=assemble  TAG SHA REPOSITORY GH_TOKEN RUNNER_TEMP GITHUB_STEP_SUMMARY [BASE]
+//     BASE is only read for non-sprint tags (default main); sprint tags derive theirs.
 //     Writes $RUNNER_TEMP/release-body.md (always) and $RUNNER_TEMP/release-fragment.md
 //     (sprint tags only) and appends both to the step summary.
 //   MODE=publish   TAG REPOSITORY DOCS_TOKEN RUNNER_TEMP GITHUB_STEP_SUMMARY
@@ -17,6 +18,7 @@ import {
   previousSprintTag,
   previousVersionTag,
   selectSourcePrs,
+  resolveBase,
   assembleNotes,
   renderFragment,
   releaseBody,
@@ -80,15 +82,15 @@ const commitDate = (repo, ref) =>
   gh(['api', `repos/${repo}/commits/${ref}`, '--jq', '.commit.committer.date']);
 
 /**
- * Walks closed PRs into main, most recently updated first, a page at a time, until
+ * Walks closed PRs into `base`, most recently updated first, a page at a time, until
  * `done(pr)` says no later page can matter. --paginate would fetch every page.
  */
-function walkMergedPrs(repo, done) {
+function walkMergedPrs(repo, base, done) {
   const out = [];
   for (let page = 1; ; page++) {
     const batch = ghJson([
       'api',
-      `repos/${repo}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=100&page=${page}`,
+      `repos/${repo}/pulls?state=closed&base=${encodeURIComponent(base)}&sort=updated&direction=desc&per_page=100&page=${page}`,
     ]);
     for (const p of batch) {
       if (done(p)) return out;
@@ -105,12 +107,16 @@ function assemble() {
   const temp = env('RUNNER_TEMP');
   const repoName = repository.split('/')[1];
   const sprint = parseSprintTag(tag) !== null;
+  // The branch the tag was cut from: its PRs are the ones the notes are made of.
+  const { base } = resolveBase(tag, process.env.BASE ?? '');
 
-  // Sprint tags look back only at sprint tags; anything else at its own semver family.
+  // Sprint tags look back only at sprint tags (which ones depends on the kind); anything
+  // else at its own semver family.
   const tagNames = lines(
     gh(['api', '--paginate', `repos/${repository}/git/matching-refs/tags/${sprint ? '20' : ''}`, '--jq', '.[].ref']),
   ).map((r) => r.replace(/^refs\/tags\//, ''));
   const previousTag = sprint ? previousSprintTag(tagNames, tag) : previousVersionTag(tagNames, tag);
+  console.log(`Base: ${base}`);
   console.log(`Previous tag: ${previousTag ?? '(none)'}`);
 
   let prs;
@@ -119,20 +125,20 @@ function assemble() {
       lines(gh(['api', '--paginate', `repos/${repository}/compare/${previousTag}...${sha}`, '--jq', '.commits[].sha'])),
     );
     const cutoff = Date.parse(commitDate(repository, previousTag)) - CUTOFF_MARGIN_MS;
-    const merged = walkMergedPrs(repository, (p) => Date.parse(p.updated_at) < cutoff);
-    prs = selectSourcePrs(merged, rangeShas);
+    const merged = walkMergedPrs(repository, base, (p) => Date.parse(p.updated_at) < cutoff);
+    prs = selectSourcePrs(merged, rangeShas, base);
   } else {
     // First release in the family: the range is the single most recently merged PR
-    // into main at or before SHA. "At or before" is ancestry (its merge commit is in
+    // into the base at or before SHA. "At or before" is ancestry (its merge commit is in
     // SHA's recent history), not a date: GitHub's merged_at can be a second later
     // than the merge commit's own date.
     const ancestors = new Set(
       lines(gh(['api', `repos/${repository}/commits?sha=${sha}&per_page=100`, '--jq', '.[].sha'])),
     );
     let latest = null;
-    walkMergedPrs(repository, (p) => {
+    walkMergedPrs(repository, base, (p) => {
       if (latest && Date.parse(p.updated_at) < Date.parse(latest.merged_at)) return true;
-      const [hit] = selectSourcePrs([p], ancestors);
+      const [hit] = selectSourcePrs([p], ancestors, base);
       if (hit && (!latest || hit.merged_at > latest.merged_at)) latest = hit;
       return false;
     });
@@ -159,7 +165,7 @@ function assemble() {
       repo: repoName,
       tag,
       commit: sha,
-      base: 'main',
+      base,
       previous_tag: previousTag,
       cut_at: new Date().toISOString().slice(0, 10),
       release_url: `https://github.com/${repository}/releases/tag/${tag}`,
