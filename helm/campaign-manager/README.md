@@ -8,7 +8,7 @@ Three independently deployable pieces, each its own subchart under `charts/`:
 |---|---|
 | `app` | The web app (Deployment, Service, Ingress), plus the database bootstrap Job and schema migrations. Always deployed. |
 | `raya-sync` | CronJob loading Raya voice-bot call data into the app's database. Opt-in (`raya-sync.enabled: true`). |
-| `platform-sync` | CronJob syncing Signals + Aggregator non-PII data directly into the app's database — no S3 involved. Opt-in (`platform-sync.enabled: true`). |
+| `platform-sync` | CronJob syncing Signals + Aggregator non-PII data directly into the app's database. Opt-in (`platform-sync.enabled: true`). |
 
 `app`, `raya-sync` and `platform-sync` all connect to the **same** Postgres database with the **same** login (`global.database`) — there is one database, shared by all three. Jobs run before the release's pods start (pre-install/pre-upgrade hooks), in this order across the whole release (Helm orders hooks by weight across the umbrella *and* every subchart together): `app`'s database Job (weight 0) → `app`'s migrate Job (weight 1) → `platform-sync`'s schema Job (weight 2, creates the `platform.*` tables it writes into). `raya-sync` needs no schema Job of its own — its tables are created by `app`'s migrate Job.
 
