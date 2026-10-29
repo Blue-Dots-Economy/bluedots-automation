@@ -1,0 +1,392 @@
+# Reusable create-release workflow.
+#
+# Creates a release tag, writes its notes, kicks off the image build, and (for
+# sprint tags) publishes the per-repo release-notes fragment to bluedots-docs —
+# but only if CI has already passed on the commit being tagged.
+#
+# Tag kinds and the branch each is cut from (sprint tags pick their own branch;
+# the `base` input only applies to v*.*.* / extra tags):
+#
+#   candidate  202611-s1-rc2  develop             deployed to UAT; UAT fixes land
+#                                                 on develop and cut the next rc
+#   release    202611-s1      main                after UAT sign-off; also creates
+#                                                 the branch release/202611-s1
+#   hotfix     202611-s1.1    release/202611-s1   fixes for live environments;
+#                                                 sync-release-branch.yml carries
+#                                                 them back to develop and feature
+#   version    v1.2.0 / extra the `base` input (default main)
+#
+# Replaces the four near-identical per-repo `cut-release` workflows. Each service
+# repo calls this with a thin caller that pins this file AND passes the same SHA
+# as `automation-ref`, so the scripts checked out below always match the workflow:
+#
+#   jobs:
+#     release:
+#       permissions: { contents: write, actions: write }
+#       uses: Blue-Dots-Economy/bluedots-automation/.github/workflows/create-release.yml@<sha> # <ref>
+#       with:
+#         tag: ${{ inputs.tag }}
+#         base: ${{ inputs.base }}       # free string, default ''; v*.*.* / extra tags only
+#         dry_run: ${{ inputs.dry_run }}
+#         ci-workflow: ci.yaml
+#         build-workflow: build-images.yaml
+#         automation-ref: <sha>
+#       secrets:
+#         docs-token: ${{ secrets.DOCS_SYNC_TOKEN }}
+#
+# Why this exists: tags were cut by hand, which meant remembering to check CI
+# first. Each repo's build-images `verify-ci` job is the backstop that refuses to
+# PUBLISH an untested commit; this is the front door that stops the bad tag
+# being created in the first place, so the failure arrives before the tag
+# exists rather than after.
+#
+# It does NOT prevent someone running `git tag && git push` from a laptop. Only
+# a tag ruleset restricting who may create `20*-s*` can do that. This is the
+# paved road, not the fence.
+#
+# In a reusable workflow `github.repository` and `github.token` are the CALLER's,
+# so every API call below acts on the calling repo with the caller's token.
+
+name: create-release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag: 202610-s1-rc1 (candidate), 202610-s1 (release), 202610-s1.1 (hotfix) or v1.2.0"
+        type: string
+        required: true
+      base:
+        description: "Only for v*.*.* / extra tags (empty = main); sprint tags pick their own branch: candidate develop, release main, hotfix release/<sprint>"
+        type: string
+        default: ""
+      dry_run:
+        description: "Check everything and preview the notes, but create nothing"
+        type: boolean
+        default: false
+      skip_ci_check:
+        description: "Tag even if CI has not passed (emergency use only)"
+        type: boolean
+        default: false
+      docs_only:
+        description: "The tag and release already exist: only re-publish the docs fragment"
+        type: boolean
+        default: false
+      ci-workflow:
+        description: "The caller's CI workflow file whose success gates the tag, e.g. ci.yaml"
+        type: string
+        required: true
+      build-workflow:
+        description: "The caller's image-build workflow file to dispatch against the tag, e.g. build-images.yaml"
+        type: string
+        required: true
+      extra-tag-pattern:
+        description: "Extra regex of accepted non-sprint tags, e.g. '^(api|web|worker)-v[0-9]+\\.[0-9]+\\.[0-9]+$'. Empty = v*.*.* and sprint tags only."
+        type: string
+        default: ""
+      docs-base:
+        description: "bluedots-docs branch the release-notes PR targets: main (live site) or develop (dev site, for dry tests)"
+        type: string
+        default: main
+      automation-ref:
+        description: "bluedots-automation commit to load the release-notes scripts from. Pass the same SHA the caller pins this workflow at."
+        type: string
+        required: true
+    secrets:
+      docs-token:
+        description: "Token that can push branches and open PRs on Blue-Dots-Economy/bluedots-docs. Absent = publishing is skipped with a warning."
+        required: false
+
+# Nothing at workflow level; the one job asks for exactly what it uses. The
+# caller must grant both, since a called workflow can only narrow permissions.
+permissions: {}
+
+jobs:
+  # One job on purpose: `assemble` writes release-fragment.md to $RUNNER_TEMP and
+  # `publish` reads it back from there, which only works on the same runner.
+  release:
+    name: Create ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the tag ref, the release and the release branch
+      actions: write    # read CI runs, and dispatch the build workflow
+    steps:
+      # The release-notes scripts, from the automation commit the caller pinned.
+      # persist-credentials: false is required, not just hygiene: run.mjs sends its
+      # own auth header to clone bluedots-docs, and a second persisted extraheader
+      # for github.com makes that clone fail.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Blue-Dots-Economy/bluedots-automation
+          ref: ${{ inputs.automation-ref }}
+          path: automation
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+
+      - name: Validate tag and CI
+        id: validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          BASE: ${{ inputs.base }}
+          SKIP: ${{ inputs.skip_ci_check }}
+          DOCS_ONLY: ${{ inputs.docs_only }}
+          CI_WORKFLOW: ${{ inputs.ci-workflow }}
+          EXTRA_TAG_PATTERN: ${{ inputs.extra-tag-pattern }}
+        run: |
+          set -euo pipefail
+
+          # ── 1. Validate the tag name ──────────────────────────────────────
+          # The build workflows only fire on known tag patterns. A tag outside
+          # them would be created here and then never build, which is a worse
+          # outcome than refusing it up front. Repos that also release a single
+          # app independently (aggregator's api-/web-/worker- prefix) pass that
+          # pattern as extra-tag-pattern.
+          # Prints the tag kind and the branch it is cut from: sprint tags derive
+          # their branch (a different `base` gets a notice and is ignored).
+          v=$(node automation/.github/scripts/release-notes/validate.mjs)
+          read -r kind BASE <<<"${v}"
+          case "${kind}" in
+            candidate|release|hotfix) sprint=true ;;
+            *) sprint=false ;;
+          esac
+          echo "${TAG} is a ${kind} tag, cut from ${BASE}"
+          publish="${sprint}"
+
+          # The commit a tag points at; fails if the tag does not exist. An
+          # annotated tag points at a tag object, which is followed to the commit.
+          tag_commit() {
+            local ref type obj
+            ref=$(gh api "repos/${REPO}/git/ref/tags/$1" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null) || return 1
+            read -r type obj <<<"${ref}"
+            if [ "${type}" = "tag" ]; then
+              gh api "repos/${REPO}/git/tags/${obj}" --jq '.object.sha'
+            else
+              echo "${obj}"
+            fi
+          }
+
+          if [ "${DOCS_ONLY:-false}" = "true" ]; then
+            # ── 2a. docs_only: the tag must already exist ───────────────────
+            if ! SHA=$(tag_commit "${TAG}"); then
+              echo "::error title=Tag not found::docs_only needs an existing tag, and ${TAG} does not exist."
+              exit 1
+            fi
+            echo "Re-publishing docs for ${TAG} @ ${SHA}"
+            if [ "${sprint}" != "true" ]; then
+              echo "::notice title=Nothing to publish::${TAG} is not a sprint tag, so it has no docs fragment. Only the notes preview will be produced."
+            else
+              # The fragment's base comes from the tag name. Publish only if the
+              # tagged commit really is on that branch (behind or identical to
+              # it), so a tag cut by hand elsewhere never gets a wrong fragment.
+              status=$(gh api "repos/${REPO}/compare/${BASE}...${SHA}" --jq '.status' 2>/dev/null || echo missing)
+              if [ "${status}" != "behind" ] && [ "${status}" != "identical" ]; then
+                echo "::warning title=Tag not on its branch::${TAG} (${SHA}) is not on ${BASE} (compare status: ${status}), so its docs fragment is not published."
+                publish=false
+              fi
+            fi
+          else
+            # ── 2b. Refuse to move an existing tag ──────────────────────────
+            if gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+              echo "::error title=Tag already exists::${TAG} is already present. Release tags are immutable — cut the next one instead (…-rc2, or the next hotfix …s1.2)."
+              exit 1
+            fi
+
+            # ── 3. Resolve the commit being tagged ──────────────────────────
+            # base is only used here: docs_only takes its commit from the tag.
+            # The branch ref API, because a hotfix base has a slash in it.
+            if ! SHA=$(gh api "repos/${REPO}/git/ref/heads/${BASE}" --jq '.object.sha' 2>/dev/null); then
+              if [ "${kind}" = "hotfix" ]; then
+                rel="${BASE#release/}"
+                if rel_sha=$(tag_commit "${rel}"); then
+                  echo "::error title=No release branch::${TAG} is a hotfix, so it is cut from ${BASE}, which does not exist. Create it at the ${rel} release commit: gh api repos/${REPO}/git/refs -f ref=refs/heads/${BASE} -f sha=${rel_sha}"
+                else
+                  echo "::error title=No release branch::${TAG} is a hotfix, so it is cut from ${BASE}, which does not exist. Cut the release tag ${rel} first; that creates the branch."
+                fi
+              else
+                echo "::error title=Branch not found::${BASE} does not exist in ${REPO}."
+              fi
+              exit 1
+            fi
+            echo "Tagging ${BASE} @ ${SHA}"
+
+            # ── 4. The gate ─────────────────────────────────────────────────
+            # Same question the build workflow's verify-ci asks, asked earlier:
+            # is there a successful CI run for THIS commit? Fails closed when
+            # there is no run at all, which is the realistic accident (a commit CI
+            # never saw) rather than a commit it saw and rejected. Not asked for
+            # docs_only: that tag was gated when it was cut.
+            if [ "${SKIP:-false}" = "true" ]; then
+              echo "::warning title=CI gate bypassed::Cutting ${TAG} at ${SHA} without checking CI, because skip_ci_check was set."
+            else
+              runs=$(gh api --paginate \
+                "repos/${REPO}/actions/workflows/${CI_WORKFLOW}/runs?head_sha=${SHA}" \
+                --jq '.workflow_runs[] | "\(.status)/\(.conclusion // "pending")\t\(.event)\t\(.html_url)"')
+
+              if [ -z "${runs}" ]; then
+                echo "::error title=No CI run for this commit::${CI_WORKFLOW} has never run for ${SHA} (tip of ${BASE}). Note that merges into 'feature' do not run CI."
+                exit 1
+              fi
+
+              echo "${CI_WORKFLOW} runs for ${SHA}:"
+              echo "${runs}" | sed 's/^/  /'
+
+              if ! echo "${runs}" | grep -q '^completed/success'; then
+                echo "::error title=CI did not pass::No successful ${CI_WORKFLOW} run exists for ${SHA}. Fix CI on ${BASE} before cutting ${TAG}."
+                exit 1
+              fi
+              echo "CI passed for ${SHA}."
+            fi
+          fi
+
+          {
+            echo "sha=${SHA}"
+            echo "sprint=${sprint}"
+            echo "publish=${publish}"
+            echo "kind=${kind}"
+            echo "base=${BASE}"
+          } >> "$GITHUB_OUTPUT"
+
+      # ── 5. Preview the notes ──────────────────────────────────────────────
+      # Assembled from the PRs merged since the previous release, so the
+      # description is written by whoever merged rather than here. Writes
+      # $RUNNER_TEMP/release-body.md (and, for sprint tags, release-fragment.md)
+      # and shows both in the run summary.
+      - name: Assemble release notes
+        env:
+          MODE: assemble
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ steps.validate.outputs.sha }}
+          BASE: ${{ steps.validate.outputs.base }}
+        run: node automation/.github/scripts/release-notes/run.mjs
+
+      - name: Dry run
+        if: inputs.dry_run
+        env:
+          TAG: ${{ inputs.tag }}
+        run: echo "::notice title=Dry run::All checks passed. ${TAG} was NOT created. The notes preview is in the run summary."
+
+      # ── 6. Create the tag AND the release, in one call ────────────────────
+      # POST /releases creates the tag itself when tag_name does not yet exist,
+      # using target_commitish. Doing it in one call removes the partial state a
+      # two-step version leaves behind: the first attempt at cut-release created
+      # the tag and then failed on the release, which left a tag with no notes
+      # and no build, and blocked its own retry (step 2b refuses an existing tag).
+      #
+      # Deliberately the REST API, not `gh release create` / `git push`:
+      #   * `gh release create` shells out to git and fails with "not a git
+      #     repository" — this job has no checkout of the caller and needs none.
+      #   * a tag pushed with GITHUB_TOKEN does NOT trigger `on: push: tags`
+      #     (GitHub suppresses it to prevent recursion), so the build workflow
+      #     would sit silent. Step 7 dispatches it explicitly instead —
+      #     workflow_dispatch is an exception to that suppression rule.
+      # The body is the SAME file previewed in step 5, passed through explicitly
+      # rather than re-requested with `generate_release_notes`. Two reasons: what
+      # the dry run shows is then byte-identical to what gets published, and the
+      # create endpoint's flag is `generate_release_notes` — `generate_notes` (the
+      # name of the separate preview endpoint) is silently ignored, which
+      # published an empty release the first time round.
+      - name: Create release
+        id: create
+        if: ${{ !inputs.dry_run && !inputs.docs_only }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ steps.validate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${REPO}/releases" \
+            -f tag_name="${TAG}" \
+            -f name="${TAG}" \
+            -f target_commitish="${SHA}" \
+            -F body=@"${RUNNER_TEMP}/release-body.md" \
+            --jq '"Created release \(.name) at \(.target_commitish[0:8]) -> \(.html_url)"'
+
+      # ── 7. Build and publish the images ───────────────────────────────────
+      # --repo is required: gh infers the repository from git context otherwise,
+      # and there is no checkout of the caller here.
+      - name: Build images
+        if: ${{ !inputs.dry_run && !inputs.docs_only }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ steps.validate.outputs.sha }}
+          BUILD_WORKFLOW: ${{ inputs.build-workflow }}
+        run: |
+          set -euo pipefail
+          gh workflow run "${BUILD_WORKFLOW}" --repo "${REPO}" --ref "${TAG}"
+          echo "::notice title=Release cut::${TAG} created at ${SHA}; ${BUILD_WORKFLOW} dispatched against the tag."
+
+      # ── 7b. Release tags open the sprint's release branch ─────────────────
+      # release/<sprint> at the tagged commit: the base for that sprint's hotfix
+      # tags. A branch already there (a re-cut, or made by hand) is left alone.
+      # Runs whenever the release was created, even if the build dispatch failed.
+      - name: Create release branch
+        if: ${{ !cancelled() && steps.create.outcome == 'success' && steps.validate.outputs.kind == 'release' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ steps.validate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          branch="release/${TAG}"
+          if gh api "repos/${REPO}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+            echo "::notice title=Release branch exists::${branch} already exists; left as it is."
+          else
+            if ! gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="${SHA}" >/dev/null; then
+              # The tag and release already exist, so a re-run stops at "Tag already
+              # exists": the branch has to be created by hand.
+              echo "::error title=Release branch not created::${TAG} was released, but ${branch} could not be created. Hotfixes need it; create it with: gh api repos/${REPO}/git/refs -f ref=refs/heads/${branch} -f sha=${SHA}"
+              exit 1
+            fi
+            echo "::notice title=Release branch created::${branch} at ${SHA}. Hotfix tags for this sprint are cut from it."
+          fi
+
+      # ── 8. Publish the docs fragment (sprint tags only) ───────────────────
+      # `publish` is the sprint flag, turned off for a docs_only tag whose commit
+      # is not on the branch its kind implies.
+      # Runs whenever the release exists (created above, or already there for
+      # docs_only), even if dispatching the build failed: the docs fragment
+      # depends on the release, not on the image build. A failed build dispatch
+      # (say, a wrong build-workflow name) still fails the run, but no longer
+      # takes the docs publish down with it.
+      # Never fails the run itself: a docs hiccup is fixed by re-running with
+      # docs_only=true (see the warnings).
+      - name: Publish release notes to docs
+        id: publish
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.publish == 'true' && (inputs.docs_only || steps.create.outcome == 'success') }}
+        continue-on-error: true
+        env:
+          MODE: publish
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          DOCS_TOKEN: ${{ secrets.docs-token }}
+          DOCS_BASE: ${{ inputs.docs-base }}
+        run: |
+          if [ -z "${DOCS_TOKEN}" ]; then
+            echo "No docs-token secret was passed; skipping the docs publish."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node automation/.github/scripts/release-notes/run.mjs
+
+      - name: Warn on docs publish skipped
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.publish == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && steps.publish.outputs.skipped == 'true' }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: echo "::warning title=Docs publish skipped::No DOCS_SYNC_TOKEN secret in this repo. Add it, then re-run Create release with docs_only=true for ${TAG}."
+
+      - name: Warn on docs publish failure
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.publish == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && steps.publish.outcome == 'failure' }}
+        env:
+          TAG: ${{ inputs.tag }}
+        run: echo "::warning title=Docs publish failed::Re-run Create release with docs_only=true for ${TAG}."

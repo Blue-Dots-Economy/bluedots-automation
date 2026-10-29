@@ -20,3 +20,7 @@ bbe0720de31d9796400261c1fc6ea1950fbd7ac8:helm/monitoring/charts/jaeger/charts/ka
 # console (see PR discussion); ignoring here only unblocks CI, rotation is
 # the actual remediation.
 188102fc35ca4f61c0c2677ece2728895cebf906:opentofu/aws/modules/output-file/signals-values.yaml.tfpl:generic-api-key:74
+
+# release-notes unit test listing semver tag names ('v1.2.0', 'api-v1.9.9', ...);
+# reviewed false positive, no key material.
+0062c3f7b3dc2fd563d249f9522da1dd4a54fb97:.github/scripts/release-notes/notes.test.mjs:generic-api-key:158
