@@ -4,6 +4,18 @@
 # sprint tags) publishes the per-repo release-notes fragment to bluedots-docs —
 # but only if CI has already passed on the commit being tagged.
 #
+# Tag kinds and the branch each is cut from (sprint tags pick their own branch;
+# the `base` input only applies to v*.*.* / extra tags):
+#
+#   candidate  202611-s1-rc2  develop             deployed to UAT; UAT fixes land
+#                                                 on develop and cut the next rc
+#   release    202611-s1      main                after UAT sign-off; also creates
+#                                                 the branch release/202611-s1
+#   hotfix     202611-s1.1    release/202611-s1   fixes for live environments;
+#                                                 sync-release-branch.yml carries
+#                                                 them back to develop and feature
+#   version    v1.2.0 / extra the `base` input (default main)
+#
 # Replaces the four near-identical per-repo `cut-release` workflows. Each service
 # repo calls this with a thin caller that pins this file AND passes the same SHA
 # as `automation-ref`, so the scripts checked out below always match the workflow:
@@ -14,6 +26,8 @@
 #       uses: Blue-Dots-Economy/bluedots-automation/.github/workflows/create-release.yml@<sha> # <ref>
 #       with:
 #         tag: ${{ inputs.tag }}
+#         base: ${{ inputs.base }}       # free string, default ''; v*.*.* / extra tags only
+#         dry_run: ${{ inputs.dry_run }}
 #         ci-workflow: ci.yaml
 #         build-workflow: build-images.yaml
 #         automation-ref: <sha>
@@ -27,7 +41,7 @@
 # exists rather than after.
 #
 # It does NOT prevent someone running `git tag && git push` from a laptop. Only
-# a tag ruleset restricting who may create `20*-s*-rc*` can do that. This is the
+# a tag ruleset restricting who may create `20*-s*` can do that. This is the
 # paved road, not the fence.
 #
 # In a reusable workflow `github.repository` and `github.token` are the CALLER's,
@@ -39,13 +53,13 @@ on:
   workflow_call:
     inputs:
       tag:
-        description: "Release tag, e.g. 202610-s1-rc1 or v1.2.0"
+        description: "Release tag: 202610-s1-rc1 (candidate), 202610-s1 (release), 202610-s1.1 (hotfix) or v1.2.0"
         type: string
         required: true
       base:
-        description: "Branch to cut the tag from. Sprint tags must come from main."
+        description: "Only for v*.*.* / extra tags (empty = main); sprint tags pick their own branch: candidate develop, release main, hotfix release/<sprint>"
         type: string
-        default: main
+        default: ""
       dry_run:
         description: "Check everything and preview the notes, but create nothing"
         type: boolean
@@ -94,7 +108,7 @@ jobs:
     name: Create ${{ inputs.tag }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # create the tag ref and the release
+      contents: write   # create the tag ref, the release and the release branch
       actions: write    # read CI runs, and dispatch the build workflow
     steps:
       # The release-notes scripts, from the automation commit the caller pinned.
@@ -132,7 +146,15 @@ jobs:
           # outcome than refusing it up front. Repos that also release a single
           # app independently (aggregator's api-/web-/worker- prefix) pass that
           # pattern as extra-tag-pattern.
-          sprint=$(node automation/.github/scripts/release-notes/validate.mjs)
+          # Prints the tag kind and the branch it is cut from: sprint tags derive
+          # their branch (a different `base` gets a notice and is ignored).
+          v=$(node automation/.github/scripts/release-notes/validate.mjs)
+          read -r kind BASE <<<"${v}"
+          case "${kind}" in
+            candidate|release|hotfix) sprint=true ;;
+            *) sprint=false ;;
+          esac
+          echo "${TAG} is a ${kind} tag, cut from ${BASE}"
 
           if [ "${DOCS_ONLY:-false}" = "true" ]; then
             # ── 2a. docs_only: the tag must already exist ───────────────────
@@ -152,20 +174,23 @@ jobs:
               echo "::notice title=Nothing to publish::${TAG} is not a sprint tag, so it has no docs fragment. Only the notes preview will be produced."
             fi
           else
-            # base is only used here: docs_only takes its commit from the tag.
-            if [ "${sprint}" = "true" ] && [ "${BASE}" != "main" ]; then
-              echo "::error title=Sprint tags come from main::${TAG} is a sprint tag but base is '${BASE}'. Cut sprint tags from main."
-              exit 1
-            fi
-
             # ── 2b. Refuse to move an existing tag ──────────────────────────
             if gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
-              echo "::error title=Tag already exists::${TAG} is already present. Release tags are immutable — cut the next candidate instead (…-rc2, …-rc3)."
+              echo "::error title=Tag already exists::${TAG} is already present. Release tags are immutable — cut the next one instead (…-rc2, or the next hotfix …s1.2)."
               exit 1
             fi
 
             # ── 3. Resolve the commit being tagged ──────────────────────────
-            SHA=$(gh api "repos/${REPO}/commits/${BASE}" --jq '.sha')
+            # base is only used here: docs_only takes its commit from the tag.
+            # The branch ref API, because a hotfix base has a slash in it.
+            if ! SHA=$(gh api "repos/${REPO}/git/ref/heads/${BASE}" --jq '.object.sha' 2>/dev/null); then
+              if [ "${kind}" = "hotfix" ]; then
+                echo "::error title=No release branch::${TAG} is a hotfix, so it is cut from ${BASE}, which does not exist. That branch is created when the sprint's release tag is cut."
+              else
+                echo "::error title=Branch not found::${BASE} does not exist in ${REPO}."
+              fi
+              exit 1
+            fi
             echo "Tagging ${BASE} @ ${SHA}"
 
             # ── 4. The gate ─────────────────────────────────────────────────
@@ -182,7 +207,7 @@ jobs:
                 --jq '.workflow_runs[] | "\(.status)/\(.conclusion // "pending")\t\(.event)\t\(.html_url)"')
 
               if [ -z "${runs}" ]; then
-                echo "::error title=No CI run for this commit::${CI_WORKFLOW} has never run for ${SHA} (tip of ${BASE}). Note that merges into 'feature' do not run CI, so cut releases from develop or main."
+                echo "::error title=No CI run for this commit::${CI_WORKFLOW} has never run for ${SHA} (tip of ${BASE}). Note that merges into 'feature' do not run CI."
                 exit 1
               fi
 
@@ -200,6 +225,8 @@ jobs:
           {
             echo "sha=${SHA}"
             echo "sprint=${sprint}"
+            echo "kind=${kind}"
+            echo "base=${BASE}"
           } >> "$GITHUB_OUTPUT"
 
       # ── 5. Preview the notes ──────────────────────────────────────────────
@@ -214,6 +241,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
           SHA: ${{ steps.validate.outputs.sha }}
+          BASE: ${{ steps.validate.outputs.base }}
         run: node automation/.github/scripts/release-notes/run.mjs
 
       - name: Dry run
@@ -274,6 +302,27 @@ jobs:
           set -euo pipefail
           gh workflow run "${BUILD_WORKFLOW}" --repo "${REPO}" --ref "${TAG}"
           echo "::notice title=Release cut::${TAG} created at ${SHA}; ${BUILD_WORKFLOW} dispatched against the tag."
+
+      # ── 7b. Release tags open the sprint's release branch ─────────────────
+      # release/<sprint> at the tagged commit: the base for that sprint's hotfix
+      # tags. A branch already there (a re-cut, or made by hand) is left alone.
+      # Runs whenever the release was created, even if the build dispatch failed.
+      - name: Create release branch
+        if: ${{ !cancelled() && steps.create.outcome == 'success' && steps.validate.outputs.kind == 'release' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ steps.validate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          branch="release/${TAG}"
+          if gh api "repos/${REPO}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+            echo "::notice title=Release branch exists::${branch} already exists; left as it is."
+          else
+            gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="${SHA}" >/dev/null
+            echo "::notice title=Release branch created::${branch} at ${SHA}. Hotfix tags for this sprint are cut from it."
+          fi
 
       # ── 8. Publish the docs fragment (sprint tags only) ───────────────────
       # Runs whenever the release exists (created above, or already there for
