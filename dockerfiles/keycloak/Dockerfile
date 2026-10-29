@@ -60,7 +60,21 @@
 # a bump here is a deliberate change to validate against the realm, not a
 # floating tag. Keep in step with the app repos' local-dev compose so local and
 # deployed behaviour match.
-ARG KEYCLOAK_VERSION=26.7.3
+#
+# 26.7.3 -> 26.7.5: patch-only, same minor. Confirmed via the upstream pom.xml
+# diff this carries the fix for CVE-2026-84939 (FreeMarker path traversal,
+# 2.3.32 -> 2.3.35, code-scanning #1049 CRITICAL) plus six more CVEs Keycloak's
+# own release notes list as resolved. mssql-jdbc is unchanged (13.2.1.jre11 in
+# both) and irrelevant here anyway since this image runs KC_DB=postgres, so
+# #132 is not touched by this bump.
+#
+# NOT build- or scan-verified, and dhi.io's own catalog wasn't checked either:
+# pulling from it needs credentials this change was made without, so whether
+# dhi.io has already mirrored 26.7.5 is unconfirmed (upstream quay.io has it).
+# Dispatch build-keycloak-image.yml (push=false still loads and scans the
+# image, see that workflow's notes) for a fresh Trivy read and to find out; if
+# the pull itself 404s, dhi.io hasn't synced this tag yet.
+ARG KEYCLOAK_VERSION=26.7.5
 # Docker Hardened Image (bluedots-automation#136). This was
 # quay.io/keycloak/keycloak — upstream, unhardened — which made it the last image
 # that was OURS and still on an upstream base.
