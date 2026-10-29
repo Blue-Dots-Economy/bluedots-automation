@@ -160,6 +160,9 @@ spec:
                 GRANT USAGE ON SCHEMA public TO {{ .Values.postgresBootstrap.campaignManagerSignalsRole.name }};
                 DO $grant$
                 BEGIN
+                  IF to_regclass('public."user"') IS NULL OR to_regclass('public.organization') IS NULL THEN
+                    RAISE NOTICE 'Signals tables not created yet; re-run common-services after Signals to apply these grants';
+                  END IF;
                   IF to_regclass('public."user"') IS NOT NULL THEN
                     EXECUTE 'GRANT SELECT (id, created_at, updated_at, domains, onboarded_by_org_id, '
                       || 'onboarded_via, onboarded_source_id, onboarded_at, onboarded_by_default, tags) ON "user" TO {{ .Values.postgresBootstrap.campaignManagerSignalsRole.name }}';
@@ -174,9 +177,8 @@ spec:
                       || 'target_item_network, target_item_domain, target_item_type, target_item_id, target_item_owner, '
                       || 'performed_by_org_id, created_at, updated_at) ON item_actions TO {{ .Values.postgresBootstrap.campaignManagerSignalsRole.name }}';
                   END IF;
-                  -- No PII here (just org id + type), so whole-table SELECT is fine.
                   IF to_regclass('public.organization') IS NOT NULL THEN
-                    EXECUTE 'GRANT SELECT ON organization TO {{ .Values.postgresBootstrap.campaignManagerSignalsRole.name }}';
+                    EXECUTE 'GRANT SELECT (id, type) ON organization TO {{ .Values.postgresBootstrap.campaignManagerSignalsRole.name }}';
                   END IF;
                 END $grant$;
               EOSQL
@@ -190,13 +192,13 @@ spec:
                 -- Only the columns platform-sync reads; skipped until the tables exist.
                 DO $grant$
                 BEGIN
-                  IF to_regclass('public.aggregator_orgs') IS NOT NULL
-                     AND to_regclass('public.aggregators') IS NOT NULL THEN
-                    GRANT SELECT (id, display_name, status, rejected_at)
-                      ON aggregator_orgs TO {{ $r.name }};
-                    GRANT SELECT (parent_org_id, signalstack_org_id, name, type,
-                                  status, created_at, actor_type)
-                      ON aggregators TO {{ $r.name }};
+                  IF to_regclass('public.organisations') IS NOT NULL
+                     AND to_regclass('public.users') IS NOT NULL THEN
+                    GRANT SELECT (id, name, org_type, status, rejected_at)
+                      ON organisations TO {{ $r.name }};
+                    GRANT SELECT (org_id, user_type, signalstack_org_id, signalstack_org_name,
+                                  serves, status, created_at)
+                      ON users TO {{ $r.name }};
                   ELSE
                     RAISE NOTICE 'aggregator tables not created yet; grants applied on a later upgrade';
                   END IF;
