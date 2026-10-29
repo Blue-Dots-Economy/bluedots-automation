@@ -1,7 +1,7 @@
 # Shared by all subcharts; per-subchart settings live in charts/*/values.yaml.
 
 global:
-  enabled: true
+  enabled: false
 
   publicHost: campaign-manager.example.com   # UPDATE
   publicProtocol: https

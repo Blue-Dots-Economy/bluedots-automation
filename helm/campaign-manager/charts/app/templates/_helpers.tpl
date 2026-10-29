@@ -16,7 +16,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "app.image" -}}
-{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}
+{{ .Values.image.repository }}:{{ required "app.image.tag is required" .Values.image.tag }}
 {{- end -}}
 
 {{- define "app.secretName" -}}

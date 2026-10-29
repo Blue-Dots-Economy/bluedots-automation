@@ -3,6 +3,7 @@
 # each subchart's own values.yaml (charts/{app,raya-sync,platform-sync}/).
 
 global:
+  enabled: true
   publicHost: campaign-manager.example.com
   database:
     host: postgres.databases.svc.cluster.local
@@ -36,7 +37,7 @@ raya-sync:
 platform-sync:
   enabled: true
   image:
-    repository: ghcr.io/your-org/campaign-manager-platform-sync
+    repository: ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync
     tag: v1.0.0
   schedule: "0 */4 * * *"
   config:

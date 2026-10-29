@@ -4,7 +4,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/blue-dots-economy/agg-campaign-manager-v2   # UPDATE
-  tag: ""                       # empty = Chart.appVersion
+  tag: ""                       # UPDATE: required
   pullPolicy: IfNotPresent
 
 # private: true to pull with the ghcr-pull Secret install.sh creates in the namespace.

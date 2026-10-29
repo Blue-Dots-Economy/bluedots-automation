@@ -9,7 +9,7 @@ image:
 
 # private: true to pull with the ghcr-pull Secret install.sh creates in the namespace.
 imagePullSecret:
-  private: false
+  private: true
   name: ghcr-pull
 
 schedule: "0 */4 * * *"        # UPDATE: cron expression, evaluated in timeZone

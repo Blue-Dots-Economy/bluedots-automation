@@ -98,7 +98,7 @@ platform-sync:
     tag: ""   # UPDATE
     pullPolicy: IfNotPresent
   imagePullSecret:
-    private: false
+    private: true   # private repo: run install.sh create_campaign_manager_image_pull_secret first
     name: ghcr-pull
 
 keycloak:

@@ -8,7 +8,7 @@ metadata:
     {{- include "app.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
@@ -24,7 +24,7 @@ spec:
       {{- include "app.imagePullSecrets" . | nindent 6 }}
       containers:
         - name: migrate
-          image: "{{ default .Values.image.repository .Values.migrate.image.repository }}:{{ default (default .Chart.AppVersion .Values.image.tag) .Values.migrate.image.tag }}"
+          image: "{{ default .Values.image.repository .Values.migrate.image.repository }}:{{ default (required "app.image.tag is required" .Values.image.tag) .Values.migrate.image.tag }}"
           imagePullPolicy: {{ .Values.migrate.image.pullPolicy }}
           command:
             {{- toYaml .Values.migrate.command | nindent 12 }}

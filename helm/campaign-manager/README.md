@@ -10,7 +10,7 @@ Three independently deployable pieces, each its own subchart under `charts/`:
 | `raya-sync` | CronJob loading Raya voice-bot call data into the app's database. Opt-in (`raya-sync.enabled: true`). |
 | `platform-sync` | CronJob syncing Signals + Aggregator non-PII data directly into the app's database — no S3 involved. Opt-in (`platform-sync.enabled: true`). |
 
-`app`, `raya-sync` and `platform-sync` all connect to the **same** Postgres database with the **same** login (`global.database`) — there is one database, shared by all three. Jobs run in this order across the whole release (Helm orders hooks by weight across the umbrella *and* every subchart together): `app`'s database Job (weight 0) → `app`'s migrate Job (weight 1) → `platform-sync`'s schema Job (weight 2, creates the `platform.*` tables it writes into). `raya-sync` needs no schema Job of its own — its tables are created by `app`'s migrate Job.
+`app`, `raya-sync` and `platform-sync` all connect to the **same** Postgres database with the **same** login (`global.database`) — there is one database, shared by all three. Jobs run before the release's pods start (pre-install/pre-upgrade hooks), in this order across the whole release (Helm orders hooks by weight across the umbrella *and* every subchart together): `app`'s database Job (weight 0) → `app`'s migrate Job (weight 1) → `platform-sync`'s schema Job (weight 2, creates the `platform.*` tables it writes into). `raya-sync` needs no schema Job of its own — its tables are created by `app`'s migrate Job.
 
 ## Before you configure
 
@@ -18,6 +18,8 @@ Three independently deployable pieces, each its own subchart under `charts/`:
 - An ingress controller in the cluster, and a DNS record for your domain pointing at its load balancer (for `app`'s ingress).
 - cert-manager with a ClusterIssuer, to issue the HTTPS certificate automatically.
 - A namespace of your choice. Install the release into it, and create it with `--create-namespace` if it does not exist.
+- The chart deploys nothing until `global.enabled: true` (`_campaign_manager_enabled` in `global-values.yaml`). It is off by default; turn it on only where Campaign Manager is needed.
+- If `platform-sync` is enabled: re-run `deploy_common_services` after Signals and the aggregator are deployed, so the read-only grants land on their tables, and create the pull secret by hand first (the adhoc-scripts image is private): `GHCR_PAT=ghp_xxx bash install.sh create_campaign_manager_image_pull_secret`.
 - If `raya-sync` or `platform-sync` are enabled, the images they need (`ghcr.io/blue-dots-economy/campaign-manager-pipeline`, not published yet, and `ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync` respectively) and the database roles `platform-sync` reads from (`campaign_manager_signals_ro` on Signals, `aggregator_export_ro` on the aggregator database — both provisioned by `helm/common-services`' `postgresBootstrap`).
 
 ## How to configure
@@ -45,14 +47,14 @@ Use `--set key=value` instead for a one-off override. Subchart keys are set the 
 
 | Key | What it is | Example |
 |---|---|---|
-| `app.image.repository`, `app.image.tag` | Container image of the app. | `ghcr.io/your-org/campaign-manager`, `sha-1a2b3c4` |
+| `app.image.repository`, `app.image.tag` | Container image of the app. The tag is required. | `ghcr.io/your-org/campaign-manager`, `sha-1a2b3c4` |
 | `app.imagePullSecret.private` | `true` if `app.image` is private. Pods then use the `ghcr-pull` Secret, which `install.sh create_campaign_manager_image_pull_secret` creates. Same key on raya-sync/platform-sync. | `false` |
 | `app.ingress.enabled`, `.host` | Expose the app on your domain. HTTPS via the `letsencrypt-prod` ClusterIssuer is on by default. | `false`, `""` |
 | `app.database.admin.user`, `.password` | Admin account, used only by the database Job to create the login and the database. | `postgres`, `postgres-admin-password` |
 | `app.secrets.SESSION_SECRET` | Key that signs login sessions. Must be at least 32 characters. | generate with `openssl rand -hex 32` |
 | `app.secrets.CRON_SECRET` / `.CRON_SECRET_PREVIOUS` | Secret that authenticates the sync hook called by your scheduler; previous value while rotating. | `a-long-random-string` |
 | `app.secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
-| `app.migrate.enabled` | Run the app's schema migrations after every install/upgrade. Already-applied migrations are skipped. | `true` |
+| `app.migrate.enabled` | Run the app's schema migrations before every install/upgrade. Already-applied migrations are skipped. | `true` |
 
 To keep credentials out of Helm values, create the Secret yourself and set `app.secrets.existingSecret` to its name. It must carry: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, plus `DB_ADMIN_PASSWORD`/`DB_PASSWORD` if `app.dbInit.enabled`.
 
