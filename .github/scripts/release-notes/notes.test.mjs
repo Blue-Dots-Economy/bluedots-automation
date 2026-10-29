@@ -7,6 +7,7 @@ import {
   extractSection,
   isNone,
   previousSprintTag,
+  previousTagByAncestry,
   selectSourcePrs,
   assembleNotes,
   renderFragment,
@@ -91,6 +92,18 @@ test('previousSprintTag for a hotfix: greatest earlier release or hotfix in the 
   assert.equal(previousSprintTag(['202609-s3', '202610-s2-rc1'], '202610-s2.1'), null);
 });
 
+test('previousTagByAncestry: greatest earlier unsuffixed sprint tag of any kind that is an ancestor', () => {
+  const names = ['202610-s1-rc1', '202610-s1-rc2', '202610-s1-rc3', '202610-s1-rc3-alimco', '202610-s2-rc1', 'v1.0.0', '202610-s0.1'];
+  const ancestors = new Set(['202610-s1-rc1', '202610-s1-rc2', '202610-s1-rc3-alimco', '202610-s0.1']);
+  const seen = [];
+  const isAncestor = (t) => { seen.push(t); return ancestors.has(t); };
+  assert.equal(previousTagByAncestry(names, '202610-s1', isAncestor), '202610-s1-rc2');
+  // checked greatest first, stops at the first hit, never asks about suffixed or later tags
+  assert.deepEqual(seen, ['202610-s1-rc3', '202610-s1-rc2']);
+  assert.equal(previousTagByAncestry(names, '202610-s1', () => false), null);
+  assert.equal(previousTagByAncestry([], '202610-s1', () => true), null);
+});
+
 const pr = (number, over = {}) => ({
   number, title: `PR ${number}`, body: '', html_url: `https://github.com/o/r/pull/${number}`,
   merged_at: `2026-10-0${number}T00:00:00Z`, merge_commit_sha: `sha${number}`, base: { ref: 'main' }, ...over,
@@ -108,6 +121,13 @@ test('selectSourcePrs filters by base, merge and range, sorted by merged_at', ()
   assert.deepEqual(selectSourcePrs(prs, range, 'develop').map((p) => p.number), [2]);
   assert.deepEqual(selectSourcePrs([pr(6, { base: { ref: 'release/202610-s1' } })], new Set(['sha6']), 'release/202610-s1')
     .map((p) => p.number), [6]);
+});
+test('selectSourcePrs leaves out the automated release/* sync PRs', () => {
+  const prs = [
+    pr(1, { base: { ref: 'develop' }, head: { ref: 'fix/x' } }),
+    pr(2, { base: { ref: 'develop' }, head: { ref: 'release/202610-s1' }, title: 'sync: release/202610-s1 → develop' }),
+  ];
+  assert.deepEqual(selectSourcePrs(prs, new Set(['sha1', 'sha2']), 'develop').map((p) => p.number), [1]);
 });
 test('selectSourcePrs requires a base', () => {
   assert.throws(() => selectSourcePrs([pr(1)], new Set(['sha1'])));

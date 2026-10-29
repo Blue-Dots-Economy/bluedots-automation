@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process';
 import {
   parseSprintTag,
   previousSprintTag,
+  previousTagByAncestry,
   previousVersionTag,
   selectSourcePrs,
   resolveBase,
@@ -115,7 +116,14 @@ function assemble() {
   const tagNames = lines(
     gh(['api', '--paginate', `repos/${repository}/git/matching-refs/tags/${sprint ? '20' : ''}`, '--jq', '.[].ref']),
   ).map((r) => r.replace(/^refs\/tags\//, ''));
-  const previousTag = sprint ? previousSprintTag(tagNames, tag) : previousVersionTag(tagNames, tag);
+  let previousTag = sprint ? previousSprintTag(tagNames, tag) : previousVersionTag(tagNames, tag);
+  if (!previousTag && parseSprintTag(tag)?.kind === 'release') {
+    // The first release tag: start from the latest earlier sprint tag (any kind) whose
+    // commit is in this release's history, usually the signed-off candidate.
+    previousTag = previousTagByAncestry(tagNames, tag, (t) =>
+      ['behind', 'identical'].includes(
+        gh(['api', `repos/${repository}/compare/${sha}...${t}`, '--jq', '.status'])));
+  }
   console.log(`Base: ${base}`);
   console.log(`Previous tag: ${previousTag ?? '(none)'}`);
 

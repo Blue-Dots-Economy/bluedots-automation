@@ -29,7 +29,7 @@ export function syncDecision({ targetExists, aheadBy, openPrUrl }) {
   return openPrUrl ? 'keep' : 'open';
 }
 
-export const prTitle = (branch, target) => `sync: ${branch} → ${target}`;
+export const prTitle = (branch, target) => `sync: ${branch} → ${target} (merge commit, do not squash)`;
 
 export function prBody(branch, target) {
   return [

@@ -42,7 +42,7 @@ test('syncDecision rejects a non-numeric ahead_by', () => {
 });
 
 test('prTitle', () => {
-  assert.equal(prTitle('release/202611-s1', 'develop'), 'sync: release/202611-s1 → develop');
+  assert.equal(prTitle('release/202611-s1', 'develop'), 'sync: release/202611-s1 → develop (merge commit, do not squash)');
 });
 test('prBody names the branches and asks for a merge commit', () => {
   const body = prBody('release/202611-s1', 'feature');

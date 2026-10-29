@@ -108,11 +108,29 @@ export function previousSprintTag(tagNames, current) {
   return below.length ? below[below.length - 1] : null;
 }
 
-/** PRs merged into `base` whose merge commit is in the release range, oldest merge first. */
+/**
+ * Fallback for a tag with no previous tag of its own kind (the first release tag): the
+ * greatest earlier unsuffixed sprint tag, of any kind, for which `isAncestor(tag)` says
+ * its commit is in the current tag's history. Checked greatest first; null if none.
+ */
+export function previousTagByAncestry(tagNames, current, isAncestor) {
+  const below = tagNames
+    .filter((t) => parseSprintTag(t) && compareTags(t, current) < 0)
+    .sort(compareTags)
+    .reverse();
+  return below.find((t) => isAncestor(t)) ?? null;
+}
+
+/**
+ * PRs merged into `base` whose merge commit is in the release range, oldest merge first.
+ * The automated `sync: release/<sprint> → …` PRs (head release/*) are left out: their
+ * hotfixes are already in the hotfix entries' notes.
+ */
 export function selectSourcePrs(prs, rangeShas, base) {
   if (!base) throw new Error('selectSourcePrs needs a base branch');
   return prs
-    .filter((p) => p.merged_at && p.base?.ref === base && rangeShas.has(p.merge_commit_sha))
+    .filter((p) => p.merged_at && p.base?.ref === base && !p.head?.ref?.startsWith('release/')
+      && rangeShas.has(p.merge_commit_sha))
     .sort((a, b) => (a.merged_at < b.merged_at ? -1 : a.merged_at > b.merged_at ? 1 : 0));
 }
 

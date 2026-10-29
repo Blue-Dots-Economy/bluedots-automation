@@ -155,23 +155,39 @@ jobs:
             *) sprint=false ;;
           esac
           echo "${TAG} is a ${kind} tag, cut from ${BASE}"
+          publish="${sprint}"
+
+          # The commit a tag points at; fails if the tag does not exist. An
+          # annotated tag points at a tag object, which is followed to the commit.
+          tag_commit() {
+            local ref type obj
+            ref=$(gh api "repos/${REPO}/git/ref/tags/$1" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null) || return 1
+            read -r type obj <<<"${ref}"
+            if [ "${type}" = "tag" ]; then
+              gh api "repos/${REPO}/git/tags/${obj}" --jq '.object.sha'
+            else
+              echo "${obj}"
+            fi
+          }
 
           if [ "${DOCS_ONLY:-false}" = "true" ]; then
             # ── 2a. docs_only: the tag must already exist ───────────────────
-            if ! ref=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '"\(.object.type) \(.object.sha)"' 2>/dev/null); then
+            if ! SHA=$(tag_commit "${TAG}"); then
               echo "::error title=Tag not found::docs_only needs an existing tag, and ${TAG} does not exist."
               exit 1
-            fi
-            read -r type obj <<<"${ref}"
-            # An annotated tag points at a tag object; follow it to the commit.
-            if [ "${type}" = "tag" ]; then
-              SHA=$(gh api "repos/${REPO}/git/tags/${obj}" --jq '.object.sha')
-            else
-              SHA="${obj}"
             fi
             echo "Re-publishing docs for ${TAG} @ ${SHA}"
             if [ "${sprint}" != "true" ]; then
               echo "::notice title=Nothing to publish::${TAG} is not a sprint tag, so it has no docs fragment. Only the notes preview will be produced."
+            else
+              # The fragment's base comes from the tag name. Publish only if the
+              # tagged commit really is on that branch (behind or identical to
+              # it), so a tag cut by hand elsewhere never gets a wrong fragment.
+              status=$(gh api "repos/${REPO}/compare/${BASE}...${SHA}" --jq '.status' 2>/dev/null || echo missing)
+              if [ "${status}" != "behind" ] && [ "${status}" != "identical" ]; then
+                echo "::warning title=Tag not on its branch::${TAG} (${SHA}) is not on ${BASE} (compare status: ${status}), so its docs fragment is not published."
+                publish=false
+              fi
             fi
           else
             # ── 2b. Refuse to move an existing tag ──────────────────────────
@@ -185,7 +201,12 @@ jobs:
             # The branch ref API, because a hotfix base has a slash in it.
             if ! SHA=$(gh api "repos/${REPO}/git/ref/heads/${BASE}" --jq '.object.sha' 2>/dev/null); then
               if [ "${kind}" = "hotfix" ]; then
-                echo "::error title=No release branch::${TAG} is a hotfix, so it is cut from ${BASE}, which does not exist. That branch is created when the sprint's release tag is cut."
+                rel="${BASE#release/}"
+                if rel_sha=$(tag_commit "${rel}"); then
+                  echo "::error title=No release branch::${TAG} is a hotfix, so it is cut from ${BASE}, which does not exist. Create it at the ${rel} release commit: gh api repos/${REPO}/git/refs -f ref=refs/heads/${BASE} -f sha=${rel_sha}"
+                else
+                  echo "::error title=No release branch::${TAG} is a hotfix, so it is cut from ${BASE}, which does not exist. Cut the release tag ${rel} first; that creates the branch."
+                fi
               else
                 echo "::error title=Branch not found::${BASE} does not exist in ${REPO}."
               fi
@@ -225,6 +246,7 @@ jobs:
           {
             echo "sha=${SHA}"
             echo "sprint=${sprint}"
+            echo "publish=${publish}"
             echo "kind=${kind}"
             echo "base=${BASE}"
           } >> "$GITHUB_OUTPUT"
@@ -320,11 +342,18 @@ jobs:
           if gh api "repos/${REPO}/git/ref/heads/${branch}" >/dev/null 2>&1; then
             echo "::notice title=Release branch exists::${branch} already exists; left as it is."
           else
-            gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="${SHA}" >/dev/null
+            if ! gh api "repos/${REPO}/git/refs" -f ref="refs/heads/${branch}" -f sha="${SHA}" >/dev/null; then
+              # The tag and release already exist, so a re-run stops at "Tag already
+              # exists": the branch has to be created by hand.
+              echo "::error title=Release branch not created::${TAG} was released, but ${branch} could not be created. Hotfixes need it; create it with: gh api repos/${REPO}/git/refs -f ref=refs/heads/${branch} -f sha=${SHA}"
+              exit 1
+            fi
             echo "::notice title=Release branch created::${branch} at ${SHA}. Hotfix tags for this sprint are cut from it."
           fi
 
       # ── 8. Publish the docs fragment (sprint tags only) ───────────────────
+      # `publish` is the sprint flag, turned off for a docs_only tag whose commit
+      # is not on the branch its kind implies.
       # Runs whenever the release exists (created above, or already there for
       # docs_only), even if dispatching the build failed: the docs fragment
       # depends on the release, not on the image build. A failed build dispatch
@@ -334,7 +363,7 @@ jobs:
       # docs_only=true (see the warnings).
       - name: Publish release notes to docs
         id: publish
-        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') }}
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.publish == 'true' && (inputs.docs_only || steps.create.outcome == 'success') }}
         continue-on-error: true
         env:
           MODE: publish
@@ -351,13 +380,13 @@ jobs:
           node automation/.github/scripts/release-notes/run.mjs
 
       - name: Warn on docs publish skipped
-        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && steps.publish.outputs.skipped == 'true' }}
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.publish == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && steps.publish.outputs.skipped == 'true' }}
         env:
           TAG: ${{ inputs.tag }}
         run: echo "::warning title=Docs publish skipped::No DOCS_SYNC_TOKEN secret in this repo. Add it, then re-run Create release with docs_only=true for ${TAG}."
 
       - name: Warn on docs publish failure
-        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.sprint == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && steps.publish.outcome == 'failure' }}
+        if: ${{ !cancelled() && !inputs.dry_run && steps.validate.outputs.publish == 'true' && (inputs.docs_only || steps.create.outcome == 'success') && steps.publish.outcome == 'failure' }}
         env:
           TAG: ${{ inputs.tag }}
         run: echo "::warning title=Docs publish failed::Re-run Create release with docs_only=true for ${TAG}."
