@@ -1,9 +1,16 @@
 campaign-manager {{ .Chart.AppVersion }} deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
-{{- if .Values.ingress.enabled }}
 
-URL: {{ .Values.global.publicProtocol }}://{{ default .Values.global.publicHost .Values.ingress.host }}
+App:
+{{- if (index .Values "app" "ingress" "enabled") }}
+  URL: {{ .Values.global.publicProtocol }}://{{ default .Values.global.publicHost (index .Values "app" "ingress" "host") }}
 {{- else }}
-
-Ingress is disabled. To reach the app locally:
-  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "campaign-manager.fullname" . }} 8080:{{ .Values.service.port }}
+  Ingress is disabled. To reach it locally:
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-app 8080:{{ index .Values "app" "service" "port" }}
 {{- end }}
+
+Raya call sync: {{ if index .Values "raya-sync" "enabled" }}enabled{{ else }}disabled (set raya-sync.enabled: true){{ end }}
+Signals/Aggregator platform sync: {{ if index .Values "platform-sync" "enabled" }}enabled{{ else }}disabled (set platform-sync.enabled: true){{ end }}
+
+To run a CronJob once without waiting for its schedule:
+  kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ .Release.Name }}-raya-sync raya-sync-manual
+  kubectl -n {{ .Release.Namespace }} create job --from=cronjob/{{ .Release.Name }}-platform-sync platform-sync-manual

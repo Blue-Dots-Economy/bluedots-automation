@@ -1,0 +1,50 @@
+{{- if and .Values.global.enabled .Values.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "platformSync.fullname" . }}
+  labels:
+    {{- include "platformSync.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  timeZone: {{ .Values.timeZone | quote }}
+  suspend: {{ .Values.suspend }}
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ .Values.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "platformSync.selectorLabels" . | nindent 12 }}
+          annotations:
+            checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+            checksum/secrets: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        spec:
+          restartPolicy: Never
+          {{- include "platformSync.imagePullSecrets" . | nindent 10 }}
+          containers:
+            - name: platform-sync
+              image: {{ include "platformSync.image" . | quote }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["python3", "run.py"]
+              {{- with .Values.args }}
+              args:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              env:
+                {{- include "platformSync.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 16 }}
+                {{- include "platformSync.secretEnv" (dict "ctx" . "name" "SIGNALS_DATABASE_URL") | nindent 16 }}
+                {{- include "platformSync.secretEnv" (dict "ctx" . "name" "AGG_DATABASE_URL") | nindent 16 }}
+              envFrom:
+                - configMapRef:
+                    name: {{ include "platformSync.fullname" . }}-config
+              securityContext:
+                allowPrivilegeEscalation: false
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+{{- end }}

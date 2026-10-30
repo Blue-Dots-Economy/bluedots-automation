@@ -33,10 +33,9 @@ variable "storage_bucket_private" {
   type        = string
 }
 
-# Every subject listed here can assume app_sa — the aggregator api/worker and
-# the signals s3-export CronJob (which shares this role and the public bucket
-# instead of a dedicated exporter role). A subject missing from this list fails
-# at STS assume time inside the pod, not at deploy time.
+# Every subject listed here can assume app_sa — the aggregator api/worker. A
+# subject missing from this list fails at STS assume time inside the pod, not
+# at deploy time.
 variable "service_account_subjects" {
   description = "List of Kubernetes service account subjects allowed to assume the application IAM role (format: system:serviceaccount:<namespace>:<sa-name>)"
   type        = list(string)

@@ -2,8 +2,11 @@ locals {
   global_vars                                   = yamldecode(file(find_in_parent_folders("global-values.yaml")))
   postgres_admin_password_bytes                 = try(local.global_vars.global.postgres_admin_password_bytes, 16)
   signals_postgres_password_bytes               = try(local.global_vars.global.signals_postgres_password_bytes, 16)
-  signals_export_ro_password_bytes              = try(local.global_vars.global.signals_export_ro_password_bytes, 16)
   aggregator_export_ro_password_bytes           = try(local.global_vars.global.aggregator_export_ro_password_bytes, 16)
+  campaign_manager_signals_ro_password_bytes    = try(local.global_vars.global.campaign_manager_signals_ro_password_bytes, 16)
+  campaign_manager_app_password_bytes           = try(local.global_vars.global.campaign_manager_app_password_bytes, 16)
+  campaign_manager_session_secret_bytes         = try(local.global_vars.global.campaign_manager_session_secret_bytes, 32)
+  campaign_manager_cron_secret_bytes            = try(local.global_vars.global.campaign_manager_cron_secret_bytes, 32)
   signals_redis_password_bytes                  = try(local.global_vars.global.signals_redis_password_bytes, 16)
   signals_auth_secret_bytes                     = try(local.global_vars.global.signals_auth_secret_bytes, 32)
   signals_notification_secret_bytes             = try(local.global_vars.global.signals_notification_secret_bytes, 32)
@@ -29,8 +32,11 @@ terraform {
 inputs = {
   postgres_admin_password_bytes                 = local.postgres_admin_password_bytes
   signals_postgres_password_bytes               = local.signals_postgres_password_bytes
-  signals_export_ro_password_bytes              = local.signals_export_ro_password_bytes
   aggregator_export_ro_password_bytes           = local.aggregator_export_ro_password_bytes
+  campaign_manager_signals_ro_password_bytes    = local.campaign_manager_signals_ro_password_bytes
+  campaign_manager_app_password_bytes           = local.campaign_manager_app_password_bytes
+  campaign_manager_session_secret_bytes         = local.campaign_manager_session_secret_bytes
+  campaign_manager_cron_secret_bytes            = local.campaign_manager_cron_secret_bytes
   signals_redis_password_bytes                  = local.signals_redis_password_bytes
   signals_auth_secret_bytes                     = local.signals_auth_secret_bytes
   signals_notification_secret_bytes             = local.signals_notification_secret_bytes

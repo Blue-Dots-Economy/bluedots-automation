@@ -1,14 +1,14 @@
-{{- /* Post-install/upgrade hook, idempotent. Mirrors db/bootstrap.sql in agg-campaign-manager-v2. */ -}}
-{{- if .Values.dbInit.enabled }}
+{{- /* Pre-install/upgrade hook, idempotent. Mirrors db/bootstrap.sql in agg-campaign-manager-v2. */ -}}
+{{- if and .Values.global.enabled .Values.dbInit.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "campaign-manager.fullname" . }}-dbinit
+  name: {{ include "app.fullname" . }}-dbinit
   labels:
-    {{- include "campaign-manager.labels" . | nindent 4 }}
+    {{- include "app.labels" . | nindent 4 }}
     app.kubernetes.io/component: dbinit
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "0"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
@@ -27,24 +27,24 @@ spec:
           imagePullPolicy: {{ .Values.dbInit.image.pullPolicy }}
           env:
             - name: PGHOST
-              value: {{ required "database.host is required" .Values.database.host | quote }}
+              value: {{ required "global.database.host is required" .Values.global.database.host | quote }}
             - name: PGPORT
-              value: {{ .Values.database.port | quote }}
+              value: {{ .Values.global.database.port | quote }}
             - name: PGUSER
               value: {{ .Values.database.admin.user | quote }}
             - name: PD_DB
-              value: {{ required "database.name is required" .Values.database.name | quote }}
+              value: {{ required "global.database.name is required" .Values.global.database.name | quote }}
             - name: PD_ROLE
-              value: {{ required "database.user is required" .Values.database.user | quote }}
+              value: {{ required "global.database.user is required" .Values.global.database.user | quote }}
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "campaign-manager.secretName" . }}
+                  name: {{ include "app.secretName" . }}
                   key: DB_ADMIN_PASSWORD
             - name: ROLE_PW
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "campaign-manager.secretName" . }}
+                  name: {{ include "app.secretName" . }}
                   key: DB_PASSWORD
           command:
             - sh

@@ -179,7 +179,7 @@ global:
   # renamed there and not here fails every exchange with AzpNotAllowedError.
   keycloakAllowedAzp: 'aggregator-portal,aggregator-api,aggregator-bff'
   # campaignManagerAllowedAzp: REPLACES the list above on the /v1/campaign/*
-  # routes only (export, email, voice, dump), scoping them to the external
+  # routes only (export, email, voice), scoping them to the external
   # campaign-manager client. The app falls back to this same literal when the
   # var is blank or parses to an empty list, so it can never un-gate the most
   # sensitive routes — set explicitly anyway, so the deployed value is visible
@@ -191,40 +191,6 @@ global:
     region: ap-south-1
     bucket: aggregator-bulk-uploads
     forcePathStyle: false
-
-  # ── Signals non-PII dump download API (api-only) ──────────────────────────
-  # `GET /v1/campaign/dump` hands the campaign manager pre-signed URLs for the
-  # Signals non-PII snapshot, so it needs no S3 credentials of its own. The
-  # objects are written by the SIGNALS `s3-export` CronJob — a different helm
-  # release — at three fixed keys, overwritten in place every run:
-  #
-  #     [<prefix>/]<network>/<instance_id>/{user,items,item_actions}.ndjson.gz
-  #
-  # There is no manifest and no dated run folder, so the key root is CONFIGURED
-  # and never probed: a wrong value returns 404 DUMP_NOT_AVAILABLE rather than
-  # serving a different dataset. `<network>` is read from the resolved
-  # aggregator.config.yaml, not from env, so it cannot drift; the other two
-  # segments are the two knobs below.
-  #
-  # THE BUCKET MUST ALSO MATCH. The api reads global.s3.bucket above; the
-  # exporter writes to s3-export.s3.bucket in the signals release. Both are
-  # pinned to the same generated `public` bucket by global-cloud-values.yaml
-  # (see opentofu/CLAUDE.md — "One bucket, one role").
-  #
-  # instanceId: the Signals instance THIS deployment serves — one aggregator
-  # deployment serves exactly one, hence no request parameter. It must equal
-  # `s3-export.instances[].id` in the signals values. NO DEFAULT ON PURPOSE:
-  # empty is inert (every dump call returns 503 DUMP_NOT_CONFIGURED with
-  # reason CAMPAIGN_DUMP_INSTANCE_ID_UNSET) rather than booting the API onto a
-  # guessed dataset, so deployments that do not use the campaign manager are
-  # unaffected. Bind it to the same anchor as the exporter's id in
-  # <env>/global-values.yaml so the two cannot drift apart.
-  campaignDumpInstanceId: ''
-  # prefix: MUST equal `s3-export.s3.prefix` in the signals release. Empty on
-  # both sides means keys start at the <network> segment, which is the
-  # exporter's default — if DevOps sets a prefix on the cron, change it here in
-  # the same window or every dump call 404s.
-  campaignDumpPrefix: ''
 
   # ── Raya voice provider (worker-only) ─────────────────────────────────────
   # Outbound leg of the campaign voice channel: the worker calls Raya's hosted
