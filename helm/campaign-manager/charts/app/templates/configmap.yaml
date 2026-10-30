@@ -5,10 +5,8 @@ metadata:
   name: {{ include "app.fullname" . }}-config
   labels:
     {{- include "app.labels" . | nindent 4 }}
-{{- with .Values.config }}
 data:
-  {{- range $key, $value := . }}
+  {{- range $key, $value := merge (include "app.loginEnv" . | fromYaml) (.Values.config | default dict) }}
   {{ $key }}: {{ $value | quote }}
   {{- end }}
-{{- end }}
 {{- end }}

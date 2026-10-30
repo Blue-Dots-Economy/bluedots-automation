@@ -31,12 +31,24 @@ ingress:
 
 config: {}                      # extra non-secret app env
 
+# Keycloak login, read by the app and by the migrate Job (which creates the first
+# admin). The render fails if one can't be worked out. Empty values are derived
+# from the shared globals install.sh passes (global.keycloak*, ingress host).
+appBaseUrl: ""                  # empty = <global.publicProtocol>://<ingress.host or global.publicHost>
+keycloak:
+  baseUrl: ""                   # public address incl. /auth; empty = derived from global.keycloak
+  internalBaseUrl: ""           # optional in-cluster address; empty = global.keycloak.internalBaseUrl
+  realm: ""                     # empty = global.keycloakRealm
+  clientId: campaign-manager
+bootstrapAdminEmail: ""         # first admin, created by the migrate Job when there is no active admin
+
 secrets:
   existingSecret: ""            # or your own Secret with the same keys (see the README)
   SESSION_SECRET: ""            # UPDATE
   CRON_SECRET: ""                # UPDATE
   CRON_SECRET_PREVIOUS: ""       # only while rotating CRON_SECRET
   GOOGLE_SERVICE_ACCOUNT_JSON: ""   # UPDATE
+  KEYCLOAK_CLIENT_SECRET: ""     # UPDATE: required, secret of the Keycloak client above
 
 # Admin creds for the db-init Job only; the app itself uses global.database.
 database:

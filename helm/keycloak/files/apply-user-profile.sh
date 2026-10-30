@@ -6,7 +6,8 @@
 #      Attributes, and relax `required` on email/firstName/lastName so any
 #      other custom attributes and signals' phone-only / one-word-name users
 #      all persist and can log in.
-#   2. org_owner realm role + manage-realm grant (org hierarchy).
+#   2. org_owner realm role + manage-realm grant (org hierarchy), and the
+#      campaign-manager client's browser login + user-management service account.
 #   3. Apply SMTP server config from env vars (KC needs this for email OTP + verify).
 #   4. aggregator-portal client: confidential + secret sync + protocol mappers.
 #   5. Acting-org claim mappers on signals-ui / aggregator-dpg / voice-dpg (§5.1
@@ -223,6 +224,90 @@ else
       echo "[kc-init] manage-realm grant FAILED: HTTP ${HTTP}"
       cat /tmp/mr-resp.json || true
     fi
+  fi
+fi
+
+# ────────────────────────────────────────────────────────────
+# 1c) campaign-manager client: browser login + user-management service account
+#
+# The Campaign Manager app signs people in on this client (PKCE, back to its
+# callback, signing out to <origin>/login) and uses its service account to look
+# up and create users. realm.json carries all of it, but an existing realm keeps
+# the client it was created with: apply-realm-config.py skips existing clients,
+# and grants nothing while the service account is off. So reconcile here,
+# additively — redirect URIs, origins and logout URIs are only ever added, so a
+# callback set by hand on a live realm survives. Placed before the SMTP
+# early-exit below so it always runs.
+# ────────────────────────────────────────────────────────────
+CM_CLIENT_ID="${CM_CLIENT_ID:-campaign-manager}"
+CM_UUID=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients?clientId=${CM_CLIENT_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" | jq -r '.[0].id // empty')
+
+if [ -z "$CM_UUID" ]; then
+  echo "[kc-init] client '${CM_CLIENT_ID}' not found — skip campaign-manager reconcile"
+else
+  cm_uris=$(printf '%s' "${CAMPAIGN_MANAGER_REDIRECT_URIS:-}" \
+    | tr ',' '\n' | sed '/^[[:space:]]*$/d' | jq -R . | jq -s .)
+
+  curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${CM_UUID}" \
+    -H "Authorization: Bearer ${TOKEN}" > /tmp/kc-cm-client.json
+
+  jq --argjson u "$cm_uris" '
+    ((.redirectUris // []) + $u | unique) as $all
+    | ($all | map(capture("^(?<o>[a-zA-Z][a-zA-Z0-9+.-]*://[^/]+)").o) | unique) as $o
+    | (.attributes."post.logout.redirect.uris" // "" | split("##") | map(select(. != ""))) as $logout
+    | .standardFlowEnabled = true
+    | .implicitFlowEnabled = false
+    | .serviceAccountsEnabled = true
+    | .redirectUris = $all
+    | .webOrigins = ((.webOrigins // []) + $o | unique)
+    | .attributes."pkce.code.challenge.method" = "S256"
+    | .attributes."post.logout.redirect.uris" = ($logout + ($o | map(. + "/login")) | unique | join("##"))
+  ' /tmp/kc-cm-client.json > /tmp/kc-cm-client.new.json
+
+  if jq -e -s '.[0] == .[1]' /tmp/kc-cm-client.json /tmp/kc-cm-client.new.json >/dev/null; then
+    echo "[kc-init] ${CM_CLIENT_ID}: browser login + service account already set — skip"
+  else
+    HTTP=$(curl -s -o /tmp/kc-cm-resp.json -w "%{http_code}" -X PUT \
+      "${KC_URL}/admin/realms/${REALM}/clients/${CM_UUID}" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      --data @/tmp/kc-cm-client.new.json)
+    if [ "$HTTP" != "204" ]; then
+      echo "[kc-init] ${CM_CLIENT_ID}: client update FAILED: HTTP ${HTTP}"
+      cat /tmp/kc-cm-resp.json || true
+      exit 1
+    fi
+    echo "[kc-init] ${CM_CLIENT_ID}: browser login + service account reconciled"
+  fi
+
+  # Service-account grants. RM_UUID comes from 1b-ii above.
+  CM_SA_UID=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${CM_UUID}/service-account-user" \
+    -H "Authorization: Bearer ${TOKEN}" | jq -r '.id // empty')
+  if [ -z "$CM_SA_UID" ] || [ -z "$RM_UUID" ]; then
+    echo "[kc-init] ${CM_CLIENT_ID}: service-account user or realm-management not found"
+    exit 1
+  fi
+  HAVE=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/users/${CM_SA_UID}/role-mappings/clients/${RM_UUID}" \
+    -H "Authorization: Bearer ${TOKEN}" | jq -c '[.[].name]')
+  GRANT=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${RM_UUID}/roles" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    | jq -c --argjson have "$HAVE" \
+        '[.[] | select(.name == ("view-users","query-users","manage-users")) | select(.name as $n | $have | index($n) | not)]')
+  if [ "$GRANT" = "[]" ]; then
+    echo "[kc-init] ${CM_CLIENT_ID}: service account already has view/query/manage-users — skip"
+  else
+    HTTP=$(curl -s -o /tmp/kc-cm-grant.json -w "%{http_code}" -X POST \
+      "${KC_URL}/admin/realms/${REALM}/users/${CM_SA_UID}/role-mappings/clients/${RM_UUID}" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      --data "$GRANT")
+    if [ "$HTTP" != "204" ] && [ "$HTTP" != "200" ]; then
+      echo "[kc-init] ${CM_CLIENT_ID}: role grant FAILED: HTTP ${HTTP}"
+      cat /tmp/kc-cm-grant.json || true
+      exit 1
+    fi
+    echo "[kc-init] ${CM_CLIENT_ID}: granted realm-management $(printf '%s' "$GRANT" | jq -c '[.[].name]')"
   fi
 fi
 

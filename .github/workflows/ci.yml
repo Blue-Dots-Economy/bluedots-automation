@@ -109,7 +109,10 @@ jobs:
                   --set platform-sync.image.tag=ci-smoke \
                   --set global.database.host=ci-smoke.invalid \
                   --set global.database.password=ci-smoke \
-                  --set app.database.admin.password=ci-smoke >/dev/null
+                  --set app.database.admin.password=ci-smoke \
+                  --set app.keycloak.baseUrl=https://ci-smoke.invalid/auth \
+                  --set app.keycloak.realm=ci-smoke \
+                  --set app.secrets.KEYCLOAK_CLIENT_SECRET=ci-smoke >/dev/null
                 ;;
               *)
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml >/dev/null

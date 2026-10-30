@@ -121,14 +121,22 @@ data:
       # Coordinators have no password and sign in through the browser with an
       # emailed one-time code, and Keycloak matches redirect_uri EXACTLY, so this
       # must list every callback the campaign manager actually uses.
+      # Each callback's origin also becomes a web origin, and <origin>/login a
+      # post-logout redirect URI: the app signs out to its own /login page, and
+      # without that entry Keycloak rejects the logout with "Invalid redirect uri".
       if [ -n "${CAMPAIGN_MANAGER_REDIRECT_URIS:-}" ]; then
         command -v jq >/dev/null 2>&1 || apk add --no-cache jq >/dev/null
         cm_uris=$(printf '%s' "$CAMPAIGN_MANAGER_REDIRECT_URIS" \
           | tr ',' '\n' | sed '/^[[:space:]]*$/d' | jq -R . | jq -s .)
         jq --argjson u "$cm_uris" '
-          .clients = [
+          ($u | map(capture("^(?<o>[a-zA-Z][a-zA-Z0-9+.-]*://[^/]+)").o) | unique) as $o
+          | .clients = [
             .clients[]
-            | if .clientId == "campaign-manager" then .redirectUris = $u else . end
+            | if .clientId == "campaign-manager" then
+                  .redirectUris = $u
+                | .webOrigins   = $o
+                | .attributes."post.logout.redirect.uris" = ($o | map(. + "/login") | join("##"))
+              else . end
           ]' "$dst" > "$dst.tmp" && mv "$dst.tmp" "$dst"
         echo "campaign-manager redirect URIs set to: $CAMPAIGN_MANAGER_REDIRECT_URIS"
       else
