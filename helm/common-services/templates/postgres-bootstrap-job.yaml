@@ -206,6 +206,14 @@ spec:
                 $grant$;
               EOSQL
               {{- end }}
+              # signals_export_ro belonged to the removed S3 export; drop it where it still exists.
+              {{- range .Values.postgresBootstrap.databases }}
+              psql -v ON_ERROR_STOP=1 -d {{ .name }} <<-'EOSQL'
+                SELECT 'GRANT signals_export_ro TO CURRENT_USER' WHERE EXISTS (SELECT FROM pg_roles WHERE rolname='signals_export_ro')\gexec
+                SELECT 'DROP OWNED BY signals_export_ro' WHERE EXISTS (SELECT FROM pg_roles WHERE rolname='signals_export_ro')\gexec
+              EOSQL
+              {{- end }}
+              psql -v ON_ERROR_STOP=1 -d postgres -c 'DROP ROLE IF EXISTS signals_export_ro'
               echo "[common-services] postgres bootstrap complete"
           resources: {{- toYaml .Values.postgresBootstrap.resources | nindent 12 }}
 {{- end }}
