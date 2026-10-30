@@ -740,7 +740,7 @@
     {
       "clientId": "campaign-manager",
       "name": "Campaign Manager",
-      "description": "Confidential client for the external campaign manager. Browser login (OTP) and direct access grants give a coordinator a token for the org-scoped campaign routes.",
+      "description": "Confidential client for Campaign Manager. Browser login (OTP) signs people in to the Campaign Manager app and gives a coordinator a token for the org-scoped campaign routes. Its service account lets the app look up and create users (view/query/manage-users).",
       "enabled": true,
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
@@ -748,7 +748,7 @@
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": true,
-      "serviceAccountsEnabled": false,
+      "serviceAccountsEnabled": true,
       "defaultClientScopes": [
         "web-origins",
         "acr",
@@ -819,6 +819,9 @@
       "webOrigins": [],
       "authenticationFlowBindingOverrides": {
         "browser": "3c7e91a4-52d8-4f16-b8a3-6e1d904c7b52"
+      },
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
       }
     }
   ],
@@ -833,6 +836,18 @@
           "manage-users",
           "query-users",
           "manage-realm"
+        ]
+      }
+    },
+    {
+      "username": "service-account-campaign-manager",
+      "enabled": true,
+      "serviceAccountClientId": "campaign-manager",
+      "clientRoles": {
+        "realm-management": [
+          "view-users",
+          "manage-users",
+          "query-users"
         ]
       }
     },
