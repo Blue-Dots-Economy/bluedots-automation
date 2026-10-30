@@ -81,6 +81,7 @@ _signals_host_bindings: &signals_host_bindings ""
 _signals_ui_urls: &signals_ui_urls ''
 
 # Campaign Manager redirect URIs. Responsible for the hand-off from Keycloak to Campaign Manager after successful login.
+# The app's callback is https://<_campaign_manager_host>/auth/keycloak/callback.
 # EMPTY ON PURPOSE — do not put a sample URL here. render-realm.sh's survivor
 # check is `grep -q '__[A-Z0-9_]*__'`, so a human-looking placeholder such as
 # `https://<domain>/...` does NOT match it: the render passes, Keycloak imports the
@@ -99,6 +100,9 @@ _campaign_manager_enabled:          &campaign_manager_enabled          false
 _campaign_manager_raya_enabled:     &campaign_manager_raya_enabled     false
 _campaign_manager_platform_enabled: &campaign_manager_platform_enabled false
 _campaign_manager_instance_id:      &campaign_manager_instance_id      ""   # never change once set
+# First Campaign Manager admin, created in Keycloak and the app on deploy when the
+# app has no active admin. Empty = none is created, and nobody can sign in.
+_campaign_manager_admin_email:      &campaign_manager_admin_email      ""
 
 # ── Keycloak's own hostname ────────────────────────────────────────────────────
 # Keycloak's own neutral domain, so users from EITHER DPG log in here instead of
@@ -793,6 +797,8 @@ app:
   ingress:
     enabled: false              # UPDATE: true once app.image.tag is a real published image
     host: *campaign_manager_host
+  # Keycloak login settings are derived from global.keycloak / keycloakRealm above.
+  bootstrapAdminEmail: *campaign_manager_admin_email
 
 raya-sync:
   enabled: *campaign_manager_raya_enabled

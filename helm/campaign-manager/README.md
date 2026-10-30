@@ -61,8 +61,24 @@ Use `--set key=value` instead for a one-off override. Subchart keys are set the 
 | `app.secrets.CRON_SECRET` / `.CRON_SECRET_PREVIOUS` | Secret that authenticates the sync hook called by your scheduler; previous value while rotating. | `a-long-random-string` |
 | `app.secrets.GOOGLE_SERVICE_ACCOUNT_JSON` | Google service-account JSON, as one string. | `'{"type":"service_account",...}'` |
 | `app.migrate.enabled` | Run the app's schema migrations before every install/upgrade. Already-applied migrations are skipped. | `true` |
+| `app.secrets.KEYCLOAK_CLIENT_SECRET` | Secret of the Keycloak client the app signs people in with. Required. `install.sh` deploys fill it from the generated `campaign_manager_secret`. | `xxx` |
 
-To keep credentials out of Helm values, create the Secret yourself and set `app.secrets.existingSecret` to its name. It must carry: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, plus `DB_ADMIN_PASSWORD`/`DB_PASSWORD` if `app.dbInit.enabled`.
+### `app` Keycloak login
+
+People sign in through Keycloak with an emailed code. The app does not start without these, and the render fails if one can't be worked out. On `install.sh` deploys they are derived from the shared Keycloak globals, so only `bootstrapAdminEmail` needs setting (`_campaign_manager_admin_email` in `global-values.yaml`).
+
+| Key | What it is | Example |
+|---|---|---|
+| `app.appBaseUrl` | Public address of the app. Empty = `<global.publicProtocol>://<app.ingress.host or global.publicHost>`. | `https://campaign-manager.example.com` |
+| `app.keycloak.baseUrl` | Public Keycloak address, as browsers reach it. Empty = derived from `global.keycloak`. | `https://auth.example.com/auth` |
+| `app.keycloak.internalBaseUrl` | Optional in-cluster Keycloak address for server-side calls. Empty = `global.keycloak.internalBaseUrl`, else the public one. | `http://keycloak-keycloak.common-services.svc.cluster.local:8080/auth` |
+| `app.keycloak.realm` | Realm. Empty = `global.keycloakRealm`. | `bluedots` |
+| `app.keycloak.clientId` | Client the app signs in with. Its service account looks up and creates users, so it needs realm-management `view-users`, `query-users` and `manage-users` (the shared realm grants them). | `campaign-manager` |
+| `app.bootstrapAdminEmail` | First admin. The migrate Job creates it in Keycloak and the app when the app has no active admin, and fails if that Keycloak account is disabled or its email is unverified. Empty = no admin is created. | `admin@example.com` |
+
+The client must allow `<app base URL>/auth/keycloak/callback` as a redirect URI and `<app base URL>/login` as a post-logout redirect URI. In the shared realm both come from `keycloak.campaignManagerRedirectUris` (`_campaign_manager_redirect_uris`).
+
+To keep credentials out of Helm values, create the Secret yourself and set `app.secrets.existingSecret` to its name. It must carry: `DATABASE_URL`, `SESSION_SECRET`, `CRON_SECRET`, `CRON_SECRET_PREVIOUS` (optional), `RAYA_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_JSON`, `KEYCLOAK_CLIENT_SECRET`, plus `DB_ADMIN_PASSWORD`/`DB_PASSWORD` if `app.dbInit.enabled`.
 
 ### `raya-sync`
 

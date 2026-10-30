@@ -29,11 +29,14 @@ spec:
           command:
             {{- toYaml .Values.migrate.command | nindent 12 }}
           env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "app.secretName" . }}
-                  key: DATABASE_URL
+            {{- include "app.secretEnv" (dict "ctx" . "name" "DATABASE_URL") | nindent 12 }}
+            {{- /* The first admin is created after migrating, through Keycloak. The
+                   ConfigMap isn't a hook, so on a first install it doesn't exist yet. */}}
+            {{- include "app.secretEnv" (dict "ctx" . "name" "KEYCLOAK_CLIENT_SECRET") | nindent 12 }}
+            {{- range $key, $value := include "app.loginEnv" . | fromYaml }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: 500m, memory: 512Mi }
