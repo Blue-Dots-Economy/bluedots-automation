@@ -86,13 +86,43 @@ imagePullSecrets:
 {{- end }}
 {{- end -}}
 
-{{/* The api's RBAC_MODE: log | enforce; anything else fails the render. */}}
+{{/*
+  The api's RBAC_MODE: off | log | enforce; anything else fails the render.
+  An unquoted `off` is read by YAML as false, so false means off.
+*/}}
 {{- define "api.rbacMode" -}}
 {{- $mode := toString .Values.rbac.mode -}}
-{{- if not (has $mode (list "log" "enforce")) -}}
-{{- fail (printf "aggregator-api.rbac.mode must be log or enforce (got %q)" $mode) -}}
+{{- if eq $mode "false" -}}{{- $mode = "off" -}}{{- end -}}
+{{- if not (has $mode (list "off" "log" "enforce")) -}}
+{{- fail (printf "aggregator-api.rbac.mode must be off, log or enforce (got %q)" $mode) -}}
 {{- end -}}
 {{- $mode -}}
+{{- end -}}
+
+{{/* "true" when the pod runs the RBAC edge (Envoy + OPA sidecars): mode log or enforce. */}}
+{{- define "api.rbacEdge" -}}
+{{- if ne (include "api.rbacMode" .) "off" -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+  The api's health check for its probes. Without the edge the kubelet calls
+  /health/ready on the `http` port. With the edge the api binds 127.0.0.1,
+  which an httpGet probe cannot reach, and probing through Envoy would restart
+  the api whenever OPA is down; so node, the image's only interpreter, calls it
+  on loopback.
+*/}}
+{{- define "api.readyCheck" -}}
+{{- if include "api.rbacEdge" . -}}
+exec:
+  command:
+    - node
+    - -e
+    - "fetch('http://127.0.0.1:{{ .Values.service.port }}/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+{{- else -}}
+httpGet:
+  path: /health/ready
+  port: http
+{{- end -}}
 {{- end -}}
 
 {{/* OPA image, by digest when one is set. */}}

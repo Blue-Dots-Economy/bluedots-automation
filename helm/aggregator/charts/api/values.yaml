@@ -118,18 +118,22 @@ securityContext:
 
 # RBAC (aggregator-dpg docs/rbac/rbac-edge-enforcement.md). `mode` is the api's
 # RBAC_MODE, one switch for the api and its edge:
-#   log     — the edge records what it would refuse; nothing is blocked (default)
+#   off     — no RBAC and no edge: the pod is the api alone, as before (default)
+#   log     — the edge records what it would refuse; a missing route permission
+#             is not refused. It still refuses a bad or expired token (401),
+#             and every request while OPA cannot answer (fail closed).
 #   enforce — the edge refuses a missing route permission (403); the api's
 #             per-organisation checks refuse too
-# The pod always runs the edge: an Envoy sidecar that every request reaches
-# first (the Service points at it), which asks the OPA sidecar whether the
-# caller's token roles grant the route's permission. The api listens on
-# 127.0.0.1 only, so nothing reaches it around Envoy. An init container copies
-# the policy and the Envoy template out of the api image (/app/policy), so the
-# image must be a build that ships them (aggregator-dpg #910).
-# See docs/aggregator-rbac-opa-plan.md.
+# With log or enforce the pod runs the edge: an Envoy sidecar that every
+# request reaches first (the Service points at it), which asks the OPA sidecar
+# whether the caller's token roles grant the route's permission. The api
+# listens on 127.0.0.1 only, so nothing reaches it around Envoy. An init
+# container copies the policy and the Envoy template out of the api image
+# (/app/policy), so the image must be a build that ships them (aggregator-dpg
+# #910); an older image fails the init container and the pod never starts.
+# Needs Kubernetes 1.32 or later. See docs/aggregator-rbac-opa-plan.md.
 rbac:
-  mode: log
+  mode: "off"
   # How often each api replica re-reads the role catalogue, reloads it when a
   # role changed and re-publishes it to OPA (RBAC_CATALOGUE_REFRESH_MS); 0 = never.
   catalogueRefreshMs: 30000

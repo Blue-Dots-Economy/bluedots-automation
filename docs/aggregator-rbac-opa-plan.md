@@ -1,17 +1,19 @@
 # Aggregator RBAC: Envoy + OPA edge sidecars
 
-Runs the aggregator's RBAC edge next to every `aggregator-api` pod, always: an
-Envoy sidecar that every request reaches first, and an OPA sidecar that decides
+Runs the aggregator's RBAC edge next to every `aggregator-api` pod: an Envoy
+sidecar that every request reaches first, and an OPA sidecar that decides
 whether the caller's token roles grant the route's permission.
-`aggregator-api.rbac.mode` picks `log` (default) or `enforce` per environment.
+`aggregator-api.rbac.mode` picks `off` (default: no edge, the pod as before),
+`log` or `enforce` per environment.
 
 | Item | Value |
 |---|---|
 | App side | aggregator-dpg #910; design `docs/rbac/rbac-edge-enforcement.md` |
-| Switch | `aggregator-api.rbac.mode`: `log` (default) / `enforce` |
+| Switch | `aggregator-api.rbac.mode`: `off` (default) / `log` / `enforce` |
 | OPA image | `ghcr.io/blue-dots-economy/opa-envoy:1.21.1`, built here (`dockerfiles/opa-envoy`): DHI OPA base + upstream Envoy-plugin binary |
 | Envoy image | Docker Hardened Image `dhi.io/envoy:1.37`, mirrored to `ghcr.io/blue-dots-economy/dhi/envoy` |
-| Needs | An api image that ships `/app/policy/rbac/{rbac.rego,edge.rego,edge/routes.json}` and `/app/policy/envoy/envoy.yaml` |
+| Needs (`log`, `enforce`) | An api image that ships `/app/policy/rbac/{rbac.rego,edge.rego,edge/routes.json}` and `/app/policy/envoy/envoy.yaml` (aggregator-dpg #910 onwards). An older image fails `edge-init` and the pod never starts |
+| Needs (`log`, `enforce`) | Kubernetes 1.32 or later: the Service's named `targetPort` resolves to a native sidecar's port only from 1.32. The EKS template runs 1.35; nothing older is supported |
 
 ## Pod layout
 
@@ -42,10 +44,11 @@ flowchart LR
 | DHI Envoy through the mirror | Same path and refresh as the other third-party images |
 | OPA `--authorization=basic` with a chart-owned `system.authz` policy | Only the api's two queries, its catalogue push and `/health` are allowed, even from inside the pod |
 | Envoy admin and OPA REST/gRPC on `127.0.0.1` | Nothing outside the pod can query them or change their state |
-| api probes are `exec node fetch` on loopback | `httpGet` cannot reach `127.0.0.1`; probing through Envoy would restart the api when OPA is down |
+| api probes are `exec node fetch` on loopback (edge on only) | `httpGet` cannot reach `127.0.0.1`; probing through Envoy would restart the api when OPA is down. Each probe starts node: about 70 ms of CPU and 60 MB of memory while it runs, about 1% of one core at the probe periods. With `off` the probes are `httpGet` |
 | Envoy does not wait for Keycloak's DNS at start | Keycloak not resolving must not take down public routes; tokens are refused until it does |
 | `--disable-telemetry`, no decision logs | OPA reports its version externally by default; decision input carries the token's personal data |
-| Sidecars always on, default `log` | Every environment records edge decisions from the first deploy; nothing is blocked until `enforce` |
+| `off` switch, default `off` | The api image pinned per environment may predate the policy files; `off` keeps the chart deployable with it. An environment moves to `log` in the same change that moves its api tag to a release that ships them |
+| `log` is not "nothing blocked" | Route permissions are only recorded, but the edge is in front of every request: it refuses a bad or expired token (401), and every request, public ones included, while OPA cannot answer (ext_authz fails closed) or Keycloak's keys cannot be fetched. Turning on `log` adds OPA and Keycloak to the api's availability |
 | Sidecar resources in `global-resources.yaml` | Same place as every other request and limit |
 
 ## Steps
@@ -66,14 +69,14 @@ flowchart LR
 ## Rollout per environment
 
 1. Once per GitHub org:
-   - after the mirror workflow first copies `envoy`, make the `dhi/envoy` package public;
-   - run **Build OPA Envoy image** (`build-opa-envoy-image.yml`), then make the `opa-envoy` package public.
+   - the mirror workflow copies `open-policy-agent` and `envoy` on the merge that adds them to `.github/dhi-mirror-images.txt` (or run it by hand); make the `dhi/envoy` package public;
+   - **Build OPA Envoy image** (`build-opa-envoy-image.yml`) runs on the same merge and publishes `opa-envoy:<OPA version>` and `opa-envoy:sha-<commit>`; if it ran before the mirror finished, run it again. Make the `opa-envoy` package public.
 2. Deploy Keycloak, so the realm declares `roles` and maps it into the access token.
-3. Deploy an api image from aggregator-dpg #910 (A1) with the default `rbac.mode: log`. At start the api writes every user's `roles` attribute (its reconcile), publishes the role catalogue to OPA, and Envoy logs each request (`operation: rbac.edge`, `outcome` allow / would_deny / deny).
+3. Cut an aggregator-dpg release that includes #910 (A1). In one change, move the environment's api tag (`global-images.yaml`) to it and set `rbac.mode: log`, then deploy. At start the api writes every user's `roles` attribute (its reconcile), publishes the role catalogue to OPA, and Envoy logs each request (`operation: rbac.edge`, `outcome` allow / would_deny / deny).
 4. Run the backfill once, so existing coordinators keep exporting: `psql "$DATABASE_URL" -f scripts/sql/rbac-backfill-roles.sql` (aggregator-dpg; gives active coordinators Data Export and 90-day PII Access, skips any they hold).
 5. Check the Envoy logs for `would_deny` that should not be, then set `rbac.mode: enforce` and deploy.
 
-Back out of enforcement by setting `mode: log`.
+Back out of enforcement by setting `mode: log`; remove the edge with `mode: off`. Do not move the api tag back to a release without the policy files while the mode is `log` or `enforce`.
 
 ## Not in this change
 

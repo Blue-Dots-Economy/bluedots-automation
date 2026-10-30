@@ -36,13 +36,16 @@ spec:
         {{- include "api.selectorLabels" . | nindent 8 }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if include "api.rbacEdge" . }}
         checksum/rbac: {{ include (print $.Template.BasePath "/rbac-configmap.yaml") . | sha256sum }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "api.serviceAccountName" . }}
       {{- include "api.imagePullSecrets" . | nindent 6 }}
       {{- include "api.hostAliases" . | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if include "api.rbacEdge" . }}
       initContainers:
         # Copies the RBAC policy and the edge route table out of the api image,
         # and fills in its Envoy template (files/edge-init.js), so the sidecars
@@ -169,14 +172,22 @@ spec:
             - name: envoy-config
               mountPath: /envoy
               readOnly: true
+      {{- end }}
       containers:
         - name: api
           image: {{ include "api.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if include "api.rbacEdge" . }}
           # Listens on 127.0.0.1:{{ .Values.service.port }} (HOST in configmap.yaml):
           # reached only through the envoy sidecar, so no containerPort here.
+          {{- else }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "api.globalConfigMap" . }}
@@ -242,40 +253,19 @@ spec:
                   key: SIGNALSTACK_ADMIN_KEY
                   optional: true
           readinessProbe:
-            exec:
-              # The api binds 127.0.0.1, which an httpGet probe cannot reach,
-              # and probing through Envoy would restart the api whenever OPA is
-              # down. node is the image's only interpreter (no shell, no wget).
-              command:
-                - node
-                - -e
-                - "fetch('http://127.0.0.1:{{ .Values.service.port }}/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+            {{- include "api.readyCheck" . | nindent 12 }}
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 6
           livenessProbe:
-            exec:
-              # The api binds 127.0.0.1, which an httpGet probe cannot reach,
-              # and probing through Envoy would restart the api whenever OPA is
-              # down. node is the image's only interpreter (no shell, no wget).
-              command:
-                - node
-                - -e
-                - "fetch('http://127.0.0.1:{{ .Values.service.port }}/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+            {{- include "api.readyCheck" . | nindent 12 }}
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 5
           startupProbe:
-            exec:
-              # The api binds 127.0.0.1, which an httpGet probe cannot reach,
-              # and probing through Envoy would restart the api whenever OPA is
-              # down. node is the image's only interpreter (no shell, no wget).
-              command:
-                - node
-                - -e
-                - "fetch('http://127.0.0.1:{{ .Values.service.port }}/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+            {{- include "api.readyCheck" . | nindent 12 }}
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -311,6 +301,7 @@ spec:
           configMap:
             name: {{ .Release.Name }}-network-config
         {{- end }}
+        {{- if include "api.rbacEdge" . }}
         - name: rbac-policy
           emptyDir:
             sizeLimit: 1Mi
@@ -320,3 +311,4 @@ spec:
         - name: rbac
           configMap:
             name: {{ include "api.fullname" . }}-rbac
+        {{- end }}

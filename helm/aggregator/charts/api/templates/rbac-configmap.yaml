@@ -3,7 +3,9 @@
   own API authorisation policy and its edge configuration, and the script the
   edge-init container runs. The RBAC policy itself and the Envoy template come
   from the api image (see the edge-init init container in deployment.yaml).
+  Rendered only when the pod runs the edge (rbac.mode log or enforce).
 */ -}}
+{{- if include "api.rbacEdge" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -17,3 +19,4 @@ data:
 {{ .Files.Get "files/opa-config.yaml" | indent 4 }}
   edge-init.js: |
 {{ .Files.Get "files/edge-init.js" | indent 4 }}
+{{- end }}

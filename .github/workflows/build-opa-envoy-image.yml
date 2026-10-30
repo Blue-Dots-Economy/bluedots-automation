@@ -1,15 +1,17 @@
 # Build & push the hardened OPA image with the Envoy plugin (DHI OPA base +
 # upstream opa-envoy static binary), used as the aggregator api's OPA sidecar.
 #
-# Triggered manually (workflow_dispatch) for ad-hoc rebuilds, and on release tags
-# so a release cut produces an image carrying the release tag. Never runs on
-# branch pushes or PRs — a rarely-rebuilt base image, not part of app CI/CD.
-# Same shape as the Postgres image workflow next to this one. Dockerfile +
-# rationale: dockerfiles/opa-envoy/Dockerfile.
+# Triggered manually (workflow_dispatch) for ad-hoc rebuilds, on release tags
+# so a release cut produces an image carrying the release tag, and on a push to
+# main, develop or feature that changes the Dockerfile or this workflow, so a
+# merged version bump publishes its image. Never runs on PRs or on other branch
+# pushes. Otherwise the same shape as the Postgres image workflow next to this
+# one. Dockerfile + rationale: dockerfiles/opa-envoy/Dockerfile.
 #
 # Pushes to GHCR using the built-in GITHUB_TOKEN (no extra secrets needed). The
-# image is ghcr.io/<repo-owner>/opa-envoy, tagged with the commit SHA it was
-# built from and, on a release tag, with the release tag verbatim. The base is
+# image is ghcr.io/<repo-owner>/opa-envoy, tagged with the OPA version (the tag
+# the chart uses by default), the commit SHA it was built from and, on a
+# release tag, with the release tag verbatim. The base is
 # pulled from this repo's own DHI mirror on GHCR, so the login runs on every
 # run, build-only included.
 name: Build OPA Envoy image
@@ -23,9 +25,15 @@ on:
   # GitHub reads this workflow FROM THE TAGGED COMMIT, so a tag cut from a commit
   # predating this change will not pick the patterns up.
   #
-  # Still NOT run on branch pushes or PRs — this stays out of app CI/CD.
+  # A merged change to the image builds it. The mirror workflow copies the DHI
+  # base on the same kind of push; when one change adds both, run this again
+  # once the mirror has finished if the base pull fails.
   push:
     tags: ['v*.*.*', '20*-s*-rc*']
+    branches: [main, develop, feature]
+    paths:
+      - dockerfiles/opa-envoy/**
+      - .github/workflows/build-opa-envoy-image.yml
   workflow_dispatch:
     inputs:
       platforms:
@@ -99,16 +107,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # `type=sha,format=short` reproduces exactly the tag this workflow used to
-      # build by hand (sha-<7 chars>), so existing pins keep resolving.
-      # `type=ref,event=tag` emits a release tag VERBATIM and nothing on a manual
-      # run, which is what makes the image tag equal the release tag.
+      # The OPA version is the BASE tag in the Dockerfile, which must equal the
+      # OPA version of the Envoy-plugin binary copied in.
+      - name: Read the OPA version
+        id: ver
+        run: |
+          v=$(sed -nE 's/^ARG BASE=.*:([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' dockerfiles/opa-envoy/Dockerfile)
+          if [ -z "$v" ]; then
+            echo "::error::no OPA version in the ARG BASE line of dockerfiles/opa-envoy/Dockerfile"
+            exit 1
+          fi
+          echo "opa=$v" >> "$GITHUB_OUTPUT"
+
+      # `type=raw` is the OPA version, the tag the chart uses by default
+      # (aggregator-api.rbac.opa.image.tag); a rebuild moves it to the newest
+      # build of that version. `type=sha,format=short` tags the build with its
+      # commit (sha-<7 chars>), which does not move, for a pin that must not
+      # change. `type=ref,event=tag` emits a release tag VERBATIM and nothing on
+      # other runs, which is what makes the image tag equal the release tag.
       - name: Compute image tags
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ steps.ref.outputs.repo }}
           tags: |
+            type=raw,value=${{ steps.ver.outputs.opa }}
             type=sha,format=short
             type=ref,event=tag
 
