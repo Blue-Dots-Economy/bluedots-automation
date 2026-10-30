@@ -12,6 +12,12 @@ Three independently deployable pieces, each its own subchart under `charts/`:
 
 `app`, `raya-sync` and `platform-sync` all connect to the **same** Postgres database with the **same** login (`global.database`) — there is one database, shared by all three. Jobs run before the release's pods start (pre-install/pre-upgrade hooks), in this order across the whole release (Helm orders hooks by weight across the umbrella *and* every subchart together): `app`'s database Job (weight 0) → `app`'s migrate Job (weight 1) → `platform-sync`'s schema Job (weight 2, creates the `platform.*` tables it writes into). `raya-sync` needs no schema Job of its own — its tables are created by `app`'s migrate Job.
 
+The `app` and `platform-sync` Secrets are created as hooks too, so the Jobs can read them. Helm does not own hook resources: `helm uninstall` leaves them behind. Delete them by hand after an uninstall:
+
+```bash
+kubectl -n <namespace> delete secret -l app.kubernetes.io/instance=<release-name>
+```
+
 ## Before you configure
 
 - A Postgres server the cluster can reach, and its admin credentials.
