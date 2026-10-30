@@ -628,6 +628,13 @@ web:
 aggregator-api:
   adminEmails: *aggregator_admin_emails
   supportEmail: *support_email
+  # RBAC: off | log | enforce. log and enforce run the Envoy + OPA edge
+  # sidecars in the api pod and need an api image that ships the policy and the
+  # Envoy template (aggregator-dpg #910; the api tag in global-images.yaml does
+  # not yet). Change to log in the same change that moves the api tag to such a
+  # release, then to enforce; see docs/aggregator-rbac-opa-plan.md.
+  rbac:
+    mode: "off"
 
 mail:
   provider: smtp  # smtp | ses

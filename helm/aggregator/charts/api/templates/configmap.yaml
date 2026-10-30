@@ -24,7 +24,12 @@ metadata:
     {{- include "api.labels" . | nindent 4 }}
 data:
   PORT: "{{ .Values.service.port }}"
+  {{- if include "api.rbacEdge" . }}
+  # Loopback only: requests reach the api through the Envoy sidecar (RBAC edge).
+  HOST: "127.0.0.1"
+  {{- else }}
   HOST: "0.0.0.0"
+  {{- end }}
   CORS_ORIGINS: "{{ include "api.publicBaseUrl" . }}"
   RUN_MIGRATIONS_ON_BOOT: "{{ .Values.runMigrationsOnBoot }}"
   ADMIN_EMAILS: "{{ .Values.adminEmails }}"
@@ -108,3 +113,14 @@ data:
   # Drives the "Already Registered - Sign In" chooser and post-submit redirect.
   SIGNALS_UI_URLS: {{ .Values.global.signalsUiUrls | quote }}
 {{- end }}
+  # RBAC (aggregator-dpg docs/rbac/rbac-edge-enforcement.md). With log or
+  # enforce, OPA and Envoy run as sidecars; 127.0.0.1, not localhost, because
+  # they bind IPv4 loopback only.
+  RBAC_MODE: "{{ include "api.rbacMode" . }}"
+  {{- if include "api.rbacEdge" . }}
+  OPA_URL: "http://127.0.0.1:{{ .Values.rbac.opa.port }}"
+  OPA_TIMEOUT_MS: "{{ .Values.rbac.opa.timeoutMs }}"
+  OPA_RETRIES: "{{ .Values.rbac.opa.retries }}"
+  OPA_BACKOFF_MS: "{{ .Values.rbac.opa.backoffMs }}"
+  RBAC_CATALOGUE_REFRESH_MS: "{{ .Values.rbac.catalogueRefreshMs }}"
+  {{- end }}
