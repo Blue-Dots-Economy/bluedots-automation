@@ -52,70 +52,8 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
-          envFrom:
-            - configMapRef:
-                name: {{ include "api.globalConfigMap" . }}
-            - configMapRef:
-                name: {{ include "api.appConfigMap" . }}
-          env:
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: POSTGRES_PASSWORD
-            # POSTGRES_USER + POSTGRES_DB + POSTGRES_HOST come from the
-            # umbrella's `{release}-global` ConfigMap (envFrom above).
-            - name: DATABASE_URL
-              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):5432/$(POSTGRES_DB)"
-            # REDIS_HOST + REDIS_PORT come from the umbrella's `{release}-global`
-            # ConfigMap (envFrom above); REDIS_PASSWORD from the umbrella Secret.
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: REDIS_PASSWORD
-            - name: REDIS_URL
-              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)"
-            - name: KEYCLOAK_ADMIN_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: KEYCLOAK_ADMIN_CLIENT_SECRET
-            - name: APPROVAL_TOKEN_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: APPROVAL_TOKEN_SECRET
-            - name: SMTP_USER
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: SMTP_USER
-                  optional: true
-            - name: SMTP_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: SMTP_PASSWORD
-                  optional: true
-            - name: AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: AWS_ACCESS_KEY_ID
-                  optional: true
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: AWS_SECRET_ACCESS_KEY
-                  optional: true
-            - name: SIGNALSTACK_ADMIN_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "api.secretName" . }}
-                  key: SIGNALSTACK_ADMIN_KEY
-                  optional: true
+          {{- include "api.envFrom" . | nindent 10 }}
+          {{- include "api.env" . | nindent 10 }}
           readinessProbe:
             httpGet:
               path: /health/ready
