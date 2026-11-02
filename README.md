@@ -48,21 +48,24 @@ that means **Signals** (`helm/signals/`).
 .
 ├── .github/
 │   ├── actions/pr-gate/      # composite action: docs + release-notes gate for develop PRs
-│   ├── workflows/            # develop-pr-gate.yml (gate), pr-gate-tests.yml (action unit tests)
+│   ├── scripts/              # release-notes + sync-release-branch scripts used by the reusable release workflows
+│   ├── workflows/            # ci.yml, develop-pr-gate.yml (gate), image builds, reusable create-release.yml + sync-release-branch.yml
 │   └── PULL_REQUEST_TEMPLATE.md  # Summary / Release Notes / Checklist
 ├── docs/
 │   ├── deployment_guide.md  # authoritative end-to-end runbook + troubleshooting
 │   └── deployment_guide_reference.md  # reference: new network/brand/instance variables
 ├── dockerfiles/              # Base images this repo builds (manual workflow_dispatch or release tag)
+│   ├── opa-envoy/            # OPA + Envoy plugin on the DHI base → ghcr.io/<owner>/opa-envoy (aggregator RBAC edge)
 │   ├── postgres/             # Bitnami Postgres 17 + portable pgvector → ghcr.io/<owner>/postgres-pgvector
 │   └── keycloak/             # Keycloak + OTP authenticator SPI → ghcr.io/<owner>/keycloak-server
-├── helm/                     # Application stack — five umbrella charts
+├── helm/                     # Application stack — six umbrella charts
 │   ├── global-resources.yaml # shared replica/HPA/PDB/resource overrides (all envs)
 │   ├── monitoring/           # chart "monitoring": kube-prometheus-stack, Loki, Alloy, Jaeger, Grafana
 │   ├── common-services/      # chart "platform": Kong, cert-manager, Postgres, Redis, metrics-server
 │   ├── keycloak/             # chart "keycloak-platform": shared realm for BOTH DPGs (deploys into common-services ns)
 │   ├── signals/              # chart "dpg": Signals (api/ui/notification/search); charts/api/files/{networks,consent}/*.json
-│   └── aggregator/           # chart "aggregator-dpg": web BFF, api, worker; files/consent/consent.json
+│   ├── aggregator/           # chart "aggregator-dpg": web BFF, api, worker; files/consent/consent.json
+│   └── campaign-manager/     # chart "campaign-manager": app, raya-sync, platform-sync (off by default)
 ├── scripts/                  # build-realm.sh + assert-realm.sh (shared realm), fetch-configs.sh
 └── opentofu/
     └── aws/
@@ -482,8 +485,8 @@ Without it, aggregator login fails with `SIGNALSTACK_ORG_NOT_REGISTERED`.
 ### Static checks (no cluster needed for lint)
 
 ```bash
-bash install.sh lint        # realm assertions + helm lint all five charts
-bash install.sh dry_run     # helm --dry-run all four against the current cluster (needs kubeconfig)
+bash install.sh lint        # realm assertions + helm lint all six charts
+bash install.sh dry_run     # helm --dry-run all six against the current cluster (needs kubeconfig)
 bash install.sh preflight   # verify helm + kubectl + cluster + generated values files
 ```
 
