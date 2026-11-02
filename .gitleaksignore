@@ -24,3 +24,4 @@ bbe0720de31d9796400261c1fc6ea1950fbd7ac8:helm/monitoring/charts/jaeger/charts/ka
 # release-notes unit test listing semver tag names ('v1.2.0', 'api-v1.9.9', ...);
 # reviewed false positive, no key material.
 0062c3f7b3dc2fd563d249f9522da1dd4a54fb97:.github/scripts/release-notes/notes.test.mjs:generic-api-key:158
+3c4286ff7897b30c1507e82209929a3fb4f4088e:.github/scripts/release-notes/notes.test.mjs:generic-api-key:262
