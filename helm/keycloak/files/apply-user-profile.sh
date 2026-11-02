@@ -62,9 +62,11 @@ fi
 #    migration's collision check depends on that. The unmanaged policy is the
 #    belt-and-braces for every attribute not declared here.
 #
-#    aggregator_id, decision_made, aggregator_type and signalstack_org_id feed
-#    the portal gate and token claims the apps act on (aggregator_id,
-#    decision_made, aggregator_type, signalstack_org_id, signals_acting_orgs).
+#    aggregator_id, decision_made, aggregator_type, signalstack_org_id and
+#    roles feed the portal gate and token claims the apps act on (aggregator_id,
+#    decision_made, aggregator_type, signalstack_org_id, signals_acting_orgs,
+#    and roles: the user's live role keys, multivalued, which the aggregator's
+#    RBAC edge reads from the access token).
 #    Only service accounts write them, through the admin API, so they are
 #    declared admin-only. That is forced: any earlier declaration of those
 #    names is dropped before they are appended, and the check after the PUT
@@ -91,7 +93,7 @@ UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" '
     then del(.required)
     else . end;
 
-  def admin_only: ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id"];
+  def admin_only: ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id", "roles"];
 
   .unmanagedAttributePolicy = $policy
   | .attributes = (
@@ -100,6 +102,7 @@ UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" '
         { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "aggregator_type", displayName: "Aggregator type", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "signalstack_org_id", displayName: "Signals organisation id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+        { name: "roles", displayName: "Roles", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
         {
           name: "phoneNumber",
           displayName: "Phone Number",
@@ -137,12 +140,12 @@ HAS_PHONE=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "ph
 GOT_POLICY=$(printf '%s' "$VERIFY" | jq -r '.unmanagedAttributePolicy // "unset"')
 STILL_REQUIRED=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "email" or .name == "firstName" or .name == "lastName") | select(has("required")) | .name] | join(",")')
 
-ADMIN_ONLY=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name as $n | ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id"] | index($n)) | select(.permissions.edit == ["admin"] and .permissions.view == ["admin"]) | .name] | unique | length')
+ADMIN_ONLY=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name as $n | ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id", "roles"] | index($n)) | select(.permissions.edit == ["admin"] and .permissions.view == ["admin"]) | .name] | unique | length')
 
-echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HAS_PHONE} admin-only identity attributes=${ADMIN_ONLY}/4"
+echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HAS_PHONE} admin-only identity attributes=${ADMIN_ONLY}/5"
 
-if [ "${ADMIN_ONLY:-0}" -lt 4 ]; then
-  echo "[kc-init] aggregator_id / decision_made / aggregator_type / signalstack_org_id are not all declared admin-only"
+if [ "${ADMIN_ONLY:-0}" -lt 5 ]; then
+  echo "[kc-init] aggregator_id / decision_made / aggregator_type / signalstack_org_id / roles are not all declared admin-only"
   exit 1
 fi
 
@@ -347,6 +350,8 @@ else
     user_attr="$2"
     claim_name="$3"
     userinfo_claim="$4"
+    # Optional 5th argument: a multivalued attribute becomes a JSON array claim.
+    multivalued="${5:-false}"
     existing=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${PORTAL_UUID}/protocol-mappers/models" \
       -H "Authorization: Bearer ${TOKEN}" \
       | jq -r --arg n "${mapper_name}" '[.[] | select(.name == $n)] | length')
@@ -367,7 +372,7 @@ else
     "id.token.claim": "false",
     "access.token.claim": "true",
     "userinfo.token.claim": "${userinfo_claim}",
-    "multivalued": "false",
+    "multivalued": "${multivalued}",
     "aggregate.attrs": "false"
   }
 }
@@ -388,6 +393,9 @@ EOF
 
   ensure_mapper "decision_made" "decision_made" "decision_made" "false"
   ensure_mapper "phone_number"  "phoneNumber"   "phone_number"  "true"
+  # The aggregator's RBAC edge decides route permissions from this claim
+  # (aggregator-dpg docs/rbac/rbac-edge-enforcement.md). Access token only.
+  ensure_mapper "roles"         "roles"         "roles"         "false" "true"
 fi
 
 # ────────────────────────────────────────────────────────────────────────────

@@ -1,0 +1,8 @@
+{
+  "name": "sync-release-branch",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

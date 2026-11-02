@@ -175,9 +175,8 @@ resource "aws_s3_bucket_versioning" "this" {
 #     CSVs are not retained at rest far longer than the short-lived download link the export email carries.
 #
 #     PREFIX-SCOPED ON PURPOSE, and that is load-bearing: this bucket is shared. `bulk-uploads/` holds raw.csv +
-#     errors.csv, `qr/` holds registration QR PNGs, and the signals s3-export non-PII dump lands under
-#     `<network>/<instance_id>/`. A bucket-wide expiration would delete all of them. campaign_export_prefix is
-#     validated non-empty for exactly that reason — an empty prefix silently means "everything".
+#     errors.csv and `qr/` holds registration QR PNGs. A bucket-wide expiration would delete both. campaign_export_prefix
+#     is validated non-empty for exactly that reason — an empty prefix silently means "everything".
 #
 #     Applied to EVERY bucket rather than a guessed one: the prefix filter makes it inert wherever no exports land,
 #     so the module needs no knowledge of which bucket the aggregator writes to.
@@ -190,9 +189,7 @@ resource "aws_s3_bucket_versioning" "this" {
 #
 #  2. abort-incomplete-multipart-upload — bucket-wide, and safe to be: aborting an INCOMPLETE multipart upload can
 #     never remove a completed object, only orphaned parts that are billed but unreachable. Deliberately NOT
-#     prefix-scoped, because the biggest multipart producers here sit outside campaign_export_prefix: the signals
-#     s3-export CronJob (boto3 multiparts large NDJSON — the retired exporter IAM policy carried
-#     s3:AbortMultipartUpload for precisely this) and bulk CSV uploads.
+#     prefix-scoped, because bulk CSV uploads multipart outside campaign_export_prefix.
 #
 # Set either knob to 0 to drop its rule. With both 0 the resource is skipped entirely, because S3 rejects a lifecycle
 # configuration that contains no rules.

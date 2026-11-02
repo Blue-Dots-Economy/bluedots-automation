@@ -29,8 +29,9 @@ Release name and namespace **match the directory name**. Only the Helm **chart n
 | `helm/monitoring/`     | `monitoring`     | `monitoring`      | `monitoring`      | Prometheus + Alertmanager + Loki + Alloy + Jaeger + Grafana |
 | `helm/common-services/`| `platform`       | `common-services` | `common-services` | Cluster-wide: **Kong** ingress, cert-manager, shared Postgres (org **portable-pgvector** image, #93), Redis, metrics-server |
 | `helm/keycloak/`       | `keycloak-platform` | `keycloak`     | **`common-services`** | **Shared Keycloak — one realm holding BOTH DPGs' clients.** The one place release name ≠ namespace: it is a common service, so it lives in the common-services namespace. |
-| `helm/signals/`        | `dpg`            | `signals`         | `signals`         | Signals stack (api, ui, notification-service, search, **s3-export** non-PII export CronJob) |
+| `helm/signals/`        | `dpg`            | `signals`         | `signals`         | Signals stack (api, ui, notification-service, search) |
 | `helm/aggregator/`     | `aggregator-dpg` | `aggregator`      | `aggregator`      | Aggregator portal (web/BFF, api, worker) — Keycloak moved to its own release |
+| `helm/campaign-manager/` | `campaign-manager` | `campaign-manager` | `campaign-manager` | Campaign Manager (app, raya-sync, platform-sync), **off by default** (`_campaign_manager_enabled`). See `helm/campaign-manager/README.md` |
 
 Namespaces / releases / values-file paths are overridable via env vars (`CS_NS`, `SIGNALS_NS`, `CS_REL`, `GLOBAL_VALUES`, …) — see [docs/deployment_guide.md → Command reference](docs/deployment_guide.md#command-reference).
 
@@ -83,8 +84,8 @@ bash install.sh deploy_aggregator
 bash install.sh cleanup_all_services      # DESTRUCTIVE: deletes namespaces incl. Postgres/Redis PVCs
 
 # Static checks (no cluster needed for lint)
-bash install.sh lint                      # realm assertions + helm lint all 5 charts
-bash install.sh dry_run                   # helm --dry-run all 5 against current cluster (runs preflight first)
+bash install.sh lint                      # realm assertions + helm lint all 6 charts
+bash install.sh dry_run                   # helm --dry-run all 6 against current cluster (runs preflight first)
 bash install.sh preflight                 # verify helm + kubectl + cluster + generated values files exist
 ```
 
@@ -142,12 +143,14 @@ When you open a PR, include an **In Plain Terms** section in the description: a 
 
 `.github/workflows/ci.yml` runs static checks on PRs (and develop/main pushes) that touch `helm/**` or `opentofu/**` — no cluster or cloud creds:
 
-- **helm job** — `scripts/assert-realm.sh` (shared-realm invariants), `helm lint` on all five charts, plus `helm template` render smoke-test on monitoring/common-services/keycloak/aggregator. `signals` is lint-only in CI because its `helm template` needs the network schema files `install.sh` fetches at deploy time (`fetch_signals_configs`), which aren't committed.
+- **helm job** — `scripts/assert-realm.sh` (shared-realm invariants), `helm lint` on all six charts, plus `helm template` render smoke-test on monitoring/common-services/keycloak/aggregator/campaign-manager. `signals` is lint-only in CI because its `helm template` needs the network schema files `install.sh` fetches at deploy time (`fetch_signals_configs`), which aren't committed.
 - **tofu job** — a blocking `tofu fmt -check -recursive` plus `tofu validate` (with `-backend=false`, provider plugins cached) on every module in `opentofu/aws/modules/*`. Keep the tree `tofu fmt`-clean or the job fails.
 
 The helm job also runs a **DHI mirror drift check**: it renders monitoring + common-services and fails if any `ghcr.io/blue-dots-economy/dhi/*` ref is missing from `.github/dhi-mirror-images.txt`. That combination is an ImagePullBackOff at deploy time whose error text (`denied`) reads like a credentials problem, so it's worth catching in the PR.
 
 This mirrors `bash install.sh lint` but gates it per-PR. Separately, `.github/workflows/develop-pr-gate.yml` enforces the Release-Notes + doc-update PR gate (see `.claude/rules/pr-gate.md`).
+
+**Shared release workflows (#297).** `.github/workflows/create-release.yml` and `.github/workflows/sync-release-branch.yml` are **reusable** (`workflow_call` only); each service repo calls them through a thin caller pinned to a SHA of this repo, passing the same SHA as `automation-ref` so the scripts under `.github/scripts/{release-notes,sync-release-branch}/` match. This repo has no caller of its own. `create-release` cuts the tag only after the caller's CI passed on that commit: candidates (`YYYYMM-sN-rcN`) from `develop`, releases (`YYYYMM-sN`) from `main` (also creating `release/<sprint>`), hotfixes (`YYYYMM-sN.N`) from `release/<sprint>`; `base` applies only to `v*.*.*` / extra tags. Sprint tags publish the release-notes fragment to bluedots-docs when the caller passes `docs-token` (`DOCS_SYNC_TOKEN`). `sync-release-branch` opens `release/<sprint> → develop|feature` PRs on each push to `release/**`; it needs the repo setting that lets GitHub Actions create PRs, its PRs need a close/reopen to start CI, and they merge with a merge commit. The script tests run in `release-notes-tests.yml`. Header comments in both workflow files are the reference.
 
 Security scanning runs on its own: `.github/workflows/security.yml` (PRs to `feature`/`develop`/`main`, pushes to `develop`/`main`, plus a monthly cron) calls the local reusable `.github/workflows/security-scan.yml` — the same workflow the other five repos consume. Almost everything it does (Trivy, gitleaks, most zizmor audits) is **report-only** and uploads SARIF to the Security tab. The one exception is a **zizmor action-pinning gate** (#154): the `workflow-lint` job's `Pinning gate` step **fails the PR** when any workflow `uses:` a GitHub Action not pinned to a full 40-char commit SHA — **GitHub-owned `actions/*` and `github/*` included** — regardless of the `block:` input, because report-only is exactly what let unpinned refs slip in. The gate reads an **offline** zizmor run (`unpinned-uses` is an offline audit); zizmor's online audits (impostor-commit, known-vulnerable-actions) were decoupled into a separate best-effort step (#168) so a GitHub-API 403/rate-limit on a cross-repo pin lookup can't abort the run and take the deterministic gate down with it.
 
@@ -194,19 +197,16 @@ For a full new-instance / new-network launch (network.json, brand assets, terms 
 - `helm/global-resources.yaml` — shared replica/HPA/PDB/resource overrides across all envs.
 - `scripts/create-permissions-boundary.sh` + `scripts/permissions-boundary.json` — **admin-only, once per AWS account**: creates the IAM permissions-boundary policy every role in this repo attaches to. `--name` is required and has no default so each org owns its own policy; the name then goes in `<env>/global-values.yaml` as `permissions_boundary_policy_name`. Create-only (`--verify` to diff, `--update` to republish deliberately) because a new default version silently re-caps every attached role. Never run by `install.sh`.
 - `scripts/build-realm.sh` — builds the shared deployment realm from an app repo's local-dev realm (applies the production-hardening transform). `scripts/assert-realm.sh` — the invariants CI enforces on it.
-- `dockerfiles/` — the **shared base images** this repo builds, one directory each, both built by **manual `workflow_dispatch` or a release tag** (`v*.*.*` / `20*-s*-rc*`; never on branch push/PR: rarely-rebuilt base images, deliberately outside app CI/CD). Rationale lives in each `Dockerfile` header; pin the resulting tag in `<env>/global-images.yaml`.
+- `dockerfiles/` — the **shared base images** this repo builds, one directory each, built by **manual `workflow_dispatch` or a release tag** (`v*.*.*` / `20*-s*-rc*`; postgres and keycloak never on branch push/PR: rarely-rebuilt base images, deliberately outside app CI/CD). `opa-envoy` also builds on a merged change to its own files. Rationale lives in each `Dockerfile` header; pin the resulting tag in `<env>/global-images.yaml`.
   - **Build-only scan (#276):** dispatching either workflow from `main` with `push: false` builds the image locally (linux/amd64), Trivy-scans it and uploads the SARIF without publishing anything — the way to refresh `main`'s image findings in the Security tab, since release-tag runs upload against the tag ref and never move `main`'s results.
+  - `dockerfiles/opa-envoy/` → `ghcr.io/<owner>/opa-envoy` — the DHI OPA base plus the upstream Envoy-plugin `opa` binary, for the aggregator api's RBAC edge sidecar. Workflow: `build-opa-envoy-image.yml`. Details: `helm/CLAUDE.md` → *Aggregator RBAC*.
   - `dockerfiles/postgres/` → `ghcr.io/<owner>/postgres-pgvector` — Bitnami PG 17 + portable pgvector (the AVX-512 `SIGILL` fix). Workflow: *Build Postgres pgvector image*.
   - `dockerfiles/keycloak/` → `ghcr.io/<owner>/keycloak-server` — upstream Keycloak + the **OTP authenticator SPI**, `kc.sh build`-indexed at image build time so pods boot `start --optimized`. Workflow: *Build Keycloak image*. **Do not drop the jar:** the shared realm's browser flows bind to provider ids that exist only when it loads (`otp-identifier-form`, `otp-channel-choice-form`), so realm import *and* the entitlement-gate Job fail on unknown provider ids rather than quietly degrading to password login. Jar provenance + bump steps: `dockerfiles/keycloak/providers/README.md`.
 - `.github/dhi-mirror-images.txt` + `.github/workflows/mirror-dhi-images.yml` — the **third-party** Docker Hardened Images (cert-manager, metrics-server, the whole monitoring stack) copied byte-for-byte from `dhi.io` into `ghcr.io/<owner>/dhi/*`, because dhi.io refuses anonymous pulls and those charts have the *kubelet* do the pull. Distinct from `dockerfiles/` above, which **builds** images: this only **copies** them, digests unchanged, via `regctl image copy --referrers --digest-tags` so the SBOM/provenance/signature travel too. Our own service images need none of this — they are built *from* a DHI base in each app repo's CI. Pinned in `helm/common-services/values.yaml` and `helm/monitoring/values.yaml` as chart defaults; cert-manager and metrics-server specifically are **not** overridden in `<env>/global-images.yaml` (a per-env override there would silently escape the CI mirror check). Redis is the one exception — its `dhi/*` tag IS also set in `<env>/global-images.yaml`, with a comment there that it must stay in step with the chart default, since that overlay is layered after the chart and wins. DHI publishes **only current versions**, so the charts were bumped to match the images rather than the reverse (kube-prometheus-stack 65.1.1→88.5.2, loki 6.7.1→7.3.0, alloy 1.8.2→1.11.1, metrics-server 3.12.1→3.14.0) — pinning a DHI image into a chart built for an older app version is what produced the kube-state-metrics readiness failure. CI guards this from both directions: a rendered `dhi/*` ref missing from the mirror list fails, **and** any rendered image that is neither mirrored nor listed in `.github/dhi-exempt-images.txt` (with a reason) fails — the second check exists because the first one is blind to a chart bump *adding* an unhardened container, which is how loki 7.x quietly introduced `kiwigrid/k8s-sidecar`.
-- **`campaign-manager` client (shared realm).** Serves two identities on one client: the
-  external campaign manager's service account uses `client_credentials` for the whole-network
-  non-PII dump, and a coordinator uses the browser flow for the org-scoped campaign routes.
-  Three settings are load-bearing and fail *silently* if wrong — `serviceAccountsEnabled` (no
-  it, the dump route is unreachable), the `profile` default scope (it carries
-  `preferred_username`, which is that route's entire access control), and the browser flow
-  bound to **`aggregator-otp-browser`**. That last one matters because coordinators have **no
-  password**: bound to anything else, Keycloak serves its default username+password login and
+- **`campaign-manager` client (shared realm).** A coordinator uses the browser flow on this
+  client to get a token for the org-scoped campaign routes; it has no service account. The
+  browser flow bound to **`aggregator-otp-browser`** is load-bearing: coordinators have **no
+  password**, so bound to anything else, Keycloak serves its default username+password login and
   nobody can complete it — the same degradation the OTP SPI note above warns about. Do **not**
   bind `aggregator-portal-browser`; it layers the portal entitlement gate on top and locks
   these coordinators out. `assert-realm.sh` asserts both the binding and its target.

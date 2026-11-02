@@ -1,0 +1,76 @@
+# Reusable sync-release-branch workflow.
+#
+# Hotfixes for live environments land on release/<YYYYMM-sN> (created when the
+# sprint's release tag is cut, see create-release.yml) and are tagged there as
+# <YYYYMM-sN>.<n>. This carries them back: for each of develop and feature that
+# is missing commits from the release branch, it opens a PR
+# `release/<sprint> → <target>`, or leaves the one already open (a PR tracks its
+# head branch, so it picks up the new commits by itself).
+#
+# Each service repo calls this with a thin caller that pins this file AND passes
+# the same SHA as `automation-ref`, so the script checked out below always
+# matches the workflow:
+#
+#   on:
+#     push:
+#       branches: ['release/**']
+#   permissions: {}
+#   jobs:
+#     sync:
+#       permissions: { contents: read, pull-requests: write }
+#       uses: Blue-Dots-Economy/bluedots-automation/.github/workflows/sync-release-branch.yml@<sha> # <ref>
+#       with:
+#         automation-ref: <sha>
+#
+# PRs opened with GITHUB_TOKEN do not trigger CI on their own: GitHub does not
+# start workflows for events caused by that token. The reviewer runs CI by
+# closing and reopening the PR, or by pushing to it; the PR body says so. This
+# is a known GitHub rule and deliberately not worked around with a personal
+# token. The repo (or org) must also allow GitHub Actions to create pull
+# requests (Settings → Actions → General).
+#
+# In a reusable workflow `github.repository`, `github.ref` and `github.token`
+# are the CALLER's, so the API calls act on the calling repo and its pushed
+# branch.
+
+name: sync-release-branch
+
+on:
+  workflow_call:
+    inputs:
+      automation-ref:
+        description: "bluedots-automation commit to load the sync script from. Pass the same SHA the caller pins this workflow at."
+        type: string
+        required: true
+
+# Nothing at workflow level; the one job asks for exactly what it uses. The
+# caller must grant both, since a called workflow can only narrow permissions.
+permissions: {}
+
+jobs:
+  sync:
+    name: Sync ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read        # compare the release branch with each target
+      pull-requests: write  # open the sync PRs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Blue-Dots-Economy/bluedots-automation
+          ref: ${{ inputs.automation-ref }}
+          path: automation
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+
+      # Merge these PRs with a merge commit, not squash: the fix keeps its
+      # history and the next develop → main promotion does not conflict.
+      - name: Open sync PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: node automation/.github/scripts/sync-release-branch/run.mjs

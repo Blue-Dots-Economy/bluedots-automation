@@ -1,0 +1,34 @@
+# Review every line tagged `# UPDATE:` before deploying.
+
+enabled: false
+
+image:
+  repository: ghcr.io/blue-dots-economy/campaign-manager-pipeline   # not published yet: the repo has no CI
+  tag: ""                      # UPDATE: required when enabled
+  pullPolicy: IfNotPresent
+
+# private: true to pull with the ghcr-pull Secret install.sh creates in the namespace.
+imagePullSecret:
+  private: false
+  name: ghcr-pull
+
+schedule: "0 2 * * *"          # UPDATE: cron expression, evaluated in timeZone
+timeZone: Asia/Kolkata
+concurrencyPolicy: Forbid
+startingDeadlineSeconds: 900
+backoffLimit: 1
+activeDeadlineSeconds: 7200
+successfulJobsHistoryLimit: 3
+failedJobsHistoryLimit: 5
+suspend: false
+
+# --skip platform leaves only the Raya stages; platform-sync covers Signals now.
+args: ["--skip", "platform"]
+
+config:                        # empty values are not rendered, so the image's own defaults apply
+  PD_REFRESH_DAYS: ""
+  PD_TEST_BATCHES: ""
+
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }

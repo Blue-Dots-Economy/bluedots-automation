@@ -52,7 +52,7 @@ jobs:
 
       - name: helm lint (all charts)
         run: |
-          for chart in monitoring common-services keycloak signals aggregator; do
+          for chart in monitoring common-services keycloak signals aggregator campaign-manager; do
             echo "::group::helm lint $chart"
             # The aggregator chart guards its mandatory secrets (renders fail on
             # `change-me`/empty defaults); skip that block for the static check
@@ -82,7 +82,7 @@ jobs:
           # schema files that install.sh fetches at deploy time
           # (fetch_signals_configs) and are not committed, so a bare `helm
           # template` fails on the missing files. `helm lint` above still covers it.
-          for chart in monitoring common-services keycloak aggregator; do
+          for chart in monitoring common-services keycloak aggregator campaign-manager; do
             echo "::group::helm template $chart"
             # aggregator: bypass the mandatory-secret guard + the fetched-config
             # requirement (see helm lint step). web.reference.enabled=false does
@@ -99,6 +99,17 @@ jobs:
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
                   --set global.existingSecret=ci-smoke \
                   --set global.keycloakRealm=ci-smoke >/dev/null
+                ;;
+              campaign-manager)
+                # Off by default; turn every subchart on with placeholder required values.
+                helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
+                  --set global.enabled=true \
+                  --set raya-sync.enabled=true --set platform-sync.enabled=true \
+                  --set app.image.tag=ci-smoke --set raya-sync.image.tag=ci-smoke \
+                  --set platform-sync.image.tag=ci-smoke \
+                  --set global.database.host=ci-smoke.invalid \
+                  --set global.database.password=ci-smoke \
+                  --set app.database.admin.password=ci-smoke >/dev/null
                 ;;
               *)
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml >/dev/null
@@ -171,12 +182,16 @@ jobs:
                 # web.reference.enabled=false for the same reason as
                 # ui.reference.enabled=false above: the college dataset is
                 # fetched at deploy time and absent from a fresh checkout.
+                # rbac.mode=log renders the api's OPA and Envoy sidecars, which
+                # the template's default (off) leaves out, so their images are
+                # checked too.
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
                   -f opentofu/aws/template/global-images.yaml \
                   -f opentofu/aws/template/global-values.yaml \
                   --set global.existingSecret=ci-smoke \
                   --set global.networkConfigDelivery=false \
                   --set web.reference.enabled=false \
+                  --set aggregator-api.rbac.mode=log \
                   >> /tmp/all-rendered.yaml
                 ;;
               keycloak)
@@ -243,7 +258,8 @@ jobs:
       #
       # So: every rendered image must be either on the mirror, explicitly
       # exempted with a reason in .github/dhi-exempt-images.txt, or one of our
-      # OWN app images (signals/aggregator/keycloak's own `image:` values) —
+      # OWN app images (signals/aggregator/keycloak's own `image:` values, and
+      # opa-envoy, built on a DHI base from dockerfiles/opa-envoy here) —
       # those are already built from a DHI base in their own repo's CI, a
       # separate provenance chain this check has no visibility into and isn't
       # meant to police. What this check actually guards against is a VENDORED
@@ -262,7 +278,7 @@ jobs:
           grep -vE '^[[:space:]]*(#|$)' .github/dhi-exempt-images.txt \
             | tr -d '[:blank:]' | sort -u > /tmp/exempt.txt
 
-          own_app_images='^ghcr\.io/blue-dots-economy/(signals-dpg/|signals-search|notification-service|tei-bge-m3|aggregator-dpg/|keycloak-server)'
+          own_app_images='^ghcr\.io/blue-dots-economy/(signals-dpg/|signals-search|notification-service|tei-bge-m3|aggregator-dpg/|keycloak-server|opa-envoy)'
 
           # Anything neither mirrored, exempted, nor one of our own app images.
           unexpected=$(grep -v '^ghcr\.io/blue-dots-economy/dhi/' /tmp/all-images.txt \

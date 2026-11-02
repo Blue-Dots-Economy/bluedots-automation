@@ -57,8 +57,7 @@ resource "aws_iam_role" "app_sa" {
 
 # Minimal S3 access policy for the application role.
 # Shared by every subject in var.service_account_subjects — the aggregator
-# api/worker AND the signals s3-export CronJob, which writes its non-PII export
-# objects into this same bucket rather than a dedicated one.
+# api/worker.
 resource "aws_iam_role_policy" "app_s3" {
   name = "s3-access"
   role = aws_iam_role.app_sa.id
@@ -82,12 +81,6 @@ resource "aws_iam_role_policy" "app_s3" {
     ]
   })
 }
-
-# NOTE: the Signals s3-export CronJob used to get its own least-privilege IRSA
-# role (`<env>-signals-s3-export`, write-only on a dedicated private bucket).
-# Both were removed: the exporter now shares the public bucket and the app_sa
-# role above, so its ServiceAccount subject must be listed in
-# var.service_account_subjects or the pod cannot assume the role at all.
 
 # Warns (does not fail) when the key is absent from <env>/global-values.yaml, as it
 # is in every per-deployment branch written before the boundary existed. Absent

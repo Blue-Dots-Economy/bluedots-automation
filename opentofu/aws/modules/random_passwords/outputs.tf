@@ -10,13 +10,29 @@ output "signals_postgres_password" {
   sensitive = true
 }
 
-output "signals_export_ro_password" {
-  value     = random_id.signals_export_ro_password.hex
-  sensitive = true
+output "campaign_manager_signals_ro_password" {
+  description = "Read-only Signals DB role password for the Campaign Manager pipeline"
+  value       = random_id.campaign_manager_signals_ro_password.hex
+  sensitive   = true
 }
 
 output "aggregator_export_ro_password" {
   value     = random_id.aggregator_export_ro_password.hex
+  sensitive = true
+}
+
+output "campaign_manager_app_password" {
+  value     = random_id.campaign_manager_app_password.hex
+  sensitive = true
+}
+
+output "campaign_manager_session_secret" {
+  value     = random_id.campaign_manager_session_secret.hex
+  sensitive = true
+}
+
+output "campaign_manager_cron_secret" {
+  value     = random_id.campaign_manager_cron_secret.hex
   sensitive = true
 }
 

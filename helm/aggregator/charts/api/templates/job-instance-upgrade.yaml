@@ -1,0 +1,104 @@
+{{- /*
+On-demand instance-upgrade Job: migrates an existing instance's database + Keycloak
+from migration 0022 to the release head, using the same image and env as the API
+Deployment (so DATABASE_URL, AGGREGATOR_NETWORK, KEYCLOAK_* etc. match exactly).
+
+Off by default. Render and apply on demand, with the app scaled to 0:
+
+  helm template <rel> helm/aggregator \
+    --set aggregator-api.instanceUpgrade.enabled=true \
+    --set 'aggregator-api.instanceUpgrade.args={run-all,--snapshot-taken,<snapshot-id>}' \
+    --show-only charts/aggregator-api/templates/job-instance-upgrade.yaml | kubectl apply -f -
+
+(The api subchart is aliased `aggregator-api` in the umbrella Chart.yaml, so the
+override key and the --show-only path use that name, not `api`.)
+
+Steps: check | run --snapshot-taken <id> | data | enrich | enable-owners, or the
+whole sequence as `run-all --snapshot-taken <id>`. The snapshot, scaling pods to 0,
+and deploying the new images stay with the operator. See the aggregator-dpg runbook
+(docs/user-org-migration-runbook.md).
+*/ -}}
+{{- /*
+  Same consent + aggregator.config.yaml loader-path derivation the Deployment
+  uses, so the online steps (`enrich` / `enable-owners` / `run-all`) read the
+  deployed config from the mounted ConfigMaps — not the image-baked copy. The
+  tool calls getNetworkConfig() in those steps; without these mounts it would
+  resolve a stale network config. `check` / `run` / `data` don't read config,
+  but mounting unconditionally keeps the Job identical to the running API.
+*/ -}}
+{{- $net := .Values.global.aggregatorNetwork -}}
+{{- $brand := .Values.global.aggregatorBrand | default "" -}}
+{{- $consentPath := printf "/app/config/%s/schemas/aggregator/consent.json" $net -}}
+{{- if $brand }}{{- $consentPath = printf "/app/config/%s/%s/schemas/aggregator/consent.json" $net $brand -}}{{- end -}}
+{{- $configPath := printf "/app/config/%s/aggregator.config.yaml" $net -}}
+{{- if $brand }}{{- $configPath = printf "/app/config/%s/%s/aggregator.config.yaml" $net $brand -}}{{- end -}}
+{{- if .Values.instanceUpgrade.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "api.fullname" . }}-instance-upgrade
+  labels:
+    {{- include "api.jobLabels" . | nindent 4 }}
+spec:
+  backoffLimit: 0
+  {{- with .Values.instanceUpgrade.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ . }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "api.jobSelectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "api.serviceAccountName" . }}
+      {{- include "api.imagePullSecrets" . | nindent 6 }}
+      {{- include "api.hostAliases" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: instance-upgrade
+          image: {{ include "api.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command: ["node", "dist/tools/instance-upgrade.js"]
+          args:
+            {{- range .Values.instanceUpgrade.args }}
+            - {{ . | quote }}
+            {{- end }}
+          {{- include "api.envFrom" . | nindent 10 }}
+          {{- include "api.env" . | nindent 10 }}
+          {{- with .Values.instanceUpgrade.databaseUrl }}
+            # Override DATABASE_URL to the direct primary (bypass a pooler) for
+            # `run` / `data`, which need one session. Last value wins in k8s.
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+          {{- end }}
+          # Consent + network config overlaid on the loader paths, from the
+          # umbrella {release}-consent / {release}-network-config ConfigMaps
+          # (the same ones the Deployment mounts — reused, not duplicated).
+          volumeMounts:
+            - name: consent
+              mountPath: {{ $consentPath }}
+              subPath: consent.json
+              readOnly: true
+            {{- if .Values.global.networkConfigDelivery }}
+            - name: network-config
+              mountPath: {{ $configPath }}
+              subPath: aggregator.config.yaml
+              readOnly: true
+            {{- end }}
+          {{- with .Values.instanceUpgrade.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: consent
+          configMap:
+            name: {{ .Release.Name }}-consent
+        {{- if .Values.global.networkConfigDelivery }}
+        - name: network-config
+          configMap:
+            name: {{ .Release.Name }}-network-config
+        {{- end }}
+{{- end }}

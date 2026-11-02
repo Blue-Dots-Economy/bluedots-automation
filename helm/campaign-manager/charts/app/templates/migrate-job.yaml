@@ -1,0 +1,40 @@
+{{- /* Runs after the database Job, from the app image unless migrate.image is set. */ -}}
+{{- if and .Values.global.enabled .Values.migrate.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "app.fullname" . }}-migrate
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: campaign-manager-migrate
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      {{- include "app.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: "{{ default .Values.image.repository .Values.migrate.image.repository }}:{{ default (required "app.image.tag is required" .Values.image.tag) .Values.migrate.image.tag }}"
+          imagePullPolicy: {{ .Values.migrate.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.migrate.command | nindent 12 }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "app.secretName" . }}
+                  key: DATABASE_URL
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+{{- end }}

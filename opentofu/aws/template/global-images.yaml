@@ -52,13 +52,6 @@ search-embeddings:
     tag: "sha-1c7d576d1af74f3e0cdf659cea033ecee26733c8"
     pullPolicy: IfNotPresent
 
-# s3-export: Signals non-PII export CronJob (adhoc-scripts)
-s3-export:
-  image:
-    repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
-    tag: "sha-efa19c9"          # pin to an immutable sha/semver tag per environment
-    pullPolicy: IfNotPresent
-
 # ── Aggregator stack ─────────────────────────────────────────────────────────
 
 aggregator-api:
@@ -78,6 +71,35 @@ worker:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
     tag: "202609-s1-rc3"
     pullPolicy: Always
+
+# ── Campaign Manager stack (opt-in; see _campaign_manager_enabled in global-values.yaml) ──
+
+app:
+  image:
+    repository: ghcr.io/blue-dots-economy/agg-campaign-manager-v2
+    tag: ""   # UPDATE
+    pullPolicy: IfNotPresent
+  imagePullSecret:
+    private: false
+    name: ghcr-pull
+
+raya-sync:
+  image:
+    repository: ghcr.io/blue-dots-economy/campaign-manager-pipeline
+    tag: ""   # UPDATE
+    pullPolicy: IfNotPresent
+  imagePullSecret:
+    private: false
+    name: ghcr-pull
+
+platform-sync:
+  image:
+    repository: ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync
+    tag: ""   # UPDATE
+    pullPolicy: IfNotPresent
+  imagePullSecret:
+    private: true   # private repo: run install.sh create_campaign_manager_image_pull_secret first
+    name: ghcr-pull
 
 keycloak:
   # Server image: built from THIS repo (dockerfiles/keycloak/) by the manual
