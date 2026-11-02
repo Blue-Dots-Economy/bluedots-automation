@@ -766,7 +766,7 @@ function preflight() {
     echo "config  : $GLOBAL_VALUES (user-edited non-secret config)"
 }
 
-# helm lint all 5 charts.
+# helm lint all 6 charts.
 function lint() {
     helm lint "$MON_DIR"
     helm lint "$CS_DIR"
@@ -799,7 +799,7 @@ function lint() {
         --set app.secrets.SESSION_SECRET=lint-only --set app.secrets.CRON_SECRET=lint-only
 }
 
-# helm --dry-run all 5 charts against the current cluster (renders + server-side checks,
+# helm --dry-run all 6 charts against the current cluster (renders + server-side checks,
 # installs nothing). Runs preflight first.
 function dry_run() {
     preflight
@@ -826,7 +826,7 @@ function dry_run() {
 #   - CI can only `helm lint` signals (its `helm template` needs the network
 #     schemas fetch_signals_configs pulls at deploy time), so a full render of
 #     this chart is never validated automatically — only here.
-#   - `dry_run` walks all 5 charts and stops at the first failure, so an
+#   - `dry_run` walks all 6 charts and stops at the first failure, so an
 #     unrelated break in monitoring/common-services hides signals entirely.
 # Unlike `lint`, this loads the env values files, so it catches YAML anchor and
 # values-layering breakage that lint cannot see.
