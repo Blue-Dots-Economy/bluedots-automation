@@ -46,13 +46,24 @@ else
   printf '           %s\n' $local_hits
 fi
 
-# ── A2. Exactly the two service accounts, no test fixtures ───────────────────
+# ── A2. Exactly the three service accounts, no test fixtures ─────────────────
 # The realm this replaced shipped `testuser` and `alice` into real environments.
 users=$(q '[.users[]?.username] | sort | join(",")')
-if [ "$users" = "service-account-aggregator-api,service-account-signals-api" ]; then
-  pass "users are exactly the two service accounts"
+if [ "$users" = "service-account-aggregator-api,service-account-campaign-manager,service-account-signals-api" ]; then
+  pass "users are exactly the three service accounts"
 else
   fail "unexpected users (test fixtures?): $users"
+fi
+
+# ── A2b. Campaign Manager can manage users ───────────────────────────────────
+# The app looks up and creates users through this client's service account, and
+# its deploy creates the first admin that way; without these it fails with 403.
+cm_sa=$(q '[.clients[] | select(.clientId=="campaign-manager") | .serviceAccountsEnabled] | first // false')
+cm_roles=$(q '[.users[]? | select(.username=="service-account-campaign-manager") | .clientRoles."realm-management"[]?] | sort | join(",")')
+if [ "$cm_sa" = "true" ] && [ "$cm_roles" = "manage-users,query-users,view-users" ]; then
+  pass "campaign-manager service account holds view/query/manage-users"
+else
+  fail "campaign-manager service account: enabled=$cm_sa roles='$cm_roles', expected manage-users,query-users,view-users"
 fi
 
 # ── A3. All three realm roles ────────────────────────────────────────────────
