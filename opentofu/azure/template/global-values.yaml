@@ -1,0 +1,591 @@
+# ── Signals / Aggregator hostnames ─────────────────────────────────────────────
+_signals_public_hosts: &signals_public_hosts
+  - "example.domain.com"
+  - "example.domain.com"
+# Which public host serves which domain, when ONE release fronts several
+# per-domain portals (e.g. a seeker portal and a provider portal). Drives BOTH:
+#   - ui.hostBindings           -> the UI picks VITE_SERVED_BINDINGS per request
+#                                  from the Host header
+#   - api.config.UI_HOST_BINDINGS -> the API inverts it (domain -> host) so an
+#                                  email CTA links the recipient to THEIR OWN
+#                                  portal instead of one shared front-door (#569)
+# One value feeds both, so the site routing and the email routing cannot drift.
+#
+# Format: "<host>=<network>/<domain>" per entry, entries separated by ";".
+#   - bare hostname only: no scheme, no port, no trailing path or slash
+#   - every host here MUST also appear in _signals_public_hosts above (that list
+#     is what the ingress actually serves and what the TLS cert covers)
+#   - every <domain> MUST appear in _signals_served_domains below, or the API
+#     logs an unknown-domain warning at boot and those emails fall back
+#   - if two hosts map to the same domain, the FIRST wins for email links
+#
+# e.g. "providers-signals.example.org=blue_dot/provider;seekers-signals.example.org=blue_dot/seeker"
+#
+# Leave EMPTY for a single-host release: ui.hostBindings is then omitted
+# entirely and every email link falls back to FRONTEND_BASE_URL, unchanged.
+_signals_host_bindings: &signals_host_bindings ""
+
+# ────────────────────────────────────────────────────────────────────────────
+# Aggregator Configuration passed to signalsUiUrls key. Responsible for the hand-off from aggregator to signals UI login page.
+# EMPTY ON PURPOSE. A sample value here is not inert: it makes the "Already
+# Registered — Sign In" chooser VISIBLE in every new environment, pointing users at
+# example.org URLs that do not resolve. Empty is omitted from the ConfigMap
+# entirely, so the hand-off stays invisible until real per-domain login pages are
+# set. Derive them from _signals_host_bindings (host=network/domain, inverted to
+# domain=<origin>/auth/login).
+_signals_ui_urls: &signals_ui_urls ''
+
+# Campaign Manager redirect URIs. Responsible for the hand-off from Keycloak to Campaign Manager after successful login.
+# EMPTY ON PURPOSE — do not put a sample URL here. render-realm.sh's survivor
+# check is `grep -q '__[A-Z0-9_]*__'`, so a human-looking placeholder such as
+# `https://<domain>/...` does NOT match it: the render passes, Keycloak imports the
+# literal string as a redirect URI, the deploy goes green, and coordinator login
+# fails later with invalid_redirect_uri. Empty leaves the real
+# __CAMPAIGN_MANAGER_REDIRECT_URIS__ placeholder in place, which the check DOES
+# catch, so a new environment fails loudly until it sets a genuine callback.
+_campaign_manager_redirect_uris: &campaign_manager_redirect_uris ''
+
+_aggregator_host:      &aggregator_host      "aggregator.domain.com"
+_grafana_host:         &grafana_host         "monitoring.domain.com"
+_campaign_manager_host: &campaign_manager_host "campaign-manager.domain.com"
+
+# Campaign Manager: app master switch + its two sync CronJobs.
+_campaign_manager_enabled:          &campaign_manager_enabled          false
+_campaign_manager_raya_enabled:     &campaign_manager_raya_enabled     false
+_campaign_manager_platform_enabled: &campaign_manager_platform_enabled false
+_campaign_manager_instance_id:      &campaign_manager_instance_id      ""   # never change once set
+
+# ── Keycloak's own hostname ────────────────────────────────────────────────────
+# Keycloak's own neutral domain, so users from EITHER DPG log in here instead of
+# at the aggregator's address. Empty = keep serving Keycloak at
+# <aggregator_host>/auth (the legacy shared-host arrangement).
+#
+# THIS VALUE IS THE ISSUER: it becomes KC_HOSTNAME, the auth Ingress host and the
+# `iss` claim, so changing it invalidates every session and the three releases
+# (keycloak, aggregator, signals) must be deployed in the same window.
+#
+# Per-environment — one host cannot serve two clusters. Prefer the same zone and
+# shape as the product hosts; a login page on a visibly different domain reads as
+# a phishing smell. Prerequisites: DNS pointing at the Kong proxy LB, and
+# keycloak.ingress.tls enabled below (nothing else owns this SNI). See
+# docs/unified-keycloak-migration-runbook.md §10.2.
+_auth_host: &auth_host ""   # e.g. "<env>-auth.example.com"; empty = share <aggregator_host>/auth
+
+
+_signals_served_domains: &signals_served_domains "blue_dot/provider,blue_dot/seeker"
+
+# Shared Keycloak realm — ONE realm per instance holding BOTH DPGs' clients.
+# Per-instance, derived from the network/domain. There is no literal default in
+# any chart, so this must be set. Changing it on a live instance is a user-visible
+# migration (every session/SSO cookie is invalidated), not a config tweak.
+_keycloak_realm: &keycloak_realm "bluedots"
+
+_network: &network "blue_dot"
+_brand: &brand ""
+
+# Which state's college/institute list backs the UI's reference-autocomplete
+# field: "ka" | "up". Feeds ui.runtimeConfig.VITE_COLLEGE_DATASET below, which is
+# the single knob: it selects both the dataset the UI requests and the one file
+# the ui reference ConfigMap ships (colleges-<code>.json). Only that region's
+# list is deployed — the two datasets together exceed the 1 MiB ConfigMap cap.
+_college_dataset: &college_dataset "ka"
+
+# Country every location is held to (signals-dpg#785), as an ISO 3166-1 alpha-2
+# code. ONE anchor, three consumers, so they cannot drift:
+#   - api.config.GEOCODING_COUNTRY   the server geocoder (Google components=country:)
+#                                    and the supplied-coordinate boundary check,
+#                                    which rejects a point outside the country
+#                                    with 400 LOCATION_OUTSIDE_COUNTRY (#789)
+#   - ui.runtimeConfig.VITE_GEO_COUNTRY  the signals address search
+#   - web.geoCountry                 the aggregator registration-form search
+# The boundary file is helm/signals/charts/api/files/geo/<CC>.geojson; only IN
+# ships. A country with no file fails the render (generate it with
+# scripts/build-geo-boundary.sh <CC>). Set "" for no restriction anywhere.
+_geo_country: &geo_country "IN"
+
+# ── SMTP Configuration ────────────────────────────────────────────────────
+_smtp_host:         &smtp_host         "smtp.gmail.com"
+_smtp_port:         &smtp_port         587
+_smtp_user:         &smtp_user         "sender@example.com"
+_smtp_from_display: &smtp_from_display "Blue Dots"
+_aggregator_admin_emails: &aggregator_admin_emails "admin@example.com"
+support_email: &support_email "support@example.com"
+
+# ── API rate limiting (Kong) ────────────────────────────────────────────────────
+_api_rate_limit_enabled: &api_rate_limit_enabled false # Master ON/OFF toggle for per-API rate limiting across signals + aggregator.
+_api_rate_limit_per_minute: &api_rate_limit_per_minute 600 # Per-IP requests/min applied to EVERY API via Kong per-API rate limiting.
+# ── OTP-abuse rate limiting (Kong) ──────────────────────────────────────────────
+_otp_rate_limit_enabled:    &otp_rate_limit_enabled    true
+_signals_otp_per_minute:    &signals_otp_per_minute    5    # a real login needs ~1–3
+_aggregator_otp_per_minute: &aggregator_otp_per_minute 20   # login flow ≈ 3 POSTs/login
+
+
+global:
+  # Aggregator export link TTL (EXPORT_URL_TTL_SECONDS = this × 86400).
+  campaignExportExpiryDays: 1
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Helm-consumed — passed straight through to the signals + aggregator charts
+  # via `.Values.global.*` (shared umbrella-chart values).
+  # ══════════════════════════════════════════════════════════════════════════
+  publicHosts: *signals_public_hosts
+  orgHierarchyEnabled: true
+
+  publicHost:         *aggregator_host
+
+  # ── Shared Keycloak (the `keycloak` release, common-services namespace) ────
+  # The realm name is consumed by THREE charts — keycloak, aggregator and signals.
+  # They must agree or tokens are validated against the wrong issuer.
+  keycloakRealm: *keycloak_realm
+  keycloak:
+    namespace: common-services
+    serviceName: keycloak-keycloak
+    servicePort: 8080
+    internalUrl: ''
+    # Single source of truth for the issuer, read by all three charts: keycloak
+    # (KC_HOSTNAME + its three auth Ingresses), aggregator (OIDC_ISSUER,
+    # KEYCLOAK_URL) and signals (KEYCLOAK_BASE_URL). Unset -> all fall back to
+    # global.publicHost.
+    host: *auth_host
+    # Realm name + the public issuer base, for the signals chart. publicBaseUrl is
+    # the KEYCLOAK host (i.e. the aggregator host) — NOT a signals host, because
+    # the issuer string inside a token is built from it.
+    realm: *keycloak_realm
+    publicBaseUrl: ''   # leave empty to use https://<aggregator_host>/auth
+    internalBaseUrl: http://keycloak-keycloak.common-services.svc.cluster.local:8080/auth
+
+  # ── Token `azp` allow-lists (aggregator api only) ──────────────────────────
+  # Which Keycloak CLIENT a token was minted for must be allow-listed, on top of
+  # the issuer check. Both are FAIL-OPEN in the app — `assertAllowedAzp` returns
+  # early on an empty list — so blanking either one silently REMOVES the check
+  # rather than tightening it. Keep them populated.
+  #
+  # These three client ids come from the shared realm this cluster imports
+  # (_keycloak_realm above, rendered by the keycloak release). Rename a client
+  # there without updating this list and every exchange fails closed with
+  # AzpNotAllowedError; drop one from this list and that client is locked out.
+  keycloakAllowedAzp: "aggregator-portal,aggregator-api,aggregator-bff"
+  # REPLACES the list above on /v1/campaign/* only (export, email, voice),
+  # scoping the campaign routes to the external campaign-manager client. Matches
+  # the app's own fallback; set explicitly so the deployed value is visible in
+  # the ConfigMap rather than implied by whichever image tag is running.
+  campaignManagerAllowedAzp: "campaign-manager"
+
+  aggregatorNetwork:  *network
+  aggregatorBrand:    *brand
+  # Deliver aggregator.config.yaml (network binding, brand strings, domain labels,
+  # registration modes) to the aggregator api + worker from the
+  # {release}-network-config ConfigMap, sourced from
+  # helm/aggregator/files/network-config/aggregator.config.yaml in this repo —
+  # instead of the copy baked into the image. Keep that file in sync with the
+  # _network / _brand anchors above.
+  networkConfigDelivery: true
+  # Upstream network.json URL the aggregator fetches at boot (it never mounts the
+  # file). repo/ref are OVERRIDDEN at deploy time by install.sh from
+  # $SIGNALS_DPG_REPO/$SIGNALS_DPG_REF, so the aggregator and signals always resolve
+  # the same schemas — pin the ref there, not here. Set `url` for a full override
+  # (mirror / internal host). REQUIRES aggregator-dpg#513 in the deployed image.
+  networkSource:
+    file: network.json
+    url: ''
+  # ── Onboarding capability allow-list (aggregator api only) ────────────────
+  # Comma-separated allow-list of registration modes this deployment offers:
+  # `form`, `voice` (`bulk` is reserved, gates nothing yet).
+  #
+  # LEAVE IT COMMENTED OUT to keep every mode enabled. Do NOT set it to an empty
+  # string: unset means "all enabled", but "" means "nothing enabled" and every
+  # public-link creation 400s. The chart omits the env var entirely when the value
+  # is empty, which is what makes commenting this out safe.
+  #
+  # UAT blue_dot and purple_dot want `form` (voice registration off):
+  # onboardingEnabled: form
+
+  # ── Signals UI hand-off (aggregator api only) ─────────────────────────────
+  # Comma-separated `domain=url` pairs — one per network domain — pointing at the
+  # login page of the Signals UI that fronts THAT domain. Drives the
+  # "Already Registered — Sign In" chooser and the post-submit redirect; without
+  # it the hand-off is invisible to users.
+  #
+  # Must be the Signals UI login page (normally `<origin>/auth/login`), NEVER a
+  # Keycloak authorization URL — those embed one-time state/PKCE values bound to
+  # the browser that generated them and fail for everyone else.
+  signalsUiUrls: *signals_ui_urls
+
+  signalstackBaseUrl: 'http://signals-api.signals.svc.cluster.local:2742'
+  signalstack:
+    # Set after signals is deployed. Several service orgs share type
+    # 'network_service' — match the slug or you may pick the wrong one:
+    #   SELECT id FROM organization WHERE type='network_service' AND slug='aggregator-dpg';
+    # Easier: ORG_ID=$(./get-signalstack-org-id.sh)
+    actingOrgId: ""
+  dataPlatform:
+    namespace:       common-services
+    postgresService: common-services-postgresql
+    redisService:    common-services-redis-master
+
+  # ── API rate limiting (Kong) — shared by the signals/aggregator/search charts'
+  apiRateLimit:
+    enabled:       *api_rate_limit_enabled
+    defaultMinute: *api_rate_limit_per_minute
+
+  # ── OTP-abuse rate limiting (Kong) — signals api + aggregator keycloak charts
+  otpRateLimit:
+    enabled:          *otp_rate_limit_enabled
+    signalsMinute:    *signals_otp_per_minute
+    aggregatorMinute: *aggregator_otp_per_minute
+
+# ─── keycloak release (helm/keycloak) ────────────────────────────────────────
+# Shared identity for both DPGs. Deployed between common-services and signals.
+#
+# NESTING RULE, and it is a trap: the keycloak release's chart is the UMBRELLA
+# helm/keycloak, whose subchart is ALSO named `keycloak`. So in this file
+#   <root>.smtp / <root>.postgres  -> the UMBRELLA's own values
+#   keycloak.<key>                 -> the SUBCHART's values
+# Both blocks below used to sit under a single `keycloak:` key, which reads
+# naturally as "the keycloak release" but actually handed them to the SUBCHART,
+# which reads neither — so the umbrella silently kept its chart defaults.
+# Keycloak ran with SMTP_HOST=smtp.example.com and could not deliver a single
+# email OTP, and nothing failed or warned.
+
+  # ── campaign-manager (must stay in this one global: block) ──
+  enabled: *campaign_manager_enabled
+  database:
+    host: ""                     # set by global-cloud-values.yaml
+    port: 5432
+    name: campaign_manager
+    user: campaign_manager
+    password: ""                 # set by global-secrets.yaml
+  rayaApiKey: ""                 # set by global-secrets.yaml
+
+# Umbrella-level. Safe as a root key: `.Values.smtp` is read only by
+# helm/keycloak (configmap-global.yaml + job-keycloak-init.yaml), by no other
+# chart this file is layered into.
+smtp:
+  SMTP_HOST: *smtp_host
+  SMTP_PORT: *smtp_port
+  SMTP_FROM: *smtp_user
+  SMTP_FROM_DISPLAY: *smtp_from_display
+  SMTP_SECURE: "false"
+  SMTP_STARTTLS: "true"
+  SMTP_AUTH: "true"
+
+# AKS already runs metrics-server in kube-system.
+metrics-server:
+  enabled: false
+
+# Kong proxy access log without query strings (keeps the NCS SSO link token out of logs).
+kong:
+  env:
+    nginx_http_log_format: >-
+      redacted '$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent "$http_user_agent" $request_time'
+    proxy_access_log: "/dev/stdout redacted"
+
+# Umbrella-level. Postgres role Keycloak logs in as. NEW clusters: `keycloak`
+# (created by common-services' bootstrap). EXISTING clusters: set `aggregator` —
+# the keycloak database there is already owned by that role and re-owning a live
+# database is not worth the risk.
+#
+# Root `postgres:` is shared but the keys do not collide: this deep-merges with
+# the managed `postgres.host` that global-cloud-values.yaml sets, and common-services
+# reads only host/port while the keycloak umbrella reads only these two.
+postgres:
+  username: keycloak
+  database: keycloak
+
+# ── keycloak subchart ─────────────────────────────────────────────────────────
+# This root `keycloak:` key is the SUBCHART of the keycloak release (umbrella
+# `keycloak-platform`, subchart `keycloak`), so keys here land on the subchart's
+# own .Values — which is where `ingress` lives. Ignored by the other releases.
+#
+# STILL NO rate-limit keys here: otp-ratelimit-ingress.yaml resolves the limit as
+#   dig "otpRateLimit" "aggregatorMinute" .Values.loginRateLimit.minute .Values.global
+# so global.otpRateLimit.* above is the live knob and a duplicate here would look
+# authoritative, never take effect while the global is set, and silently drift
+# from it. Tune the _otp_rate_limit_enabled / _aggregator_otp_per_minute anchors.
+#
+# TLS has no global equivalent (the subchart value is the only knob) and is
+# REQUIRED once Keycloak has its own hostname, because nothing else owns that
+# SNI. It must stay OFF while sharing <aggregator_host>: that cert belongs to the
+# aggregator's web Ingress in another namespace and tls.secretName is
+# namespace-local, so declaring it there names a missing Secret and Kong serves
+# self-signed for the whole host. See the runbook §10.2.
+keycloak:
+  # ── campaign-manager OIDC callbacks — YOU MUST SET THIS ────────────────────
+  # Consumed as CAMPAIGN_MANAGER_REDIRECT_URIS by render-realm.sh, which runs
+  # TWICE: once in the keycloak pod's realm-renderer initContainer and again as
+  # step 1/4 of the keycloak-init Job. Empty leaves the literal
+  # __CAMPAIGN_MANAGER_REDIRECT_URIS__ in realm.json and the script aborts — so
+  # `deploy_keycloak` fails outright rather than importing a client that looks
+  # configured and rejects every login with invalid_redirect_uri.
+  #
+  # "<url>[,<url>...]" — the campaign manager's real callback(s), used by its
+  # browser/direct-grant login for the org-scoped campaign routes. Keycloak
+  # matches redirect_uri BYTE-EXACTLY — a trailing-slash difference fails
+  # login. List every callback it uses. Never point this at a host you do not
+  # control: this is an OAuth allow-list, and a third-party entry is an
+  # open-redirect primitive for stealing authorization codes.
+  #
+  # Left EMPTY here on purpose so a new environment has to make that choice
+  # rather than inheriting someone else's callback URL. It was previously absent
+  # from this file entirely, which made the failure look like a chart bug.
+  campaignManagerRedirectUris: *campaign_manager_redirect_uris
+  sso:
+    enabled: true   # registers the signals-sso identity provider (apply-sso-idp.sh)
+
+  # OTP delivery. The subchart defaults to `log`, which writes the code to the
+  # pod log and sends nothing — Keycloak stays healthy and no OTP ever arrives.
+  # Values: http | msg91 | twilio | sns | log.
+  #
+  # `http` is preferred: it hands the OTP to notification-service, which owns
+  # the vendor, so a vendor change stops needing a jar rebuild + image + tag pin
+  # here. It also removes the duplicate login-OTP template id (this chart's
+  # msg91TemplateId AND notification-service's own). Credentials for it come
+  # from secrets.smsHttpSecret, whose counterpart is the `keycloak` key id in
+  # notification-service's internal-secrets.json — both generated from the one
+  # `sms_http_secret` input so they cannot drift into a permanent 401.
+  #
+  # Requires an image carrying keycloak-otp >= 1.2.0-SNAPSHOT: an unknown SPI
+  # provider id CrashLoopBackOffs the pod rather than degrading.
+  #
+  # For msg91/twilio/sns, credentials come from secrets.msg91AuthKey +
+  # keycloak.msg91TemplateId and the matching TWILIO_*/AWS_* values.
+  smsProvider: msg91
+
+  ingress:
+    # Enable BOTH of these only together with a dedicated _auth_host above.
+    # annotations:
+    #   cert-manager.io/cluster-issuer: letsencrypt-prod
+    tls:
+      enabled: false
+      # secretName omitted -> defaults to <host with dots as dashes>-tls, in the
+      # common-services namespace.
+
+prometheus:
+  grafana:
+    grafana.ini:
+      server:
+        domain: *grafana_host
+    ingress:
+      hosts:
+        - *grafana_host
+      tls:
+        - secretName: grafana-tls
+          hosts:
+            - *grafana_host
+
+# Alerting secrets (email.smtpAuthPassword, discord.*Webhook) are set directly
+# in the generated global-secrets.yaml (UPDATE_THIS_VALUE placeholders) — not
+# here. Only the non-secret config lives below; the two files deep-merge.
+alerting:
+  email:
+    enabled: false
+    # Split host/port so these follow the anchors; the chart joins them.
+    smtpHost: *smtp_host
+    smtpPort: *smtp_port
+    smtpFrom: *smtp_user
+    smtpAuthUsername: *smtp_user
+    to: "CHANGE-ME"
+  discord:
+    enabled: false
+
+# =============================================================================
+# Aggregator chart config (non-sensitive, passed directly via -f global-values.yaml)
+# Keys match the aggregator chart's schema so no transformation is needed.
+# =============================================================================
+
+# Public registration form: the college/institute reference picker. Same anchor
+# the signals ui reads below, on purpose — one deployment serves one region on
+# both halves, and scripts/fetch-configs.sh reads this same anchor to decide
+# which colleges-<code>.json to fetch for each chart.
+web:
+  collegeDataset: *college_dataset
+  geoCountry: *geo_country
+
+aggregator-api:
+  adminEmails: *aggregator_admin_emails
+  supportEmail: *support_email
+  # RBAC: off | log | enforce. log and enforce run the Envoy + OPA edge
+  # sidecars in the api pod and need an api image that ships the policy and the
+  # Envoy template (aggregator-dpg #910; the api tag in global-images.yaml does
+  # not yet). Change to log in the same change that moves the api tag to such a
+  # release, then to enforce; see docs/aggregator-rbac-opa-plan.md.
+  rbac:
+    mode: "off"
+
+mail:
+  provider: smtp  # smtp | ses
+  smtp:
+    host: *smtp_host
+    port: *smtp_port
+    from: *smtp_user
+    fromDisplay: *smtp_from_display
+    secure: false
+    starttls: true
+    auth: true
+
+# =============================================================================
+# Signals chart config (non-sensitive, passed directly via -f global-values.yaml)
+# Keys match the signals chart's schema so no transformation is needed.
+# Computed values (API_DOMAIN, ALLOWED_ORIGINS, NETWORK_CONFIG_LOCAL_FILE) are
+# in global-cloud-values.yaml (require HCL list indexing / join).
+# =============================================================================
+
+api:
+  secrets:
+    create: true
+    existingSecret: dpg-api-secrets
+    notificationKeyId: "dpg-api-client"
+  config:
+    NOTIFICATION_SERVICE_ENDPOINT: ""   # notification-service is off; the api then sends no emails/guardian OTPs
+    NOTIFICATION_FROM_EMAIL: *smtp_user
+    SERVED_DOMAINS: *signals_served_domains
+    INSTANCE_NAME: "dpg"  # email sign-off; match EMAIL_SIGNOFF in aggregator-dpg/config/<network>/keycloak.env
+    # ── Auth provider ──────────────────────────────────
+    # `keycloak` is the only supported value. `dual` was removed in signals #456
+    # and `betterauth` in signals-dpg#757; the api rejects either at startup with
+    # a ConfigError, so a stale value crashloops the pod rather than degrading.
+    #
+    # There is no mixed mode and NO rollback provider: better-auth's code is gone
+    # from the image. An environment moving onto a signals build that includes
+    # #757 must first confirm ALL of the following:
+    #   - the shared realm exists with the signals-ui and signals-api clients
+    #   - the signals-api client secret authenticates against the token endpoint
+    #   - signals-ui's redirect URIs resolve to the SIGNALS hosts, not the Keycloak
+    #     host, or every login fails invalid_redirect_uri
+    #   - EVERY existing user is already provisioned into the realm. There is no
+    #     just-in-time backfill (plan §12), and no provider to fall back to.
+    AUTH_PROVIDER: "keycloak"
+    # ── Self-signup gate + login channels ──────────────
+    SELF_SIGNUP_MODE: "gated"           # gated (default) = public self-signup OFF; allowed = on
+    LOGIN_CHANNELS: "phone,email"       # allowed OTP channels; subset of: email, phone
+    # enforced requires a valid inter-instance HMAC token on every peer request;
+    # permissive only warns on a missing one. INSTANCE_SHARED_SECRET is already
+    # mandatory in Signals-DPG's config schema, so no instance can be missing one.
+    #
+    # INSTANCE_SHARED_SECRET must MATCH across peer instances; each environment
+    # generates its own, so sync it across peers before relying on this.
+    PEER_AUTH_MODE: "enforced"
+    SUPPORT_EMAIL: *support_email          # contact-form emails go here (sender must be SPF/DMARC authorized)
+    CONSENT_SUPPORT_EMAIL: "hello@bluedotseconomy.org"  # rendered into T&C/Privacy/Grievances consent copy at load
+    PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
+    PII_LOCATION_JITTER_MAX_METERS: "250"   # 50–1000
+    GEOCODING_COUNTRY: *geo_country         # see _geo_country above
+    # ── NCS partner SSO (signals-dpg#766). Secrets go in global-secrets.yaml.
+    SSO_PROVIDERS: "ncs"
+    SSO_OIDC_CLIENT_ID: "signals-sso"       # must match keycloak.sso.clientId
+    SSO_OIDC_IDP_ALIAS: "signals-sso"       # must match keycloak.sso.idpAlias
+    SSO_NCS_BASE_URL: "https://betacloud.ncs.gov.in"   # staging: https://ncsapi.centralindia.cloudapp.azure.com
+    SSO_NCS_TIMEOUT_MS: "5000"
+    SSO_NCS_SINGLE_USE_LINKS: "false"
+    SSO_NCS_APPLY_URL_TEMPLATE: "https://ncs.gov.in/job-listing/applying/{ncsJobId}"
+    SSO_NCS_MAPPING: '{"network":"blue_dot","item_type":"profile_1.0","role_to_domain":{"JOBSEEKER":"seeker"},"fields":{"fullName":"name","mobileNumber":"phone","gender":"gender"},"value_maps":{"gender":{"MALE":"Male","FEMALE":"Female","OTHER":"Other","TRANSGENDER":"Other"}},"age_from_dob":{"age":"dateOfBirth"},"joined_fields":{"location":["districtName","stateName"]},"feature_routes":{"placement-prep":"/"}}'
+  ssoInternalBlock:
+    enabled: true
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  schemas:
+    networks:
+      - *network
+    consentNetwork: *network
+    consentBrand: ""
+
+ui:
+  apiUpstream: "http://signals-api:2742"
+  uiVariant: "signals"
+  # Use when splitting a unified domain into per-participant domains.
+  # blockedHosts:
+  #   - "legacy.domain.com"
+  # blockedHostStatusCode: 410      # 404 if you'd rather not advertise the retirement
+  # blockedHostMessage: ""          # blank -> built-in default
+  runtimeConfig:
+    VITE_DEFAULT_VIEW_MODE: "map"
+    VITE_MAP_PROVIDER: "google-maps"
+    VITE_ACTION_POLL_INTERVAL_MS: "30000"
+    VITE_NETWORK_NAME: *network
+    VITE_BRAND_NAME: *brand
+    VITE_ANALYTICS_GA_ID: ""
+    VITE_MAP_DEFAULT_CENTER: "" # update the lat,long if any specific area has to be focused on maps.
+    VITE_MAP_DEFAULT_ZOOM: "5"
+    VITE_PROFILE_FETCH_LIMIT: "1000"
+    VITE_ENABLED_LANGUAGES: "en,hi" # default: "en,hi" (English, Hindi). Add more codes for additional languages.
+    VITE_COLLEGE_DATASET: *college_dataset
+    VITE_GEO_COUNTRY: *geo_country
+    VITE_SSO_PARTNER_URL: "https://www.ncs.gov.in"   # "Back to NCS" link on the SSO error page; confirm URL with NCS
+    VITE_SSO_PARTNER_NAME: "NCS"
+  # College/institute reference list, delivered to the UI's nginx as a ConfigMap
+  # (see helm/signals/charts/ui/values.yaml for the full rationale). The region
+  # above selects the one file that ships; set enabled: false to fall back to
+  # the datasets baked into the UI image.
+    VITE_MAP_MARKER_CAP_CLUSTERED: 1000
+    VITE_MAP_MARKER_CAP_INDIVIDUAL: 500
+    VITE_FREETEXT_MATCH_SCORE_ENABLED: false
+  reference:
+    enabled: true
+  service:
+    # This one value drives both the Service targetPort and the Deployment's
+    # containerPort/probe target — must match nginx's `listen` in the ui image
+    # (apps/ui/Dockerfile) or probes hit a dead port and the pod restart-loops
+    # with clean nginx logs. uid 65532 can bind 80 because nodes set
+    # net.ipv4.ip_unprivileged_port_start=0. `port` (Kong-facing) stays 80 either way.
+    port: 80
+    targetPort: 80
+
+notification-service:
+  enabled: false   # not deployed for MOLE
+  # Mail transport, off the same anchors keycloak and the aggregator use. NOTE 587 + STARTTLS, not 465.
+  config:
+    # Which SMS vendor this deployment sends through: msg91 (default) or
+    # pinnacle. One vendor per deployment; both register as channel `sms`, so
+    # no caller changes. An unknown value THROWS AT BOOT — and because the SMS
+    # provider is selected at module load, a typo crashloops the whole
+    # notification service, email and WhatsApp included, not just SMS.
+    #
+    # The vendor's credentials and DLT settings are NOT here: they are entered
+    # in <env>/secrets.yaml as pinnacle_* and land in the generated
+    # global-secrets.yaml, so all of one vendor's configuration lives together.
+    SMS_PROVIDER: msg91
+    SMTP_HOST: *smtp_host
+    SMTP_PORT: *smtp_port
+    SMTP_SECURE: "false"   # STARTTLS on 587; set "true" only for a 465 endpoint
+    # Pin the sender; most relays reject a From that is not the authenticated mailbox.
+    SMTP_FROM: *smtp_user
+  secrets:
+    create: true
+    existingSecret: ""
+  redis:
+    host: common-services-redis-master.common-services.svc.cluster.local
+  internalSecrets:
+    create: true
+    existingSecret: ""
+    fileName: internal-secrets.json
+    mountPath: /app/config
+
+search:
+  # Overridden by search.postgres.host in global-cloud-values.yaml (managed Postgres).
+  postgres:
+    host: common-services-postgresql.common-services.svc.cluster.local
+    port: 5432
+  secrets:
+    create: true
+    existingSecret: dpg-search-secrets
+    data:
+      POSTGRES_USER: "dpg"
+      POSTGRES_DB: "dpg"
+      EMBEDDING_API_KEY: ""
+
+# ─── campaign-manager chart ──────────────────────────────────────────────────
+app:
+  ingress:
+    enabled: false              # UPDATE: true once app.image.tag is a real published image
+    host: *campaign_manager_host
+
+raya-sync:
+  enabled: *campaign_manager_raya_enabled
+
+platform-sync:
+  enabled: *campaign_manager_platform_enabled
+  config:
+    INSTANCE_ID: *campaign_manager_instance_id
+    EXPORT_NETWORK: *network

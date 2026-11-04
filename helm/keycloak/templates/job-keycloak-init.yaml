@@ -70,6 +70,11 @@ spec:
 
               echo "[kc-init] 4/4 apply-portal-gate.py"
               python3 /init/apply-portal-gate.py
+              {{- if .Values.keycloak.sso.enabled }}
+
+              echo "[kc-init] sso: apply-sso-idp.sh (partner SSO identity provider)"
+              sh /init/apply-sso-idp.sh
+              {{- end }}
 
               echo "[kc-init] realm reconciliation complete"
           env:
@@ -95,6 +100,26 @@ spec:
                   key: KC_BOOTSTRAP_ADMIN_PASSWORD
             - name: UNMANAGED_POLICY
               value: ENABLED
+            {{- with .Values.keycloak.sso }}
+            {{- if .enabled }}
+            # apply-sso-idp.sh. API_BASE_URL must equal the signals api's API_DOMAIN (its issuer).
+            - name: API_BASE_URL
+              value: {{ printf "https://%s" (first (required "global.publicHosts is required for keycloak.sso" $.Values.global.publicHosts)) | quote }}
+            - name: SSO_API_INTERNAL_BASE_URL
+              value: {{ .apiInternalUrl | quote }}
+            - name: SSO_OIDC_CLIENT_ID
+              value: {{ .clientId | quote }}
+            - name: SSO_OIDC_IDP_ALIAS
+              value: {{ .idpAlias | quote }}
+            - name: BROWSER_FLOW
+              value: {{ .browserFlow | quote }}
+            - name: SSO_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" $ }}
+                  key: SSO_OIDC_CLIENT_SECRET
+            {{- end }}
+            {{- end }}
             # ── render-realm.sh inputs (same values the Keycloak pod renders
             # with) + the reconciler's realm path ─────────────────────────────
             - name: RENDERED_REALM

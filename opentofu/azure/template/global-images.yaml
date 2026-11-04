@@ -1,0 +1,169 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Global image configuration — single source of truth for container image
+# repository, tag, and pull policy across every service.
+#
+# Keys map directly to subchart names/aliases in the umbrella charts:
+#   helm/common-services/ → postgresql, redis, ingress-nginx, cert-manager
+#   helm/signals/         → api, ui, notification-service, match-score, search, search-embeddings
+#   helm/aggregator/      → aggregator-api, web, worker, keycloak
+#
+# Note: aggregator's api subchart carries the alias "aggregator-api" (Chart.yaml)
+# to avoid collision with signals' api key in this shared file.
+#
+# This file lives per-environment (opentofu/aws/<env>/) so each deployment can
+# pin its own image tags independently.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Signals (dpg) stack ──────────────────────────────────────────────────────
+
+api:
+  image:
+    repository: ghcr.io/blue-dots-economy/signals-dpg/api
+    # Must stay a post-DHI tag in step with ui and the migrate Job below —
+    # a pre/post-DHI mismatch breaks the release in either direction.
+    tag: "UPDATE_PR766_BUILD"   # build of signals-dpg feat/external-idp-bridge (#766)
+    pullPolicy: Always
+
+ui:
+  image:
+    repository: ghcr.io/blue-dots-economy/signals-dpg/ui
+    tag: "UPDATE_PR766_BUILD"   # same build as api
+    pullPolicy: Always
+
+notification-service:
+  image:
+    repository: ghcr.io/blue-dots-economy/notification-service
+    # Must stay >= the image that reads SMTP_HOST (notification-service#114);
+    # this chart no longer renders SMTP_GMAIL/GMAIL_*, which older images need.
+    tag: "202609-s1-rc3"
+    pullPolicy: IfNotPresent
+
+# search: api + worker share one image (entrypoint differs via command)
+search:
+  image:
+    repository: ghcr.io/blue-dots-economy/signals-search
+    tag: "202609-s1-rc3"
+    pullPolicy: Always
+
+# search-embeddings: TEI model image with BAAI/bge-m3 baked in
+search-embeddings:
+  image:
+    repository: ghcr.io/blue-dots-economy/tei-bge-m3
+    tag: "sha-1c7d576d1af74f3e0cdf659cea033ecee26733c8"
+    pullPolicy: IfNotPresent
+
+# ── Aggregator stack ─────────────────────────────────────────────────────────
+
+aggregator-api:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
+    tag: "202609-s1-rc3"
+    pullPolicy: Always
+
+web:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
+    tag: "202609-s1-rc3"
+    pullPolicy: Always
+
+worker:
+  image:
+    repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
+    tag: "202609-s1-rc3"
+    pullPolicy: Always
+
+# ── Campaign Manager stack (opt-in; see _campaign_manager_enabled in global-values.yaml) ──
+
+app:
+  image:
+    repository: ghcr.io/blue-dots-economy/agg-campaign-manager-v2
+    tag: ""   # UPDATE
+    pullPolicy: IfNotPresent
+  imagePullSecret:
+    private: false
+    name: ghcr-pull
+
+raya-sync:
+  image:
+    repository: ghcr.io/blue-dots-economy/campaign-manager-pipeline
+    tag: ""   # UPDATE
+    pullPolicy: IfNotPresent
+  imagePullSecret:
+    private: false
+    name: ghcr-pull
+
+platform-sync:
+  image:
+    repository: ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync
+    tag: ""   # UPDATE
+    pullPolicy: IfNotPresent
+  imagePullSecret:
+    private: true   # private repo: run install.sh create_campaign_manager_image_pull_secret first
+    name: ghcr-pull
+
+keycloak:
+  # Server image: built from THIS repo (dockerfiles/keycloak/) by the manual
+  # "Build Keycloak image" workflow. Moved out of aggregator-dpg because Keycloak
+  # is a common service serving both DPGs.
+  #
+  # `repository` carries the registry: the chart renders this as
+  # `{{ .Values.image.repository }}:{{ tag }}` (charts/keycloak/_helpers.tpl) and
+  # `global.imageRegistry` is empty, so there is nothing to prefix it. This used
+  # to point at a Docker Hub account, which did not match what the workflow in
+  # this repo publishes.
+  image:
+    repository: ghcr.io/blue-dots-economy/keycloak-server
+    tag: "sha-e59cc39"
+    pullPolicy: IfNotPresent
+  # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
+  # because its brand strings come from that repo's config/<network>/keycloak.env.
+  # Tagged per branch/brand (<network>[-<brand>]-<branch>) and by commit
+  # (sha-xxxxxxx); the sha- form is pinned here because it is immutable per build.
+  themesInit:
+    image: ghcr.io/blue-dots-economy/aggregator-dpg/keycloak-theme
+    tag: "sha-91414d7"
+    pullPolicy: Always
+
+
+# ── Common services (platform) ───────────────────────────────────────────────
+
+postgresql:
+  enabled: false   # MOLE uses Azure managed Postgres (global-cloud-values.yaml)
+  image:
+    registry:  ghcr.io
+    repository: blue-dots-economy/postgres-pgvector
+    tag: "sha-5d4f334"
+    pullPolicy: IfNotPresent
+    # Bitnami reads its OWN pull-secret key here and MERGES it with
+    # global.imagePullSecrets rather than deferring to it — which is why
+    # IMAGES_PUBLIC=true clears both keys, not just the global. Kept for the
+    # private path (IMAGES_PUBLIC=false); the package is public today, so with
+    # the default the charts reference no secret and the pull is anonymous.
+    pullSecrets:
+      - ghcr-pull
+
+redis:
+  # DHI mirror (bluedots-automation#136). MUST stay in step with
+  # helm/common-services/values.yaml: this overlay is layered after the chart
+  # defaults, so whatever is here wins — leaving bitnamilegacy here would have
+  # silently undone the swap.
+  image:
+    registry: ghcr.io
+    repository: blue-dots-economy/dhi/redis
+    tag: "7.4.11-compat"
+    pullPolicy: IfNotPresent
+
+ingress-nginx:
+  controller:
+    image:
+      registry: registry.k8s.io
+      image: ingress-nginx/controller    # ingress-nginx uses "image" not "repository"
+      tag: "v1.15.1"                     # chart default (chart v4.15.1)
+      pullPolicy: IfNotPresent
+
+# cert-manager and metrics-server images are NOT set here. They are pinned in
+# helm/common-services/values.yaml at ghcr.io/blue-dots-economy/dhi/* — our
+# mirror of the Docker Hardened Images (bluedots-automation#136) — because those
+# refs must stay in lockstep with .github/dhi-mirror-images.txt, which is what
+# CI checks and what the mirror workflow actually copies. A per-env override
+# here would silently escape that check and deploy an unmirrored ref.

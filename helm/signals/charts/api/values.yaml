@@ -164,6 +164,13 @@ apiRateLimit:
 # which get only the 120/min /api/v1/consent group above plus the app's own
 # per-contact caps. After #757 is everywhere, decide whether to repoint this
 # limiter at those paths or remove it.
+# Partner SSO (signals-dpg#766): Keycloak reaches these in-cluster; block them publicly.
+ssoInternalBlock:
+  enabled: false
+  paths:
+    - /api/v1/auth/sso/oidc/token
+    - /api/v1/auth/sso/oidc/jwks
+
 otpRateLimit:
   enabled: true
   minute: 5            # per-IP OTP-send requests/min (a real login needs ~1–3)

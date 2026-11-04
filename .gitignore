@@ -36,6 +36,8 @@ opentofu/aws/**/global-secrets.yaml
 opentofu/aws/**/secrets.yaml
 !opentofu/aws/**/secrets.example.yaml
 opentofu/aws/**/tf.sh
+opentofu/azure/**/global-secrets.yaml
+opentofu/azure/**/global-cloud-values.yaml
 
 # Editor / OS junk
 .DS_Store

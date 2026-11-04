@@ -1,0 +1,51 @@
+{{- if and .Values.ingress.enabled .Values.ssoInternalBlock.enabled }}
+{{- /* Partner-SSO endpoints only Keycloak calls (in-cluster); answered 404 on the public hosts. */ -}}
+{{- $fullName := include "dpg-api.fullname" . -}}
+{{- $hosts := .Values.global.publicHosts | default (list (required "global.publicHost is required" .Values.global.publicHost)) -}}
+{{- $isKong := eq .Values.ingress.className "kong" -}}
+{{- $plugins := list (printf "%s-sso-internal-block" $fullName) -}}
+{{- if and $isKong .Values.ingress.hsts.enabled }}{{ $plugins = append $plugins (printf "%s-hsts" $fullName) }}{{ end -}}
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ $fullName }}-sso-internal-block
+  labels:
+    {{- include "dpg-api.labels" . | nindent 4 }}
+plugin: request-termination
+config:
+  status_code: 404
+  message: "Not Found"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}-sso-internal-block
+  labels:
+    {{- include "dpg-api.labels" . | nindent 4 }}
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/plugins: {{ join "," $plugins | quote }}
+    {{- if and $isKong .Values.ingress.forceSSLRedirect }}
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: {{ .Values.ingress.httpsRedirectStatusCode | int | quote }}
+    {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    {{- range $hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          {{- range $.Values.ssoInternalBlock.paths }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}
