@@ -1,7 +1,7 @@
 # Copy to global-cloud-values.yaml (gitignored) and fill every value.
 # <host> = the first entry of _signals_public_hosts in global-values.yaml.
 
-# Managed Postgres (Azure). The same hostname goes in all five places.
+# Managed Postgres (Azure). The same server FQDN goes in all five places.
 global:
   dataPlatform:
     postgresHost: ""
@@ -9,14 +9,15 @@ postgres:
   host: ""
 postgresBootstrap:
   enabled: true            # creates the dpg/keycloak roles, databases and extensions
+  adminUser: ""            # managed-Postgres admin login
 
 api:
   config:
     API_DOMAIN: ""                 # https://<host>
     FRONTEND_BASE_URL: ""          # https://<host>
-    UI_HOST_BINDINGS: ""           # same string as _signals_host_bindings; empty for a single host
-    ALLOWED_ORIGINS: ""            # https://<each public host>, comma-separated
-    NETWORK_CONFIG_LOCAL_FILE: ""  # /app/schemas/<_network>.json, e.g. /app/schemas/blue_dot.json
+    UI_HOST_BINDINGS: ""           # empty for a single host
+    ALLOWED_ORIGINS: ""            # https://<host>
+    NETWORK_CONFIG_LOCAL_FILE: "/app/schemas/blue_dot.json"
   schemas:
     apiInternalUrl: ""             # https://<host>
     crossNetworkUrl: ""            # https://<host>
@@ -26,7 +27,3 @@ api:
 search:
   postgres:
     host: ""
-
-# Only when _signals_host_bindings is set:
-# ui:
-#   hostBindings: ""

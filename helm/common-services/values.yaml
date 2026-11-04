@@ -387,6 +387,7 @@ rdsRelay:
 # extensions that the Bitnami initdb script used to create. Fully idempotent.
 postgresBootstrap:
   enabled: false  # set true by the opentofu overlay once postgres.host is known
+  adminUser: postgres  # managed-Postgres admin login the Job connects as
   image:
     repository: postgres
     tag: "17-alpine"

@@ -67,6 +67,7 @@ helm/aggregator/files/consent/consent.json
 helm/aggregator/files/network-config/aggregator.config.yaml
 
 opentofu/aws/*-cluster
+opentofu/azure/*-cluster
 
 # helm dependency update scratch dir — appears only if the command is interrupted
 helm/**/tmpcharts-*/

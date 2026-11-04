@@ -1,7 +1,6 @@
 # ── Signals / Aggregator hostnames ─────────────────────────────────────────────
 _signals_public_hosts: &signals_public_hosts
-  - "example.domain.com"
-  - "example.domain.com"
+  - "example.domain.com"   # the one Signals host
 # Which public host serves which domain, when ONE release fronts several
 # per-domain portals (e.g. a seeker portal and a provider portal). Drives BOTH:
 #   - ui.hostBindings           -> the UI picks VITE_SERVED_BINDINGS per request
@@ -45,9 +44,13 @@ _signals_ui_urls: &signals_ui_urls ''
 # catch, so a new environment fails loudly until it sets a genuine callback.
 _campaign_manager_redirect_uris: &campaign_manager_redirect_uris ''
 
-_aggregator_host:      &aggregator_host      "aggregator.domain.com"
+_aggregator_host:      &aggregator_host      "example.domain.com"   # same as the Signals host; Keycloak is served at <host>/auth
 _grafana_host:         &grafana_host         "monitoring.domain.com"
 _campaign_manager_host: &campaign_manager_host "campaign-manager.domain.com"
+
+# Kong on an Azure internal load balancer (TLS ends at the edge in front of it).
+_kong_lb_ip:      &kong_lb_ip      ""   # fixed private IP for Kong, free in the AKS subnet
+_kong_trusted_ips: &kong_trusted_ips ""   # AKS subnet CIDR; X-Forwarded-* trusted only from here
 
 # Campaign Manager: app master switch + its two sync CronJobs.
 _campaign_manager_enabled:          &campaign_manager_enabled          false
@@ -274,11 +277,30 @@ metrics-server:
   enabled: false
 
 # Kong proxy access log without query strings (keeps the NCS SSO link token out of logs).
+cert-manager:
+  enabled: false   # TLS ends at the edge (Front Door / App Gateway)
+issuer:
+  enabled: false
+
 kong:
   env:
+    real_ip_header: X-Forwarded-For
+    real_ip_recursive: "on"
+    trusted_ips: *kong_trusted_ips
     nginx_http_log_format: >-
       redacted '$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent "$http_user_agent" $request_time'
     proxy_access_log: "/dev/stdout redacted"
+  serviceMonitor:
+    enabled: false   # no Prometheus-operator CRDs (monitoring not deployed)
+  proxy:
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: ""   # chart default; null does not remove it, Azure ignores it
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+      service.beta.kubernetes.io/azure-load-balancer-ipv4: *kong_lb_ip
+    http:
+      parameters: []
+    tls:
+      parameters: ["http2"]
 
 # Umbrella-level. Postgres role Keycloak logs in as. NEW clusters: `keycloak`
 # (created by common-services' bootstrap). EXISTING clusters: set `aggregator` —
@@ -431,6 +453,8 @@ mail:
 # =============================================================================
 
 api:
+  ingress:
+    tlsSecret: ""
   secrets:
     create: true
     existingSecret: dpg-api-secrets
@@ -474,10 +498,10 @@ api:
     SSO_PROVIDERS: "ncs"
     SSO_OIDC_CLIENT_ID: "signals-sso"       # must match keycloak.sso.clientId
     SSO_OIDC_IDP_ALIAS: "signals-sso"       # must match keycloak.sso.idpAlias
-    SSO_NCS_BASE_URL: "https://betacloud.ncs.gov.in"   # staging: https://ncsapi.centralindia.cloudapp.azure.com
+    SSO_NCS_BASE_URL: ""   # NCS API base: prod https://betacloud.ncs.gov.in, staging https://ncsapi.centralindia.cloudapp.azure.com
     SSO_NCS_TIMEOUT_MS: "5000"
     SSO_NCS_SINGLE_USE_LINKS: "false"
-    SSO_NCS_APPLY_URL_TEMPLATE: "https://ncs.gov.in/job-listing/applying/{ncsJobId}"
+    SSO_NCS_APPLY_URL_TEMPLATE: ""   # NCS portal job page, e.g. https://<ncs portal>/job-listing/applying/{ncsJobId}
     SSO_NCS_MAPPING: '{"network":"blue_dot","item_type":"profile_1.0","role_to_domain":{"JOBSEEKER":"seeker"},"fields":{"fullName":"name","mobileNumber":"phone","gender":"gender"},"value_maps":{"gender":{"MALE":"Male","FEMALE":"Female","OTHER":"Other","TRANSGENDER":"Other"}},"age_from_dob":{"age":"dateOfBirth"},"joined_fields":{"location":["districtName","stateName"]},"feature_routes":{"placement-prep":"/"}}'
   ssoInternalBlock:
     enabled: true
@@ -492,6 +516,9 @@ api:
     consentBrand: ""
 
 ui:
+  ingress:
+    tlsSecret: ""
+    clusterIssuer: ""
   apiUpstream: "http://signals-api:2742"
   uiVariant: "signals"
   # Use when splitting a unified domain into per-participant domains.
@@ -512,7 +539,7 @@ ui:
     VITE_ENABLED_LANGUAGES: "en,hi" # default: "en,hi" (English, Hindi). Add more codes for additional languages.
     VITE_COLLEGE_DATASET: *college_dataset
     VITE_GEO_COUNTRY: *geo_country
-    VITE_SSO_PARTNER_URL: "https://www.ncs.gov.in"   # "Back to NCS" link on the SSO error page; confirm URL with NCS
+    VITE_SSO_PARTNER_URL: ""   # NCS portal URL for the "Back to NCS" link on the SSO error page
     VITE_SSO_PARTNER_NAME: "NCS"
   # College/institute reference list, delivered to the UI's nginx as a ConfigMap
   # (see helm/signals/charts/ui/values.yaml for the full rationale). The region
@@ -563,6 +590,9 @@ notification-service:
     mountPath: /app/config
 
 search:
+  api:
+    ingress:
+      tlsSecret: ""
   # Overridden by search.postgres.host in global-cloud-values.yaml (managed Postgres).
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local

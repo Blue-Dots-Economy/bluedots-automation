@@ -170,8 +170,8 @@ function apply_default_sc() {
 # ═══ helm: namespaces + image-pull secret ═════════════════════════════════════
 # Create the 3 namespaces (common-services, signals, aggregator) if missing.
 function create_namespaces() {
-    echo -e "\nCreating namespaces: $CS_NS $SIGNALS_NS $AGG_NS"
-    for ns in "$CS_NS" "$SIGNALS_NS" "$AGG_NS"; do
+    echo -e "\nCreating namespaces: $CS_NS $SIGNALS_NS"
+    for ns in "$CS_NS" "$SIGNALS_NS"; do
         kubectl get ns "$ns" >/dev/null 2>&1 || kubectl create ns "$ns"
     done
 }
@@ -199,7 +199,7 @@ function create_image_pull_secret() {
         echo "ERROR: $SCRIPT_DIR/rotate-ghcr-pull.sh missing"
         exit 1
     }
-    bash "$SCRIPT_DIR/rotate-ghcr-pull.sh" "${GHCR_PAT:-}" "$CS_NS" "$SIGNALS_NS" "$AGG_NS"
+    bash "$SCRIPT_DIR/rotate-ghcr-pull.sh" "${GHCR_PAT:-}" "$CS_NS" "$SIGNALS_NS"
 }
 
 # Write `ghcr-pull` into ONLY $PRIVATE_IMAGE_NAMESPACES. Deliberately ignores
@@ -514,17 +514,13 @@ function deploy_campaign_manager() {
 # ═══ helm: deploy everything ══════════════════════════════════════════════════
 # 3) Full stack, in dependency order: namespaces+secrets → common-services →
 #    signals → aggregator → campaign-manager.
-function deploy_all_services() {
+function deploy_all_services() {  # Signals only: no monitoring, aggregator, campaign-manager or ACME
     preflight
     create_namespaces_and_secrets
-    deploy_monitoring
     deploy_common_services
     deploy_keycloak
     deploy_signals
-    deploy_aggregator
-    deploy_campaign_manager
-    fix_acme_issuer_uri
-    echo -e "\n✔ all releases deployed: monitoring, common-services, keycloak, signals, aggregator, campaign-manager"
+    echo -e "\n✔ all releases deployed: common-services, keycloak, signals"
 }
 
 # cert-manager v1.20.2 bug (cert-manager/cert-manager#7846): the controller
@@ -745,7 +741,7 @@ function invoke_functions() {
 
 if [ $# -eq 0 ]; then
     echo "Usage: bash install.sh <function> [<function> ...]" >&2
-    echo "e.g.   bash install.sh preflight apply_default_sc deploy_common_services" >&2
+    echo "e.g.   bash install.sh deploy_all_services   (or: preflight deploy_common_services)" >&2
     exit 1
 else
     invoke_functions "$@"
