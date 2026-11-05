@@ -139,6 +139,10 @@ spec:
                   WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname='{{ .name }}')\gexec
                 {{- end }}
               EOSQL
+              # Azure Flexible Server leaves each new database's public schema owned by azure_pg_admin.
+              {{- range .Values.postgresBootstrap.databases }}
+              psql -v ON_ERROR_STOP=1 -d {{ .name }} -c "GRANT ALL ON SCHEMA public TO {{ .owner }};"
+              {{- end }}
               # Extensions per database, created as the master (rds_superuser on RDS) —
               # required for postgis/vector, which the non-super app roles cannot create.
               {{- range .Values.postgresBootstrap.databases }}

@@ -45,13 +45,14 @@ api.secrets.data.SIGNALS_SEARCH_API_KEY                  signals_search_api_key
 api.secrets.data.RAYA_VOICE_BOT_API_KEY                  raya_voice_bot_api_key
 '
 
-# Same shapes as random_passwords: hex = random_id (bytes), alnum = random_password (length).
+# Same shapes as random_passwords: hex/b64 = random_id .hex/.b64_std (bytes), alnum = random_password (length).
 spec() {
     case "$1" in
         keycloak_postgres_password) echo hex 24 ;;
         signals_postgres_password|aggregator_postgres_password|aggregator_export_ro_password|\
         campaign_manager_signals_ro_password|signals_redis_password|aggregator_kc_bootstrap_admin_password) echo hex 16 ;;
         monitoring_grafana_password) echo alnum 16 ;;
+        signals_pii_key) echo b64 32 ;;
         signalstack_admin_key|signals_search_api_key|raya_voice_bot_api_key) echo alnum 48 ;;
         *) echo hex 32 ;;
     esac
@@ -60,6 +61,8 @@ spec() {
 gen() { # gen hex|alnum N
     if [[ "$1" == hex ]]; then
         od -An -tx1 -N"$2" /dev/urandom | tr -d ' \n'
+    elif [[ "$1" == b64 ]]; then
+        head -c "$2" /dev/urandom | base64 | tr -d '\n'
     else
         (LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$2") || true
     fi
