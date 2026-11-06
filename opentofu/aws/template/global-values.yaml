@@ -699,6 +699,7 @@ api:
     PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
     PII_LOCATION_JITTER_MAX_METERS: "250"   # 50–1000
     GEOCODING_COUNTRY: *geo_country         # see _geo_country above
+    MARKERS_MAX_LIMIT: "25000"              # most map listings per request; keep it above ui VITE_MAP_MARKER_CAP
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local
   redis:
