@@ -734,8 +734,9 @@ ui:
   # (see helm/signals/charts/ui/values.yaml for the full rationale). The region
   # above selects the one file that ships; set enabled: false to fall back to
   # the datasets baked into the UI image.
-    VITE_MAP_MARKER_CAP_CLUSTERED: 1000
-    VITE_MAP_MARKER_CAP_INDIVIDUAL: 500
+    # Per domain: keep cap x domains on the map at or below about 100,000 so low-end phones draw it in a few seconds.
+    VITE_MAP_MARKER_CAP: 24999
+    VITE_MAP_CLUSTER_RADIUS_PX: 80
     VITE_FREETEXT_MATCH_SCORE_ENABLED: false
   reference:
     enabled: true
