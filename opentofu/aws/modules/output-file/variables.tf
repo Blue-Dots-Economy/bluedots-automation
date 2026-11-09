@@ -331,6 +331,11 @@ variable "voice_dpg_signals_secret" {
   sensitive = true
 }
 
+variable "signals_search_client_secret" {
+  type      = string
+  sensitive = true
+}
+
 variable "campaign_manager_secret" {
   type      = string
   sensitive = true

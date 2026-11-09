@@ -816,6 +816,37 @@
       "webOrigins": null
     },
     {
+      "clientId": "signals-search-client",
+      "name": "signals-search (service auth into signals)",
+      "description": "Client-credentials client for signals-search's calls to the Signals-DPG geocode endpoint. The client id must equal the slug of the network_service org seeded by provision_service_users.sql.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "__SIGNALS_SEARCH_CLIENT_SECRET__",
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "attributes": {
+        "use.refresh.tokens": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "signals-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "signals-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ],
+      "redirectUris": null,
+      "webOrigins": null
+    },
+    {
       "clientId": "campaign-manager",
       "name": "Campaign Manager",
       "description": "Confidential client for the external campaign manager. Browser login (OTP) and direct access grants give a coordinator a token for the org-scoped campaign routes.",
