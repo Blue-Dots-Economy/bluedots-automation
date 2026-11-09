@@ -227,9 +227,17 @@ api:
     # on signals' human session path, and `signals-api` is a confidential service
     # client that must never be accepted as a human session.
     KEYCLOAK_ACCEPTED_CLIENT_IDS: "signals-ui"
-    # Service clients allowed on the service-auth path. Set to `aggregator-dpg`
-    # only when Phase C (x-api-key -> client-credentials bearer) is turned on.
-    KEYCLOAK_SERVICE_CLIENT_IDS: ""
+    # Service clients allowed on the service-auth path (comma list). Add
+    # `aggregator-dpg` when Phase C (x-api-key -> client-credentials bearer) is
+    # turned on; an environment override must ADD to this list, never replace it.
+    # `signals-search-client` is signals-search calling the geocode endpoint; its
+    # id must equal the slug of the network_service org seeded by
+    # provision_service_users.sql.
+    KEYCLOAK_SERVICE_CLIENT_IDS: "signals-search-client"
+    # Text-address search geocode endpoint (POST /api/v1/geo/resolve).
+    GEO_RESOLVE_TIMEOUT_MS: "1500"
+    GEO_RESOLVE_DAILY_CAP: "5000"
+    GEO_RESOLVE_CLIENT_IDS: "signals-search-client"
     CREATE_TEST_OTP: "false"
     ALLOWED_ORIGINS: "http://localhost:8080"
     # Update these domain according to the networks you want to serve. (purple dot, yellow_dot, blue dots)
