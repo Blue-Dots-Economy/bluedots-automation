@@ -21,9 +21,6 @@ spec:
         {{- if .Values.internalSecrets.create }}
         checksum/internal-secret: {{ include (print $.Template.BasePath "/internal-secret.yaml") . | sha256sum }}
         {{- end }}
-        {{- if .Values.pinnacleTemplates }}
-        checksum/pinnacle-templates: {{ include (print $.Template.BasePath "/pinnacle-templates.yaml") . | sha256sum }}
-        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
