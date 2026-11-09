@@ -67,7 +67,7 @@ for role in org_owner signals_participant signals_admin; do
   fi
 done
 
-# ── A4. All eight clients, both DPGs ─────────────────────────────────────────
+# ── A4. All nine clients, both DPGs ─────────────────────────────────────────
 for client in aggregator-portal aggregator-api aggregator-bff \
               signals-ui signals-api aggregator-dpg voice-dpg campaign-manager \
               signals-search-client; do

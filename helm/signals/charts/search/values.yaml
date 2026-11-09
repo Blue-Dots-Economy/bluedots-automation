@@ -78,11 +78,15 @@ config:
   SWEEP_INTERVAL_MS: "60000"
   SWEEP_BATCH_SIZE: "200"
 # Text-address search (address -> Signals-DPG geocode endpoint). ALL-OR-NONE: when
-# enabled the configmap renders SIGNALS_GEOCODE_URL, KEYCLOAK_TOKEN_URL,
-# KEYCLOAK_CLIENT_ID, GEOCODE_TIMEOUT_MS and the deployment injects
-# KEYCLOAK_CLIENT_SECRET from the search Secret; when disabled none of them exist
-# (signals-search treats an empty string as set and fails validation, so they must
-# be absent, not blank). Needs the `signals-search-client` Keycloak client.
+# enabled the API Deployment (only — NEVER the worker or the shared ConfigMap, the
+# worker runs the same config validation and would crash-loop on a partial set)
+# gets SIGNALS_GEOCODE_URL, KEYCLOAK_TOKEN_URL, KEYCLOAK_CLIENT_ID,
+# GEOCODE_TIMEOUT_MS and KEYCLOAK_CLIENT_SECRET (secretKeyRef to the search Secret);
+# when disabled none exist (an empty string counts as set and fails validation).
+# Needs the `signals-search-client` Keycloak client.
+# With secrets.create=false the existing Secret MUST contain KEYCLOAK_CLIENT_SECRET,
+# else the API pod sits in CreateContainerConfigError — add the key or set
+# geocode.enabled=false.
 geocode:
   enabled: false
   # Signals API root (no /api suffix). Empty -> http://{release}-api:{signalsPort}.

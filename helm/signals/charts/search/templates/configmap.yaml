@@ -22,26 +22,6 @@ data:
   SEARCH_RADIUS_LOCALITY_METERS: {{ .Values.searchRadius.localityMeters | quote }}
   SEARCH_RADIUS_CITY_METERS: {{ .Values.searchRadius.cityMeters | quote }}
   SEARCH_RADIUS_DISTRICT_METERS: {{ .Values.searchRadius.districtMeters | quote }}
-  {{- if .Values.geocode.enabled }}
-  {{- /* Geocoder wiring is ALL-OR-NONE in signals-search: an empty string counts as
-        set and fails validation, so none of these (nor KEYCLOAK_CLIENT_SECRET in the
-        deployment) may be rendered unless geocode.enabled. The token URL defaults to
-        the in-cluster shared Keycloak, resolved like the api chart (global.keycloak.*). */}}
-  {{- $g := .Values.global | default dict }}
-  {{- $gkc := $g.keycloak | default dict }}
-  {{- $realm := $gkc.realm | default $g.keycloakRealm }}
-  {{- $tokenUrl := .Values.geocode.keycloakTokenUrl }}
-  {{- if not $tokenUrl }}
-  {{- if not $realm }}{{ fail "search.geocode.enabled but no Keycloak realm resolved — set global.keycloakRealm (or search.geocode.keycloakTokenUrl)" }}{{ end }}
-  {{- if not $gkc.internalBaseUrl }}{{ fail "search.geocode.enabled but no internal Keycloak URL resolved — set global.keycloak.internalBaseUrl (or search.geocode.keycloakTokenUrl)" }}{{ end }}
-  {{- $tokenUrl = printf "%s/realms/%s/protocol/openid-connect/token" (trimSuffix "/" $gkc.internalBaseUrl) $realm }}
-  {{- end }}
-  {{- /* Signals API root, no /api suffix. Service is {release}-api (dpg-api.fullname). */}}
-  SIGNALS_GEOCODE_URL: {{ .Values.geocode.signalsUrl | default (printf "http://%s-api:%v" .Release.Name .Values.geocode.signalsPort) | quote }}
-  KEYCLOAK_TOKEN_URL: {{ $tokenUrl | quote }}
-  KEYCLOAK_CLIENT_ID: {{ .Values.geocode.clientId | quote }}
-  GEOCODE_TIMEOUT_MS: {{ .Values.geocode.timeoutMs | quote }}
-  {{- end }}
   {{- range $k, $v := .Values.config }}
   {{ $k }}: {{ $v | quote }}
   {{- end }}

@@ -45,9 +45,32 @@ spec:
             - name: EMBEDDING_API_KEY
               valueFrom: { secretKeyRef: { name: {{ include "search.secretName" . }}, key: EMBEDDING_API_KEY } }
             {{- if .Values.geocode.enabled }}
+            {{- /* Geocoder wiring is ALL-OR-NONE in signals-search's loadConfig() (an empty
+                  string counts as set), and the WORKER runs the same loadConfig() — so these
+                  four live ONLY here on the API Deployment, never in the shared ConfigMap
+                  the worker envFroms. Token URL defaults to the in-cluster shared Keycloak
+                  (global.keycloak.*, resolved like the api chart). */}}
+            {{- $g := .Values.global | default dict }}
+            {{- $gkc := $g.keycloak | default dict }}
+            {{- $realm := $gkc.realm | default $g.keycloakRealm }}
+            {{- $tokenUrl := .Values.geocode.keycloakTokenUrl }}
+            {{- if not $tokenUrl }}
+            {{- if not $realm }}{{ fail "search.geocode.enabled but no Keycloak realm resolved — set global.keycloakRealm (or search.geocode.keycloakTokenUrl)" }}{{ end }}
+            {{- if not $gkc.internalBaseUrl }}{{ fail "search.geocode.enabled but no internal Keycloak URL resolved — set global.keycloak.internalBaseUrl (or search.geocode.keycloakTokenUrl)" }}{{ end }}
+            {{- $tokenUrl = printf "%s/realms/%s/protocol/openid-connect/token" (trimSuffix "/" $gkc.internalBaseUrl) $realm }}
+            {{- end }}
             {{- if and .Values.secrets.create (not .Values.secrets.data.KEYCLOAK_CLIENT_SECRET) }}
             {{- fail "search.geocode.enabled needs search.secrets.data.KEYCLOAK_CLIENT_SECRET (== keycloak secrets.signalsSearchClientSecret), or set secrets.create=false with an existing Secret holding that key" }}
             {{- end }}
+            # Signals API root, no /api suffix. Service is {release}-api (dpg-api.fullname).
+            - name: SIGNALS_GEOCODE_URL
+              value: {{ .Values.geocode.signalsUrl | default (printf "http://%s-api:%v" .Release.Name .Values.geocode.signalsPort) | quote }}
+            - name: KEYCLOAK_TOKEN_URL
+              value: {{ $tokenUrl | quote }}
+            - name: KEYCLOAK_CLIENT_ID
+              value: {{ .Values.geocode.clientId | quote }}
+            - name: GEOCODE_TIMEOUT_MS
+              value: {{ .Values.geocode.timeoutMs | quote }}
             - name: KEYCLOAK_CLIENT_SECRET
               valueFrom: { secretKeyRef: { name: {{ include "search.secretName" . }}, key: KEYCLOAK_CLIENT_SECRET } }
             {{- end }}
