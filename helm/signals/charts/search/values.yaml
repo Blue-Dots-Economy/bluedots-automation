@@ -77,6 +77,27 @@ config:
   INGEST_CONSUMER_GROUP: "signals-search"
   SWEEP_INTERVAL_MS: "60000"
   SWEEP_BATCH_SIZE: "200"
+# Text-address search (address -> Signals-DPG geocode endpoint). ALL-OR-NONE: when
+# enabled the configmap renders SIGNALS_GEOCODE_URL, KEYCLOAK_TOKEN_URL,
+# KEYCLOAK_CLIENT_ID, GEOCODE_TIMEOUT_MS and the deployment injects
+# KEYCLOAK_CLIENT_SECRET from the search Secret; when disabled none of them exist
+# (signals-search treats an empty string as set and fails validation, so they must
+# be absent, not blank). Needs the `signals-search-client` Keycloak client.
+geocode:
+  enabled: false
+  # Signals API root (no /api suffix). Empty -> http://{release}-api:{signalsPort}.
+  signalsUrl: ""
+  signalsPort: 2742
+  # Full realm token endpoint. Empty -> derived from global.keycloak.internalBaseUrl
+  # + global.keycloakRealm (.../realms/<realm>/protocol/openid-connect/token).
+  keycloakTokenUrl: ""
+  clientId: signals-search-client
+  timeoutMs: 2000
+searchRadius:
+  postalCodeMeters: 10000
+  localityMeters: 10000
+  cityMeters: 25000
+  districtMeters: 50000
 secrets:
   create: true
   existingSecret: dpg-search-secrets
@@ -86,6 +107,9 @@ secrets:
     POSTGRES_PASSWORD: ""
     REDIS_PASSWORD: ""
     EMBEDDING_API_KEY: ""
+    # `signals-search-client` Keycloak client secret; only read when geocode.enabled.
+    # Must equal the keycloak release's secrets.signalsSearchClientSecret.
+    KEYCLOAK_CLIENT_SECRET: ""
 
 # Pod/container security hardening (#1.12). Mirrors the signals-api baseline:
 # non-root uid 1000, drop all Linux capabilities, no privilege escalation.

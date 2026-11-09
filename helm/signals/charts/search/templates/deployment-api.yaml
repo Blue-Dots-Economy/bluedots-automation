@@ -44,6 +44,13 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ include "search.secretName" . }}, key: REDIS_PASSWORD } }
             - name: EMBEDDING_API_KEY
               valueFrom: { secretKeyRef: { name: {{ include "search.secretName" . }}, key: EMBEDDING_API_KEY } }
+            {{- if .Values.geocode.enabled }}
+            {{- if and .Values.secrets.create (not .Values.secrets.data.KEYCLOAK_CLIENT_SECRET) }}
+            {{- fail "search.geocode.enabled needs search.secrets.data.KEYCLOAK_CLIENT_SECRET (== keycloak secrets.signalsSearchClientSecret), or set secrets.create=false with an existing Secret holding that key" }}
+            {{- end }}
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "search.secretName" . }}, key: KEYCLOAK_CLIENT_SECRET } }
+            {{- end }}
             - name: DATABASE_URL
               value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
             - name: REDIS_URL

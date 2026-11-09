@@ -485,6 +485,14 @@ search:
       POSTGRES_PASSWORD: ""
       REDIS_PASSWORD: ""
       EMBEDDING_API_KEY: ""
+      # `signals-search-client` Keycloak client secret (== keycloak
+      # secrets.signalsSearchClientSecret). Required while search.geocode.enabled.
+      KEYCLOAK_CLIENT_SECRET: ""
+  # Text-address search: signals-search calls Signals-DPG's geocode endpoint with a
+  # client-credentials token. Token URL + Signals URL are derived (see the search
+  # chart's values.yaml); disable to keep search free of the geocode wiring.
+  geocode:
+    enabled: true
 
 
 # Namespace-scoped ingress isolation (#1.12). Default OFF: enabling applies an
