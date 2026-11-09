@@ -1,0 +1,10 @@
+{{- if .Values.pinnacleTemplates -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dpg-notification-service.fullname" . }}-pinnacle-templates
+  labels:
+    {{- include "dpg-notification-service.labels" . | nindent 4 }}
+data:
+  pinnacle-templates.json: {{ .Values.pinnacleTemplates | toJson | quote }}
+{{- end }}

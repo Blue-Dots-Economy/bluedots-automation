@@ -135,6 +135,8 @@ entered in `<env>/secrets.yaml` as `pinnacle_*` and rendered into the generated
 Splitting them across `global-values.yaml` and `secrets.yaml` is how half of a
 vendor's configuration goes stale.
 
+**Pinnacle event templates are a list, not env vars.** `notification-service.pinnacleTemplates` (rows in the OTP row shape) renders a ConfigMap mounted at `/app/pinnacle/pinnacle-templates.json`, and the deployment sets `PINNACLE_TEMPLATES_FILE` to it. Empty (the default) renders nothing. Keep the rows with the other Pinnacle settings in the environment's secrets file. The four `PINNACLE_TEMPLATE_*_OTP` env vars are separate and unchanged.
+
 **Those inputs default to `""`, not `UPDATE_THIS_VALUE`.** The charts filter empty
 values out of the ConfigMap/Secret, so an unfilled `secrets.yaml` leaves them
 genuinely *unset* and every "not configured" guard downstream fires. A non-empty

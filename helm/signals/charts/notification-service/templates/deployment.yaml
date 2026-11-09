@@ -21,6 +21,9 @@ spec:
         {{- if .Values.internalSecrets.create }}
         checksum/internal-secret: {{ include (print $.Template.BasePath "/internal-secret.yaml") . | sha256sum }}
         {{- end }}
+        {{- if .Values.pinnacleTemplates }}
+        checksum/pinnacle-templates: {{ include (print $.Template.BasePath "/pinnacle-templates.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -49,9 +52,15 @@ spec:
                 name: {{ include "dpg-notification-service.fullname" . }}
             - secretRef:
                 name: {{ include "dpg-notification-service.secretName" . }}
-          {{- with .Values.extraEnv }}
+          {{- if or .Values.extraEnv .Values.pinnacleTemplates }}
           env:
+            {{- if .Values.pinnacleTemplates }}
+            - name: PINNACLE_TEMPLATES_FILE
+              value: /app/pinnacle/pinnacle-templates.json
+            {{- end }}
+            {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
@@ -69,6 +78,12 @@ spec:
             - name: internal-secrets
               mountPath: {{ .Values.internalSecrets.mountPath }}
               readOnly: true
+            {{- if .Values.pinnacleTemplates }}
+            # Own directory: mounting into internalSecrets.mountPath would hide that file.
+            - name: pinnacle-templates
+              mountPath: /app/pinnacle
+              readOnly: true
+            {{- end }}
       volumes:
         - name: internal-secrets
           secret:
@@ -76,6 +91,11 @@ spec:
             items:
               - key: {{ .Values.internalSecrets.fileName }}
                 path: {{ .Values.internalSecrets.fileName }}
+        {{- if .Values.pinnacleTemplates }}
+        - name: pinnacle-templates
+          configMap:
+            name: {{ include "dpg-notification-service.fullname" . }}-pinnacle-templates
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
