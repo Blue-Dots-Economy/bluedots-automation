@@ -72,7 +72,15 @@ echo "[build-realm] output: $OUT"
 #     realm without these declarations cannot drop them; any earlier
 #     declaration of those names is replaced. unmanagedAttributePolicy is left
 #     as the source has it. apply-user-profile.sh applies the same declarations
-#     to realms that already exist.
+#     to realms that already exist. aggregator_type is multivalued: a
+#     coordinator can serve several profile types.
+#
+# H5  The aggregator-portal client's aggregator_type mapper is multivalued, so
+#     the token carries every profile type as a JSON array. Forced here so a
+#     source realm with a single-valued mapper cannot ship one. The
+#     campaign-manager mapper is left as the source has it; nothing reads that
+#     claim. apply-user-profile.sh switches the mapper on realms that already
+#     exist.
 
 jq '
   def is_local: test("localhost|127\\.0\\.0\\.1");
@@ -81,7 +89,7 @@ jq '
   def admin_only_attrs: [
     { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
     { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
-    { name: "aggregator_type", displayName: "Aggregator type", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+    { name: "aggregator_type", displayName: "Profile types", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
     { name: "signalstack_org_id", displayName: "Signals organisation id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false }
   ];
 
@@ -102,6 +110,12 @@ jq '
       | .webOrigins   = (.webOrigins   | strip_local)
       | if (.attributes."post.logout.redirect.uris") then
           .attributes."post.logout.redirect.uris" |=  strip_local_hashlist
+        else . end
+      | if .clientId == "aggregator-portal" then
+          .protocolMappers = [
+            (.protocolMappers // [])[]
+            | if .name == "aggregator_type" then .config.multivalued = "true" else . end
+          ]
         else . end
     ]
   | .attributes."kc.user.profile.config" |= (

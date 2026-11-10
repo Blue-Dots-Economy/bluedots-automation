@@ -33,7 +33,7 @@ with `scripts/build-realm.sh <app-repo realm.json>` (applies the hardening
 transform) and gate with `scripts/assert-realm.sh` — which CI runs. Do **not** add
 a "drift from upstream" diff; it would fail on the intentional differences.
 
-**Three hardening steps that are invisible when they regress:**
+**Four hardening steps that are invisible when they regress:**
 - The local realms carry `localhost` entries in `redirectUris`, `webOrigins` and —
   easy to miss — the `##`-delimited `post.logout.redirect.uris` *attribute*. Those
   widen a production OAuth client's allow-lists. `assert-realm.sh` fails on any of
@@ -49,6 +49,14 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   (A10), and `apply-user-profile.sh` re-applies them to existing realms and
   fails the init Job unless all four are admin-only. `unmanagedAttributePolicy`
   stays `ENABLED` for every other attribute.
+- `aggregator_type` is **multivalued**: a coordinator can serve several profile
+  types, and the aggregator reads them from the token as a JSON array. Both the
+  user-profile attribute and the `aggregator-portal` mapper must be multivalued.
+  `build-realm.sh` forces both (H4, H5), `assert-realm.sh` checks both (A11), and
+  `apply-user-profile.sh` switches an existing realm's mapper in place and fails
+  the init Job if the switch fails. Single-valued, every coordinator silently
+  keeps only one of their types. The `campaign-manager` mapper stays
+  single-valued; nothing reads that claim.
 
 **signals-ui lives on different hostnames to Keycloak.** `__PUBLIC_BASE_URL__` is
 the Keycloak/aggregator host; the signals UI is served from `global.publicHosts` (a
