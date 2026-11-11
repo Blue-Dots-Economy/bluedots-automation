@@ -1,0 +1,41 @@
+# =============================================================================
+# Pinnacle event-template rows — OPTIONAL, per-deployment.
+#
+# Setup (once per environment that uses SMS_PROVIDER=pinnacle and has event
+# templates beyond the four PINNACLE_TEMPLATE_*_OTP rows in global-values.yaml):
+#   cp pinnacle-templates.example.yaml pinnacle-templates.yaml
+#   ...then replace the rows below with the real, DLT-approved ones.
+#
+# pinnacle-templates.yaml is GITIGNORED — never commit real rows (real DLT
+# template ids and approved SMS wording, same reasoning as secrets.yaml).
+# deploy_signals / dry_run_signals load it only if the file exists; its
+# absence is the safe default — the chart's own `pinnacleTemplates: []`
+# stands and no event templates render.
+#
+# Row shape matches notification-service's own
+# config/pinnacle-templates.example.json (format reference, app-side).
+# =============================================================================
+notification-service:
+  pinnacleTemplates:
+    - template_key: profile_created_sms
+      network: purple_dot
+      channel: sms
+      locale: en
+      provider: pinnacle
+      provider_template_id: "1000000000000000001"
+      body_text: "Your profile on Example Dots has been created. View it: {{url}} - Team Example"
+      variables:
+        - name: url
+          type: url
+          urlHosts:
+            - seekers.example.org
+    - template_key: support_complaint_confirmation_sms
+      network: purple_dot
+      channel: sms
+      locale: en
+      provider: pinnacle
+      provider_template_id: "1000000000000000002"
+      body_text: "Example Dots: We have received your {{type}} (Ref: {{reference}}). Our team will get back to you soon. - Team Example"
+      variables:
+        - name: type
+        - name: reference
