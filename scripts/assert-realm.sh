@@ -168,6 +168,28 @@ for attr in aggregator_id decision_made aggregator_type signalstack_org_id; do
   fi
 done
 
+# ── A11. aggregator_type is multivalued for the portal ───────────────────────
+# A coordinator can serve several profile types. The aggregator reads them from
+# the aggregator_type claim as a JSON array, so both the user-profile attribute
+# and the aggregator-portal mapper must be multivalued (H4, H5). Single-valued,
+# every coordinator is limited to one of their types.
+if jq -e '
+     .attributes."kc.user.profile.config" // "{}" | fromjson
+     | [.attributes[]? | select(.name == "aggregator_type" and .multivalued == true)] | length == 1
+   ' "$REALM_FILE" >/dev/null 2>&1; then
+  pass "user profile declares aggregator_type multivalued"
+else
+  fail "user profile does not declare aggregator_type multivalued"
+fi
+if jq -e '
+     [.clients[] | select(.clientId == "aggregator-portal") | .protocolMappers[]?
+      | select(.name == "aggregator_type" and .config.multivalued == "true")] | length == 1
+   ' "$REALM_FILE" >/dev/null 2>&1; then
+  pass "aggregator-portal maps aggregator_type multivalued"
+else
+  fail "aggregator-portal aggregator_type mapper is missing or not multivalued"
+fi
+
 echo
 if [ "$FAILED" -eq 0 ]; then
   echo "realm assertions: ALL PASSED"

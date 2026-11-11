@@ -100,7 +100,7 @@ UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" '
       ([(.attributes // [])[] | select(.name as $n | admin_only | index($n) | not)] + [
         { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
-        { name: "aggregator_type", displayName: "Aggregator type", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+        { name: "aggregator_type", displayName: "Profile types", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
         { name: "signalstack_org_id", displayName: "Signals organisation id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "roles", displayName: "Roles", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
         {
@@ -146,6 +146,12 @@ echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HA
 
 if [ "${ADMIN_ONLY:-0}" -lt 5 ]; then
   echo "[kc-init] aggregator_id / decision_made / aggregator_type / signalstack_org_id / roles are not all declared admin-only"
+  exit 1
+fi
+
+TYPE_MULTI=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "aggregator_type" and .multivalued == true)] | length')
+if [ "${TYPE_MULTI:-0}" -lt 1 ]; then
+  echo "[kc-init] aggregator_type is not multivalued — coordinators would be limited to one profile type"
   exit 1
 fi
 
@@ -301,7 +307,8 @@ echo "[kc-init] smtpServer configured: ${SMTP_HOST}:${SMTP_PORT:-587} (ssl=${SSL
 #   - publicClient=false + clientAuthenticatorType=client-secret
 #   - client secret = $OIDC_CLIENT_SECRET (must match the BFF env var)
 #   - protocol mappers for decision_made + phone_number (required by
-#     requireApproved middleware on the API)
+#     requireApproved middleware on the API), roles, and aggregator_type
+#     (multivalued: the profile types a coordinator serves)
 # ────────────────────────────────────────────────────────────
 
 PORTAL_CLIENT_ID="${PORTAL_CLIENT_ID:-aggregator-portal}"
@@ -396,6 +403,45 @@ EOF
   # The aggregator's RBAC edge decides route permissions from this claim
   # (aggregator-dpg docs/rbac/rbac-edge-enforcement.md). Access token only.
   ensure_mapper "roles"         "roles"         "roles"         "false" "true"
+
+  # A coordinator can serve several profile types, so the aggregator reads
+  # aggregator_type as a JSON array claim. ensure_mapper never edits an
+  # existing mapper, and realms created earlier have it single-valued, so the
+  # switch below updates it in place. A no-op when it is already multivalued.
+  # Exits non-zero on any failure, because a single-valued or missing claim
+  # limits every coordinator to one profile type.
+  ensure_mapper_multivalued() {
+    mapper_name="$1"
+    mapper=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${PORTAL_UUID}/protocol-mappers/models" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      | jq -c --arg n "${mapper_name}" '[.[] | select(.name == $n)][0] // empty')
+    if [ -z "$mapper" ]; then
+      echo "[kc-init] mapper '${mapper_name}' absent after create — the claim would be missing"
+      exit 1
+    fi
+    if [ "$(printf '%s' "$mapper" | jq -r '.config.multivalued')" = "true" ]; then
+      echo "[kc-init] mapper '${mapper_name}' already multivalued — skip"
+      return 0
+    fi
+    mapper_id=$(printf '%s' "$mapper" | jq -r '.id')
+    resp=$(mktemp)
+    HTTP=$(curl -s -o "$resp" -w "%{http_code}" \
+      -X PUT "${KC_URL}/admin/realms/${REALM}/clients/${PORTAL_UUID}/protocol-mappers/models/${mapper_id}" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      --data "$(printf '%s' "$mapper" | jq -c '.config.multivalued = "true"')")
+    if [ "$HTTP" = "204" ]; then
+      echo "[kc-init] mapper '${mapper_name}' switched to multivalued"
+      rm -f "$resp"
+    else
+      echo "[kc-init] mapper '${mapper_name}' multivalued switch FAILED: HTTP ${HTTP}"
+      cat "$resp" || true
+      rm -f "$resp"
+      exit 1
+    fi
+  }
+  ensure_mapper "aggregator_type" "aggregator_type" "aggregator_type" "false" "true"
+  ensure_mapper_multivalued "aggregator_type"
 fi
 
 # ────────────────────────────────────────────────────────────────────────────
