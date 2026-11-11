@@ -35,6 +35,11 @@ opentofu/aws/**/global-secrets.yaml
 # committed helm/**/templates/secrets.yaml files.
 opentofu/aws/**/secrets.yaml
 !opentofu/aws/**/secrets.example.yaml
+# Pinnacle event-template rows (real DLT ids + approved SMS wording) — optional,
+# per-deployment, and not meant for this shared repo's history. deploy_signals
+# loads it only when present; absent is the safe default (no event templates).
+opentofu/aws/**/pinnacle-templates.yaml
+!opentofu/aws/**/pinnacle-templates.example.yaml
 opentofu/aws/**/tf.sh
 
 # Editor / OS junk

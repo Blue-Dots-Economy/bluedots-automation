@@ -19,6 +19,12 @@ GLOBAL_SECRETS="${GLOBAL_SECRETS:-$SCRIPT_DIR/global-secrets.yaml}"
 GLOBAL_CLOUD_VALUES="${GLOBAL_CLOUD_VALUES:-$SCRIPT_DIR/global-cloud-values.yaml}"
 # Non-sensitive config passed directly to Helm via -f (keys match chart schemas).
 GLOBAL_VALUES="${GLOBAL_VALUES:-$SCRIPT_DIR/global-values.yaml}"
+# Optional, per-env, gitignored — Pinnacle event-template rows
+# (notification-service.pinnacleTemplates: real DLT ids + approved SMS
+# wording). Absent is the safe default: deploy_signals skips the -f and the
+# chart's own `pinnacleTemplates: []` stands, so no event templates render.
+# Seed it from the committed pinnacle-templates.example.yaml.
+PINNACLE_TEMPLATES="${PINNACLE_TEMPLATES:-$SCRIPT_DIR/pinnacle-templates.yaml}"
 
 # Git ref the network/consent config is fetched from at deploy time from the
 # unified schemas repo Blue-Dots-Economy/bluedots-schemas
@@ -505,6 +511,10 @@ function deploy_keycloak() {
 function deploy_signals() {
     echo -e "\nDeploying signals"
     fetch_signals_configs
+    # Layered only when the file exists, so an environment that has never set
+    # up Pinnacle event templates deploys exactly as before.
+    local pinnacle_args=""
+    [[ -f "$PINNACLE_TEMPLATES" ]] && pinnacle_args="-f $PINNACLE_TEMPLATES"
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" \
         -n "$SIGNALS_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" \
@@ -512,6 +522,7 @@ function deploy_signals() {
         -f "$GLOBAL_VALUES" \
         -f "$GLOBAL_CLOUD_VALUES" \
         -f "$GLOBAL_SECRETS" \
+        $pinnacle_args \
         $IMAGE_PULL_HELM_ARGS \
         $EXTRA_HELM_ARGS \
         --wait --timeout 10m
@@ -761,8 +772,9 @@ function dry_run() {
     preflight
     fetch_signals_configs
     fetch_aggregator_configs
-    local mon_sc_args
+    local mon_sc_args pinnacle_args=""
     mon_sc_args="$(_monitoring_sc_args)"
+    [[ -f "$PINNACLE_TEMPLATES" ]] && pinnacle_args="-f $PINNACLE_TEMPLATES"
     helm upgrade --install "$MON_REL" "$MON_DIR" -n "$MON_NS" --create-namespace \
         -f "$GLOBAL_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $mon_sc_args --dry-run
     helm upgrade --install "$CS_REL" "$CS_DIR" -n "$CS_NS" --create-namespace \
@@ -770,7 +782,7 @@ function dry_run() {
     helm upgrade --install "$KC_REL" "$KC_DIR" -n "$KC_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $pinnacle_args $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
     helm upgrade --install "$AGG_REL" "$AGG_DIR" -n "$AGG_NS" --create-namespace \
         -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
 }
@@ -787,8 +799,10 @@ function dry_run() {
 function dry_run_signals() {
     preflight
     fetch_signals_configs
+    local pinnacle_args=""
+    [[ -f "$PINNACLE_TEMPLATES" ]] && pinnacle_args="-f $PINNACLE_TEMPLATES"
     helm upgrade --install "$SIGNALS_REL" "$SIGNALS_DIR" -n "$SIGNALS_NS" --create-namespace \
-        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
+        -f "$GLOBAL_RESOURCES" -f "$GLOBAL_IMAGES" -f "$GLOBAL_VALUES" -f "$GLOBAL_CLOUD_VALUES" -f "$GLOBAL_SECRETS" $pinnacle_args $IMAGE_PULL_HELM_ARGS $EXTRA_HELM_ARGS --dry-run
 }
 
 # ─── dispatcher ──────────────────────────────────────────────────────────────
