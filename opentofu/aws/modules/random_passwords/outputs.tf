@@ -108,6 +108,12 @@ output "campaign_manager_secret" {
   sensitive   = true
 }
 
+output "signals_search_client_secret" {
+  description = "signals-search-client Keycloak client secret (keycloak secrets.signalsSearchClientSecret == search KEYCLOAK_CLIENT_SECRET)"
+  value       = random_id.signals_search_client_secret.hex
+  sensitive   = true
+}
+
 output "aggregator_approval_token_secret" {
   value     = random_id.aggregator_approval_token_secret.hex
   sensitive = true

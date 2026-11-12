@@ -47,6 +47,7 @@ resource "local_sensitive_file" "global_secrets" {
     signalstack_client_secret                    = var.signalstack_client_secret
     voice_dpg_signals_secret                     = var.voice_dpg_signals_secret
     campaign_manager_secret                      = var.campaign_manager_secret
+    signals_search_client_secret                 = var.signals_search_client_secret
     aggregator_kc_bootstrap_admin_password       = var.aggregator_kc_bootstrap_admin_password
     aggregator_keycloak_admin_client_secret      = var.aggregator_keycloak_admin_client_secret
     aggregator_approval_token_secret             = var.aggregator_approval_token_secret

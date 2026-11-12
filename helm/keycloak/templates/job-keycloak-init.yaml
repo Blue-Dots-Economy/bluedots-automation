@@ -153,6 +153,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "keycloak-platform.secretName" . }}
                   key: CAMPAIGN_MANAGER_SECRET
+            - name: SIGNALS_SEARCH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: SIGNALS_SEARCH_CLIENT_SECRET
             - name: CAMPAIGN_MANAGER_REDIRECT_URIS
               value: {{ .Values.keycloak.campaignManagerRedirectUris | default "" | quote }}
             # render-realm.sh reads SMTP_SSL; the ConfigMap key is SMTP_SECURE.

@@ -102,6 +102,14 @@ resource "random_id" "campaign_manager_secret" {
   byte_length = var.campaign_manager_secret_bytes
 }
 
+# `signals-search-client` client. signals-search obtains client-credentials
+# tokens with it to call the Signals-DPG geocode endpoint. The same value must
+# reach the keycloak release (secrets.signalsSearchClientSecret) and the search
+# subchart (KEYCLOAK_CLIENT_SECRET).
+resource "random_id" "signals_search_client_secret" {
+  byte_length = var.signals_search_client_secret_bytes
+}
+
 resource "random_id" "aggregator_approval_token_secret" {
   byte_length = var.aggregator_approval_token_secret_bytes
 }
