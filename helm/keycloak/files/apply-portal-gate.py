@@ -32,9 +32,12 @@ Phase 5 (user & org): the gate admits org owners too. Each gate is a
 CONDITIONAL sub-flow whose conditions Keycloak ANDs:
 
   * entitled — deny when the user has NO aggregator_id AND NOT the org_owner
-    realm role (a Signals participant);
+    realm role AND decision_made is not "invited" (a Signals participant);
   * approved — deny when the user HAS an aggregator_id AND decision_made is
-    not "approved" (an unapproved coordinator). Owners carry no decision.
+    neither "approved" nor "invited" (an unapproved coordinator).
+
+An invited coordinator or org owner (decision_made = "invited") gets through
+both, so it can verify its email with a code; the portal then activates it.
 
 `verify()` checks that structure and the conditions' configs, so a realm still
 on the older coordinator-only tree fails it and is rebuilt.
@@ -156,8 +159,10 @@ NO_AGG_ID = {"attribute_name": "aggregator_id", "attribute_expected_value": ".+"
 HAS_AGG_ID = dict(NO_AGG_ID, **{"not": "false"})
 OWNER_ROLE = "org_owner"
 NOT_OWNER = {"condUserRole": OWNER_ROLE, "negate": "true"}
-NOT_APPROVED = {"attribute_name": "decision_made", "attribute_expected_value": "approved",
-                "regex": "false", "include_group_attributes": "false", "not": "true"}
+NOT_APPROVED = {"attribute_name": "decision_made", "attribute_expected_value": "approved|invited",
+                "regex": "true", "include_group_attributes": "false", "not": "true"}
+NOT_INVITED = {"attribute_name": "decision_made", "attribute_expected_value": "invited",
+               "regex": "false", "include_group_attributes": "false", "not": "true"}
 # Literal copy, not message-bundle keys: the deployment login theme does not
 # ship the aggregator repo's portalDeny* bundle keys, and deny-access-authenticator
 # prints an unresolved key verbatim. Switch to the keys once the theme has them.
@@ -191,14 +196,17 @@ def check_gate(name, children, config_of):
     roles = {(cfg.get("condUserRole"), _truthy(cfg.get("negate"))) for p, cfg in conds
              if p == "conditional-user-role"}
     if kind == "entitled":
-        assert len(conds) == 2 and attrs == {("aggregator_id", True)} and roles == {(OWNER_ROLE, True)}, (
-            name, "must deny only when there is no aggregator_id AND no org_owner role", conds)
+        assert len(conds) == 3 and attrs == {("aggregator_id", True), ("decision_made", True)} \
+            and roles == {(OWNER_ROLE, True)}, (
+            name, "must deny only with no aggregator_id, no org_owner role and not invited", conds)
+        decision = next(cfg for p, cfg in conds if cfg.get("attribute_name") == "decision_made")
+        assert decision.get("attribute_expected_value") == "invited", (name, decision)
     else:
         assert len(conds) == 2 and roles == set() and attrs == {
             ("aggregator_id", False), ("decision_made", True)}, (
             name, "must deny only a coordinator whose decision_made is not approved", conds)
         decision = next(cfg for p, cfg in conds if cfg.get("attribute_name") == "decision_made")
-        assert decision.get("attribute_expected_value") == "approved", (name, decision)
+        assert decision.get("attribute_expected_value") == "approved|invited", (name, decision)
 
 
 def verify_tree(exs, config_of, flow="<flow>"):
@@ -222,8 +230,8 @@ def verify_tree(exs, config_of, flow="<flow>"):
         "expected 2 conditional-user-role executions (the org_owner admission), got "
         f"{providers.count('conditional-user-role')}"
     )
-    assert providers.count("conditional-user-attribute") == 6, (
-        "expected 6 conditional-user-attribute executions, got "
+    assert providers.count("conditional-user-attribute") == 8, (
+        "expected 8 conditional-user-attribute executions, got "
         f"{providers.count('conditional-user-attribute')}"
     )
     for p in ("auth-cookie", "otp-identifier-form", "otp-channel-choice-form"):
@@ -375,9 +383,10 @@ def main():
                     "Identifier resolution, entitlement gate, then OTP channel choice.", "ALTERNATIVE")
         add_exec(FORMS, "otp-identifier-form", "REQUIRED")
         gate(FORMS, n("aggregator-portal-gate-otp-entitled"),
-             "Deny before OTP dispatch: neither a coordinator nor an org owner.",
+             "Deny before OTP dispatch: neither a coordinator, an org owner nor invited.",
              [("conditional-user-attribute", NO_AGG_ID, n("aggregator-portal-cond-no-aggregator-id")),
-              ("conditional-user-role", NOT_OWNER, n("aggregator-portal-cond-not-owner"))],
+              ("conditional-user-role", NOT_OWNER, n("aggregator-portal-cond-not-owner")),
+              ("conditional-user-attribute", NOT_INVITED, n("aggregator-portal-cond-not-invited"))],
              DENY_ENTITLED, n("aggregator-portal-deny-not-entitled"))
         gate(FORMS, n("aggregator-portal-gate-otp-approved"),
              "Deny before OTP dispatch: a coordinator not approved yet.",
@@ -390,7 +399,8 @@ def main():
         gate(PORTAL_FLOW, n("aggregator-portal-gate-sso-entitled"),
              "Entitlement gate on the auth-cookie path (shared-realm SSO bypass).",
              [("conditional-user-attribute", NO_AGG_ID, n("aggregator-portal-cond-no-aggregator-id-sso")),
-              ("conditional-user-role", NOT_OWNER, n("aggregator-portal-cond-not-owner-sso"))],
+              ("conditional-user-role", NOT_OWNER, n("aggregator-portal-cond-not-owner-sso")),
+              ("conditional-user-attribute", NOT_INVITED, n("aggregator-portal-cond-not-invited-sso"))],
              DENY_ENTITLED, n("aggregator-portal-deny-not-entitled-sso"))
         gate(PORTAL_FLOW, n("aggregator-portal-gate-sso-approved"),
              "Approval gate on the auth-cookie path.",
