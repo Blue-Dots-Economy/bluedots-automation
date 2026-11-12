@@ -90,6 +90,11 @@ variable "voice_dpg_signals_secret_bytes" {
   default = 32
 }
 
+variable "sms_http_secret_bytes" {
+  type    = number
+  default = 32
+}
+
 variable "campaign_manager_secret_bytes" {
   type    = number
   default = 32

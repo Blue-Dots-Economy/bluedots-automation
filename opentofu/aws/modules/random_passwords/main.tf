@@ -84,6 +84,15 @@ resource "random_id" "voice_dpg_signals_secret" {
   byte_length = var.voice_dpg_signals_secret_bytes
 }
 
+# Keycloak -> notification-service HMAC key for the smsProvider=http path
+# (helm/keycloak/values.yaml's secrets.smsHttpSecret, mirrored into
+# notification-service's internalSecrets.json "keycloak" key id). Purely an
+# internal shared secret between our own two services — nothing external
+# checks it — so it belongs here rather than in hand-entered secrets.yaml.
+resource "random_id" "sms_http_secret" {
+  byte_length = var.sms_http_secret_bytes
+}
+
 # `campaign-manager` client. Confidential client for the external campaign
 # manager: its service account is the client_credentials caller for the
 # non-PII dump route, and coordinators take password-grant tokens on it for

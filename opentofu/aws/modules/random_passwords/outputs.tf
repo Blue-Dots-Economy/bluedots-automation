@@ -86,6 +86,12 @@ output "voice_dpg_signals_secret" {
   sensitive   = true
 }
 
+output "sms_http_secret" {
+  description = "Keycloak -> notification-service HMAC key for smsProvider=http"
+  value       = random_id.sms_http_secret.hex
+  sensitive   = true
+}
+
 output "campaign_manager_secret" {
   description = "campaign-manager Keycloak client secret (keycloak secrets.campaignManagerSecret)"
   value       = random_id.campaign_manager_secret.hex
