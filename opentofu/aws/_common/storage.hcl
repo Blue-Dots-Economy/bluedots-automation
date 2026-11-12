@@ -32,6 +32,8 @@ inputs = {
   # (× 86400) in helm, so the S3 file expiry and the download-link expiry stay in lockstep.
   campaign_export_expiry_days = lookup(local.global_vars.global, "campaignExportExpiryDays", 1)
 
+  bulk_upload_retention_days = lookup(local.global_vars.global, "bulkUploadRetentionDays", 30)
+
   # Bucket-wide cleanup of orphaned multipart parts (billed but unreachable). Separate knob
   # because it is NOT prefix-scoped and is unrelated to PII retention — see the storage module.
   abort_incomplete_multipart_days = lookup(local.global_vars.global, "abortIncompleteMultipartDays", 7)
