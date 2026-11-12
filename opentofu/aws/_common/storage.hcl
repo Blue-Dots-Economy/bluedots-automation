@@ -45,7 +45,7 @@ inputs = {
   # Each entry: { type = "public"|"private", versioning_enabled = bool, cors_enabled = bool }
   buckets = lookup(local.global_vars.global, "buckets", {
     public = {
-      type         = "public"
+      type         = "private"
       cors_enabled = true
     }
     private = {

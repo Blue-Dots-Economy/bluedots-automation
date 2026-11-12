@@ -80,7 +80,7 @@ variable "buckets" {
   }))
   default = {
     public = {
-      type         = "public"
+      type         = "private"
       cors_enabled = true
     }
     private = {

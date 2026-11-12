@@ -322,7 +322,7 @@ global:
   # The `public` bucket is the ONLY app bucket — the aggregator writes to it.
   buckets:
     public:
-      type: public
+      type: private
       cors_enabled: true
     # private:
     #   type: private
