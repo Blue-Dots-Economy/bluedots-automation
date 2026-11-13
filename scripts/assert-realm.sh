@@ -67,9 +67,10 @@ for role in org_owner signals_participant signals_admin; do
   fi
 done
 
-# ── A4. All eight clients, both DPGs ─────────────────────────────────────────
+# ── A4. All nine clients, both DPGs ─────────────────────────────────────────
 for client in aggregator-portal aggregator-api aggregator-bff \
-              signals-ui signals-api aggregator-dpg voice-dpg campaign-manager; do
+              signals-ui signals-api aggregator-dpg voice-dpg campaign-manager \
+              signals-search-client; do
   if jq -e --arg c "$client" '[.clients[].clientId] | index($c) != null' "$REALM_FILE" >/dev/null; then
     pass "client present: $client"
   else
@@ -139,7 +140,7 @@ fi
 KNOWN='__KEYCLOAK_REALM__ __PUBLIC_BASE_URL__ __BRAND_LONG_NAME__
 __AGGREGATOR_API_SECRET__ __AGGREGATOR_PORTAL_SECRET__ __AGGREGATOR_BFF_SECRET__
 __SIGNALS_API_SECRET__ __SIGNALSTACK_CLIENT_SECRET__ __VOICE_DPG_SIGNALS_SECRET__ __CAMPAIGN_MANAGER_SECRET__
-__CAMPAIGN_MANAGER_REDIRECT_URIS__
+__CAMPAIGN_MANAGER_REDIRECT_URIS__ __SIGNALS_SEARCH_CLIENT_SECRET__
 __SMTP_HOST__ __SMTP_PORT__ __SMTP_FROM__ __SMTP_FROM_DISPLAY__ __SMTP_AUTH__
 __SMTP_SSL__ __SMTP_STARTTLS__ __SMTP_USER__ __SMTP_PASSWORD__'
 unknown=""
@@ -167,6 +168,28 @@ for attr in aggregator_id decision_made aggregator_type signalstack_org_id; do
     fail "user profile does not declare $attr admin-only (view/edit [\"admin\"])"
   fi
 done
+
+# ── A11. aggregator_type is multivalued for the portal ───────────────────────
+# A coordinator can serve several profile types. The aggregator reads them from
+# the aggregator_type claim as a JSON array, so both the user-profile attribute
+# and the aggregator-portal mapper must be multivalued (H4, H5). Single-valued,
+# every coordinator is limited to one of their types.
+if jq -e '
+     .attributes."kc.user.profile.config" // "{}" | fromjson
+     | [.attributes[]? | select(.name == "aggregator_type" and .multivalued == true)] | length == 1
+   ' "$REALM_FILE" >/dev/null 2>&1; then
+  pass "user profile declares aggregator_type multivalued"
+else
+  fail "user profile does not declare aggregator_type multivalued"
+fi
+if jq -e '
+     [.clients[] | select(.clientId == "aggregator-portal") | .protocolMappers[]?
+      | select(.name == "aggregator_type" and .config.multivalued == "true")] | length == 1
+   ' "$REALM_FILE" >/dev/null 2>&1; then
+  pass "aggregator-portal maps aggregator_type multivalued"
+else
+  fail "aggregator-portal aggregator_type mapper is missing or not multivalued"
+fi
 
 echo
 if [ "$FAILED" -eq 0 ]; then

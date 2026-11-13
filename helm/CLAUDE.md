@@ -33,7 +33,7 @@ with `scripts/build-realm.sh <app-repo realm.json>` (applies the hardening
 transform) and gate with `scripts/assert-realm.sh` — which CI runs. Do **not** add
 a "drift from upstream" diff; it would fail on the intentional differences.
 
-**Three hardening steps that are invisible when they regress:**
+**Four hardening steps that are invisible when they regress:**
 - The local realms carry `localhost` entries in `redirectUris`, `webOrigins` and —
   easy to miss — the `##`-delimited `post.logout.redirect.uris` *attribute*. Those
   widen a production OAuth client's allow-lists. `assert-realm.sh` fails on any of
@@ -49,6 +49,14 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   (A10), and `apply-user-profile.sh` re-applies them to existing realms and
   fails the init Job unless all four are admin-only. `unmanagedAttributePolicy`
   stays `ENABLED` for every other attribute.
+- `aggregator_type` is **multivalued**: a coordinator can serve several profile
+  types, and the aggregator reads them from the token as a JSON array. Both the
+  user-profile attribute and the `aggregator-portal` mapper must be multivalued.
+  `build-realm.sh` forces both (H4, H5), `assert-realm.sh` checks both (A11), and
+  `apply-user-profile.sh` switches an existing realm's mapper in place and fails
+  the init Job if the switch fails. Single-valued, every coordinator silently
+  keeps only one of their types. The `campaign-manager` mapper stays
+  single-valued; nothing reads that claim.
 
 **signals-ui lives on different hostnames to Keycloak.** `__PUBLIC_BASE_URL__` is
 the Keycloak/aggregator host; the signals UI is served from `global.publicHosts` (a
@@ -84,6 +92,15 @@ never CREATE a client — `ensure_acting_org_mapper` and `ensure_login_theme` bo
 `client '<id>' not found — skipping` and **return 0**. Run them first and a realm
 predating a realm.json change keeps its missing clients while the Job still exits 0:
 a silent no-op. Reconciling clients first is what makes the rest effective.
+
+**Sign-out settings are reconciled, not imported (#322).** Step 7 of
+`apply-user-profile.sh` sets `backchannel.logout.url` (+ "session required") on
+`aggregator-portal` and `signals-ui`, and adds every Signals origin to
+signals-ui's post-logout list. The URLs are `init.backchannelLogout.*` in
+`helm/keycloak/values.yaml`: **in-cluster service addresses**, because Keycloak
+calls them directly, so they follow the aggregator/signals release and namespace
+names. Without them, signing out of one app leaves the other app's session alive
+until its token expires. Post-logout entries are only added, never removed.
 
 **Realm EVENT logging ships in realm.json only — an existing realm does not get
 it (#217).** `realm.json` now sets `eventsEnabled` + `adminEventsEnabled`
@@ -234,6 +251,10 @@ Adding another means touching **four** places or it fails in a confusing way:
 **Operational note:** the `:?missing` guards make the migrate-job — and therefore the whole `signals` release — fail if a key is absent from the api Secret. So after pulling a change that adds a service apikey, run `bash install.sh apply_tf_output_file` to regenerate `global-secrets.yaml` **before** `deploy_signals`.
 
 **Every one of these orgs is `type = 'network_service'`, and that collides with `actingOrgId`.** The org row is inserted with a hardcoded `network_service` type, and because `now()` is *transaction* time and the whole loop is one `DO $$…$$`, all of them share a byte-identical `created_at`. So `SELECT id FROM organization WHERE type='network_service' ORDER BY created_at LIMIT 1` — what `get-signalstack-org-id.sh` used to run, and what several docs told operators to run by hand — is a **tie with no deterministic winner**: a plain `UPDATE organization SET name = name` on any of those rows reorders the heap and flips the answer (verified). The script now filters on `slug` (`ORG_SLUG`, default `aggregator-dpg`, the org `actingOrgId` is defined as). **Adding a service apikey adds another `network_service` org, so never reintroduce a type-only lookup.**
+
+## signals-search-client secret — upgrade order for EXISTING environments
+
+The `signals-search-client` Keycloak client adds ONE new generated secret (`secrets.signalsSearchClientSecret` == search `KEYCLOAK_CLIENT_SECRET`). The keycloak release (`requireSecret`) and the signals release (`search.geocode.enabled: true` render guard) both fail until it exists, so on an existing environment, in order: (1) apply the opentofu `random_passwords` module (creates the new `random_id`), (2) `bash install.sh apply_tf_output_file` to regenerate `global-secrets.yaml`, (3) only then `deploy_keycloak` and `deploy_signals`. The geocode vars are rendered on the search API Deployment only, never in the shared ConfigMap: the worker runs the same all-or-none config validation and would crash-loop on a partial set. With `search.secrets.create=false`, the pre-existing Secret must carry `KEYCLOAK_CLIENT_SECRET` or the API pod hits `CreateContainerConfigError` (add the key, or set `search.geocode.enabled=false`).
 
 ## Consent config is ConfigMap-delivered (not baked into images)
 

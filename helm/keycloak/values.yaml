@@ -64,6 +64,15 @@ clients:
 # ─── Realm-reconciliation Job ─────────────────────────────────────────────────
 init:
   image: alpine:3.20
+  # Where Keycloak POSTs the logout token when a shared sign-in ends, so the
+  # portal and Signals both drop their session (aggregator-dpg#1046,
+  # signals-dpg#912). In-cluster service addresses: Keycloak calls them
+  # directly, not through Kong. Change them if the aggregator or signals
+  # release/namespace is renamed (AGG_NS, SIGNALS_NS). '' = leave that client
+  # alone.
+  backchannelLogout:
+    portalUrl: http://aggregator-web.aggregator.svc.cluster.local:3000/api/auth/backchannel-logout
+    signalsUrl: http://signals-api.signals.svc.cluster.local:2742/api/v1/auth/session/backchannel-logout
 
 # ─── SMTP (non-secret half; creds live in the Secret) ─────────────────────────
 # Emitted both into the release ConfigMap and the init Job env. Keys are the
@@ -100,6 +109,7 @@ secrets:
   signalstackClientSecret: ''  # `aggregator-dpg` client (Phase C service auth)
   voiceDpgSignalsSecret: ''    # `voice-dpg` client
   campaignManagerSecret: ''    # `campaign-manager` client (aggregator campaign APIs)
+  signalsSearchClientSecret: ''  # `signals-search-client` client == search KEYCLOAK_CLIENT_SECRET
   # SMTP creds (optional under SES/IAM)
   smtpUser: ''
   smtpPassword: ''

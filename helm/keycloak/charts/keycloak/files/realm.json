@@ -55,7 +55,7 @@
     "adminEventsExpiration": "7776000",
     "phoneDefaultRegion": "IN",
     "userProfileEnabled": "true",
-    "kc.user.profile.config": "{\"unmanagedAttributePolicy\":\"ENABLED\",\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"required\":{\"roles\":[\"user\"]}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"phoneNumber\",\"displayName\":\"Phone Number\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"phoneNumberVerified\",\"displayName\":\"Phone Number Verified\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"aggregator_id\",\"displayName\":\"Aggregator id\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"decision_made\",\"displayName\":\"Registration decision\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"aggregator_type\",\"displayName\":\"Aggregator type\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"signalstack_org_id\",\"displayName\":\"Signals organisation id\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false}]}"
+    "kc.user.profile.config": "{\"unmanagedAttributePolicy\":\"ENABLED\",\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"required\":{\"roles\":[\"user\"]}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"phoneNumber\",\"displayName\":\"Phone Number\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"phoneNumberVerified\",\"displayName\":\"Phone Number Verified\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"aggregator_id\",\"displayName\":\"Aggregator id\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"decision_made\",\"displayName\":\"Registration decision\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"aggregator_type\",\"displayName\":\"Profile types\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":true},{\"name\":\"signalstack_org_id\",\"displayName\":\"Signals organisation id\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false}]}"
   },
   "smtpServer": {
     "host": "__SMTP_HOST__",
@@ -218,10 +218,17 @@
           "authenticatorConfig": "aggregator-portal-cond-not-owner"
         },
         {
-          "authenticator": "deny-access-authenticator",
+          "authenticator": "conditional-user-attribute",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 30,
+          "authenticatorConfig": "aggregator-portal-cond-not-invited"
+        },
+        {
+          "authenticator": "deny-access-authenticator",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 40,
           "authenticatorConfig": "aggregator-portal-deny-not-entitled"
         }
       ]
@@ -278,10 +285,17 @@
           "authenticatorConfig": "aggregator-portal-cond-not-owner-sso"
         },
         {
-          "authenticator": "deny-access-authenticator",
+          "authenticator": "conditional-user-attribute",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 30,
+          "authenticatorConfig": "aggregator-portal-cond-not-invited-sso"
+        },
+        {
+          "authenticator": "deny-access-authenticator",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 40,
           "authenticatorConfig": "aggregator-portal-deny-not-entitled-sso"
         }
       ]
@@ -360,8 +374,8 @@
       "alias": "aggregator-portal-cond-not-approved",
       "config": {
         "attribute_name": "decision_made",
-        "attribute_expected_value": "approved",
-        "regex": "false",
+        "attribute_expected_value": "approved|invited",
+        "regex": "true",
         "include_group_attributes": "false",
         "not": "true"
       }
@@ -370,8 +384,8 @@
       "alias": "aggregator-portal-cond-not-approved-sso",
       "config": {
         "attribute_name": "decision_made",
-        "attribute_expected_value": "approved",
-        "regex": "false",
+        "attribute_expected_value": "approved|invited",
+        "regex": "true",
         "include_group_attributes": "false",
         "not": "true"
       }
@@ -432,6 +446,26 @@
       "alias": "aggregator-portal-deny-not-entitled-sso",
       "config": {
         "denyErrorMessage": "This account does not have access to the Aggregator portal."
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-not-invited",
+      "config": {
+        "attribute_name": "decision_made",
+        "attribute_expected_value": "invited",
+        "regex": "false",
+        "include_group_attributes": "false",
+        "not": "true"
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-not-invited-sso",
+      "config": {
+        "attribute_name": "decision_made",
+        "attribute_expected_value": "invited",
+        "regex": "false",
+        "include_group_attributes": "false",
+        "not": "true"
       }
     }
   ],
@@ -508,7 +542,7 @@
             "id.token.claim": "false",
             "access.token.claim": "true",
             "userinfo.token.claim": "false",
-            "multivalued": "false",
+            "multivalued": "true",
             "aggregate.attrs": "false"
           }
         },
@@ -809,6 +843,37 @@
             "id.token.claim": "false",
             "access.token.claim": "true",
             "access.tokenResponse.claim": "false"
+          }
+        }
+      ],
+      "redirectUris": null,
+      "webOrigins": null
+    },
+    {
+      "clientId": "signals-search-client",
+      "name": "signals-search (service auth into signals)",
+      "description": "Client-credentials client for signals-search's calls to the Signals-DPG geocode endpoint. The client id must equal the slug of the network_service org seeded by provision_service_users.sql.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "__SIGNALS_SEARCH_CLIENT_SECRET__",
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "attributes": {
+        "use.refresh.tokens": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "signals-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "signals-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
           }
         }
       ],

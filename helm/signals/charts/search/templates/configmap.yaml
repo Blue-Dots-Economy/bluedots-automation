@@ -16,6 +16,12 @@ data:
   EMBEDDING_MODEL: {{ .Values.embedding.model | quote }}
   EMBEDDING_DIM: {{ .Values.embedding.dim | quote }}
   NETWORK_CONFIG_PATH: {{ .Values.networkConfigPath | quote }}
+  {{- /* Text-address search radii (metres). Plain numeric defaults; safe to render
+        whether or not the geocoder is enabled. */}}
+  SEARCH_RADIUS_POSTAL_CODE_METERS: {{ .Values.searchRadius.postalCodeMeters | quote }}
+  SEARCH_RADIUS_LOCALITY_METERS: {{ .Values.searchRadius.localityMeters | quote }}
+  SEARCH_RADIUS_CITY_METERS: {{ .Values.searchRadius.cityMeters | quote }}
+  SEARCH_RADIUS_DISTRICT_METERS: {{ .Values.searchRadius.districtMeters | quote }}
   {{- range $k, $v := .Values.config }}
   {{ $k }}: {{ $v | quote }}
   {{- end }}

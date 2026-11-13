@@ -167,7 +167,7 @@ resource "aws_s3_bucket_versioning" "this" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
-# Lifecycle — TWO rules in ONE configuration. S3 permits only a single lifecycle configuration per bucket, so both
+# Lifecycle — every rule in ONE configuration. S3 permits only a single lifecycle configuration per bucket, so all
 # rules must live in this one resource; a second aws_s3_bucket_lifecycle_configuration targeting the same bucket would
 # silently overwrite this one rather than add to it.
 #
@@ -175,7 +175,7 @@ resource "aws_s3_bucket_versioning" "this" {
 #     CSVs are not retained at rest far longer than the short-lived download link the export email carries.
 #
 #     PREFIX-SCOPED ON PURPOSE, and that is load-bearing: this bucket is shared. `bulk-uploads/` holds raw.csv +
-#     errors.csv and `qr/` holds registration QR PNGs. A bucket-wide expiration would delete both. campaign_export_prefix
+#     errors.csv on its own retention. A bucket-wide expiration would delete them too. campaign_export_prefix
 #     is validated non-empty for exactly that reason — an empty prefix silently means "everything".
 #
 #     Applied to EVERY bucket rather than a guessed one: the prefix filter makes it inert wherever no exports land,
@@ -191,11 +191,11 @@ resource "aws_s3_bucket_versioning" "this" {
 #     never remove a completed object, only orphaned parts that are billed but unreachable. Deliberately NOT
 #     prefix-scoped, because bulk CSV uploads multipart outside campaign_export_prefix.
 #
-# Set either knob to 0 to drop its rule. With both 0 the resource is skipped entirely, because S3 rejects a lifecycle
+# Set any knob to 0 to drop its rule. With all of them 0 the resource is skipped entirely, because S3 rejects a lifecycle
 # configuration that contains no rules.
 # ---------------------------------------------------------------------------------------------------------------------
 resource "aws_s3_bucket_lifecycle_configuration" "this" {
-  for_each = (var.campaign_export_expiry_days > 0 || var.abort_incomplete_multipart_days > 0) ? var.buckets : {}
+  for_each = (var.campaign_export_expiry_days > 0 || var.bulk_upload_retention_days > 0 || var.abort_incomplete_multipart_days > 0) ? var.buckets : {}
 
   bucket = aws_s3_bucket.this[each.key].id
 
@@ -216,6 +216,27 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
 
       noncurrent_version_expiration {
         noncurrent_days = var.campaign_export_noncurrent_days
+      }
+    }
+  }
+
+  dynamic "rule" {
+    for_each = var.bulk_upload_retention_days > 0 ? [1] : []
+
+    content {
+      id     = "bulk-upload-expiry"
+      status = "Enabled"
+
+      filter {
+        prefix = var.bulk_upload_prefix
+      }
+
+      expiration {
+        days = var.bulk_upload_retention_days
+      }
+
+      noncurrent_version_expiration {
+        noncurrent_days = 1
       }
     }
   }

@@ -11,6 +11,9 @@
 #   4. aggregator-portal client: confidential + secret sync + protocol mappers.
 #   5. Acting-org claim mappers on signals-ui / aggregator-dpg / voice-dpg (§5.1
 #      of signals' migration design).
+#   6. Per-client login theme (signals-ui).
+#   7. Sign-out settings: back-channel logout URLs on aggregator-portal and
+#      signals-ui, and every Signals origin on signals-ui's post-logout list.
 #
 # KC 26 ignores `kc.user.profile.config` and `smtpServer` from realm import in
 # some paths, so all of the above is (re-)applied via admin REST API after
@@ -100,7 +103,7 @@ UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" '
       ([(.attributes // [])[] | select(.name as $n | admin_only | index($n) | not)] + [
         { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
-        { name: "aggregator_type", displayName: "Aggregator type", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+        { name: "aggregator_type", displayName: "Profile types", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
         { name: "signalstack_org_id", displayName: "Signals organisation id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "roles", displayName: "Roles", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
         {
@@ -146,6 +149,12 @@ echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HA
 
 if [ "${ADMIN_ONLY:-0}" -lt 5 ]; then
   echo "[kc-init] aggregator_id / decision_made / aggregator_type / signalstack_org_id / roles are not all declared admin-only"
+  exit 1
+fi
+
+TYPE_MULTI=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "aggregator_type" and .multivalued == true)] | length')
+if [ "${TYPE_MULTI:-0}" -lt 1 ]; then
+  echo "[kc-init] aggregator_type is not multivalued — coordinators would be limited to one profile type"
   exit 1
 fi
 
@@ -301,7 +310,8 @@ echo "[kc-init] smtpServer configured: ${SMTP_HOST}:${SMTP_PORT:-587} (ssl=${SSL
 #   - publicClient=false + clientAuthenticatorType=client-secret
 #   - client secret = $OIDC_CLIENT_SECRET (must match the BFF env var)
 #   - protocol mappers for decision_made + phone_number (required by
-#     requireApproved middleware on the API)
+#     requireApproved middleware on the API), roles, and aggregator_type
+#     (multivalued: the profile types a coordinator serves)
 # ────────────────────────────────────────────────────────────
 
 PORTAL_CLIENT_ID="${PORTAL_CLIENT_ID:-aggregator-portal}"
@@ -396,6 +406,45 @@ EOF
   # The aggregator's RBAC edge decides route permissions from this claim
   # (aggregator-dpg docs/rbac/rbac-edge-enforcement.md). Access token only.
   ensure_mapper "roles"         "roles"         "roles"         "false" "true"
+
+  # A coordinator can serve several profile types, so the aggregator reads
+  # aggregator_type as a JSON array claim. ensure_mapper never edits an
+  # existing mapper, and realms created earlier have it single-valued, so the
+  # switch below updates it in place. A no-op when it is already multivalued.
+  # Exits non-zero on any failure, because a single-valued or missing claim
+  # limits every coordinator to one profile type.
+  ensure_mapper_multivalued() {
+    mapper_name="$1"
+    mapper=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${PORTAL_UUID}/protocol-mappers/models" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      | jq -c --arg n "${mapper_name}" '[.[] | select(.name == $n)][0] // empty')
+    if [ -z "$mapper" ]; then
+      echo "[kc-init] mapper '${mapper_name}' absent after create — the claim would be missing"
+      exit 1
+    fi
+    if [ "$(printf '%s' "$mapper" | jq -r '.config.multivalued')" = "true" ]; then
+      echo "[kc-init] mapper '${mapper_name}' already multivalued — skip"
+      return 0
+    fi
+    mapper_id=$(printf '%s' "$mapper" | jq -r '.id')
+    resp=$(mktemp)
+    HTTP=$(curl -s -o "$resp" -w "%{http_code}" \
+      -X PUT "${KC_URL}/admin/realms/${REALM}/clients/${PORTAL_UUID}/protocol-mappers/models/${mapper_id}" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      --data "$(printf '%s' "$mapper" | jq -c '.config.multivalued = "true"')")
+    if [ "$HTTP" = "204" ]; then
+      echo "[kc-init] mapper '${mapper_name}' switched to multivalued"
+      rm -f "$resp"
+    else
+      echo "[kc-init] mapper '${mapper_name}' multivalued switch FAILED: HTTP ${HTTP}"
+      cat "$resp" || true
+      rm -f "$resp"
+      exit 1
+    fi
+  }
+  ensure_mapper "aggregator_type" "aggregator_type" "aggregator_type" "false" "true"
+  ensure_mapper_multivalued "aggregator_type"
 fi
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -563,3 +612,90 @@ ensure_login_theme() {
 ensure_login_theme signals-ui signals
 
 echo "[kc-init] per-client login themes ready."
+
+# ────────────────────────────────────────────────────────────────────────────
+# 7) Sign-out settings on aggregator-portal and signals-ui
+#
+# Both apps share one Keycloak sign-in, so signing out of one must end the
+# other's session too. Keycloak does that by POSTing a logout token to each
+# client's back-channel logout URL (aggregator-dpg#1046, signals-dpg#912).
+# Keycloak calls the URL from inside the cluster, so it is the in-cluster
+# service address, not the public host. An empty URL leaves the client alone.
+#
+# signals-ui's post-logout list must also allow every Signals origin, or a
+# sign-out from the Signals app ends on Keycloak's "invalid redirect" page.
+# render-realm.sh sets this on a fresh import; existing realms only get it
+# here. Entries are ADDED, never removed, so a hand-added address survives.
+#
+# Same reason as the login theme above: realm JSON is read on first import only.
+# ────────────────────────────────────────────────────────────────────────────
+
+ensure_logout_settings() {
+  target_client="$1"
+  backchannel_url="$2"
+  extra_post_logout="$3"   # "##"-separated entries to add; may be empty
+
+  client_uuid=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients?clientId=${target_client}" \
+    -H "Authorization: Bearer ${TOKEN}" | jq -r '.[0].id // empty')
+
+  if [ -z "$client_uuid" ]; then
+    echo "[kc-init] client '${target_client}' not found — skipping sign-out settings"
+    return 0
+  fi
+
+  curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}" \
+    -H "Authorization: Bearer ${TOKEN}" > /tmp/kc-client-logout.json
+
+  # Merge into the existing attributes, never replace them (see the login theme
+  # note above).
+  jq --arg url "$backchannel_url" --arg add "$extra_post_logout" '
+    def entries: if . == null or . == "" then [] else split("##") end;
+    (if $url != "" then
+       .attributes."backchannel.logout.url" = $url
+       | .attributes."backchannel.logout.session.required" = "true"
+     else . end)
+    | (if $add != "" then
+         .attributes."post.logout.redirect.uris" =
+           ((.attributes."post.logout.redirect.uris" | entries) as $have
+            | ($have + [($add | entries)[] | select(. as $e | $have | index($e) | not)])
+            | join("##"))
+       else . end)
+  ' /tmp/kc-client-logout.json > /tmp/kc-client-logout-new.json
+
+  if [ "$(jq -S . /tmp/kc-client-logout.json)" = "$(jq -S . /tmp/kc-client-logout-new.json)" ]; then
+    echo "[kc-init] ${target_client}: sign-out settings already set — skip"
+    return 0
+  fi
+
+  http=$(curl -s -o /tmp/kc-logout-resp.json -w "%{http_code}" -X PUT \
+    "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data @/tmp/kc-client-logout-new.json)
+
+  if [ "$http" != "204" ]; then
+    echo "[kc-init] ${target_client}: sign-out settings PUT FAILED: HTTP ${http}"
+    cat /tmp/kc-logout-resp.json || true
+    return 1
+  fi
+
+  # Verify rather than trust, as for the login theme.
+  applied=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}" \
+    -H "Authorization: Bearer ${TOKEN}" | jq -r '.attributes."backchannel.logout.url" // empty')
+
+  if [ -n "$backchannel_url" ] && [ "$applied" != "$backchannel_url" ]; then
+    echo "[kc-init] ${target_client}: back-channel logout URL did NOT persist (got '${applied:-<unset>}')"
+    return 1
+  fi
+
+  echo "[kc-init] ${target_client}: sign-out settings applied"
+}
+
+# Every Signals origin as "<origin>##<origin>/*", matching render-realm.sh.
+signals_post_logout=$(printf '%s' "${SIGNALS_ORIGINS:-}" | tr ',' '\n' \
+  | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e '/^$/d' | awk '{ printf "%s%s##%s/*", (NR > 1 ? "##" : ""), $0, $0 }')
+
+ensure_logout_settings aggregator-portal "${PORTAL_BACKCHANNEL_LOGOUT_URL:-}" ""
+ensure_logout_settings signals-ui "${SIGNALS_BACKCHANNEL_LOGOUT_URL:-}" "$signals_post_logout"
+
+echo "[kc-init] sign-out settings ready."

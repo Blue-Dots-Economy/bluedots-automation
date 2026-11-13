@@ -63,25 +63,27 @@ Do not conflate these with the `voice_dpg_signals_secret` / `*_client_secret` fa
 
 ### The shared `public` bucket and `app_sa` role
 
-The aggregator api/worker write to one S3 bucket (`global.buckets`, selected via `global.app_bucket_key`, default `"public"`) through one IRSA role, `app_sa`, created in the `iam` module. Two things worth knowing:
+The aggregator api/worker write to one S3 bucket (`global.buckets`, selected via `global.app_bucket_key`, default `"public"`) through one IRSA role, `app_sa`, created in the `iam` module. The default entry is `public: {type: private}`: all public access is blocked, because the bucket holds participant data (bulk-upload CSVs, campaign exports) and the aggregator only ever hands out signed links. The key stays `public` so existing environments keep their `-public` bucket instead of planning a destroy and a new bucket. Two things worth knowing:
 
 - **`storage_bucket_public` is keyed by logical name, not by `type`** — and which name is `global.app_bucket_key` (default `"public"`). Three separate things, easy to conflate: the map **key** is the bucket's NAME suffix (`<bb>-<env>-<account>-<key>`), **`type`** is the access control, and **`app_bucket_key`** picks which entry becomes `global.s3.bucket` + the `app_sa` policy ARN. So `public: {type: private}` is a fully access-blocked bucket that happens to be *named* `-public`; `app_bucket_key: private` with `private: {type: private}` is the same thing named `-private`.
 - **`app_bucket_key` must name a real entry, and the module now enforces it at plan time.** It previously resolved with `try(..., null)`; a key that matched nothing became `null`, which `_common/output-file.hcl` turns into `""`, which renders an **empty** `global.s3.bucket`. No chart guards that value — `S3_BUCKET: {{ .Values.global.s3.bucket | quote }}` — so the aggregator installs green, every pod reports healthy, and the first bulk upload / QR render / error-CSV download fails at runtime hours later. An output `precondition` now fails the plan instead, naming the available keys. Renaming the key without updating `app_bucket_key` is exactly how an environment lands in that state.
 - **Removing a bucket entry plans a destroy, and the storage module sets no `force_destroy`.** So `tofu apply` on `storage` fails with `BucketNotEmpty` while any object remains. Copy anything worth keeping to another bucket, empty it, then apply.
 
-## Lifecycle rules (`storage` module) — one config, two rules, and the prefix is load-bearing
+## Lifecycle rules (`storage` module) — one config, three rules, and the prefixes are load-bearing
 
-S3 allows exactly **one** lifecycle configuration per bucket, so both rules live in a single `aws_s3_bucket_lifecycle_configuration.this`. A second resource aimed at the same bucket would *overwrite* this one, not add to it.
+S3 allows exactly **one** lifecycle configuration per bucket, so every rule lives in a single `aws_s3_bucket_lifecycle_configuration.this`. A second resource aimed at the same bucket would *overwrite* this one, not add to it.
 
 **`campaign-export-expiry`** deletes campaign PII exports under `campaign_export_prefix` (default `campaign-exports/`) after `global.campaignExportExpiryDays` days, so decrypted CSVs aren't retained far longer than the download link. The same knob sets the aggregator's `EXPORT_URL_TTL_SECONDS` (`× 86400`) in `helm/aggregator/templates/configmap-global.yaml`, so file expiry and link expiry can't drift — change it in one place. `EXPORT_URL_TTL_SECONDS` is read by the **worker** (`apps/worker/src/config.ts`), which gets it via `envFrom` on the umbrella global ConfigMap.
 
-**The prefix scoping is the whole safety story.** That bucket is shared: `bulk-uploads/` (raw.csv + errors.csv) and `qr/` (registration QR PNGs). A bucket-wide expiration deletes both. `campaign_export_prefix` therefore has a `validation` block rejecting an empty string, because `filter { prefix = "" }` is legal and silently means *the entire bucket*. The prefix must match the worker's key builder — `campaign-exports/<signalstackOrgId>/<jobId>.csv` in `aggregator-dpg` `apps/worker/src/services/campaign-process/index.ts`. **A prefix that matches nothing fails completely silently**: no error, no metric, objects simply never expire. Verify with the probe below rather than assuming.
+**The prefix scoping is the whole safety story.** That bucket is shared: `bulk-uploads/` (raw.csv + errors.csv, on their own retention below) and `<network>/` (app files that must never expire). A bucket-wide expiration deletes them all. `campaign_export_prefix` therefore has a `validation` block rejecting an empty string, because `filter { prefix = "" }` is legal and silently means *the entire bucket*. The prefix must match the worker's key builder — `campaign-exports/<signalstackOrgId>/<jobId>.csv` in `aggregator-dpg` `apps/worker/src/services/campaign-process/index.ts`. **A prefix that matches nothing fails completely silently**: no error, no metric, objects simply never expire. Verify with the probe below rather than assuming.
 
 `noncurrent_version_expiration` is **unconditional**, not gated on `versioning_enabled`. The worker writes a deterministic per-job key, so a retry *overwrites* — which on a versioned bucket leaves a noncurrent version holding the same PII that the current-version rule would never reclaim. It's inert without versioning, and ungated it also covers a bucket versioned outside this module.
 
-**`abort-incomplete-multipart-upload`** is deliberately **bucket-wide** (`abortIncompleteMultipartDays`, default 7). Safe, because aborting an *incomplete* upload can never delete a completed object — only orphaned parts that are billed but unreachable. It must be unscoped: bulk CSV uploads multipart outside the export prefix.
+**`bulk-upload-expiry`** deletes bulk-upload files under `bulk_upload_prefix` (default `bulk-uploads/`) after `global.bulkUploadRetentionDays` days (default 30). They hold participants' personal data and nothing reads them once the upload has been processed. The key must match the aggregator API's `bulk-uploads/<aggregatorId>/<uploadId>/{raw,errors}.csv`, and `bulk_upload_prefix` carries the same empty-prefix validation. Noncurrent versions go after 1 day, so a versioned bucket does not keep the data behind a delete marker.
 
-Either knob at `0` drops its rule; both at `0` skips the resource, since S3 rejects a lifecycle configuration with no rules.
+**`abort-incomplete-multipart-upload`** is deliberately **bucket-wide** (`abortIncompleteMultipartDays`, default 7). Safe, because aborting an *incomplete* upload can never delete a completed object — only orphaned parts that are billed but unreachable. It must be unscoped: multipart uploads can land under any prefix.
+
+Any knob at `0` drops its rule; all at `0` skips the resource, since S3 rejects a lifecycle configuration with no rules.
 
 ### Verifying it without waiting a day
 
@@ -91,11 +93,15 @@ Lifecycle is an asynchronous daily sweep, so you cannot watch an object vanish o
 aws s3api put-object --bucket <bucket> --key campaign-exports/_probe/probe.csv --body /tmp/probe.csv
 aws s3api head-object --bucket <bucket> --key campaign-exports/_probe/probe.csv --query Expiration
 #  expiry-date="Fri, 28 Aug 2026 00:00:00 GMT", rule-id="campaign-export-expiry"
-aws s3api head-object --bucket <bucket> --key qr/<any>.png --query Expiration    # -> None (control)
+aws s3api put-object --bucket <bucket> --key bulk-uploads/_probe/probe.csv --body /tmp/probe.csv
+aws s3api head-object --bucket <bucket> --key bulk-uploads/_probe/probe.csv --query Expiration
+#  expiry-date="...", rule-id="bulk-upload-expiry"
+aws s3api head-object --bucket <bucket> --key <network>/<any> --query Expiration  # -> None (control)
 aws s3api delete-object --bucket <bucket> --key campaign-exports/_probe/probe.csv
+aws s3api delete-object --bucket <bucket> --key bulk-uploads/_probe/probe.csv
 ```
 
-Always run the **negative control** too — an object under `qr/`, `bulk-uploads/` and `<network>/` must return `None`. That is what proves the rule is scoped rather than bucket-wide.
+Always run the **negative control** too — an object under `<network>/` must return `None`, and each probe must name its own rule-id (a `bulk-uploads/` probe reporting `campaign-export-expiry`, or the reverse, means a prefix is wrong). That is what proves the rules are scoped rather than bucket-wide.
 
 **The file always outlives the link.** S3 computes `Days` expiry as creation + N days *rounded up to the next UTC midnight*, then sweeps some time after. Measured on a real object: created 11:00 UTC with a 1-day rule → `expiry-date` of **00:00 UTC two days later, ~37h**, against a 24h link TTL. So `campaignExportExpiryDays` is a retention *floor*, never a precise deletion moment — which is why the aggregator's export email must not claim the file is deleted the instant the link dies (`campaign-process/index.ts`, `renderExportEmail`). That copy lives in `aggregator-dpg` and is a separate fix.
 

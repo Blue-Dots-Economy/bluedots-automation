@@ -171,11 +171,15 @@ jobs:
                 # ConfigMap block that would otherwise `fail()` on the first
                 # missing file; ui.reference.enabled=false does the same for
                 # the reference datasets. Neither flag hides an app image.
+                # The search client secret comes from the generated
+                # global-secrets.yaml at deploy time; a placeholder lets the
+                # geocode env render instead of hitting the chart's fail().
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml \
                   -f opentofu/aws/template/global-images.yaml \
                   -f opentofu/aws/template/global-values.yaml \
                   --set-json 'api.schemas.networks=[]' \
                   --set ui.reference.enabled=false \
+                  --set search.secrets.data.KEYCLOAK_CLIENT_SECRET=ci-smoke \
                   >> /tmp/all-rendered.yaml
                 ;;
               aggregator)
