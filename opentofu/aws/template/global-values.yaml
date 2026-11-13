@@ -147,6 +147,10 @@ _college_dataset: &college_dataset "ka"
 # ships. A country with no file fails the render (generate it with
 # scripts/build-geo-boundary.sh <CC>). Set "" for no restriction anywhere.
 _geo_country: &geo_country "IN"
+# Phone country codes the forms offer, ISO:code comma list, first is the default
+# (e.g. "IN:+91,GB:+44"; more than one shows a picker). Feeds ui.runtimeConfig.VITE_PHONE_COUNTRIES
+# (signals) and web.phoneCountries (aggregator). "" = India only.
+_phone_countries: &phone_countries "IN:+91"
 
 # ── SMTP Configuration ────────────────────────────────────────────────────
 _smtp_host:         &smtp_host         "smtp.gmail.com"
@@ -626,6 +630,7 @@ alerting:
 web:
   collegeDataset: *college_dataset
   geoCountry: *geo_country
+  phoneCountries: *phone_countries
 
 aggregator-api:
   adminEmails: *aggregator_admin_emails
@@ -733,6 +738,7 @@ ui:
     VITE_ENABLED_LANGUAGES: "en,hi" # default: "en,hi" (English, Hindi). Add more codes for additional languages.
     VITE_COLLEGE_DATASET: *college_dataset
     VITE_GEO_COUNTRY: *geo_country
+    VITE_PHONE_COUNTRIES: *phone_countries
   # College/institute reference list, delivered to the UI's nginx as a ConfigMap
   # (see helm/signals/charts/ui/values.yaml for the full rationale). The region
   # above selects the one file that ships; set enabled: false to fall back to
