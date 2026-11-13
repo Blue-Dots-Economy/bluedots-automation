@@ -218,10 +218,17 @@
           "authenticatorConfig": "aggregator-portal-cond-not-owner"
         },
         {
-          "authenticator": "deny-access-authenticator",
+          "authenticator": "conditional-user-attribute",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 30,
+          "authenticatorConfig": "aggregator-portal-cond-not-invited"
+        },
+        {
+          "authenticator": "deny-access-authenticator",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 40,
           "authenticatorConfig": "aggregator-portal-deny-not-entitled"
         }
       ]
@@ -278,10 +285,17 @@
           "authenticatorConfig": "aggregator-portal-cond-not-owner-sso"
         },
         {
-          "authenticator": "deny-access-authenticator",
+          "authenticator": "conditional-user-attribute",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 30,
+          "authenticatorConfig": "aggregator-portal-cond-not-invited-sso"
+        },
+        {
+          "authenticator": "deny-access-authenticator",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 40,
           "authenticatorConfig": "aggregator-portal-deny-not-entitled-sso"
         }
       ]
@@ -360,8 +374,8 @@
       "alias": "aggregator-portal-cond-not-approved",
       "config": {
         "attribute_name": "decision_made",
-        "attribute_expected_value": "approved",
-        "regex": "false",
+        "attribute_expected_value": "approved|invited",
+        "regex": "true",
         "include_group_attributes": "false",
         "not": "true"
       }
@@ -370,8 +384,8 @@
       "alias": "aggregator-portal-cond-not-approved-sso",
       "config": {
         "attribute_name": "decision_made",
-        "attribute_expected_value": "approved",
-        "regex": "false",
+        "attribute_expected_value": "approved|invited",
+        "regex": "true",
         "include_group_attributes": "false",
         "not": "true"
       }
@@ -432,6 +446,26 @@
       "alias": "aggregator-portal-deny-not-entitled-sso",
       "config": {
         "denyErrorMessage": "This account does not have access to the Aggregator portal."
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-not-invited",
+      "config": {
+        "attribute_name": "decision_made",
+        "attribute_expected_value": "invited",
+        "regex": "false",
+        "include_group_attributes": "false",
+        "not": "true"
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-not-invited-sso",
+      "config": {
+        "attribute_name": "decision_made",
+        "attribute_expected_value": "invited",
+        "regex": "false",
+        "include_group_attributes": "false",
+        "not": "true"
       }
     }
   ],
