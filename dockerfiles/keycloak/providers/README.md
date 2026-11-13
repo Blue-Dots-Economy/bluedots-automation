@@ -7,11 +7,11 @@ Everything in this directory is copied to `/opt/keycloak/providers/` by
 
 | Jar | Version | Source |
 |-----|---------|--------|
-| `keycloak-otp-1.3.0-SNAPSHOT.jar` | 1.3.0-SNAPSHOT | <https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator> |
+| `keycloak-otp-1.4.0-SNAPSHOT.jar` | 1.4.0-SNAPSHOT | <https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator> |
 
-`sha256:b89079bdb133d0d75400be667bb10f01eccfdc14fce17a392ab603de92529ef9`
+`sha256:0f5c683562784c264936bb6ad2d92973b29d26b2f6a78096ff36c84199b24772`
 
-Built from `keycloak-otp-authenticator` `main` at `4ff776a` (merge of PR #10).
+Built from `keycloak-otp-authenticator` branch `feat/1069-invite-login-hint-email-only` at `da5b8d7` (PR #12).
 
 > The hash identifies the **committed file**, not a target to reproduce: a jar
 > is a zip and carries build timestamps, so a fresh `mvn package` of the same
@@ -77,6 +77,11 @@ sets them, and only where notification-service declares those templates.
 
 The trade-off is that login OTP gains a hard dependency on notification-service
 being reachable from `common-services`.
+
+Invited users (from 1.4.0-SNAPSHOT): an OIDC `login_hint` fills in the identifier
+and skips the identifier form, and a user whose `decision_made` attribute is
+`invited` always gets an email code, never the email/SMS choice. The email code
+page names the masked address the code went to and how long it is valid.
 
 Only the OTP code is forwarded, never the rendered SMS text. Under Indian DLT
 the delivered copy must match the template registered with the operator, so
@@ -146,6 +151,6 @@ Those trees are developer-local and are not upstream of this one; the same
 relationship `scripts/build-realm.sh` documents for the realm JSON.
 
 They currently sit on **1.0.0-SNAPSHOT** while this directory ships
-**1.3.0-SNAPSHOT**. Bumping them is a separate change in those repos and is not
+**1.4.0-SNAPSHOT**. Bumping them is a separate change in those repos and is not
 required for a deployment — but note the 1.0.0 jar has no `http` provider, so
 local dev cannot exercise the notification-service path until it is bumped.
