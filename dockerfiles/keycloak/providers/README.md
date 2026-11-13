@@ -9,9 +9,9 @@ Everything in this directory is copied to `/opt/keycloak/providers/` by
 |-----|---------|--------|
 | `keycloak-otp-1.4.0-SNAPSHOT.jar` | 1.4.0-SNAPSHOT | <https://github.com/Blue-Dots-Economy/keycloak-otp-authenticator> |
 
-`sha256:0f5c683562784c264936bb6ad2d92973b29d26b2f6a78096ff36c84199b24772`
+`sha256:4104fb17d1ce3b2edf4bcb08419930d15704ee4e58bbd5697454d82e9b83cef8`
 
-Built from `keycloak-otp-authenticator` branch `feat/1069-invite-login-hint-email-only` at `da5b8d7` (PR #12).
+Built from `keycloak-otp-authenticator` `main` at `ba6b2db` (merge of PR #12).
 
 > The hash identifies the **committed file**, not a target to reproduce: a jar
 > is a zip and carries build timestamps, so a fresh `mvn package` of the same
@@ -78,10 +78,11 @@ sets them, and only where notification-service declares those templates.
 The trade-off is that login OTP gains a hard dependency on notification-service
 being reachable from `common-services`.
 
-Invited users (from 1.4.0-SNAPSHOT): an OIDC `login_hint` fills in the identifier
-and skips the identifier form, and a user whose `decision_made` attribute is
-`invited` always gets an email code, never the email/SMS choice. The email code
-page names the masked address the code went to and how long it is valid.
+Invited users (from 1.4.0-SNAPSHOT): an OIDC `login_hint` fills in the identifier;
+only when it is the email of a user whose `decision_made` attribute is `invited`
+is the identifier form skipped. Such a user always gets an email code, never the
+email/SMS choice. The code page says how long the code is valid and, after an
+email sign-in, the masked address it went to.
 
 Only the OTP code is forwarded, never the rendered SMS text. Under Indian DLT
 the delivered copy must match the template registered with the operator, so
