@@ -93,6 +93,15 @@ never CREATE a client — `ensure_acting_org_mapper` and `ensure_login_theme` bo
 predating a realm.json change keeps its missing clients while the Job still exits 0:
 a silent no-op. Reconciling clients first is what makes the rest effective.
 
+**Sign-out settings are reconciled, not imported (#322).** Step 7 of
+`apply-user-profile.sh` sets `backchannel.logout.url` (+ "session required") on
+`aggregator-portal` and `signals-ui`, and adds every Signals origin to
+signals-ui's post-logout list. The URLs are `init.backchannelLogout.*` in
+`helm/keycloak/values.yaml`: **in-cluster service addresses**, because Keycloak
+calls them directly, so they follow the aggregator/signals release and namespace
+names. Without them, signing out of one app leaves the other app's session alive
+until its token expires. Post-logout entries are only added, never removed.
+
 **Realm EVENT logging ships in realm.json only — an existing realm does not get
 it (#217).** `realm.json` now sets `eventsEnabled` + `adminEventsEnabled`
 (30-day event expiry, 90-day admin-event expiry via the `adminEventsExpiration`
