@@ -730,6 +730,16 @@ api:
     PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
     PII_LOCATION_JITTER_MAX_METERS: "250"   # 50–1000
     GEOCODING_COUNTRY: *geo_country         # see _geo_country above
+    # Workaround for a signals-dpg bug, not a feature to enable by default:
+    # listBrandDirectories() checks dirent.isDirectory(), which is false for a
+    # Kubernetes ConfigMap's symlinked brand folders, so <brand>/sms.properties
+    # never loads via the normal network/brand scan. SMS_MESSAGES_PATH reads
+    # the file directly with readFile (which follows symlinks fine) and layers
+    # in ahead of the network/brand files, so it becomes the effective
+    # override when those are absent or (as here) broken. Uncomment and set
+    # the brand segment only if a deployment hits this; remove once the
+    # symlink bug is fixed upstream.
+    # SMS_MESSAGES_PATH: "/app/schemas/<brand>/sms.properties"
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local
   redis:

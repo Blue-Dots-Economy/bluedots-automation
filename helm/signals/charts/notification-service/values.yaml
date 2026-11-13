@@ -167,6 +167,11 @@ internalSecrets:
   json: |
     {}
 
+# Pinnacle event templates (profile, welcome, connections, guardian OTP, ...):
+# rows in the same shape as the PINNACLE_TEMPLATE_* OTP rows above. Rendered as
+# a JSON file the app reads via PINNACLE_TEMPLATES_FILE; empty = not mounted.
+pinnacleTemplates: []
+
 podDisruptionBudget:
   enabled: false
   minAvailable: 1

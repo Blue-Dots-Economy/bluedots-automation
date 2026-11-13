@@ -135,6 +135,10 @@ entered in `<env>/secrets.yaml` as `pinnacle_*` and rendered into the generated
 Splitting them across `global-values.yaml` and `secrets.yaml` is how half of a
 vendor's configuration goes stale.
 
+**Pinnacle event templates are a list, not env vars.** `notification-service.pinnacleTemplates` (rows in the OTP row shape) renders a ConfigMap mounted at `/app/pinnacle/pinnacle-templates.json`, and the deployment sets `PINNACLE_TEMPLATES_FILE` to it. Empty (the default) renders nothing. The app reads the file only at startup and a row change does not roll the pods, so restart the deployment after editing the rows. The four `PINNACLE_TEMPLATE_*_OTP` env vars are separate and unchanged.
+
+**The rows live in their own gitignored file, not `global-values.yaml`.** `<env>/pinnacle-templates.yaml` (seeded from the committed `pinnacle-templates.example.yaml`) holds `notification-service.pinnacleTemplates`, loaded by `deploy_signals`/`dry_run_signals`/`dry_run` only when the file exists — same reasoning as `secrets.yaml`: real DLT ids and approved SMS wording are per-deployment and not meant for this shared repo's history, and a list of twenty-odd rows would otherwise bloat `global-values.yaml`. Its absence is the safe default (no event templates render), so an environment that has never set this up deploys unchanged.
+
 **Those inputs default to `""`, not `UPDATE_THIS_VALUE`.** The charts filter empty
 values out of the ConfigMap/Secret, so an unfilled `secrets.yaml` leaves them
 genuinely *unset* and every "not configured" guard downstream fires. A non-empty
