@@ -107,6 +107,11 @@ spec:
               value: {{ .Values.keycloak.brandLongName | default "Blue Dots" | quote }}
             - name: SIGNALS_ORIGINS
               value: {{ include "keycloak-platform.signalsOrigins" . | quote }}
+            # apply-user-profile.sh step 7: back-channel logout per client.
+            - name: PORTAL_BACKCHANNEL_LOGOUT_URL
+              value: {{ .Values.init.backchannelLogout.portalUrl | default "" | quote }}
+            - name: SIGNALS_BACKCHANNEL_LOGOUT_URL
+              value: {{ .Values.init.backchannelLogout.signalsUrl | default "" | quote }}
             - name: AGGREGATOR_PORTAL_SECRET
               valueFrom:
                 secretKeyRef:
