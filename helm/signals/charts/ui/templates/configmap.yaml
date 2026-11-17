@@ -13,4 +13,8 @@ data:
     {{- if .Values.hostBindings }}
     {{- $_ := set $rc "VITE_SERVED_BINDINGS" "__SERVED_BINDINGS__" }}
     {{- end }}
+    {{- /* no Google Maps key -> leaflet, unless another provider is set explicitly */}}
+    {{- if and (not $rc.VITE_GOOGLE_MAPS_API_KEY) (has ($rc.VITE_MAP_PROVIDER | default "") (list "" "google-maps")) }}
+    {{- $_ := set $rc "VITE_MAP_PROVIDER" "leaflet" }}
+    {{- end }}
     window.__DPG_UI_CONFIG__ = {{ $rc | toJson }};
