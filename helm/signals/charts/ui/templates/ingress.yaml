@@ -98,5 +98,15 @@ spec:
                 name: {{ $fullName }}
                 port:
                   number: {{ $.Values.service.port }}
+          {{- /* SPA pages under /auth: longer prefix beats Keycloak's /auth on a shared host */}}
+          {{- range $.Values.ingress.spaAuthPaths }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
     {{- end }}
 {{- end }}

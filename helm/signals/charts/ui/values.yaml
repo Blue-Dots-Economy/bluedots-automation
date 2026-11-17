@@ -74,6 +74,11 @@ ingress:
   # serves GET navigations. API routes use 308 instead, to keep a redirected POST
   # from being downgraded to GET. Kong accepts 426, 301, 302, 307, 308.
   httpsRedirectStatusCode: 301
+  spaAuthPaths:
+    - /auth/login
+    - /auth/otp
+    - /auth/callback
+    - /auth/sso
   # HSTS via a per-chart KongPlugin (response-transformer), referenced
   # alongside `plugin` above through the ingress's konghq.com/plugins
   # annotation — see templates/kong-hsts-plugin.yaml. No-op unless
