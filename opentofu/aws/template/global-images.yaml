@@ -92,6 +92,12 @@ raya-sync:
     private: false
     name: ghcr-pull
 
+s3-export:
+  image:
+    repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
+    tag: "sha-92956aa"
+  # private image: install.sh deploy_s3_exporter pulls with its own s3-export-pull secret
+
 platform-sync:
   image:
     repository: ghcr.io/blue-dots-economy/adhoc-scripts/platform-sync

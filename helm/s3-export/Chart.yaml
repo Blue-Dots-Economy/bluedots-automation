@@ -1,0 +1,11 @@
+apiVersion: v2
+name: s3-export
+description: Temporary Signals non-PII dump to S3 (adhoc-scripts signals-s3-export image), off by default.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: s3-export
+    version: 0.1.0
+    repository: file://charts/s3-export
+    condition: s3-export.enabled

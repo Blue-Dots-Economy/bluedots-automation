@@ -189,13 +189,17 @@ spec:
               psql -v ON_ERROR_STOP=1 -d {{ $r.database }} <<-'EOSQL'
                 GRANT CONNECT ON DATABASE {{ $r.database }} TO {{ $r.name }};
                 GRANT USAGE ON SCHEMA public TO {{ $r.name }};
-                -- Only the columns platform-sync reads; skipped until the tables exist.
+                -- Only the columns platform-sync and s3-export read; skipped until the tables exist.
                 DO $grant$
                 BEGIN
                   IF to_regclass('public.organisations') IS NOT NULL
                      AND to_regclass('public.users') IS NOT NULL THEN
-                    GRANT SELECT (id, name, org_type, status, rejected_at)
-                      ON organisations TO {{ $r.name }};
+                    EXECUTE (SELECT 'GRANT SELECT (' || string_agg(quote_ident(column_name), ', ')
+                                    || ') ON organisations TO {{ $r.name }}'
+                             FROM information_schema.columns
+                             WHERE table_schema = 'public' AND table_name = 'organisations'
+                               AND column_name IN ('id', 'name', 'org_type', 'status', 'rejected_at',
+                                                   'parent_id', 'depth', 'known_as'));  -- parent_id/depth/known_as: s3-export, if present
                     GRANT SELECT (org_id, user_type, signalstack_org_id, signalstack_org_name,
                                   serves, status, created_at)
                       ON users TO {{ $r.name }};

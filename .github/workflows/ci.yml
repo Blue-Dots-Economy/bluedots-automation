@@ -52,7 +52,7 @@ jobs:
 
       - name: helm lint (all charts)
         run: |
-          for chart in monitoring common-services keycloak signals aggregator campaign-manager; do
+          for chart in monitoring common-services keycloak signals aggregator campaign-manager s3-export; do
             echo "::group::helm lint $chart"
             # The aggregator chart guards its mandatory secrets (renders fail on
             # `change-me`/empty defaults); skip that block for the static check
@@ -82,7 +82,7 @@ jobs:
           # schema files that install.sh fetches at deploy time
           # (fetch_signals_configs) and are not committed, so a bare `helm
           # template` fails on the missing files. `helm lint` above still covers it.
-          for chart in monitoring common-services keycloak aggregator campaign-manager; do
+          for chart in monitoring common-services keycloak aggregator campaign-manager s3-export; do
             echo "::group::helm template $chart"
             # aggregator: bypass the mandatory-secret guard + the fetched-config
             # requirement (see helm lint step). web.reference.enabled=false does
@@ -110,6 +110,17 @@ jobs:
                   --set global.database.host=ci-smoke.invalid \
                   --set global.database.password=ci-smoke \
                   --set app.database.admin.password=ci-smoke >/dev/null
+                ;;
+              s3-export)
+                # Off by default; turn it on through the template's own global files.
+                helm template "$chart" "helm/$chart" \
+                  -f opentofu/aws/template/global-images.yaml \
+                  -f opentofu/aws/template/global-values.yaml \
+                  --set s3-export.enabled=true \
+                  --set 's3-export.instances[0].id=ci-smoke' \
+                  --set global.s3.bucket=ci-smoke \
+                  --set s3-export.databaseUrl=postgresql://ci-smoke \
+                  --set s3-export.aggDatabaseUrl=postgresql://ci-smoke >/dev/null
                 ;;
               *)
                 helm template "$chart" "helm/$chart" -f helm/global-resources.yaml >/dev/null

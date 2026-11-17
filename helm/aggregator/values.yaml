@@ -185,6 +185,10 @@ global:
   # sensitive routes — set explicitly anyway, so the deployed value is visible
   # in the ConfigMap instead of implied by the image.
   campaignManagerAllowedAzp: 'campaign-manager'
+  # GET /v1/campaign/dump key root in global.s3.bucket; must match the helm/s3-export
+  # release (instances[].id, s3.prefix). Empty id = every dump call returns 503.
+  campaignDumpInstanceId: ''
+  campaignDumpPrefix: ''
 
   # UPDATE: S3 wiring for bulk uploads, QR PNGs, error CSVs.
   s3:

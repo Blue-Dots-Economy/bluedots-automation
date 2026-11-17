@@ -1,0 +1,3 @@
+# Settings come from the env's global files under `s3-export:` (see README.md).
+s3-export:
+  enabled: false
