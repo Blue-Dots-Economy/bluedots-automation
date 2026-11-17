@@ -1,41 +1,33 @@
-# Temporary. Deployed by `install.sh deploy_s3_exporter` under the `s3-export:` key; see ../../README.md.
-
 image:
   repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
-  tag: ""                       # required
+  tag: ""
   pullPolicy: IfNotPresent
 
-imagePullSecrets: []            # e.g. [{name: ghcr-pull}]; the image is private
+imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
 serviceAccount:
   create: true
   name: signals-s3-export
-  annotations: {}               # IRSA: eks.amazonaws.com/role-arn: <role arn>
+  annotations: {}
 
 s3:
-  bucket: ""                    # empty = global.s3.bucket
-  prefix: ""                    # keys: [<prefix>/]<network>/<instance id>/<table>.ndjson.gz
-  region: ""                    # empty = global.s3.region
-  endpointUrl: ""               # MinIO only
+  bucket: ""
+  prefix: ""
+  region: ""
+  endpointUrl: ""
   forcePathStyle: false
-  existingCredentialsSecret: "" # Secret with AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, when not using IRSA
+  existingCredentialsSecret: ""
 
 export:
-  scope: aggregator_onboarded   # or "all"
+  scope: aggregator_onboarded
 
-# Read-only database URLs, rendered into one Secret unless existingSecret is set.
-databaseUrl: ""                 # Signals (dpg), e.g. campaign_manager_signals_ro
-aggDatabaseUrl: ""              # aggregator (aggregator_export_ro)
-existingSecret: ""              # pre-created Secret holding DATABASE_URL (+ AGG_DATABASE_URL)
+databaseUrl: ""
+aggDatabaseUrl: ""
+existingSecret: ""
 
-# One CronJob per Signals instance.
 instances: []
-#  - id: blue_dot_up
-#    network: blue_dot
-#    schedule: "0 0,12 * * *"
-#    suspend: false
 
 cronJob:
   timeZone: Asia/Kolkata
@@ -53,7 +45,7 @@ podSecurityContext:
 
 securityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false # writes NDJSON to the work emptyDir
+  readOnlyRootFilesystem: false
   capabilities:
     drop: [ALL]
 

@@ -199,7 +199,7 @@ spec:
                              FROM information_schema.columns
                              WHERE table_schema = 'public' AND table_name = 'organisations'
                                AND column_name IN ('id', 'name', 'org_type', 'status', 'rejected_at',
-                                                   'parent_id', 'depth', 'known_as'));  -- parent_id/depth/known_as: s3-export, if present
+                                                   'parent_id', 'depth', 'known_as'));
                     GRANT SELECT (org_id, user_type, signalstack_org_id, signalstack_org_name,
                                   serves, status, created_at)
                       ON users TO {{ $r.name }};

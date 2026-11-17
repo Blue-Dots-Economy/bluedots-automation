@@ -1,6 +1,6 @@
 apiVersion: v2
 name: s3-export
-description: Temporary Signals non-PII dump to S3 (adhoc-scripts signals-s3-export image), off by default.
+description: Signals and aggregator non-PII dump to S3 (adhoc-scripts signals-s3-export image).
 type: application
 version: 0.1.0
 appVersion: "0.1.0"

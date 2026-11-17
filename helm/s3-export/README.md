@@ -1,4 +1,4 @@
-# s3-export (temporary)
+# s3-export
 
 A CronJob that dumps the Signals data (users, items, item actions) and the
 aggregator organisation list to S3 as

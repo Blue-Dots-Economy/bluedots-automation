@@ -112,7 +112,6 @@ jobs:
                   --set app.database.admin.password=ci-smoke >/dev/null
                 ;;
               s3-export)
-                # Off by default; turn it on through the template's own global files.
                 helm template "$chart" "helm/$chart" \
                   -f opentofu/aws/template/global-images.yaml \
                   -f opentofu/aws/template/global-values.yaml \

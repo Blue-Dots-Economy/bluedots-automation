@@ -115,7 +115,7 @@ SIGNALS_NS="${SIGNALS_NS:-signals}"
 AGG_NS="${AGG_NS:-aggregator}"
 MON_NS="${MON_NS:-monitoring}"
 CM_NS="${CM_NS:-campaign-manager}"
-S3E_NS="${S3E_NS:-s3-export}"   # temporary s3-export release
+S3E_NS="${S3E_NS:-s3-export}"
 # Keycloak is a shared common service: its own RELEASE, but it lives in the
 # common-services NAMESPACE (deliberate exception to the dir==ns convention).
 KC_NS="${KC_NS:-$CS_NS}"
@@ -128,7 +128,7 @@ MON_REL="${MON_REL:-monitoring}"
 KC_REL="${KC_REL:-keycloak}"
 CM_REL="${CM_REL:-campaign-manager}"
 S3E_REL="${S3E_REL:-s3-export}"
-S3E_PULL_SECRET="${S3E_PULL_SECRET:-s3-export-pull}"   # its own pull secret, not ghcr-pull
+S3E_PULL_SECRET="${S3E_PULL_SECRET:-s3-export-pull}"
 
 # Chart directories.
 CS_DIR="$REPO_ROOT/helm/common-services"
@@ -617,10 +617,6 @@ function deploy_campaign_manager() {
         --wait --timeout 10m
 }
 
-# Temporary Signals dump to S3. Not part of deploy_all_services; renders nothing
-# unless _s3_export_enabled is true. Its ServiceAccount must be in service_account_subjects.
-# Pull secret for the private exporter image. Kept when it exists, unless
-# S3E_GHCR_PAT (a read:packages token) is set to replace it; prompts otherwise.
 function create_s3_exporter_image_pull_secret() {
     local pat="${S3E_GHCR_PAT:-}"
     if [[ -z "$pat" ]] && kubectl -n "$S3E_NS" get secret "$S3E_PULL_SECRET" >/dev/null 2>&1; then
