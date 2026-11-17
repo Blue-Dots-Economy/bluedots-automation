@@ -27,3 +27,6 @@ api:
 search:
   postgres:
     host: ""
+
+ui:
+  hostBindings: "ncsmapuat.ncs.gov.in=blue_dot/seeker"   # <host>=<network>/<domain>
