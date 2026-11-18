@@ -39,9 +39,11 @@ Like every other chart, from the env's global files, under `s3-export:`:
   the bootstrap grant is skipped and every run fails validation and writes nothing.
   Keep `_s3_export_enabled: false` until that release is deployed, then re-run
   `deploy_common_services` so the grant picks up the new columns.
-- **Serving the files needs aggregator-dpg#1102** (`GET /v1/campaign/dump`). It is
-  merged to aggregator `develop` but not in a release tag yet. The export writes its
-  files without it; nothing can hand out links to them until it is deployed.
+- **Serving the files needs `GET /v1/campaign/dump` in the same aggregator release.**
+  Releases up to `202609-*` have the route but not migration 0032; `202610-s1-rc2`
+  to `rc5` have 0032 but the route was removed (aggregator-dpg#900). aggregator-dpg#1102
+  restores it on `develop`, so the first aggregator release cut after it is the first
+  that works end to end. Until then the export writes files that nothing hands out.
 - **Switching over from the old exporter.** Older releases ran the exporter inside the
   signals chart (`helm/signals/charts/s3-export`). The next `deploy_signals` from this
   version removes it, and nothing replaces it until you run `deploy_s3_exporter`. Run
