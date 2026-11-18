@@ -1,0 +1,80 @@
+{{- range .Values.instances }}
+{{- $slug := include "s3-export.slug" (required "s3-export.instances[].id is required (campaign_manager_instance_id)" .id) }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "s3-export.fullname" $ }}-{{ $slug }}
+  labels:
+    {{- include "s3-export.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $slug }}
+spec:
+  schedule: {{ required "instances[].schedule is required" .schedule | quote }}
+  timeZone: {{ $.Values.cronJob.timeZone | quote }}
+  suspend: {{ .suspend | default false }}
+  concurrencyPolicy: {{ $.Values.cronJob.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ $.Values.cronJob.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ $.Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $.Values.cronJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $.Values.cronJob.backoffLimit }}
+      activeDeadlineSeconds: {{ $.Values.cronJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          annotations:
+            checksum/config: {{ include (print $.Template.BasePath "/configmaps.yaml") $ | sha256sum }}
+          labels:
+            {{- include "s3-export.selectorLabels" $ | nindent 12 }}
+            app.kubernetes.io/component: {{ $slug }}
+        spec:
+          {{- with $.Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "s3-export.serviceAccountName" $ }}
+          restartPolicy: Never
+          securityContext:
+            {{- toYaml $.Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: exporter
+              image: "{{ $.Values.image.repository }}:{{ required "image.tag is required" $.Values.image.tag }}"
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              securityContext:
+                {{- toYaml $.Values.securityContext | nindent 16 }}
+              envFrom:
+                - configMapRef:
+                    name: {{ include "s3-export.fullname" $ }}-env-{{ $slug }}
+                - secretRef:
+                    name: {{ include "s3-export.dbSecretName" $ }}
+                {{- with $.Values.s3.existingCredentialsSecret }}
+                - secretRef:
+                    name: {{ . }}
+                {{- end }}
+              volumeMounts:
+                - name: manifest
+                  mountPath: /etc/signals-export
+                  readOnly: true
+                - name: work
+                  mountPath: /app/data/work
+              resources:
+                {{- toYaml $.Values.resources | nindent 16 }}
+          volumes:
+            - name: manifest
+              configMap:
+                name: {{ include "s3-export.fullname" $ }}-manifest-{{ include "s3-export.slug" .network }}
+            - name: work
+              emptyDir: {}
+          {{- with $.Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $.Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $.Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

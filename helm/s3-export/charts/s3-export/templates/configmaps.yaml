@@ -1,0 +1,34 @@
+{{- $networks := list }}
+{{- range .Values.instances }}{{ $networks = append $networks .network | uniq }}{{ end }}
+{{- range $networks }}
+{{- $m := $.Files.Get (printf "files/manifests/%s.json" .) | required (printf "no files/manifests/%s.json" .) | fromJson }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "s3-export.fullname" $ }}-manifest-{{ include "s3-export.slug" . }}
+  labels:
+    {{- include "s3-export.labels" $ | nindent 4 }}
+data:
+  {{ . }}.json: |-
+    {{- toPrettyJson $m | nindent 4 }}
+{{- end }}
+{{- range .Values.instances }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "s3-export.fullname" $ }}-env-{{ include "s3-export.slug" .id }}
+  labels:
+    {{- include "s3-export.labels" $ | nindent 4 }}
+data:
+  INSTANCE_ID: {{ .id | quote }}
+  EXPORT_NETWORK: {{ .network | quote }}
+  EXPORT_SCOPE: {{ $.Values.export.scope | quote }}
+  EXPORT_MANIFEST_PATH: {{ printf "/etc/signals-export/%s.json" .network | quote }}
+  S3_BUCKET: {{ $.Values.s3.bucket | default (dig "s3" "bucket" "" $.Values.global) | required "s3.bucket (or global.s3.bucket) is required" | quote }}
+  S3_PREFIX: {{ $.Values.s3.prefix | quote }}
+  S3_ENDPOINT_URL: {{ $.Values.s3.endpointUrl | quote }}
+  S3_REGION: {{ $.Values.s3.region | default (dig "s3" "region" "" $.Values.global) | quote }}
+  S3_FORCE_PATH_STYLE: {{ $.Values.s3.forcePathStyle | quote }}
+{{- end }}

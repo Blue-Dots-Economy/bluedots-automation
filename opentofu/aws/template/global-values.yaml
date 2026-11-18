@@ -99,6 +99,7 @@ _campaign_manager_enabled:          &campaign_manager_enabled          false
 _campaign_manager_raya_enabled:     &campaign_manager_raya_enabled     false
 _campaign_manager_platform_enabled: &campaign_manager_platform_enabled false
 _campaign_manager_instance_id:      &campaign_manager_instance_id      ""   # never change once set
+_s3_export_enabled: &s3_export_enabled false
 
 # ── Keycloak's own hostname ────────────────────────────────────────────────────
 # Keycloak's own neutral domain, so users from EITHER DPG log in here instead of
@@ -351,6 +352,8 @@ global:
   service_account_subjects:
     - "system:serviceaccount:aggregator:aggregator-api"
     - "system:serviceaccount:aggregator:aggregator-worker"
+    # s3-export reuses app_sa for now (full app-bucket access); temporary.
+    - "system:serviceaccount:s3-export:signals-s3-export"
 
   # One mailbox for notification-service, aggregator and keycloak; password is smtp_password.
   smtp_user: *smtp_user
@@ -413,6 +416,8 @@ global:
   # the app's own fallback; set explicitly so the deployed value is visible in
   # the ConfigMap rather than implied by whichever image tag is running.
   campaignManagerAllowedAzp: "campaign-manager"
+  campaignDumpInstanceId: *campaign_manager_instance_id
+  campaignDumpPrefix: ""
 
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
@@ -819,3 +824,11 @@ platform-sync:
   config:
     INSTANCE_ID: *campaign_manager_instance_id
     EXPORT_NETWORK: *network
+
+# ─── s3-export chart ─────────────────────────────────────────────────────────
+s3-export:
+  enabled: *s3_export_enabled
+  instances:
+    - id: *campaign_manager_instance_id
+      network: *network
+      schedule: "0 0,12 * * *"

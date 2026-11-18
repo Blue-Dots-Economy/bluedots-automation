@@ -185,6 +185,8 @@ global:
   # sensitive routes — set explicitly anyway, so the deployed value is visible
   # in the ConfigMap instead of implied by the image.
   campaignManagerAllowedAzp: 'campaign-manager'
+  campaignDumpInstanceId: ''
+  campaignDumpPrefix: ''
 
   # UPDATE: S3 wiring for bulk uploads, QR PNGs, error CSVs.
   s3:

@@ -115,6 +115,7 @@ SIGNALS_NS="${SIGNALS_NS:-signals}"
 AGG_NS="${AGG_NS:-aggregator}"
 MON_NS="${MON_NS:-monitoring}"
 CM_NS="${CM_NS:-campaign-manager}"
+S3E_NS="${S3E_NS:-s3-export}"
 # Keycloak is a shared common service: its own RELEASE, but it lives in the
 # common-services NAMESPACE (deliberate exception to the dir==ns convention).
 KC_NS="${KC_NS:-$CS_NS}"
@@ -126,6 +127,8 @@ AGG_REL="${AGG_REL:-aggregator}"
 MON_REL="${MON_REL:-monitoring}"
 KC_REL="${KC_REL:-keycloak}"
 CM_REL="${CM_REL:-campaign-manager}"
+S3E_REL="${S3E_REL:-s3-export}"
+S3E_PULL_SECRET="${S3E_PULL_SECRET:-s3-export-pull}"
 
 # Chart directories.
 CS_DIR="$REPO_ROOT/helm/common-services"
@@ -134,6 +137,7 @@ AGG_DIR="$REPO_ROOT/helm/aggregator"
 MON_DIR="$REPO_ROOT/helm/monitoring"
 KC_DIR="$REPO_ROOT/helm/keycloak"
 CM_DIR="$REPO_ROOT/helm/campaign-manager"
+S3E_DIR="$REPO_ROOT/helm/s3-export"
 
 # Resource overrides (replica counts, HPA, PDB, container resources) — shared across environments.
 # Edit helm/global-resources.yaml to change settings across all environments.
@@ -613,6 +617,36 @@ function deploy_campaign_manager() {
         --wait --timeout 10m
 }
 
+function create_s3_exporter_image_pull_secret() {
+    local pat="${S3E_GHCR_PAT:-}"
+    if [[ -z "$pat" ]] && kubectl -n "$S3E_NS" get secret "$S3E_PULL_SECRET" >/dev/null 2>&1; then
+        echo "Secret $S3E_PULL_SECRET exists in $S3E_NS; keeping it (set S3E_GHCR_PAT to replace)."
+        return 0
+    fi
+    [[ -n "$pat" ]] || { read -rsp "GHCR PAT for the s3-export image (read:packages): " pat; echo; }
+    [[ -n "$pat" ]] || { echo "ERROR: empty PAT" >&2; exit 1; }
+    local user="${S3E_GHCR_USER:-}"
+    [[ -n "$user" ]] || { echo "ERROR: set S3E_GHCR_USER to the GitHub account that owns S3E_GHCR_PAT" >&2; exit 1; }
+    kubectl get ns "$S3E_NS" >/dev/null 2>&1 || kubectl create ns "$S3E_NS"
+    kubectl create secret docker-registry "$S3E_PULL_SECRET" \
+        --docker-server=ghcr.io --docker-username="$user" --docker-password="$pat" \
+        -n "$S3E_NS" --dry-run=client -o yaml | kubectl apply -f -
+}
+
+function deploy_s3_exporter() {
+    echo -e "\nDeploying s3-export"
+    create_s3_exporter_image_pull_secret
+    helm upgrade --install "$S3E_REL" "$S3E_DIR" \
+        -n "$S3E_NS" --create-namespace \
+        -f "$GLOBAL_IMAGES" \
+        -f "$GLOBAL_VALUES" \
+        -f "$GLOBAL_CLOUD_VALUES" \
+        -f "$GLOBAL_SECRETS" \
+        --set-json "s3-export.imagePullSecrets=[{\"name\":\"$S3E_PULL_SECRET\"}]" \
+        $EXTRA_HELM_ARGS \
+        --wait --timeout 5m
+}
+
 # ═══ helm: deploy everything ══════════════════════════════════════════════════
 # 3) Full stack, in dependency order: namespaces+secrets → common-services →
 #    signals → aggregator → campaign-manager.
@@ -797,6 +831,7 @@ function lint() {
         --set global.database.host=lint-only --set global.database.password=lint-only \
         --set app.database.admin.password=lint-only \
         --set app.secrets.SESSION_SECRET=lint-only --set app.secrets.CRON_SECRET=lint-only
+    helm lint "$S3E_DIR"
 }
 
 # helm --dry-run all 6 charts against the current cluster (renders + server-side checks,

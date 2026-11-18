@@ -115,7 +115,9 @@ empty on KA-Dharwad). Turn it on manually on existing realms, or add it to
 
 It uses Keycloak's own `partialImport` with `ifResourceExists: SKIP`, never
 OVERWRITE — re-creating an existing client changes its service-account user id, and
-those ids are referenced from the aggregator database. It also grants the
+those ids are referenced from the aggregator database. The one in-place change it
+makes to an existing client is switching `serviceAccountsEnabled` ON when realm.json
+has it (client id and secret unchanged); it never switches it off. It also grants the
 `realm-management` client roles each service account needs, because creating a
 client with `serviceAccountsEnabled` makes the SA user but grants it nothing.
 

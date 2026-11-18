@@ -41,6 +41,10 @@ worker:
     create: true
     annotations:
       eks.amazonaws.com/role-arn: ${app_sa_role_arn}
+s3-export:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: ${app_sa_role_arn}
 
 # ─── signals chart — computed config ─────────────────────────────────────────
 # Values that require HCL operations plain YAML anchors can't do:

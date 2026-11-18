@@ -57,7 +57,8 @@ resource "aws_iam_role" "app_sa" {
 
 # Minimal S3 access policy for the application role.
 # Shared by every subject in var.service_account_subjects — the aggregator
-# api/worker.
+# api/worker, and the s3-export CronJob. The exporter only needs to write its
+# own prefix; reusing this role is temporary until it gets a scoped role.
 resource "aws_iam_role_policy" "app_s3" {
   name = "s3-access"
   role = aws_iam_role.app_sa.id

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: s3-export
+description: CronJob that uploads the Signals and aggregator non-PII dump to S3.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+sources:
+  - https://github.com/Blue-Dots-Economy/adhoc-scripts
+maintainers:
+  - name: Sanketika
