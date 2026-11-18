@@ -625,9 +625,11 @@ function create_s3_exporter_image_pull_secret() {
     fi
     [[ -n "$pat" ]] || { read -rsp "GHCR PAT for the s3-export image (read:packages): " pat; echo; }
     [[ -n "$pat" ]] || { echo "ERROR: empty PAT" >&2; exit 1; }
+    local user="${S3E_GHCR_USER:-}"
+    [[ -n "$user" ]] || { echo "ERROR: set S3E_GHCR_USER to the GitHub account that owns S3E_GHCR_PAT" >&2; exit 1; }
     kubectl get ns "$S3E_NS" >/dev/null 2>&1 || kubectl create ns "$S3E_NS"
     kubectl create secret docker-registry "$S3E_PULL_SECRET" \
-        --docker-server=ghcr.io --docker-username="${GHCR_USER:-vinodbhorge}" --docker-password="$pat" \
+        --docker-server=ghcr.io --docker-username="$user" --docker-password="$pat" \
         -n "$S3E_NS" --dry-run=client -o yaml | kubectl apply -f -
 }
 
