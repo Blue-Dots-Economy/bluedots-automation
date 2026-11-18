@@ -352,6 +352,7 @@ global:
   service_account_subjects:
     - "system:serviceaccount:aggregator:aggregator-api"
     - "system:serviceaccount:aggregator:aggregator-worker"
+    # s3-export reuses app_sa for now (full app-bucket access); temporary.
     - "system:serviceaccount:s3-export:signals-s3-export"
 
   # One mailbox for notification-service, aggregator and keycloak; password is smtp_password.
