@@ -114,6 +114,16 @@ else
   fail "campaign-manager browser binding '$cm_bind' != aggregator-otp-browser id '$otp_id'"
 fi
 
+# ── A6c. campaign-manager keeps its service account ─────────────────────────
+# The S3 export's reader (/v1/campaign/dump) is called with a client-credentials
+# token from this client. Without the service account there is no such token.
+cm_sa=$(q '[.clients[] | select(.clientId=="campaign-manager") | .serviceAccountsEnabled] | first // false')
+if [ "$cm_sa" = "true" ]; then
+  pass "campaign-manager has serviceAccountsEnabled"
+else
+  fail "campaign-manager serviceAccountsEnabled is '$cm_sa', expected true"
+fi
+
 # ── A7. Realm name stays templated ───────────────────────────────────────────
 # render-realm.sh substitutes it from KEYCLOAK_REALM. A literal here would
 # hardcode the realm name and break the per-instance naming rule.

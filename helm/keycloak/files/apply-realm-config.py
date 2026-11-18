@@ -30,7 +30,9 @@ WHAT IT DELIBERATELY DOES NOT DO
 --------------------------------
 - `ifResourceExists: SKIP`, never OVERWRITE. Re-creating an existing client would
   change its service-account user id, and those ids are referenced from the
-  aggregator database. Existing clients are left exactly as they are.
+  aggregator database. Existing clients are left as they are, with one
+  exception: `serviceAccountsEnabled` is switched ON in place when realm.json
+  has it and the live client does not. It is never switched off.
 - It does not import `.users[]`. The only users in realm.json are service
   accounts, which Keycloak creates itself from the client definitions. Importing
   them as ordinary users would create duplicates that shadow the real ones.
@@ -203,6 +205,36 @@ def main():
         for r in body.get("results", []):
             if r.get("action") == "ADDED":
                 log(f"  added {r.get('resourceType')} {r.get('resourceName')}")
+
+    # ── 1b. service accounts on existing clients ────────────────────────────
+    # SKIP leaves an existing client untouched, so a client that gains
+    # `serviceAccountsEnabled` in realm.json after its realm was created never
+    # gets it (campaign-manager). Turning the flag ON is an in-place update: the
+    # client id and secret stay the same and Keycloak creates the
+    # `service-account-<clientId>` user. It is never turned OFF here, which would
+    # delete that user and break whatever references it.
+    want_sa = [c["clientId"] for c in clients if c.get("serviceAccountsEnabled")]
+    if want_sa:
+        status, live_clients = request(
+            "GET", f"/admin/realms/{REALM}/clients", token=token
+        )
+        if status != 200:
+            die(f"cannot list clients (HTTP {status})")
+        for live in live_clients:
+            if live["clientId"] not in want_sa or live.get("serviceAccountsEnabled"):
+                continue
+            status, body = request(
+                "PUT",
+                f"/admin/realms/{REALM}/clients/{live['id']}",
+                token=token,
+                body={**live, "serviceAccountsEnabled": True},
+            )
+            if status not in (200, 204):
+                die(
+                    f"enabling the service account on '{live['clientId']}' failed "
+                    f"(HTTP {status}): {body}"
+                )
+            log(f"  {live['clientId']}: service account enabled")
 
     # ── 2. service-account role grants ──────────────────────────────────────
     # Client creation makes the service-account user but grants it nothing.
