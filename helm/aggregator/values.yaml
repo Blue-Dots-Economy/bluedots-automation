@@ -72,6 +72,9 @@ global:
   # A change to that file needs a pod restart — subPath mounts don't hot-update and
   # the config is boot-cached in-process. deploy_aggregator handles this.
   networkConfigDelivery: true
+  # Replace aggregator.voice_bots / default_voice_bots in the delivered config when set.
+  voiceBots: []
+  defaultVoiceBots: {}
 
   # ── Upstream network.json source ──────────────────────────────────────────
   # The aggregator fetches network.json over HTTPS at boot rather than mounting it,
