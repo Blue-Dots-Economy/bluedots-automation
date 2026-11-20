@@ -438,7 +438,7 @@ global:
     url: ''
   # ── Onboarding capability allow-list (aggregator api only) ────────────────
   # Comma-separated allow-list of registration modes this deployment offers:
-  # `form`, `voice` (`bulk` is reserved, gates nothing yet).
+  # `form`, `voice`, `voice_or_form` (`bulk` is reserved, gates nothing yet).
   #
   # LEAVE IT COMMENTED OUT to keep every mode enabled. Do NOT set it to an empty
   # string: unset means "all enabled", but "" means "nothing enabled" and every
@@ -447,6 +447,10 @@ global:
   #
   # UAT blue_dot and purple_dot want `form` (voice registration off):
   # onboardingEnabled: form
+  # Voice bots on two-option links; empty keeps the aggregator-dpg config's list.
+  voiceBots: []
+  #   - { key: up_bot, display_name: UP helpline, phone: '+919999999999', languages: [hi], domains: [seeker] }
+  defaultVoiceBots: {}   # domain -> bot key; needed when 2+ bots serve a domain
 
   # ── Signals UI hand-off (aggregator api only) ─────────────────────────────
   # Comma-separated `domain=url` pairs — one per network domain — pointing at the

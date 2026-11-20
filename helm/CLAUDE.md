@@ -336,7 +336,7 @@ Boot logs the state — `sms templates: N cases loaded from M layer(s), K with a
 
 Same freshness model as consent and signals' network.json: `scripts/fetch-configs.sh aggregator` pulls it on every deploy into `helm/aggregator/files/network-config/aggregator.config.yaml` (gitignored), and `templates/network-config-configmap.yaml` renders it into `{release}-network-config`, subPath-mounted into api + worker **over the image-baked copy**. Net effect: update canonical, redeploy, config is live — **no image rebuild**.
 
-**Rendered verbatim.** No placeholder rewriting, no field edits — whatever canonical says is what the pods get. The only runtime override is the network.json URL, supplied as `AGGREGATOR_NETWORK_SOURCE` (below), so the file never needs editing to repoint schemas.
+**Rendered verbatim.** No placeholder rewriting, no field edits — whatever canonical says is what the pods get. One exception: a non-empty `global.voiceBots` / `global.defaultVoiceBots` replaces `aggregator.voice_bots` / `default_voice_bots` (the two-option QR link's voice-bot numbers, aggregator-dpg#1122), so a deployment can set its own numbers. Only then is the file parsed and re-serialised; comments are dropped, and an unparsable file fails the render. The only runtime override is the network.json URL, supplied as `AGGREGATOR_NETWORK_SOURCE` (below), so the file never needs editing to repoint schemas.
 
 **Its source is independent of the schemas repo.** Consent and network.json come from `bluedots-schemas`; `aggregator.config.yaml` lives in the `aggregator-dpg` `config/` tree. All four parts are configurable — flag > env > default:
 

@@ -6,8 +6,9 @@
   `scripts/fetch-configs.sh aggregator` (default the aggregator-dpg config/ tree;
   repo/ref/dir/file configurable there). Gitignored, so it always tracks canonical.
 
-  Rendered verbatim — no placeholder substitution. The upstream network.json URL is
-  overridden at runtime instead, via AGGREGATOR_NETWORK_SOURCE from the api/worker
+  Rendered verbatim unless global.voiceBots / defaultVoiceBots are set; then it is
+  re-serialised with those replacing aggregator.voice_bots / default_voice_bots.
+  The upstream network.json URL is overridden at runtime instead, via AGGREGATOR_NETWORK_SOURCE from the api/worker
   ConfigMaps, so this file never needs editing to repoint schemas.
 
   Subpath-mounted by charts/{api,worker}/templates/deployment.yaml over the
@@ -33,6 +34,13 @@
 {{- $raw := .Files.Get $file -}}
 {{- if not $raw }}
 {{- fail (printf "%s is missing or empty — run `bash scripts/fetch-configs.sh aggregator --global-values <path>` first (install.sh's deploy_aggregator does this via fetch_aggregator_configs). For a static render with no fetched config, pass --set global.networkConfigDelivery=false." $file) }}
+{{- end }}
+{{- if or .Values.global.voiceBots .Values.global.defaultVoiceBots }}
+{{- $cfg := $raw | fromYaml -}}
+{{- if or (hasKey $cfg "Error") (not $cfg.aggregator) }}{{- fail (printf "%s: cannot apply global.voiceBots, not a parsable aggregator config" $file) }}{{- end }}
+{{- with .Values.global.voiceBots }}{{- $_ := set $cfg.aggregator "voice_bots" . }}{{- end }}
+{{- with .Values.global.defaultVoiceBots }}{{- $_ := set $cfg.aggregator "default_voice_bots" . }}{{- end }}
+{{- $raw = toYaml $cfg }}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap
