@@ -12,6 +12,15 @@ Renders only when bootstrap is enabled AND the RDS host + admin password are kno
 so `helm template`/`lint` stay clean before the opentofu overlay populates them.
 */}}
 {{- if and .Values.postgresBootstrap.enabled .Values.postgres.host .Values.credentials.postgresAdminPassword }}
+{{- if .Values.postgresBootstrap.keycloakRole.enabled }}
+{{- $_ := required "credentials.keycloakPassword is required while postgresBootstrap.keycloakRole.enabled=true (regenerate global-secrets.yaml with `install.sh apply_tf_output_file`, or disable postgresBootstrap.keycloakRole and point Keycloak at aggregator)" .Values.credentials.keycloakPassword }}
+{{- end }}
+{{- if .Values.postgresBootstrap.campaignManagerSignalsRole.enabled }}
+{{- $_ := required "credentials.campaignManagerSignalsRoPassword is required while postgresBootstrap.campaignManagerSignalsRole.enabled=true (regenerate global-secrets.yaml with `install.sh apply_tf_output_file`, or disable postgresBootstrap.campaignManagerSignalsRole)" .Values.credentials.campaignManagerSignalsRoPassword }}
+{{- end }}
+{{- if .Values.postgresBootstrap.aggregatorExportRole.enabled }}
+{{- $_ := required "credentials.aggregatorExportRoPassword is required while postgresBootstrap.aggregatorExportRole.enabled=true (regenerate global-secrets.yaml with `install.sh apply_tf_output_file`, or disable postgresBootstrap.aggregatorExportRole)" .Values.credentials.aggregatorExportRoPassword }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -63,28 +72,43 @@ spec:
                 secretKeyRef:
                   name: data-postgres
                   key: dpg-password
+            {{- if .Values.postgresBootstrap.keycloakRole.enabled }}
             - name: KC_PW
               valueFrom:
                 secretKeyRef:
                   name: data-postgres
                   key: keycloak-password
-                  optional: true
+            {{- end }}
+            {{- if .Values.postgresBootstrap.campaignManagerSignalsRole.enabled }}
             - name: CM_SIGNALS_RO_PW
               valueFrom:
                 secretKeyRef:
                   name: data-postgres
                   key: campaign-manager-signals-ro-password
-                  optional: true
+            {{- end }}
+            {{- if .Values.postgresBootstrap.aggregatorExportRole.enabled }}
             - name: AGG_EXPORT_RO_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: data-postgres
                   key: aggregator-export-ro-password
-                  optional: true
+            {{- end }}
           command:
             - sh
             - -ec
             - |
+              set -e
+              : "${AGG_PW:?AGG_PW is empty — data-postgres has no aggregator-password}"
+              : "${DPG_PW:?DPG_PW is empty — data-postgres has no dpg-password}"
+              {{- if .Values.postgresBootstrap.keycloakRole.enabled }}
+              : "${KC_PW:?KC_PW is empty — data-postgres has no keycloak-password}"
+              {{- end }}
+              {{- if .Values.postgresBootstrap.campaignManagerSignalsRole.enabled }}
+              : "${CM_SIGNALS_RO_PW:?CM_SIGNALS_RO_PW is empty — data-postgres has no campaign-manager-signals-ro-password}"
+              {{- end }}
+              {{- if .Values.postgresBootstrap.aggregatorExportRole.enabled }}
+              : "${AGG_EXPORT_RO_PASSWORD:?AGG_EXPORT_RO_PASSWORD is empty — data-postgres has no aggregator-export-ro-password}"
+              {{- end }}
               echo "waiting for postgres at $PGHOST:$PGPORT"
               i=0
               until pg_isready -h "$PGHOST" -p "$PGPORT" -U postgres >/dev/null 2>&1; do

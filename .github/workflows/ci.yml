@@ -167,6 +167,9 @@ jobs:
                   --set rdsRelay.enabled=true \
                   --set postgres.host=ci-smoke.invalid \
                   --set credentials.postgresAdminPassword=ci-smoke \
+                  --set credentials.keycloakPassword=ci-smoke \
+                  --set credentials.campaignManagerSignalsRoPassword=ci-smoke \
+                  --set credentials.aggregatorExportRoPassword=ci-smoke \
                   --set clusterAutoscaler.enabled=true \
                   --set clusterAutoscaler.clusterName=ci-smoke \
                   --set clusterAutoscaler.awsRegion=ap-south-1 \
@@ -223,6 +226,80 @@ jobs:
             esac
             echo "::endgroup::"
           done
+
+      # An empty database role password must fail the render, not
+      # reach `ALTER ROLE ... WITH PASSWORD ''` (which clears it and
+      # succeeds). Guards the `required` in postgres-bootstrap-job.yaml.
+      - name: postgres bootstrap refuses empty role passwords
+        run: |
+          set -uo pipefail
+          BASE_CMD="helm template common-services helm/common-services -f helm/global-resources.yaml \
+            --set postgresBootstrap.enabled=true \
+            --set postgres.host=ci-smoke.invalid \
+            --set credentials.postgresAdminPassword=ci-smoke \
+            --set credentials.campaignManagerSignalsRoPassword=ci-smoke \
+            --set credentials.aggregatorExportRoPassword=ci-smoke \
+            --show-only templates/postgres-bootstrap-job.yaml"
+
+          # 1. keycloakRole enabled without password fails render
+          if $BASE_CMD --set credentials.keycloakPassword="" >/dev/null 2>/tmp/kc-pw.err; then
+            echo "::error::bootstrap Job rendered without credentials.keycloakPassword"
+            exit 1
+          fi
+          grep -q 'credentials.keycloakPassword is required' /tmp/kc-pw.err
+          # ...and a cluster that opts out of the role still renders without keycloakPassword.
+          $BASE_CMD --set credentials.keycloakPassword="" \
+            --set postgresBootstrap.keycloakRole.enabled=false >/dev/null
+
+          # 2. campaignManagerSignalsRole enabled without password fails render
+          if helm template common-services helm/common-services -f helm/global-resources.yaml \
+              --set postgresBootstrap.enabled=true \
+              --set postgres.host=ci-smoke.invalid \
+              --set credentials.postgresAdminPassword=ci-smoke \
+              --set credentials.keycloakPassword=ci-smoke \
+              --set credentials.campaignManagerSignalsRoPassword="" \
+              --set credentials.aggregatorExportRoPassword=ci-smoke \
+              --show-only templates/postgres-bootstrap-job.yaml >/dev/null 2>/tmp/cm-pw.err; then
+            echo "::error::bootstrap Job rendered without credentials.campaignManagerSignalsRoPassword"
+            exit 1
+          fi
+          grep -q 'credentials.campaignManagerSignalsRoPassword is required' /tmp/cm-pw.err
+          # ...and opting out still renders without campaignManagerSignalsRoPassword.
+          helm template common-services helm/common-services -f helm/global-resources.yaml \
+            --set postgresBootstrap.enabled=true \
+            --set postgres.host=ci-smoke.invalid \
+            --set credentials.postgresAdminPassword=ci-smoke \
+            --set credentials.keycloakPassword=ci-smoke \
+            --set credentials.campaignManagerSignalsRoPassword="" \
+            --set credentials.aggregatorExportRoPassword=ci-smoke \
+            --set postgresBootstrap.campaignManagerSignalsRole.enabled=false \
+            --show-only templates/postgres-bootstrap-job.yaml >/dev/null
+
+          # 3. aggregatorExportRole enabled without password fails render
+          if helm template common-services helm/common-services -f helm/global-resources.yaml \
+              --set postgresBootstrap.enabled=true \
+              --set postgres.host=ci-smoke.invalid \
+              --set credentials.postgresAdminPassword=ci-smoke \
+              --set credentials.keycloakPassword=ci-smoke \
+              --set credentials.campaignManagerSignalsRoPassword=ci-smoke \
+              --set credentials.aggregatorExportRoPassword="" \
+              --show-only templates/postgres-bootstrap-job.yaml >/dev/null 2>/tmp/agg-export-pw.err; then
+            echo "::error::bootstrap Job rendered without credentials.aggregatorExportRoPassword"
+            exit 1
+          fi
+          grep -q 'credentials.aggregatorExportRoPassword is required' /tmp/agg-export-pw.err
+          # ...and opting out still renders without aggregatorExportRoPassword.
+          helm template common-services helm/common-services -f helm/global-resources.yaml \
+            --set postgresBootstrap.enabled=true \
+            --set postgres.host=ci-smoke.invalid \
+            --set credentials.postgresAdminPassword=ci-smoke \
+            --set credentials.keycloakPassword=ci-smoke \
+            --set credentials.campaignManagerSignalsRoPassword=ci-smoke \
+            --set credentials.aggregatorExportRoPassword="" \
+            --set postgresBootstrap.aggregatorExportRole.enabled=false \
+            --show-only templates/postgres-bootstrap-job.yaml >/dev/null
+
+          echo "OK: all database role password guards verified"
 
       # Every Docker Hardened Image the charts deploy is served from OUR GHCR
       # mirror, not from dhi.io (see the header of helm/*/values.yaml for why).
