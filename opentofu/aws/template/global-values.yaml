@@ -421,6 +421,7 @@ global:
 
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
+  phoneCountries:     *phone_countries  # aggregator api + worker
   # Deliver aggregator.config.yaml (network binding, brand strings, domain labels,
   # registration modes) to the aggregator api + worker from the
   # {release}-network-config ConfigMap, sourced from
@@ -717,6 +718,7 @@ api:
     PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
     PII_LOCATION_JITTER_MAX_METERS: "250"   # 50–1000
     GEOCODING_COUNTRY: *geo_country         # see _geo_country above
+    PHONE_COUNTRIES: *phone_countries       # see _phone_countries above; a bad entry stops the api
     MARKERS_MAX_LIMIT: "25000"              # most map listings per request; keep it above ui VITE_MAP_MARKER_CAP
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local
