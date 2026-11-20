@@ -64,7 +64,7 @@ echo "[build-realm] output: $OUT"
 # H2 (no test users) needs no transform — the source carries only the two
 #    service accounts. assert-realm.sh enforces that it stays that way.
 #
-# H4  Declare aggregator_id, decision_made, aggregator_type and
+# H4  Declare aggregator_id, user_id, decision_made, aggregator_type and
 #     signalstack_org_id admin-only in the user profile
 #     (attributes."kc.user.profile.config", a JSON string). Only service
 #     accounts write them, through the admin API, and they feed token claims the
@@ -85,9 +85,10 @@ echo "[build-realm] output: $OUT"
 jq '
   def is_local: test("localhost|127\\.0\\.0\\.1");
 
-  def admin_only_names: ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id"];
+  def admin_only_names: ["aggregator_id", "user_id", "decision_made", "aggregator_type", "signalstack_org_id"];
   def admin_only_attrs: [
     { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+    { name: "user_id", displayName: "User id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
     { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
     { name: "aggregator_type", displayName: "Profile types", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
     { name: "signalstack_org_id", displayName: "Signals organisation id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false }

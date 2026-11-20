@@ -167,7 +167,7 @@ fi
 # They feed the portal gate and token claims the apps act on, and only service
 # accounts write them through the admin API. build-realm.sh forces these
 # declarations (H4); this catches a realm.json edited or built without it.
-for attr in aggregator_id decision_made aggregator_type signalstack_org_id; do
+for attr in aggregator_id user_id decision_made aggregator_type signalstack_org_id; do
   if jq -e --arg a "$attr" '
        .attributes."kc.user.profile.config" // "{}" | fromjson
        | [.attributes[]? | select(.name == $a)]
@@ -200,6 +200,25 @@ if jq -e '
 else
   fail "aggregator-portal aggregator_type mapper is missing or not multivalued"
 fi
+
+# ── A12. user_id is mapped wherever aggregator_id is ─────────────────────────
+# user_id carries the same value as aggregator_id, under the name that replaces
+# it. While both exist, every client whose tokens carry aggregator_id must carry
+# user_id too, as a single-valued access-token claim from the user_id attribute.
+for client in $(q '.clients[] | select([.protocolMappers[]? | .config["claim.name"]] | index("aggregator_id")) | .clientId'); do
+  if jq -e --arg c "$client" '
+       [.clients[] | select(.clientId == $c) | .protocolMappers[]?
+        | select(.protocolMapper == "oidc-usermodel-attribute-mapper"
+                 and .config["user.attribute"] == "user_id"
+                 and .config["claim.name"] == "user_id"
+                 and .config["access.token.claim"] == "true"
+                 and .config.multivalued == "false")] | length == 1
+     ' "$REALM_FILE" >/dev/null 2>&1; then
+    pass "$client maps user_id next to aggregator_id"
+  else
+    fail "$client maps aggregator_id but not user_id (single-valued, access token)"
+  fi
+done
 
 echo
 if [ "$FAILED" -eq 0 ]; then
