@@ -325,7 +325,7 @@ Safe to run every time — it's a no-op if the URI is already set.
 bash install.sh deploy_all_services
 ```
 
-This runs all five releases **including aggregator**, back to back, with no
+This runs all six releases **including aggregator** (campaign-manager renders nothing unless `_campaign_manager_enabled` is on), back to back, with no
 pause for `actingOrgId`, and finishes with `fix_acme_issuer_uri` automatically.
 Aggregator will come up healthy but logins will fail until you complete A8
 above and then re-run `bash install.sh deploy_aggregator`. Use the step-by-step
@@ -582,12 +582,14 @@ bash install.sh apply_tf_output_file     # regenerate the two generated files
 
 # --- deploy ---
 bash install.sh preflight                # check tools, cluster, generated files
-bash install.sh deploy_all_services      # all five, in order
+bash install.sh deploy_all_services      # all six, in order
 bash install.sh deploy_monitoring
 bash install.sh deploy_common_services
 bash install.sh deploy_keycloak
 bash install.sh deploy_signals
 bash install.sh deploy_aggregator
+bash install.sh deploy_campaign_manager  # off unless _campaign_manager_enabled; see helm/campaign-manager/README.md
+GHCR_PAT=... bash install.sh create_campaign_manager_image_pull_secret  # before the first deploy: platform-sync image is private
 
 # --- checks (no cluster changes) ---
 bash install.sh lint                     # validate the charts
@@ -604,7 +606,8 @@ bash install.sh destroy_signals
 bash install.sh destroy_keycloak
 bash install.sh destroy_common_services
 bash install.sh destroy_monitoring
-bash install.sh cleanup_all_services      # all five, reverse order, in one call
+bash install.sh cleanup_all_services      # the five above, reverse order, in one call
+helm -n campaign-manager uninstall campaign-manager   # no destroy_ target for campaign-manager
 bash install.sh destroy_tf_resources      # tear down the AWS infrastructure too
 ```
 

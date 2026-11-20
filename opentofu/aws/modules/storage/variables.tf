@@ -37,7 +37,7 @@ variable "cors_allowed_origins" {
 variable "cors_allowed_methods" {
   description = "HTTP methods permitted by the CORS rule on cors_enabled buckets."
   type        = list(string)
-  default     = ["GET", "HEAD", "PUT"]
+  default     = ["GET", "HEAD", "PUT", "POST"]
 }
 
 variable "cors_allowed_headers" {
@@ -80,7 +80,7 @@ variable "buckets" {
   }))
   default = {
     public = {
-      type         = "public"
+      type         = "private"
       cors_enabled = true
     }
     private = {
@@ -141,9 +141,8 @@ variable "abort_incomplete_multipart_days" {
   description = <<-EOT
     Days after initiation that incomplete multipart uploads are aborted, BUCKET-WIDE. Orphaned parts
     from a failed upload are billed but unreachable, and aborting an incomplete upload can never
-    delete a completed object — so this is safe to apply unscoped, and it needs to be: the signals
-    s3-export CronJob and bulk CSV uploads both multipart outside campaign_export_prefix. 0 disables
-    the rule.
+    delete a completed object — so this is safe to apply unscoped, and it needs to be: bulk CSV
+    uploads multipart outside campaign_export_prefix. 0 disables the rule.
   EOT
   type        = number
   default     = 7
@@ -160,10 +159,32 @@ variable "campaign_export_prefix" {
   default     = "campaign-exports/"
 
   # An empty prefix would silently widen the DELETE rule to the whole bucket, taking
-  # bulk-uploads/, qr/ and the signals s3-export dump with it. Fail at plan time instead.
+  # bulk-uploads/ with it. Fail at plan time instead.
   validation {
     condition     = length(trimspace(var.campaign_export_prefix)) > 0
     error_message = "campaign_export_prefix must not be empty — an empty prefix expires the ENTIRE bucket, not just campaign exports."
+  }
+}
+
+variable "bulk_upload_retention_days" {
+  description = "Days after which bulk-upload files (raw.csv and errors.csv under bulk_upload_prefix) are deleted from every bucket via a lifecycle rule. 0 disables the rule."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.bulk_upload_retention_days >= 0
+    error_message = "bulk_upload_retention_days must be >= 0 (0 disables the rule)."
+  }
+}
+
+variable "bulk_upload_prefix" {
+  description = "Object key prefix for bulk-upload files subject to the expiry lifecycle rule. Must match the key the aggregator writes: bulk-uploads/<aggregatorId>/<uploadId>/{raw,errors}.csv."
+  type        = string
+  default     = "bulk-uploads/"
+
+  validation {
+    condition     = length(trimspace(var.bulk_upload_prefix)) > 0
+    error_message = "bulk_upload_prefix must not be empty — an empty prefix expires the ENTIRE bucket, not just bulk uploads."
   }
 }
 

@@ -175,6 +175,15 @@ Set in `opentofu/aws/<env>/global-values.yaml` (anchors) unless noted.
   (`"false"` = reject unknown fields) is set in the chart values. `BULK_MAX_ITEMS`
   (bulk-upload cap) is a supported api env var but not surfaced in the chart
   today — add it under `api.config` only if you need to override the app default.
+  `MARKERS_MAX_LIMIT` (default 25000, max 100000, set in the template's
+  `api.config`) is the most map listings one request returns; larger requests
+  are capped, not rejected. Keep it above `VITE_MAP_MARKER_CAP`.
+- **Map listings (signals ui runtimeConfig):** `VITE_MAP_MARKER_CAP` is the most
+  listings fetched per domain for one map view, at every zoom (template 24999,
+  app default 10000). It replaces `VITE_MAP_MARKER_CAP_CLUSTERED`,
+  `VITE_MAP_MARKER_CAP_INDIVIDUAL` and `VITE_MAP_CLUSTER_DISABLE_ZOOM`, which
+  signals-dpg#892 and later no longer read. `VITE_MAP_CLUSTER_RADIUS_PX` (default
+  80) is how close, in screen pixels, listings must be to merge into one bubble.
 - **Geocoding / maps** — **two** keys in `secrets.yaml`, because a Google API key
   accepts only one application restriction (HTTP referrers *or* IP addresses):
   - `google_maps_api_key` → `ui.runtimeConfig.VITE_GOOGLE_MAPS_API_KEY`
@@ -250,7 +259,8 @@ config all set.
 | Consent (aggregator) | `helm/aggregator/files/consent/consent.json` | — |
 | Domains / TLS | `global-values.yaml` | `_signals_public_hosts`, `_aggregator_host`, `_grafana_host` |
 | Auth channels | `global-values.yaml` | `_msg91_*`, `_smtp_*` |
-| Limits / rate | `global-values.yaml` / `api.config` | `ALLOW_EXTRA_SCHEMA_DATA`, `_api_rate_limit_*` (`BULK_MAX_ITEMS` = optional api env override) |
+| Limits / rate | `global-values.yaml` / `api.config` | `ALLOW_EXTRA_SCHEMA_DATA`, `_api_rate_limit_*` `MARKERS_MAX_LIMIT` (`BULK_MAX_ITEMS` = optional api env override) |
+| Map listings (signals) | `global-values.yaml` / `ui.runtimeConfig` | `VITE_MAP_MARKER_CAP` (per domain), `VITE_MAP_CLUSTER_RADIUS_PX` |
 | Peer auth (inter-instance) | `global-values.yaml` / `api.config` | `PEER_AUTH_MODE` — `enforced` (template default) requires a valid `INSTANCE_SHARED_SECRET`-signed token on every peer request. The template governs **new** environments only: each live environment keeps its own `global-values.yaml` in the private deployment repo (see deployment_guide.md, "Each live environment has its own values file in the private deployment repo"), and those must be updated separately or nothing changes there. Before enabling it anywhere, confirm every peer instance in the network carries the **same** `INSTANCE_SHARED_SECRET` — the value is generated per environment, so two instances provisioned by separate `install.sh` runs do **not** share one by default. |
 | Image tags | `global-images.yaml` | per-service `repository`/`tag` |
 | Secrets | generated → `global-secrets.yaml` | `AUTH_SECRET`, DB/Redis passwords |

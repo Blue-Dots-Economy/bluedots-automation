@@ -87,6 +87,10 @@ referenceBaseUrl: ""
 # (signals-dpg#785), e.g. "IN". Empty = no restriction. Set per environment from
 # the _geo_country anchor in <env>/global-values.yaml.
 geoCountry: ""
+# Phone country codes the registration forms offer, ISO:code comma list, first
+# is the default (e.g. "IN:+91,GB:+44"; more than one shows a picker). Empty =
+# India only. Same format as signals' ui.runtimeConfig.VITE_PHONE_COUNTRIES.
+phoneCountries: ""
 
 # College/institute reference list delivered to the web pod as a ConfigMap
 # mounted at /app/apps/web/public/reference/, so the list updates with a value

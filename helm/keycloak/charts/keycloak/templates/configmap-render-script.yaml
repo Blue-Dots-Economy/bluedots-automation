@@ -33,6 +33,7 @@ data:
     : "${SIGNALSTACK_CLIENT_SECRET:?SIGNALSTACK_CLIENT_SECRET must be set}"
     : "${VOICE_DPG_SIGNALS_SECRET:?VOICE_DPG_SIGNALS_SECRET must be set}"
     : "${CAMPAIGN_MANAGER_SECRET:?CAMPAIGN_MANAGER_SECRET must be set}"
+    : "${SIGNALS_SEARCH_CLIENT_SECRET:?SIGNALS_SEARCH_CLIENT_SECRET must be set}"
 
     # ── Optional: safe defaults ────────────────────────────────────────────
     : "${BRAND_LONG_NAME:=Blue Dots}"
@@ -66,6 +67,7 @@ data:
         -e "s|__SIGNALSTACK_CLIENT_SECRET__|$(escape "$SIGNALSTACK_CLIENT_SECRET")|g" \
         -e "s|__VOICE_DPG_SIGNALS_SECRET__|$(escape "$VOICE_DPG_SIGNALS_SECRET")|g" \
         -e "s|__CAMPAIGN_MANAGER_SECRET__|$(escape "$CAMPAIGN_MANAGER_SECRET")|g" \
+        -e "s|__SIGNALS_SEARCH_CLIENT_SECRET__|$(escape "$SIGNALS_SEARCH_CLIENT_SECRET")|g" \
         -e "s|__SMTP_HOST__|$(escape "$SMTP_HOST")|g" \
         -e "s|__SMTP_PORT__|$(escape "$SMTP_PORT")|g" \
         -e "s|__SMTP_FROM__|$(escape "$SMTP_FROM")|g" \

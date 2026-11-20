@@ -6,7 +6,7 @@ Guidance for the Helm half of the repo. Read the root `CLAUDE.md` first (the cri
 
 - **`monitoring/`** (chart `monitoring`) — `kube-prometheus-stack` (Prometheus Operator + Prometheus + Alertmanager + node-exporter + kube-state-metrics, **and the monitoring CRDs** others depend on), `loki`, `alloy` (DaemonSet log shipper, replaced Promtail), `jaeger`, Grafana (`_grafana_host`). The stock kube-prometheus ruleset is **disabled** (`defaultRules.create: false`) — alerting is a curated `additionalPrometheusRulesMap`. See `helm/monitoring/README.md`.
 - **`common-services/`** (chart `platform`) — Kong ingress, cert-manager + `letsencrypt-prod` issuer, shared Postgres (disabled by default when RDS is used), Redis, metrics-server. Passwords generated on first install into `data-postgres`/`data-redis` Secrets in the `common-services` namespace. The Bitnami `postgresql` subchart runs the org **portable-pgvector** image (`ghcr.io/blue-dots-economy/postgres-pgvector`, #93) — a Postgres + pgvector + PostGIS build compiled without AVX-512 so it doesn't SIGILL on non-AVX-512 nodes; it needs the `image.*` override plus `allowInsecureImages`, since the Bitnami chart otherwise refuses a non-Bitnami image.
-- **`signals/`** (chart `dpg`) — api, ui, notification-service, search (+ search-embeddings), s3-export. Connects to the shared DBs in `common-services`. The `match-score` subchart (the external dpg-scoring service) was removed in #89 — match-score now calls signals-search `POST /v1/relevance`. The **`s3-export`** subchart (chart `dpg-s3-export`, #86) is a CronJob that dumps allowlisted **non-PII** Signals data to S3 for campaign analytics.
+- **`signals/`** (chart `dpg`) — api, ui, notification-service, search (+ search-embeddings). Connects to the shared DBs in `common-services`. The `match-score` subchart (the external dpg-scoring service) was removed in #89 — match-score now calls signals-search `POST /v1/relevance`.
 - **`keycloak/`** (chart `keycloak-platform`) — the **shared** Keycloak. One instance, one realm, **both DPGs' clients**. Its own release in the `common-services` namespace (see the deadlock note below). Owns this repo's realm artefact (`charts/keycloak/files/realm.json`) plus the two realm-reconciliation scripts.
 - **`aggregator/`** (chart `aggregator-dpg`) — web (BFF), api, worker. Vendored `ingress-nginx`/`cert-manager` subcharts are **disabled** (`platform` owns them). Keycloak is no longer here. The worker liveness probe is an `httpGet` on `/healthz` (aggregator-dpg#675), not an `exec` — the DHI-based image has no shell.
 
@@ -33,7 +33,7 @@ with `scripts/build-realm.sh <app-repo realm.json>` (applies the hardening
 transform) and gate with `scripts/assert-realm.sh` — which CI runs. Do **not** add
 a "drift from upstream" diff; it would fail on the intentional differences.
 
-**Three hardening steps that are invisible when they regress:**
+**Four hardening steps that are invisible when they regress:**
 - The local realms carry `localhost` entries in `redirectUris`, `webOrigins` and —
   easy to miss — the `##`-delimited `post.logout.redirect.uris` *attribute*. Those
   widen a production OAuth client's allow-lists. `assert-realm.sh` fails on any of
@@ -49,6 +49,14 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   (A10), and `apply-user-profile.sh` re-applies them to existing realms and
   fails the init Job unless all four are admin-only. `unmanagedAttributePolicy`
   stays `ENABLED` for every other attribute.
+- `aggregator_type` is **multivalued**: a coordinator can serve several profile
+  types, and the aggregator reads them from the token as a JSON array. Both the
+  user-profile attribute and the `aggregator-portal` mapper must be multivalued.
+  `build-realm.sh` forces both (H4, H5), `assert-realm.sh` checks both (A11), and
+  `apply-user-profile.sh` switches an existing realm's mapper in place and fails
+  the init Job if the switch fails. Single-valued, every coordinator silently
+  keeps only one of their types. The `campaign-manager` mapper stays
+  single-valued; nothing reads that claim.
 
 **signals-ui lives on different hostnames to Keycloak.** `__PUBLIC_BASE_URL__` is
 the Keycloak/aggregator host; the signals UI is served from `global.publicHosts` (a
@@ -85,6 +93,15 @@ never CREATE a client — `ensure_acting_org_mapper` and `ensure_login_theme` bo
 predating a realm.json change keeps its missing clients while the Job still exits 0:
 a silent no-op. Reconciling clients first is what makes the rest effective.
 
+**Sign-out settings are reconciled, not imported (#322).** Step 7 of
+`apply-user-profile.sh` sets `backchannel.logout.url` (+ "session required") on
+`aggregator-portal` and `signals-ui`, and adds every Signals origin to
+signals-ui's post-logout list. The URLs are `init.backchannelLogout.*` in
+`helm/keycloak/values.yaml`: **in-cluster service addresses**, because Keycloak
+calls them directly, so they follow the aggregator/signals release and namespace
+names. Without them, signing out of one app leaves the other app's session alive
+until its token expires. Post-logout entries are only added, never removed.
+
 **Realm EVENT logging ships in realm.json only — an existing realm does not get
 it (#217).** `realm.json` now sets `eventsEnabled` + `adminEventsEnabled`
 (30-day event expiry, 90-day admin-event expiry via the `adminEventsExpiration`
@@ -98,7 +115,9 @@ empty on KA-Dharwad). Turn it on manually on existing realms, or add it to
 
 It uses Keycloak's own `partialImport` with `ifResourceExists: SKIP`, never
 OVERWRITE — re-creating an existing client changes its service-account user id, and
-those ids are referenced from the aggregator database. It also grants the
+those ids are referenced from the aggregator database. The one in-place change it
+makes to an existing client is switching `serviceAccountsEnabled` ON when realm.json
+has it (client id and secret unchanged); it never switches it off. It also grants the
 `realm-management` client roles each service account needs, because creating a
 client with `serviceAccountsEnabled` makes the SA user but grants it nothing.
 
@@ -235,6 +254,10 @@ Adding another means touching **four** places or it fails in a confusing way:
 
 **Every one of these orgs is `type = 'network_service'`, and that collides with `actingOrgId`.** The org row is inserted with a hardcoded `network_service` type, and because `now()` is *transaction* time and the whole loop is one `DO $$…$$`, all of them share a byte-identical `created_at`. So `SELECT id FROM organization WHERE type='network_service' ORDER BY created_at LIMIT 1` — what `get-signalstack-org-id.sh` used to run, and what several docs told operators to run by hand — is a **tie with no deterministic winner**: a plain `UPDATE organization SET name = name` on any of those rows reorders the heap and flips the answer (verified). The script now filters on `slug` (`ORG_SLUG`, default `aggregator-dpg`, the org `actingOrgId` is defined as). **Adding a service apikey adds another `network_service` org, so never reintroduce a type-only lookup.**
 
+## signals-search-client secret — upgrade order for EXISTING environments
+
+The `signals-search-client` Keycloak client adds ONE new generated secret (`secrets.signalsSearchClientSecret` == search `KEYCLOAK_CLIENT_SECRET`). The keycloak release (`requireSecret`) and the signals release (`search.geocode.enabled: true` render guard) both fail until it exists, so on an existing environment, in order: (1) apply the opentofu `random_passwords` module (creates the new `random_id`), (2) `bash install.sh apply_tf_output_file` to regenerate `global-secrets.yaml`, (3) only then `deploy_keycloak` and `deploy_signals`. The geocode vars are rendered on the search API Deployment only, never in the shared ConfigMap: the worker runs the same all-or-none config validation and would crash-loop on a partial set. With `search.secrets.create=false`, the pre-existing Secret must carry `KEYCLOAK_CLIENT_SECRET` or the API pod hits `CreateContainerConfigError` (add the key, or set `search.geocode.enabled=false`).
+
 ## Consent config is ConfigMap-delivered (not baked into images)
 
 Consent text/versions ship via ConfigMap so they change with a file edit + rollout, no rebuild. This repo is the downstream sync; canonical content lives in the unified schemas repo `Blue-Dots-Economy/bluedots-schemas` (per-network dirs at the repo root, e.g. `blue_dot/consent.json`, `blue_dot/upsdm/consent.json`), fetched at deploy time by `scripts/fetch-configs.sh`. The two charts deliver it differently — a real trap:
@@ -359,33 +382,11 @@ Once #513 is deployed, canonical can drop `source:` from the YAML entirely (it b
 
 ## Token `azp` allow-lists — fail-OPEN, the mirror image of the onboarding flag
 
-`global.keycloakAllowedAzp` → `KEYCLOAK_ALLOWED_AZP` and `global.campaignManagerAllowedAzp` → `CAMPAIGN_MANAGER_ALLOWED_AZP`, both emitted **only** by `helm/aggregator/charts/api/templates/configmap.yaml` (web and worker read neither). They client-scope token verification on top of the issuer check: `azp` is the client a token was minted for, so an allow-list stops a token issued to a *different* client in the same shared realm being replayed against this API. The second one **replaces** the first on `/v1/campaign/*` (export, email, voice, dump), scoping those routes to the external `campaign-manager` client.
+`global.keycloakAllowedAzp` → `KEYCLOAK_ALLOWED_AZP` and `global.campaignManagerAllowedAzp` → `CAMPAIGN_MANAGER_ALLOWED_AZP`, both emitted **only** by `helm/aggregator/charts/api/templates/configmap.yaml` (web and worker read neither). They client-scope token verification on top of the issuer check: `azp` is the client a token was minted for, so an allow-list stops a token issued to a *different* client in the same shared realm being replayed against this API. The second one **replaces** the first on `/v1/campaign/*` (export, email, voice), scoping those routes to the external `campaign-manager` client.
 
 **They are rendered unconditionally, and that is the opposite of `AGGREGATOR_ONBOARDING_ENABLED` two sections up — deliberately.** `assertAllowedAzp` returns early on an empty list (`if (allow.length === 0) return; // gate disabled when unconfigured`), so these are **fail-open**: a blank value silently *removes* the check rather than denying everything. An omitted-when-empty conditional would therefore be the dangerous choice here, which is why both carry real defaults in `helm/aggregator/values.yaml` instead of empty strings. The onboarding flag is fail-*closed* and must be omitted. Two adjacent keys, opposite treatment, for opposite reasons — don't "make them consistent".
 
 `campaignManagerAllowedAzp` cannot un-gate even if blanked (the app falls back to the literal `campaign-manager` rather than returning an empty list, precisely because that route is the most sensitive). It is still set explicitly so the deployed value is visible in the rendered ConfigMap instead of implied by whichever image tag is running. `keycloakAllowedAzp`'s three ids — `aggregator-portal`, `aggregator-api`, `aggregator-bff` — are the clients the shared realm defines for this DPG; rename one there without updating this list and every exchange fails closed with `AzpNotAllowedError`.
-
-## Signals non-PII dump — a cross-RELEASE key contract nothing validates
-
-`GET /v1/campaign/dump` pre-signs the Signals non-PII snapshot so the campaign manager needs no S3 credentials of its own. The catch is that the objects are written by a **different helm release**: the signals `s3-export` CronJob, at three fixed keys overwritten in place every run (no manifest, no dated run folder):
-
-```
-[<prefix>/]<network>/<instance_id>/{user,items,item_actions}.ndjson.gz
-```
-
-So the key root is **configured on both sides and never probed**. Three things must line up, and **none of them fails the deploy** — both releases install green and the route returns `404 DUMP_NOT_AVAILABLE` at first call, possibly hours later:
-
-| aggregator (reads) | signals (writes) |
-|---|---|
-| `global.campaignDumpInstanceId` → `CAMPAIGN_DUMP_INSTANCE_ID` | `s3-export.instances[].id` → `INSTANCE_ID` |
-| `global.campaignDumpPrefix` → `CAMPAIGN_DUMP_PREFIX` | `s3-export.s3.prefix` → `S3_PREFIX` |
-| `global.s3.bucket` → `S3_BUCKET` | `s3-export.s3.bucket` |
-
-**Bind the instance id to a single YAML anchor in `<env>/global-values.yaml`** (`_s3_export_instance_id`, consumed by both keys) — it is the only mechanism that can keep two separate releases equal, since Helm cannot see across them. The bucket needs no per-env entry: `global-cloud-values.yaml` pins both sides to the generated `public` bucket (see `opentofu/CLAUDE.md` → *One bucket, one role*).
-
-`<network>` is **not** configurable — the api reads it from the resolved `aggregator.config.yaml`/`network.json` (`getNetworkConfig().network.id`), so it cannot drift from what the app actually serves. Note that it is the network **id inside network.json**, not `global.aggregatorNetwork` and not the brand: with `_network: blue_dot` and an exporter instance of `up-gzb` the key root is `blue_dot/up-gzb/`, even though the *brand* is also `up-gzb`. Do not collapse the instance-id anchor onto `*brand`.
-
-`CAMPAIGN_DUMP_INSTANCE_ID` has **no default and is safe to render empty** — the route returns `503 DUMP_NOT_CONFIGURED` (reason `CAMPAIGN_DUMP_INSTANCE_ID_UNSET`) and nothing else in the API is affected, so deployments with no campaign manager need no value. That is why it is a blank chart default rather than a `fail()`.
 
 ## `RAYA_*` — the two keys that crash the worker when rendered EMPTY
 
@@ -401,6 +402,25 @@ The worker deployment's `secretKeyRef` carries `optional: true`, and **that only
 `secrets.rayaApiKey` is **deliberately not plumbed through** the `secrets.yaml` → `output-file` → `global-secrets.yaml` chain that `smtpPassword` uses. Nothing generates it, so there is no placeholder to rotate and no unused credential sitting in a generated file; supply it out of band when a deployment actually enables voice (`--set secrets.rayaApiKey=…`, or a pre-created `global.existingSecret` carrying a `RAYA_API_KEY` key).
 
 **`RAYA_API_KEY` is not signals' `RAYA_VOICE_BOT_API_KEY`.** That one is *inbound* (the raya bot → the signals api, an `x-api-key` seeded into signals' `apikey` table, generated by `random_passwords`), and neither is `secrets.voiceDpgSignalsSecret`, the same bot's Keycloak client-credentials secret. Three separate values for one vendor, each independently rotatable — see *Service apikeys* above.
+
+## Aggregator RBAC — Envoy + OPA edge
+
+`aggregator-api.rbac.mode` (`off` | `log` | `enforce`, default `off`) is the api's `RBAC_MODE`, one switch for the api and its edge. With `off` the pod is the api alone, as before (`HOST=0.0.0.0`, `httpGet` probes, the Service on the api's port), so any api image deploys. With `log` or `enforce`, route permissions are decided by an **edge in the api pod**, not by the api (aggregator-dpg `docs/rbac/rbac-edge-enforcement.md`): every request reaches an Envoy sidecar first, Envoy asks the OPA sidecar whether the caller's token `roles` grant the route's permission, and only an allowed request reaches the api. Those pods get an `edge-init` init container and two **native sidecars** (`restartPolicy: Always`, so the api starts only after both are up). Plan and rollout: `docs/aggregator-rbac-opa-plan.md`.
+
+- **`log` still refuses some requests.** It only records a missing route permission, but Envoy is in front of every request: a bad or expired token gets 401, and every request, public ones included, is refused while OPA cannot answer or Keycloak's signing keys cannot be fetched.
+- **Kubernetes 1.32 or later** (`log`, `enforce`): the Service's named `targetPort: http` must resolve to the Envoy sidecar's port, which Kubernetes does for native sidecars only from 1.32. The EKS template runs 1.35; older clusters are not supported.
+- **Move the mode and the api tag together.** The template keeps `off` while its api tag predates the policy files; an environment switches to `log` in the same change that moves its api tag to a release with aggregator-dpg #910.
+
+- **With the edge on, the image must ship the policy and the Envoy template.** `edge-init` (the api image, `files/edge-init.js`) copies `rbac.rego`, `edge.rego` and `edge/routes.json` out of `/app/policy/rbac`, and fills in `/app/policy/envoy/envoy.yaml`. An api image without them fails the init container and the pod never starts; deploy only a build that has them (aggregator-dpg #910).
+- **Nothing reaches the api around Envoy.** The api binds `127.0.0.1` (`HOST`), and the Service's `targetPort: http` is Envoy's port (`rbac.envoy.port`, 8000). Kong and the web BFF (`http://<release>-api:4000`) need no change. The api's probes are `exec node fetch` on loopback: an `httpGet` cannot reach `127.0.0.1`, and probing through Envoy would restart the api whenever OPA is down.
+- **Envoy and OPA are reachable only from inside the pod**, apart from Envoy's listener. Envoy's admin port is on `127.0.0.1` (the kubelet checks the listener with `tcpSocket`). OPA's REST API (`127.0.0.1:8181`) and the ext_authz gRPC check (`127.0.0.1:9191`, `files/opa-config.yaml`) are loopback-only; the kubelet probes `/health` on the diagnostic port `8282`. `--authorization=basic` with `files/opa-authz.rego` allows only the api's two decision queries, its catalogue push (`PUT /v1/data/catalogue`) and `GET /health`, so nothing can read or replace policies. Telemetry and decision logs are off (the decision input carries the token's personal data).
+- **The edge's issuer is the public one** (`aggregator.oidcIssuer`, the same base as the api's `KEYCLOAK_URL`); its signing keys come from Keycloak inside the cluster (`aggregator.keycloakInternalUrl`). Envoy starts without waiting for Keycloak's DNS; until it resolves, a request with a token is refused.
+- **OPA is this repo's own image** (`opa-envoy`, `dockerfiles/opa-envoy`): the DHI OPA base with the upstream Envoy-plugin `opa` binary of the same version, because DHI has no Envoy-plugin variant. Built by `.github/workflows/build-opa-envoy-image.yml` on a merged change to its files, a release tag or by hand; tagged with the OPA version (the chart default, moved by each rebuild) and `sha-<commit>` (fixed, for a pin). **Envoy is a Docker Hardened Image** (`dhi/envoy`, on the DHI mirror). Both run as the pod's uid 1000. CI renders the aggregator chart with `rbac.mode=log`, so the image checks cover the sidecars.
+- **`OPA_URL` is `127.0.0.1`, not `localhost`.** Node may resolve `localhost` to `::1`, which the sidecar does not listen on.
+- **Built-in roles come from the api's database** (migration 0031); there is no `rbac.yaml` override any more. Custom roles live only in the database.
+- **`rbac.catalogueRefreshMs`** (default 30 000) is how often each replica reloads roles from the database and re-publishes them to OPA (`RBAC_CATALOGUE_REFRESH_MS`); a restarted OPA refuses permission routes until the next publish.
+- **Fail closed.** OPA down refuses every request at the edge, public ones included; the liveness probe restarts it.
+- **The `roles` claim.** The deployment realm declares `roles` admin-only and maps it, multivalued, into the access token (`helm/keycloak/files/apply-user-profile.sh`, on every Keycloak boot). The api keeps it in step with its database; without it every user lacks every permission at the edge.
 
 ## Org hierarchy flag
 

@@ -55,7 +55,7 @@
     "adminEventsExpiration": "7776000",
     "phoneDefaultRegion": "IN",
     "userProfileEnabled": "true",
-    "kc.user.profile.config": "{\"unmanagedAttributePolicy\":\"ENABLED\",\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"required\":{\"roles\":[\"user\"]}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"phoneNumber\",\"displayName\":\"Phone Number\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"phoneNumberVerified\",\"displayName\":\"Phone Number Verified\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"aggregator_id\",\"displayName\":\"Aggregator id\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"decision_made\",\"displayName\":\"Registration decision\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"aggregator_type\",\"displayName\":\"Aggregator type\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"signalstack_org_id\",\"displayName\":\"Signals organisation id\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false}]}"
+    "kc.user.profile.config": "{\"unmanagedAttributePolicy\":\"ENABLED\",\"attributes\":[{\"name\":\"username\",\"displayName\":\"${username}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"email\",\"displayName\":\"${email}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]},\"required\":{\"roles\":[\"user\"]}},{\"name\":\"firstName\",\"displayName\":\"${firstName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"lastName\",\"displayName\":\"${lastName}\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"phoneNumber\",\"displayName\":\"Phone Number\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"phoneNumberVerified\",\"displayName\":\"Phone Number Verified\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}},{\"name\":\"aggregator_id\",\"displayName\":\"Aggregator id\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"decision_made\",\"displayName\":\"Registration decision\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false},{\"name\":\"aggregator_type\",\"displayName\":\"Profile types\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":true},{\"name\":\"signalstack_org_id\",\"displayName\":\"Signals organisation id\",\"permissions\":{\"view\":[\"admin\"],\"edit\":[\"admin\"]},\"multivalued\":false}]}"
   },
   "smtpServer": {
     "host": "__SMTP_HOST__",
@@ -116,7 +116,7 @@
     {
       "id": "9f3b1c52-7a41-4c8e-9d16-3b0f5a2e7c84",
       "alias": "aggregator-portal-browser",
-      "description": "aggregator-portal only; bound by flow ID (import resolves the override by id, not alias). Adds a portal-entitlement gate to aggregator-otp-browser. Must NOT become the realm-wide browserFlow: signals-ui keeps aggregator-otp-browser.",
+      "description": "aggregator-portal only; bound by flow ID. Portal entitlement gate over aggregator-otp-browser: approved coordinators and org owners (org_owner role). Never the realm-wide browserFlow.",
       "providerId": "basic-flow",
       "topLevel": true,
       "builtIn": false,
@@ -131,7 +131,7 @@
           "authenticatorFlow": true,
           "requirement": "CONDITIONAL",
           "priority": 20,
-          "flowAlias": "aggregator-portal-gate-sso-coordinator"
+          "flowAlias": "aggregator-portal-gate-sso-entitled"
         },
         {
           "authenticatorFlow": true,
@@ -179,7 +179,7 @@
           "authenticatorFlow": true,
           "requirement": "CONDITIONAL",
           "priority": 12,
-          "flowAlias": "aggregator-portal-gate-otp-coordinator"
+          "flowAlias": "aggregator-portal-gate-otp-entitled"
         },
         {
           "authenticatorFlow": true,
@@ -197,8 +197,8 @@
       ]
     },
     {
-      "alias": "aggregator-portal-gate-otp-coordinator",
-      "description": "Deny before OTP dispatch: the resolved user carries no aggregator_id, so they are not a coordinator (a Signals participant, or an org owner). Runs after otp-identifier-form, which calls context.setUser().",
+      "alias": "aggregator-portal-gate-otp-entitled",
+      "description": "Deny before OTP dispatch: neither a coordinator (no aggregator_id) nor an org owner (no org_owner role). Conditions are ANDed; runs after otp-identifier-form sets the user.",
       "providerId": "basic-flow",
       "topLevel": false,
       "builtIn": false,
@@ -211,17 +211,31 @@
           "authenticatorConfig": "aggregator-portal-cond-no-aggregator-id"
         },
         {
-          "authenticator": "deny-access-authenticator",
+          "authenticator": "conditional-user-role",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 20,
-          "authenticatorConfig": "aggregator-portal-deny-not-coordinator"
+          "authenticatorConfig": "aggregator-portal-cond-not-owner"
+        },
+        {
+          "authenticator": "conditional-user-attribute",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 30,
+          "authenticatorConfig": "aggregator-portal-cond-not-invited"
+        },
+        {
+          "authenticator": "deny-access-authenticator",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 40,
+          "authenticatorConfig": "aggregator-portal-deny-not-entitled"
         }
       ]
     },
     {
       "alias": "aggregator-portal-gate-otp-approved",
-      "description": "Deny before OTP dispatch: decision_made is absent, 'pending' or 'rejected'. Mirrors requireApproved() in apps/api/src/services/auth/access-token.ts.",
+      "description": "Deny before OTP dispatch: a coordinator (aggregator_id present) whose decision_made is not approved. Mirrors requireApproved() in the API.",
       "providerId": "basic-flow",
       "topLevel": false,
       "builtIn": false,
@@ -231,20 +245,27 @@
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 10,
+          "authenticatorConfig": "aggregator-portal-cond-has-aggregator-id"
+        },
+        {
+          "authenticator": "conditional-user-attribute",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
           "authenticatorConfig": "aggregator-portal-cond-not-approved"
         },
         {
           "authenticator": "deny-access-authenticator",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
-          "priority": 20,
+          "priority": 30,
           "authenticatorConfig": "aggregator-portal-deny-not-approved"
         }
       ]
     },
     {
-      "alias": "aggregator-portal-gate-sso-coordinator",
-      "description": "Same coordinator gate on the auth-cookie path. Load-bearing in the shared realm: a Signals user with a live Keycloak SSO session skips the forms sub-flow entirely, so the pre-OTP gate never runs for them.",
+      "alias": "aggregator-portal-gate-sso-entitled",
+      "description": "Same entitlement gate on the auth-cookie path: an SSO session skips the forms sub-flow, so the pre-OTP gate never runs for it.",
       "providerId": "basic-flow",
       "topLevel": false,
       "builtIn": false,
@@ -257,11 +278,25 @@
           "authenticatorConfig": "aggregator-portal-cond-no-aggregator-id-sso"
         },
         {
-          "authenticator": "deny-access-authenticator",
+          "authenticator": "conditional-user-role",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 20,
-          "authenticatorConfig": "aggregator-portal-deny-not-coordinator-sso"
+          "authenticatorConfig": "aggregator-portal-cond-not-owner-sso"
+        },
+        {
+          "authenticator": "conditional-user-attribute",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 30,
+          "authenticatorConfig": "aggregator-portal-cond-not-invited-sso"
+        },
+        {
+          "authenticator": "deny-access-authenticator",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 40,
+          "authenticatorConfig": "aggregator-portal-deny-not-entitled-sso"
         }
       ]
     },
@@ -277,13 +312,20 @@
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
           "priority": 10,
+          "authenticatorConfig": "aggregator-portal-cond-has-aggregator-id-sso"
+        },
+        {
+          "authenticator": "conditional-user-attribute",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
           "authenticatorConfig": "aggregator-portal-cond-not-approved-sso"
         },
         {
           "authenticator": "deny-access-authenticator",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
-          "priority": 20,
+          "priority": 30,
           "authenticatorConfig": "aggregator-portal-deny-not-approved-sso"
         }
       ]
@@ -332,8 +374,8 @@
       "alias": "aggregator-portal-cond-not-approved",
       "config": {
         "attribute_name": "decision_made",
-        "attribute_expected_value": "approved",
-        "regex": "false",
+        "attribute_expected_value": "approved|invited",
+        "regex": "true",
         "include_group_attributes": "false",
         "not": "true"
       }
@@ -342,22 +384,10 @@
       "alias": "aggregator-portal-cond-not-approved-sso",
       "config": {
         "attribute_name": "decision_made",
-        "attribute_expected_value": "approved",
-        "regex": "false",
+        "attribute_expected_value": "approved|invited",
+        "regex": "true",
         "include_group_attributes": "false",
         "not": "true"
-      }
-    },
-    {
-      "alias": "aggregator-portal-deny-not-coordinator",
-      "config": {
-        "denyErrorMessage": "This account does not have access to the Aggregator portal."
-      }
-    },
-    {
-      "alias": "aggregator-portal-deny-not-coordinator-sso",
-      "config": {
-        "denyErrorMessage": "This account does not have access to the Aggregator portal."
       }
     },
     {
@@ -370,6 +400,72 @@
       "alias": "aggregator-portal-deny-not-approved-sso",
       "config": {
         "denyErrorMessage": "Your Aggregator registration has not been approved yet."
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-has-aggregator-id",
+      "config": {
+        "attribute_name": "aggregator_id",
+        "attribute_expected_value": ".+",
+        "regex": "true",
+        "include_group_attributes": "false",
+        "not": "false"
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-has-aggregator-id-sso",
+      "config": {
+        "attribute_name": "aggregator_id",
+        "attribute_expected_value": ".+",
+        "regex": "true",
+        "include_group_attributes": "false",
+        "not": "false"
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-not-owner",
+      "config": {
+        "condUserRole": "org_owner",
+        "negate": "true"
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-not-owner-sso",
+      "config": {
+        "condUserRole": "org_owner",
+        "negate": "true"
+      }
+    },
+    {
+      "alias": "aggregator-portal-deny-not-entitled",
+      "config": {
+        "denyErrorMessage": "This account does not have access to the Aggregator portal."
+      }
+    },
+    {
+      "alias": "aggregator-portal-deny-not-entitled-sso",
+      "config": {
+        "denyErrorMessage": "This account does not have access to the Aggregator portal."
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-not-invited",
+      "config": {
+        "attribute_name": "decision_made",
+        "attribute_expected_value": "invited",
+        "regex": "false",
+        "include_group_attributes": "false",
+        "not": "true"
+      }
+    },
+    {
+      "alias": "aggregator-portal-cond-not-invited-sso",
+      "config": {
+        "attribute_name": "decision_made",
+        "attribute_expected_value": "invited",
+        "regex": "false",
+        "include_group_attributes": "false",
+        "not": "true"
       }
     }
   ],
@@ -446,7 +542,7 @@
             "id.token.claim": "false",
             "access.token.claim": "true",
             "userinfo.token.claim": "false",
-            "multivalued": "false",
+            "multivalued": "true",
             "aggregate.attrs": "false"
           }
         },
@@ -479,6 +575,22 @@
             "access.token.claim": "true",
             "userinfo.token.claim": "false",
             "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "roles",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "multivalued": "true",
             "aggregate.attrs": "false"
           }
         },
@@ -738,9 +850,40 @@
       "webOrigins": null
     },
     {
+      "clientId": "signals-search-client",
+      "name": "signals-search (service auth into signals)",
+      "description": "Client-credentials client for signals-search's calls to the Signals-DPG geocode endpoint. The client id must equal the slug of the network_service org seeded by provision_service_users.sql.",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "__SIGNALS_SEARCH_CLIENT_SECRET__",
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "attributes": {
+        "use.refresh.tokens": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "signals-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "signals-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ],
+      "redirectUris": null,
+      "webOrigins": null
+    },
+    {
       "clientId": "campaign-manager",
       "name": "Campaign Manager",
-      "description": "Confidential client for the external campaign manager. Its service account is the client_credentials caller for the non-PII dump route (#692); browser login (OTP) and direct access grants give a coordinator a token for the org-scoped campaign routes.",
+      "description": "Confidential client for the external campaign manager. Browser login (OTP) and direct access grants give a coordinator a token for the org-scoped campaign routes.",
       "enabled": true,
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",

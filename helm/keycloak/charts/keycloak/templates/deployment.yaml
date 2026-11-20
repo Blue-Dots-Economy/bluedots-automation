@@ -124,6 +124,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "keycloak.secretName" . }}
                   key: CAMPAIGN_MANAGER_SECRET
+            - name: SIGNALS_SEARCH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak.secretName" . }}
+                  key: SIGNALS_SEARCH_CLIENT_SECRET
             - name: SMTP_HOST
               valueFrom:
                 configMapKeyRef:

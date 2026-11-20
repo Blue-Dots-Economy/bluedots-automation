@@ -1,0 +1,58 @@
+image:
+  repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: signals-s3-export
+  annotations: {}
+
+s3:
+  bucket: ""
+  prefix: ""
+  region: ""
+  endpointUrl: ""
+  forcePathStyle: false
+  existingCredentialsSecret: ""
+
+export:
+  scope: aggregator_onboarded
+
+databaseUrl: ""
+aggDatabaseUrl: ""
+existingSecret: ""
+
+instances: []
+
+cronJob:
+  timeZone: Asia/Kolkata
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 900
+  backoffLimit: 2
+  activeDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests: { cpu: 250m, memory: 256Mi }
+  limits: { cpu: "1", memory: 1Gi }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

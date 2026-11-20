@@ -1,0 +1,13 @@
+# OPA configuration for the edge (aggregator-dpg docs/rbac/rbac-edge-enforcement.md,
+# same as its infra/opa/edge-config.yaml but on 127.0.0.1). The Envoy plugin
+# answers Envoy's ext_authz check from data.rbac.edge.decision (edge.rego).
+#
+# Decision logs stay off: their input carries the verified token's payload
+# (email, phone), which must not be logged. Envoy's access log records each
+# edge outcome instead, without personal data.
+plugins:
+  envoy_ext_authz_grpc:
+    addr: 127.0.0.1:9191
+    path: rbac/edge/decision
+    dry-run: false
+    enable-reflection: false

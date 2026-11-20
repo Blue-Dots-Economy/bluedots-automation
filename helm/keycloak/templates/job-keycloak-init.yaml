@@ -107,6 +107,11 @@ spec:
               value: {{ .Values.keycloak.brandLongName | default "Blue Dots" | quote }}
             - name: SIGNALS_ORIGINS
               value: {{ include "keycloak-platform.signalsOrigins" . | quote }}
+            # apply-user-profile.sh step 7: back-channel logout per client.
+            - name: PORTAL_BACKCHANNEL_LOGOUT_URL
+              value: {{ .Values.init.backchannelLogout.portalUrl | default "" | quote }}
+            - name: SIGNALS_BACKCHANNEL_LOGOUT_URL
+              value: {{ .Values.init.backchannelLogout.signalsUrl | default "" | quote }}
             - name: AGGREGATOR_PORTAL_SECRET
               valueFrom:
                 secretKeyRef:
@@ -153,6 +158,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "keycloak-platform.secretName" . }}
                   key: CAMPAIGN_MANAGER_SECRET
+            - name: SIGNALS_SEARCH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-platform.secretName" . }}
+                  key: SIGNALS_SEARCH_CLIENT_SECRET
             - name: CAMPAIGN_MANAGER_REDIRECT_URIS
               value: {{ .Values.keycloak.campaignManagerRedirectUris | default "" | quote }}
             # render-realm.sh reads SMTP_SSL; the ConfigMap key is SMTP_SECURE.

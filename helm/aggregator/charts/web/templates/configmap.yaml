@@ -49,6 +49,8 @@ data:
   # (signals-dpg#785), e.g. "IN". Blank = suggestions from anywhere. Same
   # _geo_country anchor that drives signals' VITE_GEO_COUNTRY and GEOCODING_COUNTRY.
   GEO_COUNTRY: "{{ .Values.geoCountry | default "" }}"
+  # Phone country codes, e.g. "IN:+91,GB:+44" (first is default). Blank = India only.
+  PHONE_COUNTRIES: "{{ .Values.phoneCountries | default "" }}"
 {{- /*
   Google Maps browser key. OMITTED when unset or left at the house
   UPDATE_THIS_VALUE placeholder, rather than rendered empty/bogus: the app
