@@ -54,8 +54,12 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   value. Until `aggregator_id` is removed, every client that maps
   `aggregator_id` into its tokens (`aggregator-portal`, `campaign-manager`) also
   maps `user_id`: `assert-realm.sh` checks it (A12) and `apply-user-profile.sh`
-  adds the mapper to existing realms. The aggregator API copies the value onto
-  existing coordinators in its instance-upgrade `enrich` step.
+  adds the mapper to existing realms. New coordinators get the value at
+  creation; existing ones get it from a one-off run of the aggregator's
+  instance-upgrade Job with `aggregator-api.instanceUpgrade.enabled=true` and
+  `aggregator-api.instanceUpgrade.args={backfill-user-id}`, with the app up
+  (run it with `--dry-run` first). It is not part of `run-all`. Until it runs,
+  those coordinators' tokens carry no `user_id` claim.
 - `aggregator_type` is **multivalued**: a coordinator can serve several profile
   types, and the aggregator reads them from the token as a JSON array. Both the
   user-profile attribute and the `aggregator-portal` mapper must be multivalued.

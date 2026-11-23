@@ -248,19 +248,28 @@ fi
 # Every client that maps `aggregator_id` into its tokens also maps `user_id`
 # (the same value, under the name that replaces it). Added here for realms
 # that already exist; realm.json covers a first import. Placed before the SMTP
-# early-exit so it always runs. A failed create fails the Job.
+# early-exit so it always runs. A failed lookup or create fails the Job; a
+# client the realm does not have is skipped.
 # ────────────────────────────────────────────────────────────
 ensure_user_id_mapper() {
   target_client="$1"
-  client_uuid=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients?clientId=${target_client}" \
-    -H "Authorization: Bearer ${TOKEN}" | jq -r '.[0].id // empty')
+  # curl runs on its own: piped into jq, a failed lookup would read as "not found".
+  clients=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients?clientId=${target_client}" \
+    -H "Authorization: Bearer ${TOKEN}") || {
+    echo "[kc-init] ${target_client}: client lookup FAILED — user_id mapper not checked"
+    return 1
+  }
+  client_uuid=$(printf '%s' "$clients" | jq -r '.[0].id // empty')
   if [ -z "$client_uuid" ]; then
     echo "[kc-init] client '${target_client}' not found — skipping user_id mapper"
     return 0
   fi
-  existing=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    | jq -r '[.[] | select(.name == "user_id")] | length')
+  mappers=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models" \
+    -H "Authorization: Bearer ${TOKEN}") || {
+    echo "[kc-init] ${target_client}: mapper lookup FAILED — user_id mapper not checked"
+    return 1
+  }
+  existing=$(printf '%s' "$mappers" | jq -r '[.[] | select(.name == "user_id")] | length')
   if [ "${existing:-0}" -gt 0 ]; then
     echo "[kc-init] ${target_client}: user_id mapper already present — skip"
     return 0
