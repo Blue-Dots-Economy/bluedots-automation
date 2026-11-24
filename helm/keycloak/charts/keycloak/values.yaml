@@ -60,6 +60,10 @@ realm: ""
 # Substituted into the realm's display name (__BRAND_LONG_NAME__).
 brandLongName: Blue Dots
 
+# The deployment's PHONE_COUNTRIES; its first country becomes the realm's
+# phoneDefaultRegion (how the OTP login reads a number typed without a code). "" = IN.
+phoneCountries: ""
+
 # Explicit signals-UI origins for the shared realm's signals-ui allow-lists.
 # Empty = derive from global.publicHosts (the normal case). Set only to override.
 # These are the SIGNALS hostnames, NOT the Keycloak/aggregator host — see

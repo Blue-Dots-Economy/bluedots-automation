@@ -347,6 +347,24 @@ remove_aggregator_id_mapper() {
 remove_aggregator_id_mapper campaign-manager
 
 # ────────────────────────────────────────────────────────────
+# Phone default region: the country a number typed without a code is read in.
+# ────────────────────────────────────────────────────────────
+REGION="${PHONE_DEFAULT_REGION:-IN}"
+REGION_REP=$(curl -fsS "${KC_URL}/admin/realms/${REALM}" -H "Authorization: Bearer ${TOKEN}" \
+  | jq --arg r "$REGION" '.attributes.phoneDefaultRegion = $r')
+HTTP=$(curl -s -o /tmp/region-resp.json -w "%{http_code}" -X PUT \
+  "${KC_URL}/admin/realms/${REALM}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  --data "${REGION_REP}")
+if [ "$HTTP" != "204" ] && [ "$HTTP" != "200" ]; then
+  echo "[kc-init] phoneDefaultRegion PUT failed: HTTP ${HTTP}"
+  cat /tmp/region-resp.json || true
+  exit 1
+fi
+echo "[kc-init] phoneDefaultRegion=${REGION}"
+
+# ────────────────────────────────────────────────────────────
 # 2) SMTP server config
 # ────────────────────────────────────────────────────────────
 if [ -z "${SMTP_HOST:-}" ]; then

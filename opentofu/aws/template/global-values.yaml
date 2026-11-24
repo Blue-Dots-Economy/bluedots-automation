@@ -150,7 +150,8 @@ _college_dataset: &college_dataset "ka"
 _geo_country: &geo_country "IN"
 # Phone country codes the forms offer, ISO:code comma list, first is the default
 # (e.g. "IN:+91,GB:+44"; more than one shows a picker). Feeds ui.runtimeConfig.VITE_PHONE_COUNTRIES
-# (signals) and web.phoneCountries (aggregator). "" = India only.
+# (signals), web.phoneCountries (aggregator) and keycloak.phoneCountries (OTP login's
+# default region = the first country). "" = India only.
 _phone_countries: &phone_countries "IN:+91"
 
 # ── SMTP Configuration ────────────────────────────────────────────────────
@@ -590,6 +591,9 @@ keycloak:
   # For msg91/twilio/sns, credentials come from secrets.msg91AuthKey +
   # keycloak.msg91TemplateId and the matching TWILIO_*/AWS_* values.
   smsProvider: msg91
+
+  # A number typed at login without a code is read in the first country here.
+  phoneCountries: *phone_countries
 
   ingress:
     # Enable BOTH of these only together with a dedicated _auth_host above.

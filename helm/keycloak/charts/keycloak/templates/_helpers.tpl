@@ -132,3 +132,9 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/* Country a phone without a code is read in: the first PHONE_COUNTRIES entry ("IN:+91,GB:+44" -> IN). */}}
+{{- define "keycloak.phoneDefaultRegion" -}}
+{{- $first := . | default "" | splitList "," | first | default "" | trim -}}
+{{- splitList ":" $first | first | default "" | trim | upper | default "IN" -}}
+{{- end -}}

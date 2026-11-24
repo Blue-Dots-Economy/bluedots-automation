@@ -37,6 +37,7 @@ data:
 
     # ── Optional: safe defaults ────────────────────────────────────────────
     : "${BRAND_LONG_NAME:=Blue Dots}"
+    : "${PHONE_DEFAULT_REGION:=IN}"
     : "${SMTP_HOST:=mailhog}"
     : "${SMTP_PORT:=1025}"
     : "${SMTP_FROM:=no-reply@bluedots.local}"
@@ -60,6 +61,7 @@ data:
         -e "s|__PUBLIC_BASE_URL__|$(escape "$PUBLIC_BASE_URL")|g" \
         -e "s|__KEYCLOAK_REALM__|$(escape "$KEYCLOAK_REALM")|g" \
         -e "s|__BRAND_LONG_NAME__|$(escape "$BRAND_LONG_NAME")|g" \
+        -e "s|__PHONE_DEFAULT_REGION__|$(escape "$PHONE_DEFAULT_REGION")|g" \
         -e "s|__AGGREGATOR_PORTAL_SECRET__|$(escape "$AGGREGATOR_PORTAL_SECRET")|g" \
         -e "s|__AGGREGATOR_API_SECRET__|$(escape "$AGGREGATOR_API_SECRET")|g" \
         -e "s|__AGGREGATOR_BFF_SECRET__|$(escape "$AGGREGATOR_BFF_SECRET")|g" \

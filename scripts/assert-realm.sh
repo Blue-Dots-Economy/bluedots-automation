@@ -147,7 +147,7 @@ fi
 # ── A9. Every placeholder is one render-realm.sh knows how to substitute ─────
 # A stray placeholder is a deploy-time hard failure (render-realm.sh fails on
 # unset vars). Catching it here turns that into a CI failure instead.
-KNOWN='__KEYCLOAK_REALM__ __PUBLIC_BASE_URL__ __BRAND_LONG_NAME__
+KNOWN='__KEYCLOAK_REALM__ __PUBLIC_BASE_URL__ __BRAND_LONG_NAME__ __PHONE_DEFAULT_REGION__
 __AGGREGATOR_API_SECRET__ __AGGREGATOR_PORTAL_SECRET__ __AGGREGATOR_BFF_SECRET__
 __SIGNALS_API_SECRET__ __SIGNALSTACK_CLIENT_SECRET__ __VOICE_DPG_SIGNALS_SECRET__ __CAMPAIGN_MANAGER_SECRET__
 __CAMPAIGN_MANAGER_REDIRECT_URIS__ __SIGNALS_SEARCH_CLIENT_SECRET__
