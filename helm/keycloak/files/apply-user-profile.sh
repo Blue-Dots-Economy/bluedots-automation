@@ -6,8 +6,9 @@
 #      Unmanaged Attributes, and relax `required` on email/firstName/lastName so
 #      any other custom attributes and signals' phone-only / one-word-name users
 #      all persist and can log in.
-#   2. org_owner realm role + manage-realm grant (org hierarchy), and the
-#      user_id claim mapper on every client that maps aggregator_id.
+#   2. org_owner realm role + manage-realm grant (org hierarchy), the user_id
+#      claim mapper on aggregator-portal and campaign-manager, and removal of
+#      campaign-manager's aggregator_id mapper.
 #   3. Apply SMTP server config from env vars (KC needs this for email OTP + verify).
 #   4. aggregator-portal client: confidential + secret sync + protocol mappers.
 #   5. Acting-org claim mappers on signals-ui / aggregator-dpg / voice-dpg (§5.1
@@ -245,11 +246,13 @@ fi
 # ────────────────────────────────────────────────────────────
 # 1c) user_id claim mapper
 #
-# Every client that maps `aggregator_id` into its tokens also maps `user_id`
-# (the same value, under the name that replaces it). Added here for realms
-# that already exist; realm.json covers a first import. Placed before the SMTP
-# early-exit so it always runs. A failed lookup or create fails the Job; a
-# client the realm does not have is skipped.
+# `user_id` carries the same value as `aggregator_id`, under the name that
+# replaces it. `aggregator-portal` maps both while clients move to `user_id`.
+# `campaign-manager` maps `user_id` only: no user signs in through it yet, so
+# its `aggregator_id` mapper is removed. Every deployed realm had that mapper.
+# Applied here for realms that already exist; realm.json covers a first
+# import. Placed before the SMTP early-exit so it always runs. A failed lookup,
+# create or delete fails the Job; a client the realm does not have is skipped.
 # ────────────────────────────────────────────────────────────
 ensure_user_id_mapper() {
   target_client="$1"
@@ -305,6 +308,43 @@ ensure_user_id_mapper() {
 
 ensure_user_id_mapper aggregator-portal
 ensure_user_id_mapper campaign-manager
+
+remove_aggregator_id_mapper() {
+  target_client="$1"
+  # curl runs on its own: piped into jq, a failed lookup would read as "not found".
+  clients=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients?clientId=${target_client}" \
+    -H "Authorization: Bearer ${TOKEN}") || {
+    echo "[kc-init] ${target_client}: client lookup FAILED — aggregator_id mapper not checked"
+    return 1
+  }
+  client_uuid=$(printf '%s' "$clients" | jq -r '.[0].id // empty')
+  if [ -z "$client_uuid" ]; then
+    echo "[kc-init] client '${target_client}' not found — skipping aggregator_id mapper removal"
+    return 0
+  fi
+  mappers=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models" \
+    -H "Authorization: Bearer ${TOKEN}") || {
+    echo "[kc-init] ${target_client}: mapper lookup FAILED — aggregator_id mapper not checked"
+    return 1
+  }
+  mapper_id=$(printf '%s' "$mappers" | jq -r '[.[] | select(.name == "aggregator_id")][0].id // empty')
+  if [ -z "$mapper_id" ]; then
+    echo "[kc-init] ${target_client}: no aggregator_id mapper — skip"
+    return 0
+  fi
+  http=$(curl -s -o /tmp/kc-agg-id-resp.json -w "%{http_code}" -X DELETE \
+    "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models/${mapper_id}" \
+    -H "Authorization: Bearer ${TOKEN}")
+  if [ "$http" = "204" ]; then
+    echo "[kc-init] ${target_client}: aggregator_id mapper removed"
+  else
+    echo "[kc-init] ${target_client}: aggregator_id mapper delete FAILED: HTTP ${http}"
+    cat /tmp/kc-agg-id-resp.json || true
+    return 1
+  fi
+}
+
+remove_aggregator_id_mapper campaign-manager
 
 # ────────────────────────────────────────────────────────────
 # 2) SMTP server config

@@ -924,22 +924,6 @@
       ],
       "protocolMappers": [
         {
-          "name": "aggregator_id",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-attribute-mapper",
-          "consentRequired": false,
-          "config": {
-            "user.attribute": "aggregator_id",
-            "claim.name": "aggregator_id",
-            "jsonType.label": "String",
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false",
-            "multivalued": "false",
-            "aggregate.attrs": "false"
-          }
-        },
-        {
           "name": "user_id",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-attribute-mapper",

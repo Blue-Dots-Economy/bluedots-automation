@@ -51,15 +51,17 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   admin-only. `unmanagedAttributePolicy` stays `ENABLED` for every other
   attribute.
 - `user_id` is the replacement name for `aggregator_id` and holds the same
-  value. Until `aggregator_id` is removed, every client that maps
-  `aggregator_id` into its tokens (`aggregator-portal`, `campaign-manager`) also
-  maps `user_id`: `assert-realm.sh` checks it (A12) and `apply-user-profile.sh`
-  adds the mapper to existing realms. New coordinators get the value at
-  creation; existing ones get it from a one-off run of the aggregator's
-  instance-upgrade Job with `aggregator-api.instanceUpgrade.enabled=true` and
-  `aggregator-api.instanceUpgrade.args={backfill-user-id}`, with the app up
-  (run it with `--dry-run` first). It is not part of `run-all`. Until it runs,
-  those coordinators' tokens carry no `user_id` claim.
+  value. Until `aggregator_id` is removed, `aggregator-portal` maps both into
+  its tokens: `assert-realm.sh` checks that every client mapping
+  `aggregator_id` also maps `user_id` (A12). `campaign-manager` maps `user_id`
+  only, since no user signs in through it yet: `assert-realm.sh` checks it maps
+  `user_id` and no `aggregator_id` (A13). `apply-user-profile.sh` applies both
+  to existing realms, adding the `user_id` mappers and removing
+  `campaign-manager`'s `aggregator_id` mapper. New coordinators get the value
+  at creation; existing ones get it from the one-off backfill script in
+  `Blue-Dots-Economy/adhoc-scripts` (`aggregator-user-id-backfill/`), run once
+  per environment. Until it runs, those coordinators' `aggregator-portal`
+  tokens carry no `user_id` claim.
 - `aggregator_type` is **multivalued**: a coordinator can serve several profile
   types, and the aggregator reads them from the token as a JSON array. Both the
   user-profile attribute and the `aggregator-portal` mapper must be multivalued.

@@ -220,6 +220,31 @@ for client in $(q '.clients[] | select([.protocolMappers[]? | .config["claim.nam
   fi
 done
 
+# ── A13. campaign-manager maps user_id only ──────────────────────────────────
+# No user signs in through campaign-manager yet, so it starts on the new name
+# and never carries aggregator_id. A12 no longer reaches it (it maps no
+# aggregator_id), so its user_id mapper is checked here.
+if jq -e '
+     [.clients[] | select(.clientId == "campaign-manager") | .protocolMappers[]?
+      | select(.config["claim.name"] == "aggregator_id")] | length == 0
+   ' "$REALM_FILE" >/dev/null 2>&1; then
+  pass "campaign-manager does not map aggregator_id"
+else
+  fail "campaign-manager maps aggregator_id; it must map user_id only"
+fi
+if jq -e '
+     [.clients[] | select(.clientId == "campaign-manager") | .protocolMappers[]?
+      | select(.protocolMapper == "oidc-usermodel-attribute-mapper"
+               and .config["user.attribute"] == "user_id"
+               and .config["claim.name"] == "user_id"
+               and .config["access.token.claim"] == "true"
+               and .config.multivalued == "false")] | length == 1
+   ' "$REALM_FILE" >/dev/null 2>&1; then
+  pass "campaign-manager maps user_id"
+else
+  fail "campaign-manager does not map user_id (single-valued, access token)"
+fi
+
 echo
 if [ "$FAILED" -eq 0 ]; then
   echo "realm assertions: ALL PASSED"
