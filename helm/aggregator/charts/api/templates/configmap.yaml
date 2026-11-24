@@ -33,6 +33,7 @@ data:
   CORS_ORIGINS: "{{ include "api.publicBaseUrl" . }}"
   RUN_MIGRATIONS_ON_BOOT: "{{ .Values.runMigrationsOnBoot }}"
   ADMIN_EMAILS: "{{ .Values.adminEmails }}"
+  OWNER_SELF_ADD_MODE: "{{ include "api.ownerSelfAddMode" . }}"
   PUBLIC_API_URL: "{{ include "api.publicBaseUrl" . }}/backend"
   BULK_UPLOAD_URL_TTL_SECONDS: "{{ .Values.bulk.uploadUrlTtlSeconds }}"
   BULK_UPLOAD_MAX_BYTES: "{{ .Values.bulk.uploadMaxBytes }}"

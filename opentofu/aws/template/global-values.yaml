@@ -644,6 +644,8 @@ web:
 aggregator-api:
   adminEmails: *aggregator_admin_emails
   supportEmail: *support_email
+  # How organisation owners join their own team: owner (button), auto (at registration) or off.
+  ownerSelfAddMode: owner
   # RBAC: off | log | enforce. log and enforce run the Envoy + OPA edge
   # sidecars in the api pod and need an api image that ships the policy and the
   # Envoy template (aggregator-dpg #910; the api tag in global-images.yaml does
