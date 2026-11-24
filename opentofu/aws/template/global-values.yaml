@@ -418,8 +418,6 @@ global:
   campaignManagerAllowedAzp: "campaign-manager"
   campaignDumpInstanceId: *campaign_manager_instance_id
   campaignDumpPrefix: ""
-  # Tables the dump API serves; each must be in the s3-export manifest.
-  campaignDumpFiles: "user,items,item_actions,aggregators,registration_links"
 
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
