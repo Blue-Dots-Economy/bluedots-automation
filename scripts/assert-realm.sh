@@ -134,6 +134,13 @@ else
   fail "realm name is hardcoded to '$realm_name'"
 fi
 
+region=$(q '.attributes.phoneDefaultRegion')
+if [ "$region" = "__PHONE_DEFAULT_REGION__" ]; then
+  pass "phoneDefaultRegion is templated (__PHONE_DEFAULT_REGION__)"
+else
+  fail "phoneDefaultRegion is hardcoded to '$region'; it comes from PHONE_COUNTRIES"
+fi
+
 # ── A8. HTTPS required for external callers ──────────────────────────────────
 # `external` not `all`: private (in-cluster) source addresses stay exempt so the
 # keycloak-init Job can talk plain HTTP over the service URL.

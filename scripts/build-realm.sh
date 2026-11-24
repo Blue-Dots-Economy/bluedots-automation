@@ -105,6 +105,7 @@ jq '
     end;
 
   .sslRequired = "external"
+  | .attributes.phoneDefaultRegion = "__PHONE_DEFAULT_REGION__"
   | .clients = [
       .clients[]
       | .redirectUris = (.redirectUris | strip_local)
