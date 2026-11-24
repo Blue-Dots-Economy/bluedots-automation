@@ -1,12 +1,14 @@
 #!/bin/sh
 # Post-import init for the (now combined, Phase B) realm:
 #   1. Declare the phoneNumber/phoneNumberVerified user attributes, declare the
-#      service-written identity attributes (aggregator_id, aggregator_type,
-#      decision_made, signalstack_org_id) admin-only, enable Unmanaged
-#      Attributes, and relax `required` on email/firstName/lastName so any
-#      other custom attributes and signals' phone-only / one-word-name users
+#      service-written identity attributes (aggregator_id, user_id,
+#      aggregator_type, decision_made, signalstack_org_id) admin-only, enable
+#      Unmanaged Attributes, and relax `required` on email/firstName/lastName so
+#      any other custom attributes and signals' phone-only / one-word-name users
 #      all persist and can log in.
-#   2. org_owner realm role + manage-realm grant (org hierarchy).
+#   2. org_owner realm role + manage-realm grant (org hierarchy), the user_id
+#      claim mapper on aggregator-portal and campaign-manager, and removal of
+#      campaign-manager's aggregator_id mapper.
 #   3. Apply SMTP server config from env vars (KC needs this for email OTP + verify).
 #   4. aggregator-portal client: confidential + secret sync + protocol mappers.
 #   5. Acting-org claim mappers on signals-ui / aggregator-dpg / voice-dpg (§5.1
@@ -65,11 +67,13 @@ fi
 #    migration's collision check depends on that. The unmanaged policy is the
 #    belt-and-braces for every attribute not declared here.
 #
-#    aggregator_id, decision_made, aggregator_type, signalstack_org_id and
-#    roles feed the portal gate and token claims the apps act on (aggregator_id,
-#    decision_made, aggregator_type, signalstack_org_id, signals_acting_orgs,
-#    and roles: the user's live role keys, multivalued, which the aggregator's
-#    RBAC edge reads from the access token).
+#    aggregator_id, user_id, decision_made, aggregator_type, signalstack_org_id
+#    and roles feed the portal gate and token claims the apps act on
+#    (aggregator_id, user_id, decision_made, aggregator_type,
+#    signalstack_org_id, signals_acting_orgs, and roles: the user's live role
+#    keys, multivalued, which the aggregator's RBAC edge reads from the access
+#    token). user_id holds the same value as aggregator_id, under the name that
+#    replaces it.
 #    Only service accounts write them, through the admin API, so they are
 #    declared admin-only. That is forced: any earlier declaration of those
 #    names is dropped before they are appended, and the check after the PUT
@@ -96,12 +100,13 @@ UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" '
     then del(.required)
     else . end;
 
-  def admin_only: ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id", "roles"];
+  def admin_only: ["aggregator_id", "user_id", "decision_made", "aggregator_type", "signalstack_org_id", "roles"];
 
   .unmanagedAttributePolicy = $policy
   | .attributes = (
       ([(.attributes // [])[] | select(.name as $n | admin_only | index($n) | not)] + [
         { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+        { name: "user_id", displayName: "User id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "aggregator_type", displayName: "Profile types", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
         { name: "signalstack_org_id", displayName: "Signals organisation id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
@@ -143,12 +148,12 @@ HAS_PHONE=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "ph
 GOT_POLICY=$(printf '%s' "$VERIFY" | jq -r '.unmanagedAttributePolicy // "unset"')
 STILL_REQUIRED=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "email" or .name == "firstName" or .name == "lastName") | select(has("required")) | .name] | join(",")')
 
-ADMIN_ONLY=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name as $n | ["aggregator_id", "decision_made", "aggregator_type", "signalstack_org_id", "roles"] | index($n)) | select(.permissions.edit == ["admin"] and .permissions.view == ["admin"]) | .name] | unique | length')
+ADMIN_ONLY=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name as $n | ["aggregator_id", "user_id", "decision_made", "aggregator_type", "signalstack_org_id", "roles"] | index($n)) | select(.permissions.edit == ["admin"] and .permissions.view == ["admin"]) | .name] | unique | length')
 
-echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HAS_PHONE} admin-only identity attributes=${ADMIN_ONLY}/5"
+echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HAS_PHONE} admin-only identity attributes=${ADMIN_ONLY}/6"
 
-if [ "${ADMIN_ONLY:-0}" -lt 5 ]; then
-  echo "[kc-init] aggregator_id / decision_made / aggregator_type / signalstack_org_id / roles are not all declared admin-only"
+if [ "${ADMIN_ONLY:-0}" -lt 6 ]; then
+  echo "[kc-init] aggregator_id / user_id / decision_made / aggregator_type / signalstack_org_id / roles are not all declared admin-only"
   exit 1
 fi
 
@@ -237,6 +242,109 @@ else
     fi
   fi
 fi
+
+# ────────────────────────────────────────────────────────────
+# 1c) user_id claim mapper
+#
+# `user_id` carries the same value as `aggregator_id`, under the name that
+# replaces it. `aggregator-portal` maps both while clients move to `user_id`.
+# `campaign-manager` maps `user_id` only: no user signs in through it yet, so
+# its `aggregator_id` mapper is removed. Every deployed realm had that mapper.
+# Applied here for realms that already exist; realm.json covers a first
+# import. Placed before the SMTP early-exit so it always runs. A failed lookup,
+# create or delete fails the Job; a client the realm does not have is skipped.
+# ────────────────────────────────────────────────────────────
+ensure_user_id_mapper() {
+  target_client="$1"
+  # curl runs on its own: piped into jq, a failed lookup would read as "not found".
+  clients=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients?clientId=${target_client}" \
+    -H "Authorization: Bearer ${TOKEN}") || {
+    echo "[kc-init] ${target_client}: client lookup FAILED — user_id mapper not checked"
+    return 1
+  }
+  client_uuid=$(printf '%s' "$clients" | jq -r '.[0].id // empty')
+  if [ -z "$client_uuid" ]; then
+    echo "[kc-init] client '${target_client}' not found — skipping user_id mapper"
+    return 0
+  fi
+  mappers=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models" \
+    -H "Authorization: Bearer ${TOKEN}") || {
+    echo "[kc-init] ${target_client}: mapper lookup FAILED — user_id mapper not checked"
+    return 1
+  }
+  existing=$(printf '%s' "$mappers" | jq -r '[.[] | select(.name == "user_id")] | length')
+  if [ "${existing:-0}" -gt 0 ]; then
+    echo "[kc-init] ${target_client}: user_id mapper already present — skip"
+    return 0
+  fi
+  http=$(curl -s -o /tmp/kc-user-id-resp.json -w "%{http_code}" -X POST \
+    "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data '{
+      "name": "user_id",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "user.attribute": "user_id",
+        "claim.name": "user_id",
+        "jsonType.label": "String",
+        "id.token.claim": "false",
+        "access.token.claim": "true",
+        "userinfo.token.claim": "false",
+        "multivalued": "false",
+        "aggregate.attrs": "false"
+      }
+    }')
+  if [ "$http" = "201" ]; then
+    echo "[kc-init] ${target_client}: user_id mapper created"
+  else
+    echo "[kc-init] ${target_client}: user_id mapper create FAILED: HTTP ${http}"
+    cat /tmp/kc-user-id-resp.json || true
+    return 1
+  fi
+}
+
+ensure_user_id_mapper aggregator-portal
+ensure_user_id_mapper campaign-manager
+
+remove_aggregator_id_mapper() {
+  target_client="$1"
+  # curl runs on its own: piped into jq, a failed lookup would read as "not found".
+  clients=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients?clientId=${target_client}" \
+    -H "Authorization: Bearer ${TOKEN}") || {
+    echo "[kc-init] ${target_client}: client lookup FAILED — aggregator_id mapper not checked"
+    return 1
+  }
+  client_uuid=$(printf '%s' "$clients" | jq -r '.[0].id // empty')
+  if [ -z "$client_uuid" ]; then
+    echo "[kc-init] client '${target_client}' not found — skipping aggregator_id mapper removal"
+    return 0
+  fi
+  mappers=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models" \
+    -H "Authorization: Bearer ${TOKEN}") || {
+    echo "[kc-init] ${target_client}: mapper lookup FAILED — aggregator_id mapper not checked"
+    return 1
+  }
+  mapper_id=$(printf '%s' "$mappers" | jq -r '[.[] | select(.name == "aggregator_id")][0].id // empty')
+  if [ -z "$mapper_id" ]; then
+    echo "[kc-init] ${target_client}: no aggregator_id mapper — skip"
+    return 0
+  fi
+  http=$(curl -s -o /tmp/kc-agg-id-resp.json -w "%{http_code}" -X DELETE \
+    "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models/${mapper_id}" \
+    -H "Authorization: Bearer ${TOKEN}")
+  if [ "$http" = "204" ]; then
+    echo "[kc-init] ${target_client}: aggregator_id mapper removed"
+  else
+    echo "[kc-init] ${target_client}: aggregator_id mapper delete FAILED: HTTP ${http}"
+    cat /tmp/kc-agg-id-resp.json || true
+    return 1
+  fi
+}
+
+remove_aggregator_id_mapper campaign-manager
 
 # ────────────────────────────────────────────────────────────
 # 2) SMTP server config
