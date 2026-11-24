@@ -588,7 +588,11 @@ keycloak:
   #
   # For msg91/twilio/sns, credentials come from secrets.msg91AuthKey +
   # keycloak.msg91TemplateId and the matching TWILIO_*/AWS_* values.
-  smsProvider: msg91
+  smsProvider: http
+  smsHttp:
+    # Needs the matching <app>_signin_otp / <app>_signup_otp templates in notification-service.config.
+    clientApps: "signals-ui=signals,aggregator-portal=aggregator"
+    signinNeedsPhoneVerifiedApps: "signals,aggregator"
 
   ingress:
     # Enable BOTH of these only together with a dedicated _auth_host above.
