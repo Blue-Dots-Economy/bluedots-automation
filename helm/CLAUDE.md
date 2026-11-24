@@ -422,6 +422,10 @@ The worker deployment's `secretKeyRef` carries `optional: true`, and **that only
 - **Fail closed.** OPA down refuses every request at the edge, public ones included; the liveness probe restarts it.
 - **The `roles` claim.** The deployment realm declares `roles` admin-only and maps it, multivalued, into the access token (`helm/keycloak/files/apply-user-profile.sh`, on every Keycloak boot). The api keeps it in step with its database; without it every user lacks every permission at the edge.
 
+## Owner self-add mode
+
+`aggregator-api.ownerSelfAddMode` (`owner` | `auto` | `off`, default `auto`) is the api's `OWNER_SELF_ADD_MODE` (aggregator-dpg#1165): how an organisation owner joins their own team. `owner` shows the "Add myself to My Team" button, `auto` adds the owner when they register the organisation, `off` hides the button. Only the api reads it; the web takes the mode from the api's `/v1/aggregator-config`. Any other value fails the render. A change needs an api restart, which `helm upgrade` does because the api ConfigMap checksum changes.
+
 ## Org hierarchy flag
 
 `global.orgHierarchyEnabled` (in `global-values.yaml`, default `true`) is emitted as `ORG_HIERARCHY_ENABLED` to the aggregator **web + api** pods via their ConfigMaps (`helm/aggregator/charts/{web,api}/templates/configmap.yaml`). There's no default in the aggregator chart's own `values.yaml`, so the global value must be present (it is) — set it identically for web and api or the two halves disagree.
