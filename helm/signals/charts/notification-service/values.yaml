@@ -128,17 +128,9 @@ config:
   PINNACLE_TEMPLATE_SIGNALS_SIGNUP_OTP: ""
   PINNACLE_TEMPLATE_AGGREGATOR_SIGNIN_OTP: ""
   PINNACLE_TEMPLATE_AGGREGATOR_SIGNUP_OTP: ""
-  # MSG91 OTP templates (notification-service#200), read when SMS_PROVIDER=msg91.
-  # Same JSON template config shape as the Pinnacle rows above, with provider
-  # "msg91" and the MSG91 template id (24 hex chars, not the DLT id) as
-  # provider_template_id. MSG91 renders the text itself; body_text documents it.
-  # A variable may set "from" (the name Keycloak sends, e.g. "message") and
-  # "value" (a fixed value, e.g. the one DLT-whitelisted link), e.g.
-  # [{"name":"num","from":"message","sensitive":true},
-  #  {"name":"urg","type":"url","value":"https://<whitelisted host>"}].
-  # MSG91_TEMPLATE_LOGIN_OTP covers login_otp (Signals guardian OTP) and replaces
-  # SMS_LOGIN_OTP_TEMPLATE_ID. An invalid config stops startup. Set these before
-  # switching Keycloak to smsProvider=http. Blank = template not declared.
+  # MSG91 OTP templates (notification-service#200): one JSON template config each,
+  # same shape as the Pinnacle rows, provider "msg91". LOGIN_OTP is the guardian
+  # OTP. Blank = not declared.
   MSG91_TEMPLATE_SIGNALS_SIGNIN_OTP: ""
   MSG91_TEMPLATE_SIGNALS_SIGNUP_OTP: ""
   MSG91_TEMPLATE_AGGREGATOR_SIGNIN_OTP: ""
