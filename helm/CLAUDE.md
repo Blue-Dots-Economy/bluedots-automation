@@ -424,7 +424,7 @@ The worker deployment's `secretKeyRef` carries `optional: true`, and **that only
 
 ## Owner self-add mode
 
-`aggregator-api.ownerSelfAddMode` (`owner` | `auto` | `off`, default `owner`) is the api's `OWNER_SELF_ADD_MODE` (aggregator-dpg#1165): how an organisation owner joins their own team. `owner` shows the "Add myself to My Team" button, `auto` adds the owner when they register the organisation, `off` hides the button. Only the api reads it; the web takes the mode from the api's `/v1/aggregator-config`. Any other value fails the render. A change needs an api restart, which `helm upgrade` does because the api ConfigMap checksum changes.
+`aggregator-api.ownerSelfAddMode` (`owner` | `auto` | `off`, default `auto`) is the api's `OWNER_SELF_ADD_MODE` (aggregator-dpg#1165): how an organisation owner joins their own team. `owner` shows the "Add myself to My Team" button, `auto` adds the owner when they register the organisation, `off` hides the button. Only the api reads it; the web takes the mode from the api's `/v1/aggregator-config`. Any other value fails the render. A change needs an api restart, which `helm upgrade` does because the api ConfigMap checksum changes.
 
 ## Org hierarchy flag
 

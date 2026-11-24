@@ -88,7 +88,7 @@ bulk:
   qrDownloadUrlTtlSeconds: 900
 adminEmails: "admin@bluedots.local"
 # How organisation owners join their own team (OWNER_SELF_ADD_MODE): owner | auto | off.
-ownerSelfAddMode: owner
+ownerSelfAddMode: auto
 publicLinkBaseUrl: ""
 serviceAccount:
   create: true
