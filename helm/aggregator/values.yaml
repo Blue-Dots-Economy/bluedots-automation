@@ -190,6 +190,8 @@ global:
   campaignManagerAllowedAzp: 'campaign-manager'
   campaignDumpInstanceId: ''
   campaignDumpPrefix: ''
+  # Tables served by /v1/campaign/dump (must be written by s3-export); blank = API default.
+  campaignDumpFiles: ''
 
   # UPDATE: S3 wiring for bulk uploads, QR PNGs, error CSVs.
   s3:

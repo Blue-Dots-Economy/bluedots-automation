@@ -124,9 +124,31 @@
             "org_depth",
             "org_known_as",
             "coordinator_org_id",
+            "coordinator_name_masked",
             "coordinator_type",
             "coordinator_status",
             "coordinator_created_at"
+          ]
+        },
+        "registration_links": {
+          "columns": [
+            "link_id",
+            "org_id",
+            "coordinator_org_id",
+            "slug",
+            "domain",
+            "registration_mode",
+            "status",
+            "registration_url",
+            "title",
+            "state",
+            "district",
+            "event",
+            "event_date",
+            "event_location",
+            "tags",
+            "created_at",
+            "updated_at"
           ]
         }
       }

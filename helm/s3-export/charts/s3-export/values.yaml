@@ -22,6 +22,10 @@ s3:
 
 export:
   scope: aggregator_onboarded
+  # Base of the registration_links registration_url (the aggregator's public
+  # web URL). Empty => <global.publicProtocol|https>://<global.publicHost>, the
+  # same value the aggregator api uses. The export stops if it resolves empty.
+  publicLinkBaseUrl: ""
 
 databaseUrl: ""
 aggDatabaseUrl: ""
