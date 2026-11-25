@@ -122,6 +122,11 @@ resource "random_id" "aggregator_oidc_client_secret" {
   byte_length = var.aggregator_oidc_client_secret_bytes
 }
 
+# Keycloak -> notification-service OTP signing key (keycloak.smsProvider: http).
+resource "random_id" "sms_http_secret" {
+  byte_length = var.sms_http_secret_bytes
+}
+
 # ─── Monitoring chart secrets ───────────────────────────────────────────────
 resource "random_password" "monitoring_grafana_password" {
   length  = var.monitoring_grafana_password_length

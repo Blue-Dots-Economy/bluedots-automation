@@ -131,6 +131,11 @@ variable "aggregator_oidc_client_secret_bytes" {
   default = 32
 }
 
+variable "sms_http_secret_bytes" {
+  type    = number
+  default = 32
+}
+
 # -----------------------------------------------------------------------------
 # Monitoring chart secrets
 # -----------------------------------------------------------------------------

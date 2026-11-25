@@ -128,6 +128,14 @@ config:
   PINNACLE_TEMPLATE_SIGNALS_SIGNUP_OTP: ""
   PINNACLE_TEMPLATE_AGGREGATOR_SIGNIN_OTP: ""
   PINNACLE_TEMPLATE_AGGREGATOR_SIGNUP_OTP: ""
+  # MSG91 OTP templates (notification-service#200): one JSON template config each,
+  # same shape as the Pinnacle rows, provider "msg91". LOGIN_OTP is the guardian
+  # OTP. Blank = not declared.
+  MSG91_TEMPLATE_SIGNALS_SIGNIN_OTP: ""
+  MSG91_TEMPLATE_SIGNALS_SIGNUP_OTP: ""
+  MSG91_TEMPLATE_AGGREGATOR_SIGNIN_OTP: ""
+  MSG91_TEMPLATE_AGGREGATOR_SIGNUP_OTP: ""
+  MSG91_TEMPLATE_LOGIN_OTP: ""
   # Path the app reads for runtime secrets JSON (mounted from internalSecrets.json below).
   INTERNAL_SECRETS_JSON: /app/config/internal-secrets.json
 
