@@ -2,8 +2,8 @@
 
 **Applies to:** an environment that is already running, with live coordinators,
 moving to the release that replaces the `aggregator_id` token claim and
-Keycloak attribute with `user_id` (aggregator-dpg #1082, #1083, #1084 and
-#1085, issue #852). All four ship in **one release**, deployed in a
+Keycloak attribute with `user_id` (aggregator-dpg #1082, #1083, #1084, #1085
+and #1188, issue #852). All five ship in **one release**, deployed in a
 **maintenance window**.
 
 **Not needed for:** a brand-new environment. Its realm is imported from
@@ -24,6 +24,9 @@ in their sign-in token. After the release:
   `aggregator_id` mappers are removed.
 - **The aggregator** reads only `user_id`, and writes only `user_id` for new
   coordinators. Bulk upload jobs carry the id as `userId` only.
+- **The aggregator's API responses** for the coordinator profile, invite accept
+  and onboarding totals return the id as `user_id`, and the portal reads it
+  there. The API and the portal must be on the same release.
 - **Signals** recognises an aggregator account by `user_id` only. Wording only.
 - **Existing coordinators** get `user_id` from a one-off **backfill**, and their
   old `aggregator_id` is then removed by a one-off **cleanup**.
@@ -245,6 +248,9 @@ is 0.
    It prints only the `user_id` line.
 
 4. **A bulk upload** of a small file completes.
+5. **The coordinator's Account Details and Onboarding pages** load. They read
+   the renamed `user_id` field, so this confirms the API and the portal were
+   updated together.
 
 If any of these fails, stop here and roll back (§13, "before the cleanup").
 
