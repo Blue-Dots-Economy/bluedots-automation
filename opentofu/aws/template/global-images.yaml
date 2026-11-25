@@ -95,7 +95,7 @@ raya-sync:
 s3-export:
   image:
     repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
-    tag: "sha-92956aa"
+    tag: "sha-5888d4c"
 
 platform-sync:
   image:

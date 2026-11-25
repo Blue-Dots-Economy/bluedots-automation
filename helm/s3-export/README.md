@@ -102,8 +102,9 @@ or an older image stops the whole run at validation, Signals included.
 
 `registration_links.ndjson.gz` has one row per registration link (QR code), with its
 full `registration_url`, and `aggregators` has the coordinator's masked name. Both
-need an image built from Blue-Dots-Economy/adhoc-scripts#29 or later, plus the
-`users`, `contact (id, name)` and `registration_links` grants from the same bootstrap.
+need an image built from Blue-Dots-Economy/adhoc-scripts#29 or later (`sha-5888d4c`),
+plus the `users`, `contact (id, name)` and `registration_links` grants from the same
+bootstrap.
 The URL base is `s3-export.export.publicLinkBaseUrl`, or `https://<global.publicHost>`
 when that is empty; the run stops if neither is set. The aggregator serves the file
 through `/v1/campaign/dump` once it is in the api chart's `campaignDumpFiles`
