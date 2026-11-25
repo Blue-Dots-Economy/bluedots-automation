@@ -4,7 +4,7 @@ Both realm-reconciliation scripts, mounted at /init by the init Job.
 These are this repo's own copies, not a mirror of any app repo (plan §3.1).
 apply-user-profile.sh started as a verified functional superset of
 the signals local copy: same acting-org mapper call sites, same phoneNumber /
-unmanagedAttributePolicy surface, plus aggregator_id, org_owner and the
+unmanagedAttributePolicy surface, plus user_id, org_owner and the
 signals-ui login-theme override. It also declares the service-written identity
 attributes admin-only.
 

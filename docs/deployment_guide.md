@@ -401,6 +401,14 @@ bash install.sh plan_tf_<module>     # shows what WOULD change; changes nothing
 If the plan says **destroy** or **replace** on a database, node group or bucket,
 stop and get a second pair of eyes.
 
+**Some releases need more than a redeploy.** When a release changes data that
+lives outside the charts, it ships its own runbook. Follow it instead of a plain
+`deploy_*`:
+
+- [`user-id-claim-rollout-runbook.md`](user-id-claim-rollout-runbook.md) —
+  moving coordinators from `aggregator_id` to `user_id` (aggregator-dpg #852).
+  Needs a maintenance window.
+
 ---
 
 ## B2. Worked example — change the SMTP mailbox

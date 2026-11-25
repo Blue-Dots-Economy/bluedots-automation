@@ -64,8 +64,8 @@ echo "[build-realm] output: $OUT"
 # H2 (no test users) needs no transform — the source carries only the two
 #    service accounts. assert-realm.sh enforces that it stays that way.
 #
-# H4  Declare aggregator_id, user_id, decision_made, aggregator_type and
-#     signalstack_org_id admin-only in the user profile
+# H4  Declare user_id, decision_made, aggregator_type and signalstack_org_id
+#     admin-only in the user profile
 #     (attributes."kc.user.profile.config", a JSON string). Only service
 #     accounts write them, through the admin API, and they feed token claims the
 #     apps act on. Forced here rather than trusted from the source, so a source
@@ -73,7 +73,8 @@ echo "[build-realm] output: $OUT"
 #     declaration of those names is replaced. unmanagedAttributePolicy is left
 #     as the source has it. apply-user-profile.sh applies the same declarations
 #     to realms that already exist. aggregator_type is multivalued: a
-#     coordinator can serve several profile types.
+#     coordinator can serve several profile types. A declaration of the former
+#     name aggregator_id is removed: a fresh realm stores no values.
 #
 # H5  The aggregator-portal client's aggregator_type mapper is multivalued, so
 #     the token carries every profile type as a JSON array. Forced here so a
@@ -87,7 +88,6 @@ jq '
 
   def admin_only_names: ["aggregator_id", "user_id", "decision_made", "aggregator_type", "signalstack_org_id"];
   def admin_only_attrs: [
-    { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
     { name: "user_id", displayName: "User id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
     { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
     { name: "aggregator_type", displayName: "Profile types", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
