@@ -134,6 +134,13 @@ else
   fail "realm name is hardcoded to '$realm_name'"
 fi
 
+region=$(q '.attributes.phoneDefaultRegion')
+if [ "$region" = "__PHONE_DEFAULT_REGION__" ]; then
+  pass "phoneDefaultRegion is templated (__PHONE_DEFAULT_REGION__)"
+else
+  fail "phoneDefaultRegion is hardcoded to '$region'; it comes from PHONE_COUNTRIES"
+fi
+
 # ── A8. HTTPS required for external callers ──────────────────────────────────
 # `external` not `all`: private (in-cluster) source addresses stay exempt so the
 # keycloak-init Job can talk plain HTTP over the service URL.
@@ -147,7 +154,7 @@ fi
 # ── A9. Every placeholder is one render-realm.sh knows how to substitute ─────
 # A stray placeholder is a deploy-time hard failure (render-realm.sh fails on
 # unset vars). Catching it here turns that into a CI failure instead.
-KNOWN='__KEYCLOAK_REALM__ __PUBLIC_BASE_URL__ __BRAND_LONG_NAME__
+KNOWN='__KEYCLOAK_REALM__ __PUBLIC_BASE_URL__ __BRAND_LONG_NAME__ __PHONE_DEFAULT_REGION__
 __AGGREGATOR_API_SECRET__ __AGGREGATOR_PORTAL_SECRET__ __AGGREGATOR_BFF_SECRET__
 __SIGNALS_API_SECRET__ __SIGNALSTACK_CLIENT_SECRET__ __VOICE_DPG_SIGNALS_SECRET__ __CAMPAIGN_MANAGER_SECRET__
 __CAMPAIGN_MANAGER_REDIRECT_URIS__ __SIGNALS_SEARCH_CLIENT_SECRET__
