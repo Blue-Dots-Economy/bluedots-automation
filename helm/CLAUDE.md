@@ -42,27 +42,32 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   addresses, so the in-cluster init Job keeps working over plain HTTP while
   external callers must use HTTPS. A `kubectl port-forward` session comes from a
   non-private address and gets `403 HTTPS required` — expected, not a fault.
-- `aggregator_id`, `user_id`, `decision_made`, `aggregator_type` and
-  `signalstack_org_id` are declared **admin-only** in the user profile. Only
+- `user_id`, `decision_made`, `aggregator_type` and `signalstack_org_id` are
+  declared **admin-only** in the user profile. Only
   service accounts write them, through the admin API, and they feed token claims
   the apps act on. `build-realm.sh` forces the declarations (H4),
   `assert-realm.sh` checks them (A10), and `apply-user-profile.sh` re-applies
   them to existing realms and fails the init Job unless all of them are
   admin-only. `unmanagedAttributePolicy` stays `ENABLED` for every other
   attribute.
-- `user_id` is the replacement name for `aggregator_id` and holds the same
-  value. Until `aggregator_id` is removed, `aggregator-portal` maps both into
-  its tokens: `assert-realm.sh` checks that every client mapping
-  `aggregator_id` also maps `user_id` (A12). `campaign-manager` maps `user_id`
-  only, since no user signs in through it yet: `assert-realm.sh` checks it maps
-  `user_id` and no `aggregator_id` (A13). `apply-user-profile.sh` applies both
-  to existing realms, adding the `user_id` mappers and removing
-  `campaign-manager`'s `aggregator_id` mapper. New coordinators get the value
-  at creation; existing ones get it from a one-off run of the aggregator's
-  instance-upgrade Job with `aggregator-api.instanceUpgrade.enabled=true` and
-  `aggregator-api.instanceUpgrade.args={backfill-user-id}`, with the app up
-  (run it with `--dry-run` first). It is not part of `run-all`. Until it runs,
-  those coordinators' `aggregator-portal` tokens carry no `user_id` claim.
+- `user_id` is the coordinator's `users.id` and the only id the apps read; it
+  replaces `aggregator_id`. `aggregator-portal` and `campaign-manager` map it,
+  no client maps `aggregator_id` (`assert-realm.sh` A12, A13), and the realm
+  does not declare `aggregator_id` (A10). On an existing realm,
+  `apply-user-profile.sh` adds the `user_id` mappers and removes both clients'
+  `aggregator_id` mappers. It keeps `aggregator_id` declared admin-only while
+  any user still stores a value, and drops the declaration on the first run
+  after none does. New coordinators get `user_id` at creation. Existing ones get
+  it from the aggregator's instance-upgrade Job
+  (`aggregator-api.instanceUpgrade.enabled=true`), run with the app up and
+  before users sign in again, in this order, each with `--dry-run` first and
+  again after until it reports nothing left to do:
+  `instanceUpgrade.args={backfill-user-id}` copies `aggregator_id` into
+  `user_id`, then, after a sign-in smoke test and a Keycloak database snapshot,
+  `instanceUpgrade.args={remove-aggregator-id}` removes `aggregator_id`; then
+  re-run `deploy_keycloak` so the init Job drops the declaration. Neither is
+  part of `run-all`. A coordinator without `user_id` cannot sign in, and once
+  `remove-aggregator-id` has run, rolling the app back needs the snapshot.
 - `aggregator_type` is **multivalued**: a coordinator can serve several profile
   types, and the aggregator reads them from the token as a JSON array. Both the
   user-profile attribute and the `aggregator-portal` mapper must be multivalued.

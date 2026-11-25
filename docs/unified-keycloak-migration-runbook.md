@@ -676,8 +676,8 @@ an aggregator or arbitrary host → 400 `invalid_redirect_uri`, and the reverse 
 `aggregator-portal`.
 
 **End-to-end login.** A real approved coordinator completes OTP login, reaches the
-portal, and `/profile` renders. `403 MISSING_AGGREGATOR_ID` means the
-`aggregator_id` attribute or its mapper is missing — check the init Job log.
+portal, and `/profile` renders. `403 MISSING_USER_ID` means the `user_id`
+attribute or its mapper is missing — check the init Job log.
 
 **Negative path.** A `decision_made=pending` account is refused at the gate with
 the entitlement message, not an OTP prompt. This is the first time

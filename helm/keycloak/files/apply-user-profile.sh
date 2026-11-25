@@ -1,14 +1,14 @@
 #!/bin/sh
 # Post-import init for the (now combined, Phase B) realm:
 #   1. Declare the phoneNumber/phoneNumberVerified user attributes, declare the
-#      service-written identity attributes (aggregator_id, user_id,
-#      aggregator_type, decision_made, signalstack_org_id) admin-only, enable
+#      service-written identity attributes (user_id, aggregator_type,
+#      decision_made, signalstack_org_id, roles) admin-only, enable
 #      Unmanaged Attributes, and relax `required` on email/firstName/lastName so
 #      any other custom attributes and signals' phone-only / one-word-name users
 #      all persist and can log in.
 #   2. org_owner realm role + manage-realm grant (org hierarchy), the user_id
 #      claim mapper on aggregator-portal and campaign-manager, and removal of
-#      campaign-manager's aggregator_id mapper.
+#      the former aggregator_id mapper from both.
 #   3. Apply SMTP server config from env vars (KC needs this for email OTP + verify).
 #   4. aggregator-portal client: confidential + secret sync + protocol mappers.
 #   5. Acting-org claim mappers on signals-ui / aggregator-dpg / voice-dpg (§5.1
@@ -67,17 +67,21 @@ fi
 #    migration's collision check depends on that. The unmanaged policy is the
 #    belt-and-braces for every attribute not declared here.
 #
-#    aggregator_id, user_id, decision_made, aggregator_type, signalstack_org_id
-#    and roles feed the portal gate and token claims the apps act on
-#    (aggregator_id, user_id, decision_made, aggregator_type,
-#    signalstack_org_id, signals_acting_orgs, and roles: the user's live role
-#    keys, multivalued, which the aggregator's RBAC edge reads from the access
-#    token). user_id holds the same value as aggregator_id, under the name that
-#    replaces it.
+#    user_id, decision_made, aggregator_type, signalstack_org_id and roles feed
+#    the portal gate and token claims the apps act on (user_id, decision_made,
+#    aggregator_type, signalstack_org_id, signals_acting_orgs, and roles: the
+#    user's live role keys, multivalued, which the aggregator's RBAC edge reads
+#    from the access token). user_id is the coordinator's users.id.
 #    Only service accounts write them, through the admin API, so they are
 #    declared admin-only. That is forced: any earlier declaration of those
 #    names is dropped before they are appended, and the check after the PUT
-#    fails the Job unless all four are admin-only.
+#    fails the Job unless all five are admin-only.
+#
+#    aggregator_id is the former name of user_id. Its admin-only declaration is
+#    kept while any user still stores a value, so the values never become
+#    user-editable, and dropped once the aggregator's instance-upgrade
+#    `remove-aggregator-id` has removed them all (the next run of this Job drops
+#    it). Only a realm that still declares it is scanned.
 #
 #    Relaxing `required` on email/firstName/lastName: Keycloak's default
 #    profile marks all three required for the `user` role, which matches
@@ -94,7 +98,41 @@ fi
 PROFILE=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/users/profile" \
   -H "Authorization: Bearer ${TOKEN}")
 
-UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" '
+# Counts the users that still store the former `aggregator_id` attribute.
+# Keycloak cannot search for "any value", so this pages through every user.
+# Prints the count; returns non-zero when a page cannot be read.
+count_stored_aggregator_id() {
+  first=0
+  page=100
+  total=0
+  while :; do
+    batch=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/users?first=${first}&max=${page}&briefRepresentation=false" \
+      -H "Authorization: Bearer ${TOKEN}") || return 1
+    n=$(printf '%s' "$batch" | jq 'length')
+    c=$(printf '%s' "$batch" | jq '[.[] | select(((.attributes // {}).aggregator_id // []) | length > 0)] | length')
+    total=$((total + c))
+    [ "$n" -lt "$page" ] && break
+    first=$((first + page))
+  done
+  echo "$total"
+}
+
+KEEP_AGGREGATOR_ID=false
+if [ "$(printf '%s' "$PROFILE" | jq '[.attributes[]? | select(.name == "aggregator_id")] | length')" -gt 0 ]; then
+  if STORED_AGG=$(count_stored_aggregator_id); then
+    if [ "$STORED_AGG" -gt 0 ]; then
+      KEEP_AGGREGATOR_ID=true
+      echo "[kc-init] ${STORED_AGG} user(s) still store aggregator_id — keeping its admin-only declaration until instance-upgrade remove-aggregator-id has run"
+    else
+      echo "[kc-init] no user stores aggregator_id — dropping its declaration"
+    fi
+  else
+    KEEP_AGGREGATOR_ID=true
+    echo "[kc-init] could not count users storing aggregator_id — keeping its admin-only declaration"
+  fi
+fi
+
+UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" --argjson keepAgg "$KEEP_AGGREGATOR_ID" '
   def relax:
     if (.name == "email" or .name == "firstName" or .name == "lastName")
     then del(.required)
@@ -104,8 +142,9 @@ UPDATED=$(printf '%s' "$PROFILE" | jq --arg policy "$POLICY" '
 
   .unmanagedAttributePolicy = $policy
   | .attributes = (
-      ([(.attributes // [])[] | select(.name as $n | admin_only | index($n) | not)] + [
-        { name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
+      ([(.attributes // [])[] | select(.name as $n | admin_only | index($n) | not)]
+      + (if $keepAgg then [{ name: "aggregator_id", displayName: "Aggregator id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false }] else [] end)
+      + [
         { name: "user_id", displayName: "User id", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "decision_made", displayName: "Registration decision", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: false },
         { name: "aggregator_type", displayName: "Profile types", permissions: { view: ["admin"], edit: ["admin"] }, multivalued: true },
@@ -148,12 +187,16 @@ HAS_PHONE=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "ph
 GOT_POLICY=$(printf '%s' "$VERIFY" | jq -r '.unmanagedAttributePolicy // "unset"')
 STILL_REQUIRED=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "email" or .name == "firstName" or .name == "lastName") | select(has("required")) | .name] | join(",")')
 
-ADMIN_ONLY=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name as $n | ["aggregator_id", "user_id", "decision_made", "aggregator_type", "signalstack_org_id", "roles"] | index($n)) | select(.permissions.edit == ["admin"] and .permissions.view == ["admin"]) | .name] | unique | length')
+ADMIN_ONLY=$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name as $n | ["user_id", "decision_made", "aggregator_type", "signalstack_org_id", "roles"] | index($n)) | select(.permissions.edit == ["admin"] and .permissions.view == ["admin"]) | .name] | unique | length')
 
-echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HAS_PHONE} admin-only identity attributes=${ADMIN_ONLY}/6"
+echo "[kc-init] unmanagedAttributePolicy=${GOT_POLICY} phoneNumber declared=${HAS_PHONE} admin-only identity attributes=${ADMIN_ONLY}/5"
 
-if [ "${ADMIN_ONLY:-0}" -lt 6 ]; then
-  echo "[kc-init] aggregator_id / user_id / decision_made / aggregator_type / signalstack_org_id / roles are not all declared admin-only"
+if [ "${ADMIN_ONLY:-0}" -lt 5 ]; then
+  echo "[kc-init] user_id / decision_made / aggregator_type / signalstack_org_id / roles are not all declared admin-only"
+  exit 1
+fi
+if [ "$KEEP_AGGREGATOR_ID" = "true" ] && [ "$(printf '%s' "$VERIFY" | jq -r '[.attributes[]? | select(.name == "aggregator_id") | select(.permissions.edit == ["admin"] and .permissions.view == ["admin"])] | length')" -lt 1 ]; then
+  echo "[kc-init] aggregator_id is still stored but not declared admin-only"
   exit 1
 fi
 
@@ -246,12 +289,10 @@ fi
 # ────────────────────────────────────────────────────────────
 # 1c) user_id claim mapper
 #
-# `user_id` carries the same value as `aggregator_id`, under the name that
-# replaces it. `aggregator-portal` maps both while clients move to `user_id`.
-# `campaign-manager` maps `user_id` only: no user signs in through it yet, so
-# its `aggregator_id` mapper is removed. Every deployed realm had that mapper.
-# Applied here for realms that already exist; realm.json covers a first
-# import. Placed before the SMTP early-exit so it always runs. A failed lookup,
+# `user_id` is the coordinator's users.id, the only id the apps read. Both
+# clients map it, and the mapper of its former name, `aggregator_id`, is
+# removed from both. Applied here for realms that already exist; realm.json
+# covers a first import. Placed before the SMTP early-exit so it always runs. A failed lookup,
 # create or delete fails the Job; a client the realm does not have is skipped.
 # ────────────────────────────────────────────────────────────
 ensure_user_id_mapper() {
@@ -344,6 +385,7 @@ remove_aggregator_id_mapper() {
   fi
 }
 
+remove_aggregator_id_mapper aggregator-portal
 remove_aggregator_id_mapper campaign-manager
 
 # ────────────────────────────────────────────────────────────
