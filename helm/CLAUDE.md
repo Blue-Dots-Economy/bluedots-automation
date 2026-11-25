@@ -68,6 +68,7 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   re-run `deploy_keycloak` so the init Job drops the declaration. Neither is
   part of `run-all`. A coordinator without `user_id` cannot sign in, and once
   `remove-aggregator-id` has run, rolling the app back needs the snapshot.
+  Full procedure: `docs/user-id-claim-rollout-runbook.md`.
 - `aggregator_type` is **multivalued**: a coordinator can serve several profile
   types, and the aggregator reads them from the token as a JSON array. Both the
   user-profile attribute and the `aggregator-portal` mapper must be multivalued.
