@@ -90,6 +90,9 @@ adminEmails: "admin@bluedots.local"
 # How organisation owners join their own team (OWNER_SELF_ADD_MODE): owner | auto | off.
 ownerSelfAddMode: auto
 publicLinkBaseUrl: ""
+# Tables served by /v1/campaign/dump (CAMPAIGN_DUMP_FILES); each must be in the
+# s3-export manifest. global.campaignDumpFiles, when set, takes precedence.
+campaignDumpFiles: 'user,items,item_actions,aggregators,registration_links'
 serviceAccount:
   create: true
   annotations: {}

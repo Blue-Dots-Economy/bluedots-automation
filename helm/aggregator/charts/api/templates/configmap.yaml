@@ -76,6 +76,9 @@ data:
   CAMPAIGN_MANAGER_ALLOWED_AZP: "{{ .Values.global.campaignManagerAllowedAzp }}"
   CAMPAIGN_DUMP_INSTANCE_ID: "{{ .Values.global.campaignDumpInstanceId }}"
   CAMPAIGN_DUMP_PREFIX: "{{ .Values.global.campaignDumpPrefix }}"
+  # Comma-separated export tables served by /v1/campaign/dump:
+  # global.campaignDumpFiles if set, else the api chart's campaignDumpFiles.
+  CAMPAIGN_DUMP_FILES: "{{ .Values.global.campaignDumpFiles | default .Values.campaignDumpFiles }}"
 {{- /*
   Onboarding capability allow-list (aggregator-dpg#663, issue #637) and the
   Signals UI hand-off (aggregator-dpg#653/#654, issues #652/#635). Both are
