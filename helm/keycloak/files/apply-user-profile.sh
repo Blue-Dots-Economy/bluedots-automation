@@ -350,18 +350,27 @@ remove_aggregator_id_mapper campaign-manager
 # Phone default region: the country a number typed without a code is read in.
 # ────────────────────────────────────────────────────────────
 REGION="${PHONE_DEFAULT_REGION:-IN}"
-# Keycloak merges a partial `attributes` map into the realm; nothing else changes.
-HTTP=$(curl -s -o /tmp/region-resp.json -w "%{http_code}" -X PUT \
-  "${KC_URL}/admin/realms/${REALM}" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  --data "{\"attributes\":{\"phoneDefaultRegion\":\"${REGION}\"}}")
-if [ "$HTTP" != "204" ] && [ "$HTTP" != "200" ]; then
-  echo "[kc-init] phoneDefaultRegion PUT failed: HTTP ${HTTP}"
-  cat /tmp/region-resp.json || true
+# Keycloak drops every realm attribute missing from a PUT's `attributes`, so send them all.
+REALM_REP=$(curl -fsS "${KC_URL}/admin/realms/${REALM}" -H "Authorization: Bearer ${TOKEN}") || {
+  echo "[kc-init] realm read FAILED — phoneDefaultRegion not set"
   exit 1
+}
+if [ "$(printf '%s' "$REALM_REP" | jq -r '.attributes.phoneDefaultRegion // empty')" = "$REGION" ]; then
+  echo "[kc-init] phoneDefaultRegion=${REGION} (unchanged)"
+else
+  ATTRS=$(printf '%s' "$REALM_REP" | jq -c --arg r "$REGION" '{attributes: ((.attributes // {}) + {phoneDefaultRegion: $r})}')
+  HTTP=$(curl -s -o /tmp/region-resp.json -w "%{http_code}" -X PUT \
+    "${KC_URL}/admin/realms/${REALM}" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data "${ATTRS}")
+  if [ "$HTTP" != "204" ] && [ "$HTTP" != "200" ]; then
+    echo "[kc-init] phoneDefaultRegion PUT failed: HTTP ${HTTP}"
+    cat /tmp/region-resp.json || true
+    exit 1
+  fi
+  echo "[kc-init] phoneDefaultRegion=${REGION}"
 fi
-echo "[kc-init] phoneDefaultRegion=${REGION}"
 
 # ────────────────────────────────────────────────────────────
 # 2) SMTP server config
