@@ -99,20 +99,26 @@ PROFILE=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/users/profile" \
   -H "Authorization: Bearer ${TOKEN}")
 
 # Counts the users that still store the former `aggregator_id` attribute.
-# Keycloak cannot search for "any value", so this pages through every user.
-# Prints the count; returns non-zero when a page cannot be read.
+# Only a coordinator ever got it, and every coordinator carries one of the
+# registration decisions below, so only those users are read: Keycloak cannot
+# search for "any value", and the realm also holds every Signals participant.
+# Each user carries one decision, so no user is counted twice. Prints the
+# count; returns non-zero when a page cannot be read.
+AGGREGATOR_DECISIONS="pending invited approved rejected"
 count_stored_aggregator_id() {
-  first=0
   page=100
   total=0
-  while :; do
-    batch=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/users?first=${first}&max=${page}&briefRepresentation=false" \
-      -H "Authorization: Bearer ${TOKEN}") || return 1
-    n=$(printf '%s' "$batch" | jq 'length')
-    c=$(printf '%s' "$batch" | jq '[.[] | select(((.attributes // {}).aggregator_id // []) | length > 0)] | length')
-    total=$((total + c))
-    [ "$n" -lt "$page" ] && break
-    first=$((first + page))
+  for decision in $AGGREGATOR_DECISIONS; do
+    first=0
+    while :; do
+      batch=$(curl -fsS "${KC_URL}/admin/realms/${REALM}/users?q=decision_made:${decision}&first=${first}&max=${page}&briefRepresentation=false" \
+        -H "Authorization: Bearer ${TOKEN}") || return 1
+      n=$(printf '%s' "$batch" | jq 'length')
+      c=$(printf '%s' "$batch" | jq '[.[] | select(((.attributes // {}).aggregator_id // []) | length > 0)] | length')
+      total=$((total + c))
+      [ "$n" -lt "$page" ] && break
+      first=$((first + page))
+    done
   done
   echo "$total"
 }
