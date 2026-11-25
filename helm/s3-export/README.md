@@ -106,7 +106,8 @@ need an image built from Blue-Dots-Economy/adhoc-scripts#29 or later, plus the
 `users`, `contact (id, name)` and `registration_links` grants from the same bootstrap.
 The URL base is `s3-export.export.publicLinkBaseUrl`, or `https://<global.publicHost>`
 when that is empty; the run stops if neither is set. The aggregator serves the file
-through `/v1/campaign/dump` once it is in `global.campaignDumpFiles`.
+through `/v1/campaign/dump` once it is in the api chart's `campaignDumpFiles`
+(or `global.campaignDumpFiles`, which takes precedence).
 
 ## Remove
 
