@@ -104,7 +104,8 @@ or an older image stops the whole run at validation, Signals included.
 full `registration_url`, and `aggregators` has the coordinator's masked name. Both
 need an image built from Blue-Dots-Economy/adhoc-scripts#29 or later (`sha-5888d4c`),
 plus the `users`, `contact (id, name)` and `registration_links` grants from the same
-bootstrap.
+bootstrap. `aggregators.coordinator_org_name` (the coordinator's Signals org name)
+needs an image built from Blue-Dots-Economy/adhoc-scripts#31 or later.
 The URL base is `s3-export.export.publicLinkBaseUrl`, or `https://<global.publicHost>`
 when that is empty; the run stops if neither is set. The aggregator serves the file
 through `/v1/campaign/dump` once it is in the api chart's `campaignDumpFiles`
