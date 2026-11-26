@@ -186,6 +186,14 @@ into CI. Two defects it exists to catch, both of which passed `helm lint` and
 Keep `namespace` in every `sum by (...)`: Alertmanager's `group_by` and its
 `equal: [namespace, alertname]` inhibit rules both reference it.
 
+**Log-based alerts go through the Loki ruler, not promtool.** The aggregator has no
+`/metrics`, so its config alerts (`monitoring/templates/loki-rules-aggregator.yaml`,
+switch `lokiAlerts.aggregator.enabled`) are LogQL rules in a ConfigMap labelled
+`loki_rule`. Loki's sidecar writes them to `/rules/fake` (the ruler reads
+`<dir>/<tenant>`, and the tenant is `fake` with auth off) and the ruler sends to the
+same Alertmanager. They match log text, so renaming the aggregator's `VOICE_BOT_` or
+`network-config.load` log fields silently stops them; promtool does not cover them.
+
 ## Cluster Autoscaler (#1.6)
 
 `common-services/templates/cluster-autoscaler.yaml` (first-party, not a vendored subchart) ships the Kubernetes Cluster Autoscaler as SA + cluster-wide RBAC + Deployment, gated by `clusterAutoscaler.enabled` (**default OFF**). It scales the EKS managed node group's ASG between the OpenTofu `node_count_min`/`node_count_max` (raised to **2 / 6** via the `_eks_node_count_min`/`_eks_node_count_max` anchors in `opentofu/aws/template/global-values.yaml` — was 1 / 2, which left no headroom; `_common/eks.hcl` reads these anchors directly, so the module defaults in `modules/eks/variables.tf` are shadowed under Terragrunt and were a no-op) via ASG auto-discovery (`--node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,...`; the node group carries those discovery tags, and EKS propagates them to the ASG). AWS access is **IRSA**, not node creds: `modules/eks/main.tf` adds a `cluster_autoscaler_irsa` role (scoped `attach_cluster_autoscaler_policy`, bound to `common-services:cluster-autoscaler`) and exports **`cluster_autoscaler_role_arn`**.
