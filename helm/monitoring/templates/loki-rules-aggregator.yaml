@@ -1,0 +1,38 @@
+{{- if and .Values.loki.enabled .Values.lokiAlerts.aggregator.enabled }}
+{{- $ns := .Values.lokiAlerts.aggregator.namespace }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-loki-rules-aggregator
+  labels:
+    loki_rule: "1"
+data:
+  aggregator.yaml: |
+    groups:
+      - name: aggregator-config
+        rules:
+          - alert: AggregatorVoiceBotConfigInvalid
+            expr: |
+              sum by (namespace, container) (count_over_time({namespace="{{ $ns }}"} |= "VOICE_BOT_" [{{ .Values.lokiAlerts.aggregator.voiceBotWindow }}])) > 0
+            labels:
+              severity: warning
+            annotations:
+              summary: "Invalid voice bot settings were ignored in {{ `{{ $labels.namespace }}` }}"
+              description: >-
+                The aggregator {{ `{{ $labels.container }}` }} dropped one or more voice_bots or
+                default_voice_bots entries from aggregator.config.yaml. Those bots are not offered.
+                Search its logs for VOICE_BOT_ to see the entry and reason, fix voiceBots in the
+                global values and redeploy.
+          - alert: AggregatorConfigLoadFailed
+            expr: |
+              sum by (namespace, container) (count_over_time({namespace="{{ $ns }}"} |= "network-config.load" |= "\"status\":\"failure\"" [10m])) > 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Aggregator config fails to load in {{ `{{ $labels.namespace }}` }}"
+              description: >-
+                The aggregator {{ `{{ $labels.container }}` }} cannot load aggregator.config.yaml, so
+                config-dependent requests return 500 and the console shows an error page. Search its
+                logs for network-config.load to see the reason.
+{{- end }}
