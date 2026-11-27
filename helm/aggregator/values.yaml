@@ -59,6 +59,8 @@ global:
   # orange_dot); switching brand = change this value + redeploy the matching
   # keycloak theme image tag.
   aggregatorBrand: ''
+  # Phone countries the api and worker accept, e.g. "IN:+91,GB:+44"; blank = India only.
+  phoneCountries: ''
 
   # Deliver aggregator.config.yaml to api + worker from the {release}-network-config
   # ConfigMap (source: files/network-config/aggregator.config.yaml, fetched per

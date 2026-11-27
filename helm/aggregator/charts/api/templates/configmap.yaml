@@ -57,6 +57,7 @@ data:
   AGGREGATOR_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   # Brand skin over the network (UI/config skin). Empty = standard dots.
   AGGREGATOR_BRAND: "{{ .Values.global.aggregatorBrand }}"
+  PHONE_COUNTRIES: "{{ .Values.global.phoneCountries | default "" }}"
   SIGNALSTACK_BASE_URL: "{{ .Values.global.signalstackBaseUrl }}"
   # network_service org id in signal-stack DB; sent as `x-acting-org-id` on
   # admin calls. Without it the login-time upsert fallback fails with

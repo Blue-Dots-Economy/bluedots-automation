@@ -76,6 +76,8 @@ spec:
               value: {{ include "keycloak.realm" . | quote }}
             - name: BRAND_LONG_NAME
               value: {{ .Values.brandLongName | quote }}
+            - name: PHONE_DEFAULT_REGION
+              value: {{ include "keycloak.phoneDefaultRegion" .Values.phoneCountries | quote }}
             {{- /*
               signals-ui's redirect/origin/post-logout allow-lists, built from
               the SIGNALS hostnames — not the Keycloak host. See the note in

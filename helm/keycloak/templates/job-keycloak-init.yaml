@@ -105,6 +105,8 @@ spec:
               value: {{ include "keycloak-platform.publicBaseUrl" . | quote }}
             - name: BRAND_LONG_NAME
               value: {{ .Values.keycloak.brandLongName | default "Blue Dots" | quote }}
+            - name: PHONE_DEFAULT_REGION
+              value: {{ include "keycloak.phoneDefaultRegion" .Values.keycloak.phoneCountries | quote }}
             - name: SIGNALS_ORIGINS
               value: {{ include "keycloak-platform.signalsOrigins" . | quote }}
             # apply-user-profile.sh step 7: back-channel logout per client.
