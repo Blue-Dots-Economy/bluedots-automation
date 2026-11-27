@@ -91,6 +91,7 @@
             "org_depth",
             "org_known_as",
             "coordinator_org_id",
+            "coordinator_org_name",
             "coordinator_name_masked",
             "coordinator_is_owner",
             "coordinator_type",
