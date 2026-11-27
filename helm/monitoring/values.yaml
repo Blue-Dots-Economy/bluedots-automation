@@ -41,6 +41,13 @@ alerting:
     warningWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
     infoWebhook: "https://discord.com/api/webhooks/CHANGE-ME/CHANGE-ME"
 
+# Log-based alerts evaluated by the Loki ruler (templates/loki-rules-aggregator.yaml).
+lokiAlerts:
+  aggregator:
+    enabled: true
+    namespace: aggregator
+    voiceBotWindow: 1h   # the warning is logged once per pod start; the alert clears after this window
+
 prometheus:
   enabled: true
 
@@ -820,6 +827,8 @@ loki:
       registry: ghcr.io
       repository: blue-dots-economy/dhi/k8s-sidecar
       tag: "2.10.1-alpine3.22"
+    rules:
+      folder: /rules/fake   # the ruler reads <storage dir>/<tenant>; "fake" is the tenant with auth off
 
   loki:
     # DHI (bluedots-automation#136): 3.1.0 -> 3.6.15. Staying inside v3 (DHI also
@@ -831,6 +840,13 @@ loki:
       repository: blue-dots-economy/dhi/loki
       tag: "3.6.15"
     auth_enabled: false
+
+    rulerConfig:
+      storage:
+        type: local
+        local:
+          directory: /rules
+      alertmanager_url: http://monitoring-prometheus-alertmanager.monitoring.svc.cluster.local:9093
 
     commonConfig:
       replication_factor: 1
