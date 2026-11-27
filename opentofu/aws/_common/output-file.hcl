@@ -127,6 +127,7 @@ dependency "random_passwords" {
     aggregator_approval_token_secret        = "0000000000000000000000000000000000000000000000000000000000000009"
     aggregator_session_key                  = "000000000000000000000000000000000000000000000000000000000000000a"
     aggregator_oidc_client_secret           = "000000000000000000000000000000000000000000000000000000000000000b"
+    sms_http_secret                         = "0000000000000000000000000000000000000000000000000000000000000018"
     monitoring_grafana_password             = "dummy-grafana-password"
   }
 }
@@ -181,6 +182,7 @@ inputs = {
   aggregator_approval_token_secret        = dependency.random_passwords.outputs.aggregator_approval_token_secret
   aggregator_session_key                  = dependency.random_passwords.outputs.aggregator_session_key
   aggregator_oidc_client_secret           = dependency.random_passwords.outputs.aggregator_oidc_client_secret
+  sms_http_secret                         = dependency.random_passwords.outputs.sms_http_secret
 
   smtp_user = local.smtp_user
 

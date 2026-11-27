@@ -199,10 +199,19 @@ spec:
                              FROM information_schema.columns
                              WHERE table_schema = 'public' AND table_name = 'organisations'
                                AND column_name IN ('id', 'name', 'org_type', 'status', 'rejected_at',
-                                                   'parent_id', 'depth', 'known_as'));
-                    GRANT SELECT (org_id, user_type, signalstack_org_id, signalstack_org_name,
-                                  serves, status, created_at)
+                                                   'parent_id', 'depth', 'known_as', 'org_owner'));
+                    GRANT SELECT (id, org_id, user_type, signalstack_org_id, signalstack_org_name,
+                                  signalstack_org_slug, contact_id, serves, status, created_at)
                       ON users TO {{ $r.name }};
+                    -- Coordinator name for the masked export column; never email / phone.
+                    IF to_regclass('public.contact') IS NOT NULL THEN
+                      GRANT SELECT (id, name) ON contact TO {{ $r.name }};
+                    END IF;
+                    IF to_regclass('public.registration_links') IS NOT NULL THEN
+                      GRANT SELECT (id, user_id, org_id, slug, domain, registration_mode, status,
+                                    context, expires_at, created_at, updated_at)
+                        ON registration_links TO {{ $r.name }};
+                    END IF;
                   ELSE
                     RAISE NOTICE 'aggregator tables not created yet; grants applied on a later upgrade';
                   END IF;
