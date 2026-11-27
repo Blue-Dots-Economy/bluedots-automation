@@ -191,8 +191,9 @@ Keep `namespace` in every `sum by (...)`: Alertmanager's `group_by` and its
 switch `lokiAlerts.aggregator.enabled`) are LogQL rules in a ConfigMap labelled
 `loki_rule`. Loki's sidecar writes them to `/rules/fake` (the ruler reads
 `<dir>/<tenant>`, and the tenant is `fake` with auth off) and the ruler sends to the
-same Alertmanager. They match log text, so renaming the aggregator's `VOICE_BOT_` or
-`network-config.load` log fields silently stops them; promtool does not cover them.
+same Alertmanager. They match log text: the voice bot alert keys on the aggregator's
+`"finding":"voice_bots_dropped"` and the load alert on `network-config.load` with
+`"status":"failure"`. Renaming either silently stops them; promtool does not cover them.
 
 ## Cluster Autoscaler (#1.6)
 
