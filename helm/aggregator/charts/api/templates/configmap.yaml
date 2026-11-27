@@ -33,6 +33,7 @@ data:
   CORS_ORIGINS: "{{ include "api.publicBaseUrl" . }}"
   RUN_MIGRATIONS_ON_BOOT: "{{ .Values.runMigrationsOnBoot }}"
   ADMIN_EMAILS: "{{ .Values.adminEmails }}"
+  OWNER_SELF_ADD_MODE: "{{ include "api.ownerSelfAddMode" . }}"
   PUBLIC_API_URL: "{{ include "api.publicBaseUrl" . }}/backend"
   BULK_UPLOAD_URL_TTL_SECONDS: "{{ .Values.bulk.uploadUrlTtlSeconds }}"
   BULK_UPLOAD_MAX_BYTES: "{{ .Values.bulk.uploadMaxBytes }}"
@@ -56,6 +57,7 @@ data:
   AGGREGATOR_NETWORK: "{{ .Values.global.aggregatorNetwork }}"
   # Brand skin over the network (UI/config skin). Empty = standard dots.
   AGGREGATOR_BRAND: "{{ .Values.global.aggregatorBrand }}"
+  PHONE_COUNTRIES: "{{ .Values.global.phoneCountries | default "" }}"
   SIGNALSTACK_BASE_URL: "{{ .Values.global.signalstackBaseUrl }}"
   # network_service org id in signal-stack DB; sent as `x-acting-org-id` on
   # admin calls. Without it the login-time upsert fallback fails with
@@ -75,6 +77,9 @@ data:
   CAMPAIGN_MANAGER_ALLOWED_AZP: "{{ .Values.global.campaignManagerAllowedAzp }}"
   CAMPAIGN_DUMP_INSTANCE_ID: "{{ .Values.global.campaignDumpInstanceId }}"
   CAMPAIGN_DUMP_PREFIX: "{{ .Values.global.campaignDumpPrefix }}"
+  # Comma-separated export tables served by /v1/campaign/dump:
+  # global.campaignDumpFiles if set, else the api chart's campaignDumpFiles.
+  CAMPAIGN_DUMP_FILES: "{{ .Values.global.campaignDumpFiles | default .Values.campaignDumpFiles }}"
 {{- /*
   Onboarding capability allow-list (aggregator-dpg#663, issue #637) and the
   Signals UI hand-off (aggregator-dpg#653/#654, issues #652/#635). Both are

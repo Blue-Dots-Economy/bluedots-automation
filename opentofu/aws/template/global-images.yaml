@@ -21,13 +21,13 @@ api:
     repository: ghcr.io/blue-dots-economy/signals-dpg/api
     # Must stay a post-DHI tag in step with ui and the migrate Job below —
     # a pre/post-DHI mismatch breaks the release in either direction.
-    tag: "202609-s1-rc3"
+    tag: "202611-s1-rc1"
     pullPolicy: Always
 
 ui:
   image:
     repository: ghcr.io/blue-dots-economy/signals-dpg/ui
-    tag: "202609-s1-rc3"
+    tag: "202611-s1-rc1"
     pullPolicy: Always
 
 notification-service:
@@ -35,7 +35,7 @@ notification-service:
     repository: ghcr.io/blue-dots-economy/notification-service
     # Must stay >= the image that reads SMTP_HOST (notification-service#114);
     # this chart no longer renders SMTP_GMAIL/GMAIL_*, which older images need.
-    tag: "202609-s1-rc3"
+    tag: "202611-s1-rc1"
     pullPolicy: IfNotPresent
 
 # search: api + worker share one image (entrypoint differs via command)
@@ -57,19 +57,19 @@ search-embeddings:
 aggregator-api:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/api
-    tag: "202609-s1-rc3"
+    tag: "202611-s1-rc1"
     pullPolicy: Always
 
 web:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/web
-    tag: "202609-s1-rc3"
+    tag: "202611-s1-rc1"
     pullPolicy: Always
 
 worker:
   image:
     repository: ghcr.io/blue-dots-economy/aggregator-dpg/worker
-    tag: "202609-s1-rc3"
+    tag: "202611-s1-rc1"
     pullPolicy: Always
 
 # ── Campaign Manager stack (opt-in; see _campaign_manager_enabled in global-values.yaml) ──
@@ -95,7 +95,7 @@ raya-sync:
 s3-export:
   image:
     repository: ghcr.io/blue-dots-economy/adhoc-scripts/signals-s3-export
-    tag: "sha-92956aa"
+    tag: "sha-5888d4c"
 
 platform-sync:
   image:
@@ -118,7 +118,7 @@ keycloak:
   # this repo publishes.
   image:
     repository: ghcr.io/blue-dots-economy/keycloak-server
-    tag: "sha-e59cc39"
+    tag: "202611-s1-rc1"
     pullPolicy: IfNotPresent
   # Theme init image: still built in aggregator-dpg (keycloak-theme-build.yaml),
   # because its brand strings come from that repo's config/<network>/keycloak.env.

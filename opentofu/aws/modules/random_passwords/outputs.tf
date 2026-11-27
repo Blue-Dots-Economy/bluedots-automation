@@ -129,6 +129,11 @@ output "aggregator_oidc_client_secret" {
   sensitive = true
 }
 
+output "sms_http_secret" {
+  value     = random_id.sms_http_secret.hex
+  sensitive = true
+}
+
 # ─── Monitoring chart ───────────────────────────────────────────────────────
 output "monitoring_grafana_password" {
   description = "Generated Grafana admin password"

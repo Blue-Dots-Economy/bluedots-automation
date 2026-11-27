@@ -150,7 +150,8 @@ _college_dataset: &college_dataset "ka"
 _geo_country: &geo_country "IN"
 # Phone country codes the forms offer, ISO:code comma list, first is the default
 # (e.g. "IN:+91,GB:+44"; more than one shows a picker). Feeds ui.runtimeConfig.VITE_PHONE_COUNTRIES
-# (signals) and web.phoneCountries (aggregator). "" = India only.
+# (signals), web.phoneCountries (aggregator) and keycloak.phoneCountries (OTP login's
+# default region = the first country). "" = India only.
 _phone_countries: &phone_countries "IN:+91"
 
 # ── SMTP Configuration ────────────────────────────────────────────────────
@@ -421,6 +422,7 @@ global:
 
   aggregatorNetwork:  *network
   aggregatorBrand:    *brand
+  phoneCountries:     *phone_countries  # aggregator api + worker
   # Deliver aggregator.config.yaml (network binding, brand strings, domain labels,
   # registration modes) to the aggregator api + worker from the
   # {release}-network-config ConfigMap, sourced from
@@ -438,7 +440,7 @@ global:
     url: ''
   # ── Onboarding capability allow-list (aggregator api only) ────────────────
   # Comma-separated allow-list of registration modes this deployment offers:
-  # `form`, `voice` (`bulk` is reserved, gates nothing yet).
+  # `form`, `voice`, `voice_or_form` (`bulk` is reserved, gates nothing yet).
   #
   # LEAVE IT COMMENTED OUT to keep every mode enabled. Do NOT set it to an empty
   # string: unset means "all enabled", but "" means "nothing enabled" and every
@@ -447,6 +449,10 @@ global:
   #
   # UAT blue_dot and purple_dot want `form` (voice registration off):
   # onboardingEnabled: form
+  # Voice bots on two-option links; empty keeps the aggregator-dpg config's list.
+  voiceBots: []
+  #   - { key: up_bot, display_name: UP helpline, phone: '+919999999999', languages: [hi], domains: [seeker] }
+  defaultVoiceBots: {}   # domain -> bot key; needed when 2+ bots serve a domain
 
   # ── Signals UI hand-off (aggregator api only) ─────────────────────────────
   # Comma-separated `domain=url` pairs — one per network domain — pointing at the
@@ -586,6 +592,9 @@ keycloak:
   # keycloak.msg91TemplateId and the matching TWILIO_*/AWS_* values.
   smsProvider: msg91
 
+  # A number typed at login without a code is read in the first country here.
+  phoneCountries: *phone_countries
+
   ingress:
     # Enable BOTH of these only together with a dedicated _auth_host above.
     # annotations:
@@ -640,6 +649,8 @@ web:
 aggregator-api:
   adminEmails: *aggregator_admin_emails
   supportEmail: *support_email
+  # How organisation owners join their own team: owner (button), auto (at registration) or off.
+  ownerSelfAddMode: auto
   # RBAC: off | log | enforce. log and enforce run the Envoy + OPA edge
   # sidecars in the api pod and need an api image that ships the policy and the
   # Envoy template (aggregator-dpg #910; the api tag in global-images.yaml does
@@ -711,6 +722,7 @@ api:
     PII_LOCATION_JITTER_MIN_METERS: "100"   # 50–1000, min <= max; jitter reuses SIGNALS_PII_KEY
     PII_LOCATION_JITTER_MAX_METERS: "250"   # 50–1000
     GEOCODING_COUNTRY: *geo_country         # see _geo_country above
+    PHONE_COUNTRIES: *phone_countries       # see _phone_countries above; a bad entry stops the api
     MARKERS_MAX_LIMIT: "25000"              # most map listings per request; keep it above ui VITE_MAP_MARKER_CAP
   postgres:
     host: common-services-postgresql.common-services.svc.cluster.local

@@ -119,6 +119,16 @@ imagePullSecrets:
 {{- $mode -}}
 {{- end -}}
 
+{{/* The api's OWNER_SELF_ADD_MODE: owner | auto | off; anything else fails the render. */}}
+{{- define "api.ownerSelfAddMode" -}}
+{{- $mode := toString .Values.ownerSelfAddMode -}}
+{{- if eq $mode "false" -}}{{- $mode = "off" -}}{{- end -}}
+{{- if not (has $mode (list "owner" "auto" "off")) -}}
+{{- fail (printf "aggregator-api.ownerSelfAddMode must be owner, auto or off (got %q)" $mode) -}}
+{{- end -}}
+{{- $mode -}}
+{{- end -}}
+
 {{/* "true" when the pod runs the RBAC edge (Envoy + OPA sidecars): mode log or enforce. */}}
 {{- define "api.rbacEdge" -}}
 {{- if ne (include "api.rbacMode" .) "off" -}}true{{- end -}}

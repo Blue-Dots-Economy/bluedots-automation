@@ -42,13 +42,33 @@ a "drift from upstream" diff; it would fail on the intentional differences.
   addresses, so the in-cluster init Job keeps working over plain HTTP while
   external callers must use HTTPS. A `kubectl port-forward` session comes from a
   non-private address and gets `403 HTTPS required` — expected, not a fault.
-- `aggregator_id`, `decision_made`, `aggregator_type` and `signalstack_org_id`
-  are declared **admin-only** in the user profile. Only service accounts write
-  them, through the admin API, and they feed token claims the apps act on.
-  `build-realm.sh` forces the declarations (H4), `assert-realm.sh` checks them
-  (A10), and `apply-user-profile.sh` re-applies them to existing realms and
-  fails the init Job unless all four are admin-only. `unmanagedAttributePolicy`
-  stays `ENABLED` for every other attribute.
+- `user_id`, `decision_made`, `aggregator_type` and `signalstack_org_id` are
+  declared **admin-only** in the user profile. Only
+  service accounts write them, through the admin API, and they feed token claims
+  the apps act on. `build-realm.sh` forces the declarations (H4),
+  `assert-realm.sh` checks them (A10), and `apply-user-profile.sh` re-applies
+  them to existing realms and fails the init Job unless all of them are
+  admin-only. `unmanagedAttributePolicy` stays `ENABLED` for every other
+  attribute.
+- `user_id` is the coordinator's `users.id` and the only id the apps read; it
+  replaces `aggregator_id`. `aggregator-portal` and `campaign-manager` map it,
+  no client maps `aggregator_id` (`assert-realm.sh` A12, A13), and the realm
+  does not declare `aggregator_id` (A10). On an existing realm,
+  `apply-user-profile.sh` adds the `user_id` mappers and removes both clients'
+  `aggregator_id` mappers. It keeps `aggregator_id` declared admin-only while
+  any user still stores a value, and drops the declaration on the first run
+  after none does. New coordinators get `user_id` at creation. Existing ones get
+  it from the aggregator's instance-upgrade Job
+  (`aggregator-api.instanceUpgrade.enabled=true`), run with the app up and
+  before users sign in again, in this order, each with `--dry-run` first and
+  again after until it reports nothing left to do:
+  `instanceUpgrade.args={backfill-user-id}` copies `aggregator_id` into
+  `user_id`, then, after a sign-in smoke test and a Keycloak database snapshot,
+  `instanceUpgrade.args={remove-aggregator-id}` removes `aggregator_id`; then
+  re-run `deploy_keycloak` so the init Job drops the declaration. Neither is
+  part of `run-all`. A coordinator without `user_id` cannot sign in, and once
+  `remove-aggregator-id` has run, rolling the app back needs the snapshot.
+  Full procedure: `docs/user-id-claim-rollout-runbook.md`.
 - `aggregator_type` is **multivalued**: a coordinator can serve several profile
   types, and the aggregator reads them from the token as a JSON array. Both the
   user-profile attribute and the `aggregator-portal` mapper must be multivalued.
@@ -185,6 +205,15 @@ into CI. Two defects it exists to catch, both of which passed `helm lint` and
 
 Keep `namespace` in every `sum by (...)`: Alertmanager's `group_by` and its
 `equal: [namespace, alertname]` inhibit rules both reference it.
+
+**Log-based alerts go through the Loki ruler, not promtool.** The aggregator has no
+`/metrics`, so its config alerts (`monitoring/templates/loki-rules-aggregator.yaml`,
+switch `lokiAlerts.aggregator.enabled`) are LogQL rules in a ConfigMap labelled
+`loki_rule`. Loki's sidecar writes them to `/rules/fake` (the ruler reads
+`<dir>/<tenant>`, and the tenant is `fake` with auth off) and the ruler sends to the
+same Alertmanager. They match log text: the voice bot alert keys on the aggregator's
+`"finding":"voice_bots_dropped"` and the load alert on `network-config.load` with
+`"status":"failure"`. Renaming either silently stops them; promtool does not cover them.
 
 ## Cluster Autoscaler (#1.6)
 
@@ -336,7 +365,7 @@ Boot logs the state — `sms templates: N cases loaded from M layer(s), K with a
 
 Same freshness model as consent and signals' network.json: `scripts/fetch-configs.sh aggregator` pulls it on every deploy into `helm/aggregator/files/network-config/aggregator.config.yaml` (gitignored), and `templates/network-config-configmap.yaml` renders it into `{release}-network-config`, subPath-mounted into api + worker **over the image-baked copy**. Net effect: update canonical, redeploy, config is live — **no image rebuild**.
 
-**Rendered verbatim.** No placeholder rewriting, no field edits — whatever canonical says is what the pods get. The only runtime override is the network.json URL, supplied as `AGGREGATOR_NETWORK_SOURCE` (below), so the file never needs editing to repoint schemas.
+**Rendered verbatim.** No placeholder rewriting, no field edits — whatever canonical says is what the pods get. One exception: a non-empty `global.voiceBots` / `global.defaultVoiceBots` replaces `aggregator.voice_bots` / `default_voice_bots` (the two-option QR link's voice-bot numbers, aggregator-dpg#1122), so a deployment can set its own numbers. Only then is the file parsed and re-serialised; comments are dropped, and an unparsable file fails the render. The only runtime override is the network.json URL, supplied as `AGGREGATOR_NETWORK_SOURCE` (below), so the file never needs editing to repoint schemas.
 
 **Its source is independent of the schemas repo.** Consent and network.json come from `bluedots-schemas`; `aggregator.config.yaml` lives in the `aggregator-dpg` `config/` tree. All four parts are configurable — flag > env > default:
 
@@ -421,6 +450,10 @@ The worker deployment's `secretKeyRef` carries `optional: true`, and **that only
 - **`rbac.catalogueRefreshMs`** (default 30 000) is how often each replica reloads roles from the database and re-publishes them to OPA (`RBAC_CATALOGUE_REFRESH_MS`); a restarted OPA refuses permission routes until the next publish.
 - **Fail closed.** OPA down refuses every request at the edge, public ones included; the liveness probe restarts it.
 - **The `roles` claim.** The deployment realm declares `roles` admin-only and maps it, multivalued, into the access token (`helm/keycloak/files/apply-user-profile.sh`, on every Keycloak boot). The api keeps it in step with its database; without it every user lacks every permission at the edge.
+
+## Owner self-add mode
+
+`aggregator-api.ownerSelfAddMode` (`owner` | `auto` | `off`, default `auto`) is the api's `OWNER_SELF_ADD_MODE` (aggregator-dpg#1165): how an organisation owner joins their own team. `owner` shows the "Add myself to My Team" button, `auto` adds the owner when they register the organisation, `off` hides the button. Only the api reads it; the web takes the mode from the api's `/v1/aggregator-config`. Any other value fails the render. A change needs an api restart, which `helm upgrade` does because the api ConfigMap checksum changes.
 
 ## Org hierarchy flag
 

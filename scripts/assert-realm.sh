@@ -134,6 +134,13 @@ else
   fail "realm name is hardcoded to '$realm_name'"
 fi
 
+region=$(q '.attributes.phoneDefaultRegion')
+if [ "$region" = "__PHONE_DEFAULT_REGION__" ]; then
+  pass "phoneDefaultRegion is templated (__PHONE_DEFAULT_REGION__)"
+else
+  fail "phoneDefaultRegion is hardcoded to '$region'; it comes from PHONE_COUNTRIES"
+fi
+
 # ── A8. HTTPS required for external callers ──────────────────────────────────
 # `external` not `all`: private (in-cluster) source addresses stay exempt so the
 # keycloak-init Job can talk plain HTTP over the service URL.
@@ -147,7 +154,7 @@ fi
 # ── A9. Every placeholder is one render-realm.sh knows how to substitute ─────
 # A stray placeholder is a deploy-time hard failure (render-realm.sh fails on
 # unset vars). Catching it here turns that into a CI failure instead.
-KNOWN='__KEYCLOAK_REALM__ __PUBLIC_BASE_URL__ __BRAND_LONG_NAME__
+KNOWN='__KEYCLOAK_REALM__ __PUBLIC_BASE_URL__ __BRAND_LONG_NAME__ __PHONE_DEFAULT_REGION__
 __AGGREGATOR_API_SECRET__ __AGGREGATOR_PORTAL_SECRET__ __AGGREGATOR_BFF_SECRET__
 __SIGNALS_API_SECRET__ __SIGNALSTACK_CLIENT_SECRET__ __VOICE_DPG_SIGNALS_SECRET__ __CAMPAIGN_MANAGER_SECRET__
 __CAMPAIGN_MANAGER_REDIRECT_URIS__ __SIGNALS_SEARCH_CLIENT_SECRET__
@@ -167,7 +174,7 @@ fi
 # They feed the portal gate and token claims the apps act on, and only service
 # accounts write them through the admin API. build-realm.sh forces these
 # declarations (H4); this catches a realm.json edited or built without it.
-for attr in aggregator_id decision_made aggregator_type signalstack_org_id; do
+for attr in user_id decision_made aggregator_type signalstack_org_id; do
   if jq -e --arg a "$attr" '
        .attributes."kc.user.profile.config" // "{}" | fromjson
        | [.attributes[]? | select(.name == $a)]
@@ -178,6 +185,18 @@ for attr in aggregator_id decision_made aggregator_type signalstack_org_id; do
     fail "user profile does not declare $attr admin-only (view/edit [\"admin\"])"
   fi
 done
+
+# aggregator_id is the former name of user_id. A fresh realm has no stored
+# values, so it is not declared; apply-user-profile.sh keeps it declared on an
+# existing realm only while users still store it.
+if jq -e '
+     .attributes."kc.user.profile.config" // "{}" | fromjson
+     | [.attributes[]? | select(.name == "aggregator_id")] | length == 0
+   ' "$REALM_FILE" >/dev/null 2>&1; then
+  pass "user profile does not declare aggregator_id"
+else
+  fail "user profile declares aggregator_id; user_id replaces it"
+fi
 
 # ── A11. aggregator_type is multivalued for the portal ───────────────────────
 # A coordinator can serve several profile types. The aggregator reads them from
@@ -200,6 +219,35 @@ if jq -e '
 else
   fail "aggregator-portal aggregator_type mapper is missing or not multivalued"
 fi
+
+# ── A12. No client maps aggregator_id ────────────────────────────────────────
+# user_id replaces aggregator_id; the apps read only user_id.
+if jq -e '
+     [.clients[] | .protocolMappers[]?
+      | select(.config["claim.name"] == "aggregator_id" or .config["user.attribute"] == "aggregator_id")] | length == 0
+   ' "$REALM_FILE" >/dev/null 2>&1; then
+  pass "no client maps aggregator_id"
+else
+  fail "a client maps aggregator_id; user_id replaces it"
+fi
+
+# ── A13. The portal and campaign-manager map user_id ─────────────────────────
+# user_id is the coordinator's users.id, the only id the apps read: a
+# single-valued access-token claim from the user_id attribute.
+for client in aggregator-portal campaign-manager; do
+  if jq -e --arg c "$client" '
+       [.clients[] | select(.clientId == $c) | .protocolMappers[]?
+        | select(.protocolMapper == "oidc-usermodel-attribute-mapper"
+                 and .config["user.attribute"] == "user_id"
+                 and .config["claim.name"] == "user_id"
+                 and .config["access.token.claim"] == "true"
+                 and .config.multivalued == "false")] | length == 1
+     ' "$REALM_FILE" >/dev/null 2>&1; then
+    pass "$client maps user_id"
+  else
+    fail "$client does not map user_id (single-valued, access token)"
+  fi
+done
 
 echo
 if [ "$FAILED" -eq 0 ]; then
