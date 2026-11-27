@@ -61,9 +61,9 @@
 # floating tag. Keep in step with the app repos' local-dev compose so local and
 # deployed behaviour match.
 #
-# 26.7.3 -> 26.7.5, patch-only: fixes CVE-2026-84939 (FreeMarker path
-# traversal, CRITICAL) plus a dozen more security fixes from 26.7.4/26.7.5.
-ARG KEYCLOAK_VERSION=26.7.5
+# 26.7.3 -> 26.7.4, patch-only. CVE-2026-84939 (FreeMarker, CRITICAL) is fixed
+# only in 26.7.5, which DHI has not published yet; bump again once it is.
+ARG KEYCLOAK_VERSION=26.7.4
 # Docker Hardened Image (bluedots-automation#136). This was
 # quay.io/keycloak/keycloak — upstream, unhardened — which made it the last image
 # that was OURS and still on an upstream base.
