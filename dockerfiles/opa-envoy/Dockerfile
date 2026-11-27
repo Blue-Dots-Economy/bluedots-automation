@@ -29,13 +29,14 @@
 # OPA sidecar in the api pod. Built by .github/workflows/build-opa-envoy-image.yml.
 # =============================================================================
 
-# Upstream OPA 1.21.1, Envoy-plugin build, static. Pinned by digest (the
+# Upstream OPA 1.22.4, Envoy-plugin build, static. Pinned by digest (the
 # multi-arch index) so a rebuild cannot pull a different binary than the one
-# validated here.
-ARG OPA_ENVOY=openpolicyagent/opa:1.21.1-envoy-1-static@sha256:c1f40d815a15c4ca0ccbdf300e0a3515fccf1d30fbd92e69917ab96bad83811d
-# The hardened base: DHI OPA 1.21.1 from this repo's GHCR mirror. Tag only, like
+# validated here. 1.23.0 has no Envoy-plugin build yet, so 1.22.4 is the
+# newest version that has one.
+ARG OPA_ENVOY=openpolicyagent/opa:1.22.4-envoy-5-static@sha256:2b50e57d511baf3779e7f9dd59a88db8b93ab2d36ec951ba1071836812e0ecdf
+# The hardened base: DHI OPA 1.22.4 from this repo's GHCR mirror. Tag only, like
 # the other mirrored images, so a rebuild picks up DHI's security refreshes.
-ARG BASE=ghcr.io/blue-dots-economy/dhi/open-policy-agent:1.21.1
+ARG BASE=ghcr.io/blue-dots-economy/dhi/open-policy-agent:1.22.4
 
 FROM ${OPA_ENVOY} AS opa-envoy
 
